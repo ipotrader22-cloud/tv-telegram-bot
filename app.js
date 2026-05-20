@@ -23,5 +23,5 @@ app.post('/', async (req, res) => {
     res.status(500).send('Error');
   }
 });
-
+app.get('/', (req, res) => res.status(200).send('OK'));
 app.listen(10000, () => console.log('Server running on port 10000'));
