@@ -13,12 +13,11 @@ const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 const TRADES_SHEET = 'Trades';
-const POSITIONS_SHEET = 'Positions';
+const PENDING_SHEET = 'Pending';
+const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
+const LEGACY_POSITIONS_SHEET = 'Positions';
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Helpers
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function cleanNumber(value) {
   if (value === undefined || value === null) return '';
 
@@ -42,8 +41,21 @@ function makeTradeId(symbol, side) {
   return `${symbol}_${side}`.toUpperCase();
 }
 
-function nowIso() {
-  return new Date().toISOString();
+function nowNy() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const get = type => parts.find(p => p.type === type)?.value || '';
+
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
 function normalizeRawMessage(reqBody) {
@@ -52,9 +64,19 @@ function normalizeRawMessage(reqBody) {
     : JSON.stringify(reqBody, null, 2);
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Parser
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function googleFinanceSymbolFormula(rowNum) {
+  return `=IF(C${rowNum}="","",IFERROR(GOOGLEFINANCE(REGEXREPLACE(C${rowNum},".*:",""),"price"),""))`;
+}
+
+function unrealizedFormula(rowNum) {
+  return `=IF(OR(C${rowNum}="",J${rowNum}="",F${rowNum}="",G${rowNum}=""),"",IF(D${rowNum}="LONG",(J${rowNum}-F${rowNum})*G${rowNum},(F${rowNum}-J${rowNum})*G${rowNum}))`;
+}
+
+function parseUpdatedRowNumber(updatedRange) {
+  const match = String(updatedRange || '').match(/![A-Z]+(\d+):/);
+  return match ? Number(match[1]) : null;
+}
+
 function parseTradingViewMessage(message) {
   const raw = String(message || '').trim();
 
@@ -64,24 +86,24 @@ function parseTradingViewMessage(message) {
 
   const firstLine = raw.split('\n')[0] || '';
 
-  const headerMatch = firstLine.match(/([A-Z0-9:_\.-]+)\s+(LONG|SHORT)/i);
+  const headerMatch = raw.match(/([A-Z0-9:_\.\-!]+)\s+(LONG|SHORT)/i);
   if (headerMatch) {
-    symbol = headerMatch[1].trim();
+    symbol = headerMatch[1].trim().replace(/^[^A-Z0-9]+/i, '');
     side = headerMatch[2].trim().toUpperCase();
   }
 
-  if (/SETUP/i.test(firstLine)) {
-    event = 'SETUP';
-  } else if (/Entry filled/i.test(raw)) {
+  if (/CANCELED|CANCELLED/i.test(firstLine) || /CANCELED|CANCELLED/i.test(raw)) {
+    event = 'CANCEL';
+  } else if (/Entry filled/i.test(raw) || /\bFILLED\b/i.test(firstLine)) {
     event = 'FILL';
   } else if (/EOD CLOSE/i.test(firstLine)) {
     event = 'EOD';
-  } else if (/ЦЕЛЬ/i.test(firstLine) || /Profit:/i.test(raw)) {
+  } else if (/TARGET HIT|TAKE PROFIT|\bTP\b/i.test(firstLine) || /ЦЕЛЬ/i.test(firstLine) || /Profit:/i.test(raw)) {
     event = 'TP';
-  } else if (/СТОП/i.test(firstLine) || /Actual loss:/i.test(raw)) {
+  } else if (/STOP LOSS|\bSTOP\b|\bSL\b/i.test(firstLine) || /СТОП/i.test(firstLine) || /Actual loss:/i.test(raw)) {
     event = 'SL';
-  } else if (/CANCELED/i.test(firstLine)) {
-    event = 'CANCEL';
+  } else if (/SETUP/i.test(firstLine)) {
+    event = 'SETUP';
   } else {
     event = 'UNKNOWN';
   }
@@ -95,21 +117,23 @@ function parseTradingViewMessage(message) {
     cleanNumber(extract(/Size:\s*([0-9\.,-]+)/i, raw));
 
   const target =
-    cleanNumber(extract(/ЦЕЛЬ:\s*([0-9\.,-]+)/i, raw));
+    cleanNumber(extract(/ЦЕЛЬ:\s*([0-9\.,-]+)/i, raw)) ||
+    cleanNumber(extract(/Target:\s*([0-9\.,-]+)/i, raw));
 
   const filled =
-    cleanNumber(extract(/Filled:\s*([0-9\.,-]+)/i, raw));
+    cleanNumber(extract(/Filled:\s*([0-9\.,-]+)/i, raw)) ||
+    cleanNumber(extract(/Entry filled:\s*([0-9\.,-]+)/i, raw));
 
   const close =
     cleanNumber(extract(/Close:\s*([0-9\.,-]+)/i, raw));
 
-  const stop = cleanNumber(
-    extract(/СТОП на закрытие (?:ниже|выше)\s*([0-9\.,-]+)/i, raw)
-  );
+  const stop =
+    cleanNumber(extract(/СТОП на закрытие (?:ниже|выше)\s*([0-9\.,-]+)/i, raw)) ||
+    cleanNumber(extract(/Stop:\s*([0-9\.,-]+)/i, raw));
 
   let exit = '';
-  if (event === 'TP') exit = filled;
-  if (event === 'SL' || event === 'EOD') exit = close;
+  if (event === 'TP') exit = filled || close;
+  if (event === 'SL' || event === 'EOD') exit = close || filled;
 
   let result = '';
 
@@ -138,7 +162,7 @@ function parseTradingViewMessage(message) {
   const trade_id = makeTradeId(symbol, side);
 
   return {
-    timestamp: nowIso(),
+    timestamp: nowNy(),
     trade_id,
     symbol,
     side,
@@ -154,9 +178,73 @@ function parseTradingViewMessage(message) {
   };
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Google Sheets client
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function formatTelegramMessage(row, originalMessage) {
+  if (!row || row.event === 'UNKNOWN') return originalMessage;
+
+  const titleBase = `${row.symbol || ''} ${row.side || ''}`.trim();
+
+  if (row.event === 'SETUP') {
+    const emoji = row.side === 'LONG' ? '🟢' : '🔴';
+
+    return [
+      `${emoji} ${titleBase} SETUP`,
+      '',
+      row.entry !== '' ? `Entry: ${row.entry}` : '',
+      row.size !== '' ? `Size: ${row.size}` : '',
+      row.target !== '' ? `Target: ${row.target}` : '',
+      row.stop !== '' ? `Stop: ${row.stop}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (row.event === 'FILL') {
+    return [
+      `🎯 ${titleBase} FILLED`,
+      '',
+      row.entry !== '' ? `Filled: ${row.entry}` : '',
+      row.size !== '' ? `Size: ${row.size}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (row.event === 'TP') {
+    return [
+      `🎉 ${titleBase} TARGET HIT`,
+      '',
+      row.exit !== '' ? `Exit: ${row.exit}` : '',
+      row.result !== '' ? `Profit: $${row.result}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (row.event === 'SL') {
+    return [
+      `⛔ ${row.side || ''} STOP`,
+      '',
+      row.symbol ? `Symbol: ${row.symbol}` : '',
+      row.exit !== '' ? `Close: ${row.exit}` : '',
+      row.size !== '' ? `Size: ${row.size}` : '',
+      row.result !== '' ? `Loss: -$${Math.abs(row.result)}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (row.event === 'EOD') {
+    return [
+      `🌙 ${titleBase} EOD CLOSE`,
+      '',
+      row.exit !== '' ? `Close: ${row.exit}` : '',
+      row.result !== '' ? `Result: $${row.result}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (row.event === 'CANCEL') {
+    return [
+      `⚪ ${titleBase} SETUP CANCELED`,
+      '',
+      `Reason: Limit order canceled / replaced / EOD`,
+    ].join('\n');
+  }
+
+  return originalMessage;
+}
+
 async function getSheetsClient() {
   if (!GOOGLE_SHEET_ID || !GOOGLE_SERVICE_ACCOUNT_JSON) {
     console.log('Google Sheets env vars missing. Skipping sheet logging.');
@@ -173,10 +261,84 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Trades raw log
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function getSheetIdByName(sheets, sheetName) {
+  const response = await sheets.spreadsheets.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+  });
+
+  const sheet = response.data.sheets.find(s => s.properties.title === sheetName);
+  return sheet ? sheet.properties.sheetId : null;
+}
+
+async function readSheet(sheets, sheetName, range = 'A:Z') {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${sheetName}!${range}`,
+  });
+
+  return response.data.values || [];
+}
+
+function findRowIndexByTradeId(values, tradeId) {
+  if (!tradeId) return -1;
+
+  for (let i = 1; i < values.length; i++) {
+    if ((values[i][0] || '').toUpperCase() === tradeId.toUpperCase()) {
+      return i + 1;
+    }
+  }
+
+  return -1;
+}
+
+async function deleteSheetRow(sheets, sheetName, rowNumber) {
+  if (!rowNumber || rowNumber < 2) return;
+
+  const sheetId = await getSheetIdByName(sheets, sheetName);
+  if (sheetId === null) {
+    console.log(`Sheet not found: ${sheetName}`);
+    return;
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: 'ROWS',
+              startIndex: rowNumber - 1,
+              endIndex: rowNumber,
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  console.log(`Deleted row ${rowNumber} from ${sheetName}`);
+}
+
+async function removeRowByTradeId(sheets, sheetName, tradeId) {
+  const values = await readSheet(sheets, sheetName);
+  const rowNumber = findRowIndexByTradeId(values, tradeId);
+
+  if (rowNumber < 0) return null;
+
+  const existing = values[rowNumber - 1];
+  await deleteSheetRow(sheets, sheetName, rowNumber);
+
+  return existing;
+}
+
 async function appendToTradesSheet(sheets, row) {
+  if (!['FILL', 'TP', 'SL', 'EOD'].includes(row.event)) {
+    console.log('Trades append skipped for non-executed event:', row.event);
+    return;
+  }
+
   await sheets.spreadsheets.values.append({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${TRADES_SHEET}!A:K`,
@@ -201,113 +363,137 @@ async function appendToTradesSheet(sheets, row) {
   console.log('Trades row appended:', row.symbol, row.side, row.event);
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Positions sheet helpers
-// Headers:
-// trade_id | timestamp | symbol | side | status | entry | size | target | stop | unrealized | raw
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async function readPositions(sheets) {
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: GOOGLE_SHEET_ID,
-    range: `${POSITIONS_SHEET}!A:K`,
-  });
-
-  return response.data.values || [];
-}
-
-function findPositionRowIndex(values, tradeId) {
-  // values[0] = headers, sheet rows are 1-based
-  for (let i = 1; i < values.length; i++) {
-    if ((values[i][0] || '').toUpperCase() === tradeId.toUpperCase()) {
-      return i + 1;
-    }
-  }
-  return -1;
-}
-
-async function upsertPosition(sheets, row, status) {
+async function upsertPending(sheets, row) {
   if (!row.trade_id) return;
 
-  const values = await readPositions(sheets);
-  const sheetRow = findPositionRowIndex(values, row.trade_id);
-
+  const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
+  const sheetRow = findRowIndexByTradeId(values, row.trade_id);
   const existing = sheetRow > 0 ? values[sheetRow - 1] : [];
 
-  const positionRow = [
+  const pendingRow = [
     row.trade_id,
     row.timestamp || existing[1] || '',
     row.symbol || existing[2] || '',
     row.side || existing[3] || '',
-    status,
+    'pending',
     row.entry || existing[5] || '',
     row.size || existing[6] || '',
     row.target || existing[7] || '',
     row.stop || existing[8] || '',
-    '',
-    row.raw || existing[10] || '',
+    row.raw || existing[9] || '',
   ];
 
   if (sheetRow > 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${POSITIONS_SHEET}!A${sheetRow}:K${sheetRow}`,
+      range: `${PENDING_SHEET}!A${sheetRow}:J${sheetRow}`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [positionRow],
-      },
+      requestBody: { values: [pendingRow] },
     });
 
-    console.log('Position updated:', row.trade_id, status);
+    console.log('Pending updated:', row.trade_id);
   } else {
     await sheets.spreadsheets.values.append({
       spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${POSITIONS_SHEET}!A:K`,
+      range: `${PENDING_SHEET}!A:J`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [positionRow],
-      },
+      requestBody: { values: [pendingRow] },
     });
 
-    console.log('Position appended:', row.trade_id, status);
+    console.log('Pending appended:', row.trade_id);
   }
 }
 
-async function clearPosition(sheets, tradeId) {
-  if (!tradeId) return null;
+async function upsertOpenPosition(sheets, row, pendingRow = null) {
+  if (!row.trade_id) return;
 
-  const values = await readPositions(sheets);
-  const sheetRow = findPositionRowIndex(values, tradeId);
+  const values = await readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L');
+  const sheetRow = findRowIndexByTradeId(values, row.trade_id);
+  const existing = sheetRow > 0 ? values[sheetRow - 1] : [];
 
-  if (sheetRow < 0) return null;
+  const openTime = row.timestamp || existing[1] || pendingRow?.[1] || '';
+  const symbol = row.symbol || existing[2] || pendingRow?.[2] || '';
+  const side = row.side || existing[3] || pendingRow?.[3] || '';
+  const entry = row.entry || existing[5] || pendingRow?.[5] || '';
+  const size = row.size || existing[6] || pendingRow?.[6] || '';
+  const target = row.target || existing[7] || pendingRow?.[7] || '';
+  const stop = row.stop || existing[8] || pendingRow?.[8] || '';
+  const raw = row.raw || existing[11] || pendingRow?.[9] || '';
 
-  const existing = values[sheetRow - 1];
+  let targetRowNumber = sheetRow;
 
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: GOOGLE_SHEET_ID,
-    range: `${POSITIONS_SHEET}!A${sheetRow}:K${sheetRow}`,
-  });
+  const openRowWithoutFormulas = [
+    row.trade_id,
+    openTime,
+    symbol,
+    side,
+    'open',
+    entry,
+    size,
+    target,
+    stop,
+    '',
+    '',
+    raw,
+  ];
 
-  console.log('Position cleared:', tradeId);
+  if (sheetRow > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${OPEN_POSITIONS_SHEET}!A${sheetRow}:L${sheetRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [openRowWithoutFormulas] },
+    });
+
+    targetRowNumber = sheetRow;
+    console.log('Open position updated:', row.trade_id);
+  } else {
+    const appendResponse = await sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${OPEN_POSITIONS_SHEET}!A:L`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [openRowWithoutFormulas] },
+    });
+
+    targetRowNumber = parseUpdatedRowNumber(appendResponse.data.updates.updatedRange);
+    console.log('Open position appended:', row.trade_id, 'row', targetRowNumber);
+  }
+
+  if (targetRowNumber) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${OPEN_POSITIONS_SHEET}!J${targetRowNumber}:K${targetRowNumber}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[
+          googleFinanceSymbolFormula(targetRowNumber),
+          unrealizedFormula(targetRowNumber),
+        ]],
+      },
+    });
+  }
+}
+
+async function removeOpenPosition(sheets, tradeId) {
+  const removed = await removeRowByTradeId(sheets, OPEN_POSITIONS_SHEET, tradeId);
+  if (!removed) return null;
 
   return {
-    trade_id: existing[0] || '',
-    open_time: existing[1] || '',
-    symbol: existing[2] || '',
-    side: existing[3] || '',
-    status: existing[4] || '',
-    entry: existing[5] || '',
-    size: existing[6] || '',
-    target: existing[7] || '',
-    stop: existing[8] || '',
-    raw_open: existing[10] || '',
+    trade_id: removed[0] || '',
+    open_time: removed[1] || '',
+    symbol: removed[2] || '',
+    side: removed[3] || '',
+    status: removed[4] || '',
+    entry: removed[5] || '',
+    size: removed[6] || '',
+    target: removed[7] || '',
+    stop: removed[8] || '',
+    last_price: removed[9] || '',
+    unrealized_p_l: removed[10] || '',
+    raw_open: removed[11] || '',
   };
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Closed Trades sheet
-// Headers:
-// trade_id | open_time | close_time | symbol | side | entry | exit | size | result | exit_reason | raw_open | raw_close
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function appendClosedTrade(sheets, openPosition, closeRow) {
   const closedRow = [
     closeRow.trade_id,
@@ -328,51 +514,54 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${CLOSED_TRADES_SHEET}!A:L`,
     valueInputOption: 'USER_ENTERED',
-    requestBody: {
-      values: [closedRow],
-    },
+    requestBody: { values: [closedRow] },
   });
 
   console.log('Closed trade appended:', closeRow.trade_id, closeRow.event, closeRow.result);
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Ledger processor
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function cleanupLegacyPositionIfExists(sheets, tradeId) {
+  try {
+    await removeRowByTradeId(sheets, LEGACY_POSITIONS_SHEET, tradeId);
+  } catch (err) {
+    console.log('Legacy Positions cleanup skipped:', err.message);
+  }
+}
+
 async function processLedger(row) {
   const sheets = await getSheetsClient();
   if (!sheets) return;
 
-  // Always preserve current raw log behavior.
   await appendToTradesSheet(sheets, row);
 
   if (!row.trade_id || row.event === 'UNKNOWN') return;
 
   if (row.event === 'SETUP') {
-    await upsertPosition(sheets, row, 'pending');
+    await upsertPending(sheets, row);
     return;
   }
 
   if (row.event === 'FILL') {
-    await upsertPosition(sheets, row, 'open');
+    const pendingRow = await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
+    await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+    await upsertOpenPosition(sheets, row, pendingRow);
     return;
   }
 
   if (row.event === 'CANCEL') {
-    await clearPosition(sheets, row.trade_id);
+    await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
+    await cleanupLegacyPositionIfExists(sheets, row.trade_id);
     return;
   }
 
   if (row.event === 'TP' || row.event === 'SL' || row.event === 'EOD') {
-    const openPosition = await clearPosition(sheets, row.trade_id);
+    const openPosition = await removeOpenPosition(sheets, row.trade_id);
+    await cleanupLegacyPositionIfExists(sheets, row.trade_id);
     await appendClosedTrade(sheets, openPosition, row);
     return;
   }
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Telegram
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function sendTelegram(message) {
   if (!TOKEN || !CHAT_ID) {
     console.log('Telegram env vars missing. Skipping Telegram.');
@@ -395,18 +584,14 @@ async function sendTelegram(message) {
   console.log('Telegram response:', JSON.stringify(data));
 }
 
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Routes
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.post('/', async (req, res) => {
   try {
     const message = normalizeRawMessage(req.body);
     const parsedRow = parseTradingViewMessage(message);
+    const telegramMessage = formatTelegramMessage(parsedRow, message);
 
-    // Telegram first, so current TV → TG flow stays alive.
-    await sendTelegram(message);
+    await sendTelegram(telegramMessage);
 
-    // Sheets second. If Sheets fails, Telegram still worked.
     try {
       await processLedger(parsedRow);
     } catch (sheetErr) {
