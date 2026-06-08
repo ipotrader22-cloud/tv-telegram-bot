@@ -18,6 +18,10 @@ const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BASIC HELPERS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 function cleanNumber(value) {
   if (value === undefined || value === null) return '';
 
@@ -76,6 +80,10 @@ function parseUpdatedRowNumber(updatedRange) {
   const match = String(updatedRange || '').match(/![A-Z]+(\d+):/);
   return match ? Number(match[1]) : null;
 }
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// OLD TEXT ALERT PARSER — keeps your older scripts working
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseTradingViewMessage(message) {
   const raw = String(message || '').trim();
@@ -178,6 +186,79 @@ function parseTradingViewMessage(message) {
   };
 }
 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NEW JSON ALERT PARSER — for the new FVG live TV script
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function parseJsonTradingViewAlert(data) {
+  const eventRaw = String(data.event || '').toUpperCase();
+
+  const eventMap = {
+    SETUP: 'SETUP',
+    ENTRY_FILL: 'FILL',
+    TP: 'TP',
+    CLOSE_STOP: 'SL',
+    EOD_CLOSE: 'EOD',
+    EOD_RESET: 'EOD',
+    NEW_DAY_EMERGENCY_CLOSE: 'EOD',
+    NEW_DAY_RESET: 'CANCEL',
+    CANCEL_REPLACE: 'CANCEL',
+  };
+
+  const event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
+
+  const symbol = String(data.symbol || '').trim();
+  const side = String(data.side || 'LONG').trim().toUpperCase();
+
+  const entry = cleanNumber(data.entry);
+  const size = cleanNumber(data.qty);
+  const target = cleanNumber(data.target);
+  const stop = cleanNumber(data.stop);
+  const price = cleanNumber(data.price);
+
+  let exit = '';
+  if (event === 'TP' || event === 'SL' || event === 'EOD') {
+    exit = price;
+  }
+
+  let result = '';
+
+  const trade_id = makeTradeId(symbol, side);
+
+  return {
+    timestamp: nowNy(),
+    trade_id,
+    symbol,
+    side,
+    event,
+    entry,
+    size,
+    target,
+    stop,
+    exit,
+    result,
+    status:
+      event === 'SETUP' ? 'pending' :
+      event === 'FILL' ? 'open' :
+      event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
+      event === 'CANCEL' ? 'canceled' :
+      'unknown',
+    raw: JSON.stringify(data, null, 2),
+
+    // Kept for raw logs / future Sheets use, but not shown in Telegram
+    box_top: data.box_top ?? '',
+    box_bottom: data.box_bottom ?? '',
+    min_box_atr: data.min_box_atr ?? '',
+    depth_pct: data.depth_pct ?? '',
+    tp_atr: data.tp_atr ?? '',
+    raw_event: eventRaw,
+  };
+}
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PRETTY TELEGRAM FORMATTER
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 function formatTelegramMessage(row, originalMessage) {
   if (!row || row.event === 'UNKNOWN') return originalMessage;
 
@@ -187,63 +268,70 @@ function formatTelegramMessage(row, originalMessage) {
     const emoji = row.side === 'LONG' ? '🟢' : '🔴';
 
     return [
-      `${emoji} ${titleBase} SETUP`,
+      `${emoji} <b>${titleBase} SETUP</b>`,
       '',
-      row.entry !== '' ? `Entry: ${row.entry}` : '',
-      row.size !== '' ? `Size: ${row.size}` : '',
-      row.target !== '' ? `Target: ${row.target}` : '',
-      row.stop !== '' ? `Stop: ${row.stop}` : '',
+      row.entry !== '' ? `📍 Entry Limit: <b>${row.entry}</b>` : '',
+      row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+      row.stop !== '' ? `⛔ Stop: close below <b>${row.stop}</b>` : '',
+      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'FILL') {
     return [
-      `🎯 ${titleBase} FILLED`,
+      `🎉 <b>${titleBase} FILLED</b>`,
       '',
-      row.entry !== '' ? `Filled: ${row.entry}` : '',
-      row.size !== '' ? `Size: ${row.size}` : '',
+      row.entry !== '' ? `✅ Entry: <b>${row.entry}</b>` : '',
+      row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+      row.stop !== '' ? `⛔ Stop: close below <b>${row.stop}</b>` : '',
+      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'TP') {
     return [
-      `🎉 ${titleBase} TARGET HIT`,
+      `🎯 <b>${titleBase} TAKE PROFIT HIT</b>`,
       '',
-      row.exit !== '' ? `Exit: ${row.exit}` : '',
+      row.exit !== '' ? `✅ Exit Price: <b>${row.exit}</b>` : '',
+      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       row.result !== '' ? `Profit: $${row.result}` : '',
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'SL') {
     return [
-      `⛔ ${row.side || ''} STOP`,
+      `⛔ <b>${titleBase} CLOSE STOP</b>`,
       '',
-      row.symbol ? `Symbol: ${row.symbol}` : '',
-      row.exit !== '' ? `Close: ${row.exit}` : '',
-      row.size !== '' ? `Size: ${row.size}` : '',
+      row.exit !== '' ? `❌ Exit Close: <b>${row.exit}</b>` : '',
+      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       row.result !== '' ? `Loss: -$${Math.abs(row.result)}` : '',
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'EOD') {
     return [
-      `🌙 ${titleBase} EOD CLOSE`,
+      `⏰ <b>${titleBase || row.symbol} EOD CLOSE / RESET</b>`,
       '',
-      row.exit !== '' ? `Close: ${row.exit}` : '',
-      row.result !== '' ? `Result: $${row.result}` : '',
+      row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+      row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
+      `All pending orders canceled / positions flattened before close.`,
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'CANCEL') {
     return [
-      `⚪ ${titleBase} SETUP CANCELED`,
+      `⚪ <b>${titleBase || row.symbol} SETUP CANCELED / REPLACED</b>`,
       '',
-      `Reason: Limit order canceled / replaced / EOD`,
+      `Reason: new valid FVG replaced old pending setup / session reset`,
     ].join('\n');
   }
 
   return originalMessage;
 }
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GOOGLE SHEETS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function getSheetsClient() {
   if (!GOOGLE_SHEET_ID || !GOOGLE_SERVICE_ACCOUNT_JSON) {
@@ -562,6 +650,10 @@ async function processLedger(row) {
   }
 }
 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TELEGRAM
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 async function sendTelegram(message) {
   if (!TOKEN || !CHAT_ID) {
     console.log('Telegram env vars missing. Skipping Telegram.');
@@ -576,6 +668,7 @@ async function sendTelegram(message) {
     body: JSON.stringify({
       chat_id: CHAT_ID,
       text: message,
+      parse_mode: 'HTML',
       disable_web_page_preview: true,
     }),
   });
@@ -584,10 +677,23 @@ async function sendTelegram(message) {
   console.log('Telegram response:', JSON.stringify(data));
 }
 
-app.post('/', async (req, res) => {
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WEBHOOK ROUTES
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async function handleTradingViewWebhook(req, res) {
   try {
+    const isJsonObject =
+      typeof req.body === 'object' &&
+      req.body !== null &&
+      !Buffer.isBuffer(req.body);
+
     const message = normalizeRawMessage(req.body);
-    const parsedRow = parseTradingViewMessage(message);
+
+    const parsedRow = isJsonObject
+      ? parseJsonTradingViewAlert(req.body)
+      : parseTradingViewMessage(message);
+
     const telegramMessage = formatTelegramMessage(parsedRow, message);
 
     await sendTelegram(telegramMessage);
@@ -603,7 +709,10 @@ app.post('/', async (req, res) => {
     console.error('Error:', err);
     res.status(500).send('Error');
   }
-});
+}
+
+app.post('/', handleTradingViewWebhook);
+app.post('/tv', handleTradingViewWebhook);
 
 app.get('/', (req, res) => {
   res.status(200).send('OK');
