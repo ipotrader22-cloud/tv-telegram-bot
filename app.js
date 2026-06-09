@@ -82,7 +82,7 @@ function parseUpdatedRowNumber(updatedRange) {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// OLD TEXT ALERT PARSER — keeps your older scripts working
+// OLD TEXT ALERT PARSER — keeps older TV scripts working
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseTradingViewMessage(message) {
@@ -183,11 +183,12 @@ function parseTradingViewMessage(message) {
     result,
     status,
     raw,
+    raw_event: event,
   };
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// NEW JSON ALERT PARSER — for the new FVG live TV script
+// NEW JSON ALERT PARSER — for new FVG live TV script
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseJsonTradingViewAlert(data) {
@@ -198,9 +199,13 @@ function parseJsonTradingViewAlert(data) {
     ENTRY_FILL: 'FILL',
     TP: 'TP',
     CLOSE_STOP: 'SL',
+
+    // EOD_CLOSE is real position close.
     EOD_CLOSE: 'EOD',
-    EOD_RESET: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
+
+    // These are pending-order/session resets, not closed trades.
+    EOD_RESET: 'CANCEL',
     NEW_DAY_RESET: 'CANCEL',
     CANCEL_REPLACE: 'CANCEL',
   };
@@ -208,7 +213,11 @@ function parseJsonTradingViewAlert(data) {
   const event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
 
   const symbol = String(data.symbol || '').trim();
-  const side = String(data.side || 'LONG').trim().toUpperCase();
+
+  // Important:
+  // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
+  // That allows us to remove all pending rows by symbol.
+  const side = data.side ? String(data.side).trim().toUpperCase() : '';
 
   const entry = cleanNumber(data.entry);
   const size = cleanNumber(data.qty);
@@ -225,6 +234,13 @@ function parseJsonTradingViewAlert(data) {
 
   const trade_id = makeTradeId(symbol, side);
 
+  const status =
+    event === 'SETUP' ? 'pending' :
+    event === 'FILL' ? 'open' :
+    event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
+    event === 'CANCEL' ? 'canceled' :
+    'unknown';
+
   return {
     timestamp: nowNy(),
     trade_id,
@@ -237,21 +253,20 @@ function parseJsonTradingViewAlert(data) {
     stop,
     exit,
     result,
-    status:
-      event === 'SETUP' ? 'pending' :
-      event === 'FILL' ? 'open' :
-      event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
-      event === 'CANCEL' ? 'canceled' :
-      'unknown',
+    status,
     raw: JSON.stringify(data, null, 2),
 
-    // Kept for raw logs / future Sheets use, but not shown in Telegram
+    // Kept in raw/debug, not displayed in TG
     box_top: data.box_top ?? '',
     box_bottom: data.box_bottom ?? '',
     min_box_atr: data.min_box_atr ?? '',
     depth_pct: data.depth_pct ?? '',
     tp_atr: data.tp_atr ?? '',
+    qty_mode: data.qty_mode ?? '',
+    risk_pct: data.risk_pct ?? '',
+    max_position_pct: data.max_position_pct ?? '',
     raw_event: eventRaw,
+    reason: data.reason ?? '',
   };
 }
 
@@ -265,14 +280,14 @@ function formatTelegramMessage(row, originalMessage) {
   const titleBase = `${row.symbol || ''} ${row.side || ''}`.trim();
 
   if (row.event === 'SETUP') {
-    const emoji = row.side === 'LONG' ? '🟢' : '🔴';
+    const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
 
     return [
       `${emoji} <b>${titleBase} SETUP</b>`,
       '',
       row.entry !== '' ? `📍 Entry Limit: <b>${row.entry}</b>` : '',
       row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
-      row.stop !== '' ? `⛔ Stop: close below <b>${row.stop}</b>` : '',
+      row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
@@ -283,7 +298,7 @@ function formatTelegramMessage(row, originalMessage) {
       '',
       row.entry !== '' ? `✅ Entry: <b>${row.entry}</b>` : '',
       row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
-      row.stop !== '' ? `⛔ Stop: close below <b>${row.stop}</b>` : '',
+      row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
@@ -310,20 +325,25 @@ function formatTelegramMessage(row, originalMessage) {
 
   if (row.event === 'EOD') {
     return [
-      `⏰ <b>${titleBase || row.symbol} EOD CLOSE / RESET</b>`,
+      `⏰ <b>${titleBase || row.symbol} EOD CLOSE</b>`,
       '',
       row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
       row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
-      `All pending orders canceled / positions flattened before close.`,
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'CANCEL') {
+    const resetText = row.raw_event === 'EOD_RESET'
+      ? 'EOD pending orders canceled'
+      : row.raw_event === 'NEW_DAY_RESET'
+        ? 'New day reset: old pending orders canceled'
+        : 'Setup canceled / replaced';
+
     return [
-      `⚪ <b>${titleBase || row.symbol} SETUP CANCELED / REPLACED</b>`,
+      `⚪ <b>${titleBase || row.symbol} ${resetText}</b>`,
       '',
-      `Reason: new valid FVG replaced old pending setup / session reset`,
-    ].join('\n');
+      row.reason ? `Reason: ${row.reason}` : '',
+    ].filter(Boolean).join('\n');
   }
 
   return originalMessage;
@@ -419,6 +439,27 @@ async function removeRowByTradeId(sheets, sheetName, tradeId) {
   await deleteSheetRow(sheets, sheetName, rowNumber);
 
   return existing;
+}
+
+async function removePendingRowsBySymbol(sheets, symbol) {
+  if (!symbol) return 0;
+
+  const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
+  let removedCount = 0;
+
+  // Go bottom-up so row numbers don't shift after deletion.
+  for (let i = values.length - 1; i >= 1; i--) {
+    const row = values[i];
+    const rowSymbol = String(row[2] || '').toUpperCase();
+
+    if (rowSymbol === String(symbol).toUpperCase()) {
+      await deleteSheetRow(sheets, PENDING_SHEET, i + 1);
+      removedCount++;
+    }
+  }
+
+  console.log(`Pending rows removed by symbol ${symbol}: ${removedCount}`);
+  return removedCount;
 }
 
 async function appendToTradesSheet(sheets, row) {
@@ -622,27 +663,46 @@ async function processLedger(row) {
 
   await appendToTradesSheet(sheets, row);
 
-  if (!row.trade_id || row.event === 'UNKNOWN') return;
+  if (!row || row.event === 'UNKNOWN') return;
 
+  // SETUP → Pending
   if (row.event === 'SETUP') {
+    if (!row.trade_id) return;
     await upsertPending(sheets, row);
     return;
   }
 
+  // FILL → remove Pending, add/update Open Positions
   if (row.event === 'FILL') {
+    if (!row.trade_id) return;
+
     const pendingRow = await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
     await upsertOpenPosition(sheets, row, pendingRow);
     return;
   }
 
+  // CANCEL / EOD_RESET / NEW_DAY_RESET / CANCEL_REPLACE
   if (row.event === 'CANCEL') {
-    await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
-    await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+    if (row.trade_id) {
+      await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
+      await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+      return;
+    }
+
+    // If side is missing, remove all pending rows for this symbol.
+    if (row.symbol) {
+      await removePendingRowsBySymbol(sheets, row.symbol);
+      return;
+    }
+
     return;
   }
 
+  // TP / SL / EOD → remove Open Position, add Closed Trade
   if (row.event === 'TP' || row.event === 'SL' || row.event === 'EOD') {
+    if (!row.trade_id) return;
+
     const openPosition = await removeOpenPosition(sheets, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
     await appendClosedTrade(sheets, openPosition, row);
@@ -662,19 +722,41 @@ async function sendTelegram(message) {
 
   const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
 
-  const response = await fetch(url, {
+  const payload = {
+    chat_id: CHAT_ID,
+    text: message,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+  };
+
+  let response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text: message,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(payload),
   });
 
-  const data = await response.json();
+  let data = await response.json();
   console.log('Telegram response:', JSON.stringify(data));
+
+  // Fallback if Telegram rejects HTML parsing for some old/raw alert text.
+  if (!data.ok && data.description && String(data.description).includes("can't parse entities")) {
+    console.log('Telegram HTML parse failed. Retrying without parse_mode.');
+
+    const fallbackPayload = {
+      chat_id: CHAT_ID,
+      text: message,
+      disable_web_page_preview: true,
+    };
+
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fallbackPayload),
+    });
+
+    data = await response.json();
+    console.log('Telegram fallback response:', JSON.stringify(data));
+  }
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
