@@ -81,6 +81,47 @@ function parseUpdatedRowNumber(updatedRange) {
   return match ? Number(match[1]) : null;
 }
 
+function calcResult(openPosition, closeRow) {
+  const entry = cleanNumber(openPosition?.entry);
+  const exit = cleanNumber(closeRow?.exit);
+  const size = cleanNumber(openPosition?.size || closeRow?.size);
+  const side = String(openPosition?.side || closeRow?.side || '').toUpperCase();
+
+  if (entry === '' || exit === '' || size === '' || !side) return '';
+
+  if (side === 'LONG') {
+    return Number(((exit - entry) * size).toFixed(2));
+  }
+
+  if (side === 'SHORT') {
+    return Number(((entry - exit) * size).toFixed(2));
+  }
+
+  return '';
+}
+
+function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
+  if (!openPosition) return closeRow;
+
+  const enriched = {
+    ...closeRow,
+    trade_id: closeRow.trade_id || openPosition.trade_id || makeTradeId(openPosition.symbol, openPosition.side),
+    symbol: closeRow.symbol || openPosition.symbol || '',
+    side: closeRow.side || openPosition.side || '',
+    entry: closeRow.entry !== '' ? closeRow.entry : openPosition.entry || '',
+    size: closeRow.size !== '' ? closeRow.size : openPosition.size || '',
+    target: closeRow.target !== '' ? closeRow.target : openPosition.target || '',
+    stop: closeRow.stop !== '' ? closeRow.stop : openPosition.stop || '',
+    status: 'closed',
+  };
+
+  if (enriched.result === '') {
+    enriched.result = calcResult(openPosition, enriched);
+  }
+
+  return enriched;
+}
+
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // OLD TEXT ALERT PARSER — keeps older TV scripts working
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -200,11 +241,9 @@ function parseJsonTradingViewAlert(data) {
     TP: 'TP',
     CLOSE_STOP: 'SL',
 
-    // EOD_CLOSE is real position close.
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
 
-    // These are pending-order/session resets, not closed trades.
     EOD_RESET: 'CANCEL',
     NEW_DAY_RESET: 'CANCEL',
     CANCEL_REPLACE: 'CANCEL',
@@ -214,9 +253,8 @@ function parseJsonTradingViewAlert(data) {
 
   const symbol = String(data.symbol || '').trim();
 
-  // Important:
   // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
-  // That allows us to remove all pending rows by symbol.
+  // That lets us remove all pending rows by symbol.
   const side = data.side ? String(data.side).trim().toUpperCase() : '';
 
   const entry = cleanNumber(data.entry);
@@ -256,7 +294,6 @@ function parseJsonTradingViewAlert(data) {
     status,
     raw: JSON.stringify(data, null, 2),
 
-    // Kept in raw/debug, not displayed in TG
     box_top: data.box_top ?? '',
     box_bottom: data.box_bottom ?? '',
     min_box_atr: data.min_box_atr ?? '',
@@ -308,8 +345,9 @@ function formatTelegramMessage(row, originalMessage) {
       `🎯 <b>${titleBase} TAKE PROFIT HIT</b>`,
       '',
       row.exit !== '' ? `✅ Exit Price: <b>${row.exit}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
-      row.result !== '' ? `Profit: $${row.result}` : '',
+      row.result !== '' ? `Result: $${row.result}` : '',
     ].filter(Boolean).join('\n');
   }
 
@@ -318,8 +356,9 @@ function formatTelegramMessage(row, originalMessage) {
       `⛔ <b>${titleBase} CLOSE STOP</b>`,
       '',
       row.exit !== '' ? `❌ Exit Close: <b>${row.exit}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
-      row.result !== '' ? `Loss: -$${Math.abs(row.result)}` : '',
+      row.result !== '' ? `Result: $${row.result}` : '',
     ].filter(Boolean).join('\n');
   }
 
@@ -328,7 +367,9 @@ function formatTelegramMessage(row, originalMessage) {
       `⏰ <b>${titleBase || row.symbol} EOD CLOSE</b>`,
       '',
       row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
       row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
+      row.result !== '' ? `Result: $${row.result}` : '',
     ].filter(Boolean).join('\n');
   }
 
@@ -447,7 +488,6 @@ async function removePendingRowsBySymbol(sheets, symbol) {
   const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
   let removedCount = 0;
 
-  // Go bottom-up so row numbers don't shift after deletion.
   for (let i = values.length - 1; i >= 1; i--) {
     const row = values[i];
     const rowSymbol = String(row[2] || '').toUpperCase();
@@ -661,24 +701,23 @@ async function processLedger(row) {
   const sheets = await getSheetsClient();
   if (!sheets) return;
 
-  await appendToTradesSheet(sheets, row);
-
   if (!row || row.event === 'UNKNOWN') return;
 
-  // SETUP → Pending
+  // SETUP → Pending only. Not an executed trade.
   if (row.event === 'SETUP') {
     if (!row.trade_id) return;
     await upsertPending(sheets, row);
     return;
   }
 
-  // FILL → remove Pending, add/update Open Positions
+  // FILL → remove Pending, add/update Open Positions, append to Trades.
   if (row.event === 'FILL') {
     if (!row.trade_id) return;
 
     const pendingRow = await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
     await upsertOpenPosition(sheets, row, pendingRow);
+    await appendToTradesSheet(sheets, row);
     return;
   }
 
@@ -690,7 +729,6 @@ async function processLedger(row) {
       return;
     }
 
-    // If side is missing, remove all pending rows for this symbol.
     if (row.symbol) {
       await removePendingRowsBySymbol(sheets, row.symbol);
       return;
@@ -699,13 +737,17 @@ async function processLedger(row) {
     return;
   }
 
-  // TP / SL / EOD → remove Open Position, add Closed Trade
+  // TP / SL / EOD → first enrich from Open Positions, then write Trades + Closed Trades.
   if (row.event === 'TP' || row.event === 'SL' || row.event === 'EOD') {
     if (!row.trade_id) return;
 
     const openPosition = await removeOpenPosition(sheets, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
-    await appendClosedTrade(sheets, openPosition, row);
+
+    const enrichedCloseRow = enrichCloseRowFromOpenPosition(row, openPosition);
+
+    await appendToTradesSheet(sheets, enrichedCloseRow);
+    await appendClosedTrade(sheets, openPosition, enrichedCloseRow);
     return;
   }
 }
@@ -738,7 +780,6 @@ async function sendTelegram(message) {
   let data = await response.json();
   console.log('Telegram response:', JSON.stringify(data));
 
-  // Fallback if Telegram rejects HTML parsing for some old/raw alert text.
   if (!data.ok && data.description && String(data.description).includes("can't parse entities")) {
     console.log('Telegram HTML parse failed. Retrying without parse_mode.');
 
