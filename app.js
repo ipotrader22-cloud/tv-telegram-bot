@@ -17,6 +17,10 @@ const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || '';
 
+const TELEGRAM_DM_URL = 'https://t.me/tradervip22';
+const TELEGRAM_CHANNEL_URL = 'https://t.me/+0yWY1QdYuqkxYzhi';
+const FULL_HISTORY_URL = 'https://docs.google.com/spreadsheets/d/1m0skLrbtBY0XRpJjOK-iY0IU1qc94SMnOybeh7C71Jg/edit?gid=1698117325#gid=1698117325';
+
 const TRADES_SHEET = 'Trades';
 const PENDING_SHEET = 'Pending';
 const OPEN_POSITIONS_SHEET = 'Open Positions';
@@ -180,69 +184,8 @@ function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
   return enriched;
 }
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function moneyClass(value) {
-  const n = cleanNumber(value);
-  if (n === '') return '';
-  if (n > 0) return 'positive';
-  if (n < 0) return 'negative';
-  return 'neutral';
-}
-
-function sideClass(side) {
-  const s = String(side || '').toUpperCase();
-  if (s === 'LONG') return 'long';
-  if (s === 'SHORT') return 'short';
-  return '';
-}
-
-function num(value, decimals = 2) {
-  const n = cleanNumber(value);
-  if (n === '') return '';
-  return n.toFixed(decimals);
-}
-
-function pct(value) {
-  const n = cleanNumber(value);
-  if (n === '') return '';
-  return `${n.toFixed(2)}%`;
-}
-
-function safeDateText(value) {
-  return String(value || '').replace('T', ' ').slice(0, 19);
-}
-
-function parseCookies(req) {
-  const header = req.headers.cookie || '';
-
-  return header.split(';').reduce((cookies, part) => {
-    const [key, ...valueParts] = part.trim().split('=');
-
-    if (!key) return cookies;
-
-    cookies[key] = decodeURIComponent(valueParts.join('=') || '');
-    return cookies;
-  }, {});
-}
-
-function isDashboardAuthorized(req) {
-  const keyFromQuery = String(req.query.key || '');
-  const cookies = parseCookies(req);
-  const keyFromCookie = cookies.vixale_dashboard_key || '';
-
-  return DASHBOARD_KEY && (keyFromQuery === DASHBOARD_KEY || keyFromCookie === DASHBOARD_KEY);
-}
-
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// OLD TEXT ALERT PARSER
+// OLD TEXT ALERT PARSER — keeps older TV scripts working
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseTradingViewMessage(message) {
@@ -349,7 +292,7 @@ function parseTradingViewMessage(message) {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// NEW JSON ALERT PARSER
+// NEW JSON ALERT PARSER — for new FVG live TV script
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseJsonTradingViewAlert(data) {
@@ -360,8 +303,10 @@ function parseJsonTradingViewAlert(data) {
     ENTRY_FILL: 'FILL',
     TP: 'TP',
     CLOSE_STOP: 'SL',
+
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
+
     EOD_RESET: 'CANCEL',
     NEW_DAY_RESET: 'CANCEL',
     CANCEL_REPLACE: 'CANCEL',
@@ -370,6 +315,9 @@ function parseJsonTradingViewAlert(data) {
   const event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
 
   const symbol = String(data.symbol || '').trim();
+
+  // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
+  // That lets us remove all pending rows by symbol.
   const side = data.side ? String(data.side).trim().toUpperCase() : '';
 
   const entry = cleanNumber(data.entry);
@@ -917,6 +865,7 @@ async function sendTelegram(message) {
   }
 }
 
+
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // DASHBOARD DATA
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1062,7 +1011,7 @@ async function getDashboardData() {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// LANDING PAGE HTML
+// PUBLIC LANDING PAGE HTML
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function renderLandingHtml() {
@@ -1072,53 +1021,59 @@ function renderLandingHtml() {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vixale | Trading Systems, Engineered</title>
-  <meta name="description" content="Vixale builds, tests, and monitors algorithmic trading systems with live forward-test transparency." />
+  <meta name="description" content="Vixale builds and monitors algorithmic trading systems with private live dashboard access." />
   <style>
     :root {
-      --bg: #060a12;
-      --panel: #0f1724;
-      --panel2: #131d2b;
-      --line: #223044;
-      --text: #eef5ff;
-      --muted: #9fb2ca;
+      --bg: #05070c;
+      --text: #f5f7fb;
+      --muted: #9da9bc;
+      --muted2: #c3ccda;
       --green: #00e676;
+      --blue: #5aa9ff;
       --red: #ff4d5e;
-      --blue: #4da3ff;
-      --white: #ffffff;
-      --gold: #ffd166;
+      --line: rgba(255,255,255,0.12);
+      --line2: rgba(255,255,255,0.22);
+      --panel: rgba(255,255,255,0.055);
+      --panel2: rgba(255,255,255,0.085);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html {
-      scroll-behavior: smooth;
-    }
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top left, rgba(77, 163, 255, 0.18), transparent 34%),
-        radial-gradient(circle at top right, rgba(0, 230, 118, 0.12), transparent 30%),
-        radial-gradient(circle at bottom right, rgba(255, 209, 102, 0.07), transparent 22%),
-        var(--bg);
+        radial-gradient(circle at 12% 4%, rgba(90,169,255,0.24), transparent 30%),
+        radial-gradient(circle at 85% 12%, rgba(0,230,118,0.16), transparent 28%),
+        radial-gradient(circle at 50% 95%, rgba(255,255,255,0.055), transparent 26%),
+        linear-gradient(180deg, #05070c 0%, #070b12 52%, #03050a 100%);
       color: var(--text);
-      font-family: Inter, Arial, Helvetica, sans-serif;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      overflow-x: hidden;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
+    a { color: inherit; text-decoration: none; }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.035;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.9) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.9) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: radial-gradient(circle at center, black, transparent 80%);
     }
 
     .nav {
       position: sticky;
       top: 0;
-      z-index: 100;
-      backdrop-filter: blur(18px);
-      background: rgba(6, 10, 18, 0.76);
-      border-bottom: 1px solid rgba(34, 48, 68, 0.75);
+      z-index: 20;
+      backdrop-filter: blur(22px);
+      background: rgba(5, 7, 12, 0.72);
+      border-bottom: 1px solid var(--line);
     }
 
     .nav-inner {
@@ -1128,18 +1083,16 @@ function renderLandingHtml() {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 20px;
+      gap: 18px;
     }
 
     .logo {
-      font-weight: 950;
       font-size: 22px;
-      letter-spacing: -0.4px;
+      font-weight: 950;
+      letter-spacing: -0.6px;
     }
 
-    .logo span {
-      color: var(--green);
-    }
+    .logo span { color: var(--green); }
 
     .nav-links {
       display: flex;
@@ -1147,82 +1100,94 @@ function renderLandingHtml() {
       gap: 20px;
       color: var(--muted);
       font-size: 14px;
-      font-weight: 700;
+      font-weight: 750;
     }
 
-    .nav-links a:hover {
-      color: var(--white);
-    }
+    .nav-links a:hover { color: var(--text); }
 
     .nav-cta {
-      border: 1px solid rgba(0, 230, 118, 0.32);
-      background: rgba(0, 230, 118, 0.10);
-      color: var(--green) !important;
-      padding: 10px 14px;
+      color: #06100a !important;
+      background: var(--green);
       border-radius: 999px;
+      padding: 10px 14px;
+      box-shadow: 0 0 30px rgba(0,230,118,0.18);
     }
 
     .wrap {
       max-width: 1180px;
       margin: 0 auto;
       padding: 0 22px;
+      position: relative;
+      z-index: 2;
     }
 
     .hero {
-      padding: 86px 0 68px;
+      min-height: 760px;
       display: grid;
-      grid-template-columns: 1.05fr 0.95fr;
-      gap: 44px;
+      grid-template-columns: 1fr 0.92fr;
+      gap: 52px;
       align-items: center;
+      padding: 80px 0 72px;
     }
 
     .eyebrow {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 9px 12px;
+      gap: 10px;
+      padding: 9px 13px;
+      border: 1px solid rgba(255,255,255,0.14);
       border-radius: 999px;
-      background: rgba(77, 163, 255, 0.10);
-      border: 1px solid rgba(77, 163, 255, 0.24);
-      color: #b9d9ff;
+      color: var(--muted2);
+      background: rgba(255,255,255,0.055);
       font-size: 13px;
-      font-weight: 900;
-      margin-bottom: 18px;
+      font-weight: 850;
+      margin-bottom: 22px;
     }
 
     .pulse {
       width: 8px;
       height: 8px;
-      border-radius: 50%;
+      border-radius: 999px;
       background: var(--green);
-      box-shadow: 0 0 18px var(--green);
+      box-shadow: 0 0 22px var(--green);
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(44px, 6vw, 76px);
-      line-height: 0.96;
-      letter-spacing: -2.8px;
+      font-size: clamp(52px, 8vw, 94px);
+      line-height: 0.91;
+      letter-spacing: -4.2px;
+      max-width: 780px;
     }
 
     .grad {
-      background: linear-gradient(135deg, var(--white), #b8d5ff 48%, var(--green));
+      background: linear-gradient(135deg, #ffffff 0%, #d8e6ff 45%, var(--green) 100%);
       -webkit-background-clip: text;
       color: transparent;
     }
 
     .hero-text {
-      margin-top: 22px;
-      max-width: 620px;
-      color: var(--muted);
-      font-size: 18px;
-      line-height: 1.65;
+      margin: 26px 0 0;
+      max-width: 635px;
+      color: var(--muted2);
+      font-size: 19px;
+      line-height: 1.62;
     }
 
-    .hero-actions {
+    .access-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.55;
+      max-width: 630px;
+    }
+
+    .access-note strong { color: var(--text); }
+
+    .actions {
       display: flex;
-      gap: 14px;
       flex-wrap: wrap;
+      gap: 13px;
       margin-top: 30px;
     }
 
@@ -1231,139 +1196,175 @@ function renderLandingHtml() {
       align-items: center;
       justify-content: center;
       gap: 9px;
+      border-radius: 15px;
       padding: 14px 18px;
-      border-radius: 14px;
       font-weight: 900;
       border: 1px solid var(--line);
-      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+      background: rgba(255,255,255,0.055);
+      color: var(--text);
+      transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
     }
 
     .btn:hover {
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      border-color: var(--line2);
+      background: rgba(255,255,255,0.09);
     }
 
     .btn-primary {
       background: var(--green);
-      color: #031008;
       border-color: var(--green);
-      box-shadow: 0 12px 30px rgba(0, 230, 118, 0.18);
+      color: #031008;
+      box-shadow: 0 16px 38px rgba(0,230,118,0.18);
     }
 
-    .btn-secondary {
-      background: rgba(15, 23, 36, 0.82);
-      color: var(--text);
-    }
+    .btn-primary:hover { background: #19f284; }
 
-    .hero-card {
-      border: 1px solid var(--line);
-      background: linear-gradient(145deg, rgba(15,23,36,0.95), rgba(8,13,22,0.95));
-      border-radius: 24px;
-      padding: 22px;
-      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
-    }
+    .btn-ghost { color: var(--muted2); }
 
-    .mini-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 18px;
-    }
+    .hero-visual { position: relative; }
 
-    .mini-title {
-      font-weight: 950;
-      font-size: 18px;
-    }
-
-    .live-badge {
-      color: var(--green);
-      background: rgba(0,230,118,0.10);
-      border: 1px solid rgba(0,230,118,0.25);
-      padding: 7px 10px;
+    .orb {
+      position: absolute;
+      width: 360px;
+      height: 360px;
       border-radius: 999px;
-      font-size: 12px;
-      font-weight: 900;
+      background: radial-gradient(circle, rgba(0,230,118,0.18), transparent 64%);
+      top: -70px;
+      right: -80px;
+      filter: blur(8px);
+      z-index: -1;
     }
 
-    .mini-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+    .mock-window {
+      border: 1px solid rgba(255,255,255,0.16);
+      background: linear-gradient(145deg, rgba(255,255,255,0.11), rgba(255,255,255,0.045));
+      border-radius: 28px;
+      padding: 14px;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.55);
+      backdrop-filter: blur(16px);
+      transform: rotate(-1deg);
     }
 
-    .mini-box {
-      background: rgba(17,26,40,0.86);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 16px;
-    }
-
-    .mini-label {
-      color: var(--muted);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      font-weight: 900;
-    }
-
-    .mini-value {
-      margin-top: 10px;
-      font-size: 25px;
-      font-weight: 950;
-    }
-
-    .positive {
-      color: var(--green);
-    }
-
-    .negative {
-      color: var(--red);
-    }
-
-    .mock-table {
-      margin-top: 14px;
-      border: 1px solid var(--line);
-      border-radius: 16px;
+    .mock-inner {
+      background: rgba(4,8,14,0.88);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
       overflow: hidden;
     }
 
-    .mock-row {
+    .window-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .dots { display: flex; gap: 7px; }
+
+    .dots span {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.28);
+    }
+
+    .live {
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--green);
+      background: rgba(0,230,118,0.10);
+      border: 1px solid rgba(0,230,118,0.24);
+      border-radius: 999px;
+      padding: 6px 9px;
+    }
+
+    .metric-grid {
       display: grid;
-      grid-template-columns: 1fr 0.8fr 0.8fr 0.9fr;
+      grid-template-columns: repeat(2, 1fr);
       gap: 10px;
-      padding: 12px 14px;
-      border-bottom: 1px solid rgba(34,48,68,0.55);
-      font-size: 13px;
+      padding: 16px;
     }
 
-    .mock-row:last-child {
-      border-bottom: 0;
+    .metric {
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 16px;
+      padding: 15px;
     }
 
-    .mock-head {
+    .metric-label {
       color: var(--muted);
-      text-transform: uppercase;
-      font-size: 10px;
+      font-size: 11px;
       letter-spacing: 0.7px;
-      font-weight: 950;
-      background: rgba(8,13,22,0.58);
+      text-transform: uppercase;
+      font-weight: 900;
     }
 
-    .section {
-      padding: 64px 0;
+    .metric-value {
+      margin-top: 10px;
+      font-size: 25px;
+      font-weight: 950;
+      letter-spacing: -0.6px;
+    }
+
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+
+    .mini-chart {
+      height: 125px;
+      margin: 4px 16px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.09);
+      background:
+        linear-gradient(180deg, rgba(0,230,118,0.16), transparent),
+        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+      background-size: auto, 44px 44px, 44px 44px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mini-chart svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .ticker-row {
+      display: grid;
+      grid-template-columns: 1fr 0.8fr 0.9fr 0.9fr;
+      gap: 12px;
+      padding: 13px 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px;
+      color: var(--muted2);
+    }
+
+    .ticker-row strong { color: var(--text); }
+
+    .section { padding: 72px 0; }
+
+    .section-head {
+      max-width: 780px;
+      margin-bottom: 28px;
     }
 
     .section h2 {
-      font-size: clamp(30px, 4vw, 46px);
       margin: 0 0 12px;
-      letter-spacing: -1.4px;
+      font-size: clamp(34px, 4.5vw, 54px);
+      letter-spacing: -2.2px;
+      line-height: 1.02;
     }
 
-    .section-lead {
-      color: var(--muted);
-      font-size: 17px;
+    .section p.lead {
+      margin: 0;
+      color: var(--muted2);
+      font-size: 18px;
       line-height: 1.65;
-      max-width: 760px;
-      margin-bottom: 28px;
     }
 
     .cards {
@@ -1372,116 +1373,129 @@ function renderLandingHtml() {
       gap: 16px;
     }
 
-    .service-card {
+    .card {
+      background: var(--panel);
       border: 1px solid var(--line);
-      background: rgba(15,23,36,0.78);
-      border-radius: 20px;
-      padding: 24px;
-      min-height: 210px;
+      border-radius: 24px;
+      padding: 26px;
+      min-height: 240px;
+      backdrop-filter: blur(18px);
     }
 
-    .service-card .icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 14px;
+    .card .num {
+      color: var(--green);
+      font-weight: 950;
+      font-size: 13px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 44px;
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: -0.6px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .flow {
       display: grid;
-      place-items: center;
-      background: rgba(77,163,255,0.12);
-      border: 1px solid rgba(77,163,255,0.25);
-      color: #b9d9ff;
-      font-size: 20px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .flow-box {
+      background: rgba(255,255,255,0.055);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 22px;
+      min-height: 150px;
+    }
+
+    .flow-box span {
+      display: inline-flex;
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,230,118,0.10);
+      border: 1px solid rgba(0,230,118,0.23);
+      color: var(--green);
+      font-weight: 950;
       margin-bottom: 16px;
     }
 
-    .service-card h3 {
-      margin: 0 0 10px;
-      font-size: 19px;
-    }
-
-    .service-card p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.58;
-      font-size: 15px;
-    }
-
-    .split {
-      display: grid;
-      grid-template-columns: 0.9fr 1.1fr;
-      gap: 22px;
-      align-items: stretch;
-    }
-
-    .panel {
-      border: 1px solid var(--line);
-      background: rgba(15,23,36,0.78);
-      border-radius: 22px;
-      padding: 26px;
-    }
-
-    .bullets {
-      display: grid;
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .bullet {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .check {
-      color: var(--green);
-      font-weight: 950;
-      margin-top: 1px;
-    }
-
-    .cta {
-      border: 1px solid rgba(0,230,118,0.24);
-      background: linear-gradient(135deg, rgba(0,230,118,0.10), rgba(77,163,255,0.09));
-      border-radius: 28px;
-      padding: 36px;
-      display: flex;
-      justify-content: space-between;
-      gap: 24px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .cta h2 {
+    .flow-box h3 {
       margin: 0 0 8px;
-      font-size: 34px;
+      font-size: 18px;
     }
 
-    .cta p {
+    .flow-box p {
       margin: 0;
       color: var(--muted);
       line-height: 1.55;
-      max-width: 720px;
+      font-size: 14px;
+    }
+
+    .access-panel {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      background: linear-gradient(135deg, rgba(0,230,118,0.12), rgba(90,169,255,0.08));
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 30px;
+      padding: 34px;
+      align-items: center;
+    }
+
+    .access-panel h2 {
+      font-size: clamp(32px, 4vw, 50px);
+      margin: 0 0 12px;
+      letter-spacing: -1.8px;
+    }
+
+    .access-panel p {
+      color: var(--muted2);
+      line-height: 1.65;
+      font-size: 17px;
+      margin: 0;
+    }
+
+    .access-buttons {
+      display: grid;
+      gap: 12px;
+    }
+
+    .small-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
     }
 
     .footer {
-      padding: 34px 0;
+      padding: 36px 0;
       color: var(--muted);
       border-top: 1px solid var(--line);
       font-size: 13px;
-      line-height: 1.65;
+      line-height: 1.7;
     }
 
-    @media (max-width: 920px) {
+    @media (max-width: 960px) {
       .hero {
         grid-template-columns: 1fr;
+        min-height: auto;
         padding-top: 54px;
       }
 
-      .cards {
-        grid-template-columns: 1fr;
-      }
-
-      .split {
+      .cards, .flow, .access-panel {
         grid-template-columns: 1fr;
       }
 
@@ -1491,33 +1505,24 @@ function renderLandingHtml() {
     }
 
     @media (max-width: 560px) {
-      .nav-inner {
-        padding: 14px;
+      .wrap, .nav-inner {
+        padding-left: 15px;
+        padding-right: 15px;
       }
 
-      .wrap {
-        padding: 0 14px;
-      }
+      h1 { letter-spacing: -2.4px; }
 
-      .mini-grid {
-        grid-template-columns: 1fr;
-      }
+      .btn { width: 100%; }
 
-      .mock-row {
-        grid-template-columns: 1fr 0.8fr;
-      }
+      .metric-grid { grid-template-columns: 1fr; }
 
-      .hero-actions {
-        flex-direction: column;
-      }
-
-      .btn {
-        width: 100%;
-      }
+      .ticker-row { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 <body>
+  <div class="noise"></div>
+
   <nav class="nav">
     <div class="nav-inner">
       <a href="/" class="logo">Vixale<span>.</span></a>
@@ -1533,124 +1538,161 @@ function renderLandingHtml() {
   <main>
     <section class="wrap hero">
       <div>
-        <div class="eyebrow"><span class="pulse"></span> Algorithmic trading systems + live tracking</div>
+        <div class="eyebrow"><span class="pulse"></span> Live-tested trading infrastructure</div>
         <h1>Trading Systems, <span class="grad">Engineered.</span></h1>
         <p class="hero-text">
-          Vixale builds, tests, and monitors algorithmic trading systems with a focus on execution, transparency, and forward-test visibility for active traders.
+          Vixale builds, monitors, and documents algorithmic trading systems with a clean execution workflow and private live dashboard access.
         </p>
-        <div class="hero-actions">
+        <p class="access-note">
+          To request access to the <strong>Live Trade Dashboard</strong>, contact us on Telegram or join the Telegram channel for updates.
+        </p>
+
+        <div class="actions">
           <a class="btn btn-primary" href="/login">View Live Dashboard</a>
-          <a class="btn btn-secondary" href="#access">Request Strategy Access</a>
+          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
+          <a class="btn btn-ghost" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
         </div>
       </div>
 
-      <div class="hero-card">
-        <div class="mini-top">
-          <div class="mini-title">Live Strategy Tracker</div>
-          <div class="live-badge">● LIVE</div>
-        </div>
+      <div class="hero-visual">
+        <div class="orb"></div>
+        <div class="mock-window">
+          <div class="mock-inner">
+            <div class="window-top">
+              <div class="dots"><span></span><span></span><span></span></div>
+              <div class="live">● LIVE TRACKING</div>
+            </div>
 
-        <div class="mini-grid">
-          <div class="mini-box">
-            <div class="mini-label">Open Positions</div>
-            <div class="mini-value">Live</div>
-          </div>
-          <div class="mini-box">
-            <div class="mini-label">Pending Orders</div>
-            <div class="mini-value">Tracked</div>
-          </div>
-          <div class="mini-box">
-            <div class="mini-label">Running P&L</div>
-            <div class="mini-value positive">Visible</div>
-          </div>
-          <div class="mini-box">
-            <div class="mini-label">Closed Trades</div>
-            <div class="mini-value">Logged</div>
-          </div>
-        </div>
+            <div class="metric-grid">
+              <div class="metric">
+                <div class="metric-label">Open P&L</div>
+                <div class="metric-value positive">+$1,248</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Win Rate</div>
+                <div class="metric-value">67.4%</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Pending Orders</div>
+                <div class="metric-value">4</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Closed Today</div>
+                <div class="metric-value positive">+$532</div>
+              </div>
+            </div>
 
-        <div class="mock-table">
-          <div class="mock-row mock-head">
-            <div>Symbol</div>
-            <div>Side</div>
-            <div>Status</div>
-            <div>P&L</div>
-          </div>
-          <div class="mock-row">
-            <div><strong>NVDA</strong></div>
-            <div class="positive"><strong>LONG</strong></div>
-            <div>Open</div>
-            <div class="positive">+$248</div>
-          </div>
-          <div class="mock-row">
-            <div><strong>NFLX</strong></div>
-            <div class="negative"><strong>SHORT</strong></div>
-            <div>Closed</div>
-            <div class="positive">+$277</div>
+            <div class="mini-chart">
+              <svg viewBox="0 0 600 160" preserveAspectRatio="none">
+                <path d="M0,118 C55,92 82,132 132,102 C185,68 210,86 260,58 C325,22 365,78 420,46 C478,12 520,38 600,18" fill="none" stroke="rgba(0,230,118,0.95)" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0,118 C55,92 82,132 132,102 C185,68 210,86 260,58 C325,22 365,78 420,46 C478,12 520,38 600,18 L600,160 L0,160 Z" fill="rgba(0,230,118,0.10)"/>
+              </svg>
+            </div>
+
+            <div class="ticker-row">
+              <div><strong>NVDA</strong></div>
+              <div class="positive">LONG</div>
+              <div>OPEN</div>
+              <div class="positive">+$248</div>
+            </div>
+            <div class="ticker-row">
+              <div><strong>NFLX</strong></div>
+              <div class="negative">SHORT</div>
+              <div>CLOSED</div>
+              <div class="positive">+$277</div>
+            </div>
+            <div class="ticker-row">
+              <div><strong>META</strong></div>
+              <div class="positive">LONG</div>
+              <div>PENDING</div>
+              <div>—</div>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
     <section id="systems" class="wrap section">
-      <h2>What Vixale Builds</h2>
-      <p class="section-lead">
-        A practical trading infrastructure layer: strategy research, signal delivery, execution automation, and live monitoring.
-      </p>
+      <div class="section-head">
+        <h2>Built like trading software, not a signal room.</h2>
+        <p class="lead">
+          The system is designed around structured alerts, execution workflow, tracking, and clean reporting.
+        </p>
+      </div>
 
       <div class="cards">
-        <div class="service-card">
-          <div class="icon">⚙️</div>
-          <h3>Trading Systems</h3>
-          <p>Custom strategy logic, backtesting workflows, optimization support, and deployment-ready execution rules.</p>
+        <div class="card">
+          <div class="num">01 / Research</div>
+          <h3>Strategy Logic</h3>
+          <p>Rules-based trading systems with defined entry, target, stop, and lifecycle events.</p>
         </div>
 
-        <div class="service-card">
-          <div class="icon">📡</div>
-          <h3>Live Signals</h3>
-          <p>Structured trade alerts with entry, target, stop, quantity, and lifecycle tracking from setup to close.</p>
+        <div class="card">
+          <div class="num">02 / Signals</div>
+          <h3>Live Alerts</h3>
+          <p>Signal delivery with structured trade data: symbol, side, entry, target, stop, and quantity.</p>
         </div>
 
-        <div class="service-card">
-          <div class="icon">🤖</div>
-          <h3>Execution Automation</h3>
-          <p>TradingView alerts, broker bridge logic, Telegram notifications, and live trade ledger infrastructure.</p>
+        <div class="card">
+          <div class="num">03 / Tracking</div>
+          <h3>Live Dashboard</h3>
+          <p>Private dashboard access for open positions, pending orders, closed trades, and P&L tracking.</p>
         </div>
       </div>
     </section>
 
     <section id="transparency" class="wrap section">
-      <div class="split">
-        <div class="panel">
-          <h2>Forward-Test Transparency</h2>
-          <p class="section-lead">
-            A strategy is only useful when its live behavior can be monitored. Vixale keeps a structured journal of setups, fills, pending orders, open positions, and closed trades.
-          </p>
-          <a class="btn btn-primary" href="/login">Open Live Dashboard</a>
+      <div class="section-head">
+        <h2>Signal → execution → tracking.</h2>
+        <p class="lead">
+          Vixale focuses on the full workflow: from strategy signal to broker bridge, notifications, and transparent trade logging.
+        </p>
+      </div>
+
+      <div class="flow">
+        <div class="flow-box">
+          <span>1</span>
+          <h3>TradingView Signal</h3>
+          <p>Strategy alerts generate structured setup, entry, target, stop, and close events.</p>
         </div>
 
-        <div class="panel">
-          <h2>What traders can see</h2>
-          <div class="bullets">
-            <div class="bullet"><span class="check">✓</span><span>Current open positions and running P&L</span></div>
-            <div class="bullet"><span class="check">✓</span><span>Pending orders waiting for entry</span></div>
-            <div class="bullet"><span class="check">✓</span><span>Recent closed trades with P&L and exit type</span></div>
-            <div class="bullet"><span class="check">✓</span><span>Win rate, total closed P&L, and daily closed P&L</span></div>
-            <div class="bullet"><span class="check">✓</span><span>Auto-refreshing dashboard for live forward-test review</span></div>
-          </div>
+        <div class="flow-box">
+          <span>2</span>
+          <h3>Execution Bridge</h3>
+          <p>Signals can be routed into an execution workflow for broker-side order handling.</p>
+        </div>
+
+        <div class="flow-box">
+          <span>3</span>
+          <h3>Telegram Alerts</h3>
+          <p>Trade events are delivered to Telegram with readable status and P&L details.</p>
+        </div>
+
+        <div class="flow-box">
+          <span>4</span>
+          <h3>Live Dashboard</h3>
+          <p>Open positions, pending orders, and closed trades are tracked in a private dashboard.</p>
         </div>
       </div>
     </section>
 
     <section id="access" class="wrap section">
-      <div class="cta">
+      <div class="access-panel">
         <div>
-          <h2>Request Strategy Access</h2>
+          <h2>Request access to the Live Trade Dashboard.</h2>
           <p>
-            Vixale is currently focused on forward-tested trading systems, signal infrastructure, and automation workflows for active traders.
+            Dashboard access is private. To request the password, contact us on Telegram or join the channel for updates and strategy announcements.
           </p>
+          <div class="small-note">
+            Full trade history is available only inside the password-protected dashboard.
+          </div>
         </div>
-        <a class="btn btn-primary" href="mailto:info@vixale.com">Contact Vixale</a>
+
+        <div class="access-buttons">
+          <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
+          <a class="btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
+          <a class="btn btn-ghost" href="/login">Go to Dashboard Login</a>
+        </div>
       </div>
     </section>
   </main>
@@ -1675,18 +1717,15 @@ function renderLoginHtml(errorMessage = '') {
   <title>Vixale Dashboard Login</title>
   <style>
     :root {
-      --bg: #060a12;
-      --panel: #0f1724;
-      --line: #223044;
-      --text: #eef5ff;
-      --muted: #9fb2ca;
+      --bg: #05070c;
+      --line: rgba(255,255,255,0.14);
+      --text: #f5f7fb;
+      --muted: #9da9bc;
       --green: #00e676;
       --red: #ff4d5e;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -1694,64 +1733,63 @@ function renderLoginHtml(errorMessage = '') {
       display: grid;
       place-items: center;
       background:
-        radial-gradient(circle at top left, rgba(77, 163, 255, 0.18), transparent 34%),
-        radial-gradient(circle at top right, rgba(0, 230, 118, 0.12), transparent 30%),
-        var(--bg);
+        radial-gradient(circle at top left, rgba(90, 169, 255, 0.22), transparent 34%),
+        radial-gradient(circle at top right, rgba(0, 230, 118, 0.14), transparent 30%),
+        linear-gradient(180deg, #05070c 0%, #070b12 100%);
       color: var(--text);
-      font-family: Inter, Arial, Helvetica, sans-serif;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       padding: 24px;
     }
 
     .card {
       width: 100%;
-      max-width: 440px;
-      background: linear-gradient(135deg, rgba(17,26,40,0.96), rgba(10,15,24,0.96));
+      max-width: 450px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.045));
       border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 32px;
-      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+      border-radius: 28px;
+      padding: 34px;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.55);
+      backdrop-filter: blur(18px);
     }
 
     .logo {
       font-size: 28px;
       font-weight: 950;
       margin-bottom: 10px;
-      letter-spacing: -0.5px;
+      letter-spacing: -0.6px;
     }
 
-    .logo span {
-      color: var(--green);
-    }
+    .logo span { color: var(--green); }
 
     h1 {
       margin: 0;
-      font-size: 24px;
-      letter-spacing: -0.4px;
+      font-size: 26px;
+      letter-spacing: -0.8px;
     }
 
     p {
       color: var(--muted);
-      line-height: 1.55;
-      margin: 10px 0 24px;
+      line-height: 1.58;
+      margin: 11px 0 26px;
     }
 
     label {
       display: block;
       color: var(--muted);
-      font-size: 13px;
-      font-weight: 800;
+      font-size: 12px;
+      font-weight: 900;
       text-transform: uppercase;
-      letter-spacing: 0.7px;
+      letter-spacing: 0.8px;
       margin-bottom: 8px;
     }
 
     input {
       width: 100%;
-      background: #070b13;
+      background: rgba(0,0,0,0.24);
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 15px;
       color: var(--text);
-      padding: 14px 15px;
+      padding: 15px;
       font-size: 16px;
       outline: none;
     }
@@ -1765,40 +1803,45 @@ function renderLoginHtml(errorMessage = '') {
       width: 100%;
       margin-top: 16px;
       border: 0;
-      border-radius: 14px;
-      padding: 14px 18px;
+      border-radius: 15px;
+      padding: 15px 18px;
       background: var(--green);
       color: #031008;
       font-weight: 950;
       font-size: 15px;
       cursor: pointer;
+      box-shadow: 0 16px 38px rgba(0,230,118,0.18);
     }
 
     .error {
       margin-top: 14px;
       color: var(--red);
-      font-weight: 800;
+      font-weight: 850;
       font-size: 14px;
     }
 
-    .back {
-      display: inline-block;
-      margin-top: 18px;
+    .links {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .links a {
       color: var(--muted);
       font-size: 14px;
       text-decoration: none;
     }
 
-    .back:hover {
-      color: var(--text);
-    }
+    .links a:hover { color: var(--text); }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="logo">Vixale<span>.</span></div>
-    <h1>Dashboard Access</h1>
-    <p>Enter the dashboard password to view the live forward-test tracker.</p>
+    <h1>Live Dashboard Access</h1>
+    <p>Enter the dashboard password to view the live trade tracker and full trade history link.</p>
 
     <form method="POST" action="/dashboard-login">
       <label for="password">Password</label>
@@ -1808,14 +1851,17 @@ function renderLoginHtml(errorMessage = '') {
 
     ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
 
-    <a class="back" href="/">← Back to Vixale</a>
+    <div class="links">
+      <a href="/">← Back to Home</a>
+      <a href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
+    </div>
   </div>
 </body>
 </html>`;
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// DASHBOARD HTML
+// DASHBOARD HTML — PASSWORD PROTECTED
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function renderMoney(value) {
@@ -1882,33 +1928,28 @@ function renderDashboardHtml(data) {
   <title>Vixale Live Strategy Dashboard</title>
   <style>
     :root {
-      --bg: #070b13;
-      --panel: #0f1724;
-      --panel2: #151f2d;
-      --card: #111a28;
-      --line: #223044;
-      --text: #eaf2ff;
-      --muted: #8fa3bd;
+      --bg: #05070c;
+      --line: rgba(255,255,255,0.12);
+      --text: #f5f7fb;
+      --muted: #9da9bc;
       --green: #00e676;
       --red: #ff4d5e;
-      --yellow: #ffd166;
-      --blue: #4da3ff;
       --white: #ffffff;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top left, rgba(77, 163, 255, 0.18), transparent 34%),
-        radial-gradient(circle at top right, rgba(0, 230, 118, 0.10), transparent 28%),
-        var(--bg);
+        radial-gradient(circle at 12% 4%, rgba(90,169,255,0.22), transparent 30%),
+        radial-gradient(circle at 85% 12%, rgba(0,230,118,0.12), transparent 28%),
+        linear-gradient(180deg, #05070c 0%, #070b12 100%);
       color: var(--text);
-      font-family: Inter, Arial, Helvetica, sans-serif;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
     }
+
+    a { color: inherit; text-decoration: none; }
 
     .wrap {
       max-width: 1440px;
@@ -1916,13 +1957,58 @@ function renderDashboardHtml(data) {
       padding: 28px;
     }
 
-    .hero {
-      background: linear-gradient(135deg, rgba(17,26,40,0.96), rgba(10,15,24,0.96));
+    .top-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .home-link, .dash-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.055);
       border: 1px solid var(--line);
-      border-radius: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .home-link:hover, .dash-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.09);
+    }
+
+    .dashboard-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .dash-btn {
+      color: var(--text);
+    }
+
+    .dash-btn.primary {
+      background: var(--green);
+      border-color: var(--green);
+      color: #031008;
+    }
+
+    .hero {
+      background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.045));
+      border: 1px solid var(--line);
+      border-radius: 28px;
       padding: 28px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.32);
-      margin-bottom: 22px;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.38);
+      backdrop-filter: blur(18px);
+      margin-bottom: 20px;
     }
 
     .topline {
@@ -1933,22 +2019,17 @@ function renderDashboardHtml(data) {
       flex-wrap: wrap;
     }
 
-    .brand {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
     .brand h1 {
       margin: 0;
-      font-size: 34px;
-      letter-spacing: -0.6px;
+      font-size: 36px;
+      letter-spacing: -1.4px;
       line-height: 1.05;
     }
 
-    .brand .subtitle {
+    .subtitle {
       color: var(--muted);
       font-size: 14px;
+      margin-top: 7px;
     }
 
     .badge {
@@ -1958,9 +2039,9 @@ function renderDashboardHtml(data) {
       padding: 9px 12px;
       border-radius: 999px;
       background: rgba(0, 230, 118, 0.10);
-      border: 1px solid rgba(0, 230, 118, 0.25);
+      border: 1px solid rgba(0, 230, 118, 0.24);
       color: var(--green);
-      font-weight: 700;
+      font-weight: 900;
       font-size: 13px;
       white-space: nowrap;
     }
@@ -1968,7 +2049,7 @@ function renderDashboardHtml(data) {
     .dot {
       width: 8px;
       height: 8px;
-      border-radius: 50%;
+      border-radius: 999px;
       background: var(--green);
       box-shadow: 0 0 20px var(--green);
     }
@@ -1987,62 +2068,47 @@ function renderDashboardHtml(data) {
     }
 
     .card {
-      background: rgba(15, 23, 36, 0.86);
+      background: rgba(0,0,0,0.16);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 18px 16px;
-      min-height: 110px;
+      min-height: 112px;
     }
 
     .card .label {
       color: var(--muted);
       font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 0.7px;
-      font-weight: 800;
+      letter-spacing: 0.75px;
+      font-weight: 900;
     }
 
     .card .value {
       margin-top: 13px;
-      font-size: 25px;
-      font-weight: 900;
-      letter-spacing: -0.4px;
+      font-size: 26px;
+      font-weight: 950;
+      letter-spacing: -0.6px;
     }
 
-    .positive {
-      color: var(--green) !important;
-    }
-
-    .negative {
-      color: var(--red) !important;
-    }
-
-    .neutral {
-      color: var(--text) !important;
-    }
-
-    .long {
-      color: var(--green);
-      font-weight: 900;
-    }
-
-    .short {
-      color: var(--red);
-      font-weight: 900;
-    }
+    .positive { color: var(--green) !important; }
+    .negative { color: var(--red) !important; }
+    .neutral { color: var(--text) !important; }
+    .long { color: var(--green); font-weight: 950; }
+    .short { color: var(--red); font-weight: 950; }
 
     .section {
-      background: rgba(15, 23, 36, 0.90);
+      background: rgba(255,255,255,0.055);
       border: 1px solid var(--line);
-      border-radius: 18px;
+      border-radius: 22px;
       overflow: hidden;
       margin-top: 18px;
-      box-shadow: 0 14px 40px rgba(0,0,0,0.22);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.22);
+      backdrop-filter: blur(14px);
     }
 
     .section-header {
       padding: 16px 18px;
-      background: rgba(21, 31, 45, 0.92);
+      background: rgba(255,255,255,0.055);
       border-bottom: 1px solid var(--line);
       display: flex;
       justify-content: space-between;
@@ -2053,7 +2119,7 @@ function renderDashboardHtml(data) {
     .section-header h2 {
       margin: 0;
       font-size: 16px;
-      letter-spacing: 0.2px;
+      letter-spacing: -0.2px;
     }
 
     .section-header span {
@@ -2061,9 +2127,7 @@ function renderDashboardHtml(data) {
       font-size: 12px;
     }
 
-    .table-wrap {
-      overflow-x: auto;
-    }
+    .table-wrap { overflow-x: auto; }
 
     table {
       width: 100%;
@@ -2073,7 +2137,7 @@ function renderDashboardHtml(data) {
 
     th, td {
       padding: 13px 14px;
-      border-bottom: 1px solid rgba(34,48,68,0.55);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
       text-align: right;
       font-size: 13px;
       white-space: nowrap;
@@ -2084,8 +2148,8 @@ function renderDashboardHtml(data) {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.65px;
-      background: rgba(8, 13, 22, 0.48);
-      font-weight: 900;
+      background: rgba(0,0,0,0.16);
+      font-weight: 950;
     }
 
     td:first-child, th:first-child,
@@ -2093,12 +2157,10 @@ function renderDashboardHtml(data) {
       text-align: left;
     }
 
-    tr:hover td {
-      background: rgba(77, 163, 255, 0.055);
-    }
+    tr:hover td { background: rgba(90, 169, 255, 0.055); }
 
     .ticker {
-      font-weight: 900;
+      font-weight: 950;
       color: var(--white);
     }
 
@@ -2112,49 +2174,45 @@ function renderDashboardHtml(data) {
       margin-top: 20px;
       color: var(--muted);
       font-size: 12px;
-      line-height: 1.55;
+      line-height: 1.6;
       border: 1px solid var(--line);
-      background: rgba(15, 23, 36, 0.62);
-      border-radius: 16px;
+      background: rgba(255,255,255,0.045);
+      border-radius: 18px;
       padding: 16px 18px;
     }
 
     @media (max-width: 1100px) {
-      .cards {
-        grid-template-columns: repeat(3, 1fr);
-      }
+      .cards { grid-template-columns: repeat(3, 1fr); }
     }
 
     @media (max-width: 720px) {
-      .wrap {
-        padding: 14px;
-      }
-
-      .brand h1 {
-        font-size: 26px;
-      }
-
-      .cards {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      .card {
-        min-height: 92px;
-      }
-
-      .card .value {
-        font-size: 20px;
-      }
+      .wrap { padding: 14px; }
+      .brand h1 { font-size: 27px; }
+      .cards { grid-template-columns: repeat(2, 1fr); }
+      .card { min-height: 94px; }
+      .card .value { font-size: 21px; }
+      .dash-btn, .home-link { width: 100%; }
+      .dashboard-links { width: 100%; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
+    <div class="top-actions">
+      <a class="home-link" href="/">← Back to Home</a>
+
+      <div class="dashboard-links">
+        <a class="dash-btn primary" href="${FULL_HISTORY_URL}" target="_blank" rel="noopener noreferrer">Full Trade History</a>
+        <a class="dash-btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Telegram Channel</a>
+        <a class="dash-btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Contact</a>
+      </div>
+    </div>
+
     <div class="hero">
       <div class="topline">
         <div class="brand">
           <h1>Vixale Live Strategy Dashboard</h1>
-          <div class="subtitle">Live forward-test / paper-trading tracker</div>
+          <div class="subtitle">Private live forward-test / paper-trading tracker</div>
           <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
         </div>
         <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
@@ -2248,7 +2306,7 @@ function renderDashboardHtml(data) {
     <div class="section">
       <div class="section-header">
         <h2>Recent Closed Trades</h2>
-        <span>Latest 20 completed trades</span>
+        <span>Latest 20 completed trades. Full history available above.</span>
       </div>
       <div class="table-wrap">
         ${data.recent_closed_trades.length ? `
@@ -2281,6 +2339,7 @@ function renderDashboardHtml(data) {
 </html>`;
 }
 
+
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // WEBHOOK ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2301,7 +2360,7 @@ async function handleTradingViewWebhook(req, res) {
     let finalRow = parsedRow;
 
     try {
-      finalRow = await processLedger(parsedRow);
+      finalRow = (await processLedger(parsedRow)) || parsedRow;
     } catch (sheetErr) {
       console.error('Google Sheets / ledger failed:', sheetErr);
       finalRow = parsedRow;
@@ -2383,6 +2442,16 @@ app.get('/dashboard', async (req, res) => {
     console.error('Dashboard error:', err);
     res.status(500).send('Dashboard error');
   }
+});
+
+app.get('/logout', (req, res) => {
+  res.clearCookie('vixale_dashboard_key', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+  });
+
+  return res.redirect('/');
 });
 
 app.get('/health', (req, res) => {
