@@ -1235,12 +1235,12 @@ function renderLandingHtml() {
     }
 
     .hero {
-      min-height: 760px;
+      min-height: 620px;
       display: grid;
       grid-template-columns: 1.02fr 0.98fr;
-      gap: 56px;
+      gap: 48px;
       align-items: center;
-      padding: 86px 0 72px;
+      padding: 64px 0 42px;
     }
 
     .badge {
@@ -1256,8 +1256,16 @@ function renderLandingHtml() {
       font-size: 13px;
       font-weight: 520;
       box-shadow: 0 16px 42px rgba(16, 20, 19, 0.06);
-      margin-bottom: 28px;
+      margin-bottom: 22px;
       overflow: hidden;
+      cursor: pointer;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+
+    .badge:hover {
+      transform: translateY(-1px);
+      border-color: rgba(11, 207, 116, 0.45);
+      box-shadow: 0 18px 46px rgba(16, 20, 19, 0.08);
     }
 
     .badge::after {
@@ -1287,16 +1295,16 @@ function renderLandingHtml() {
     h1 {
       margin: 0;
       max-width: 680px;
-      font-size: clamp(42px, 5.7vw, 72px);
-      line-height: 1.04;
-      letter-spacing: -2.8px;
-      font-weight: 560;
+      font-size: clamp(34px, 4.0vw, 50px);
+      line-height: 1.08;
+      letter-spacing: -1.7px;
+      font-weight: 540;
     }
 
     .smart-slogan {
-      margin-top: 20px;
+      margin-top: 16px;
       color: #26302c;
-      font-size: 21px;
+      font-size: 18px;
       line-height: 1.45;
       letter-spacing: -0.35px;
       font-weight: 430;
@@ -1309,7 +1317,7 @@ function renderLandingHtml() {
 
     .hero-text {
       max-width: 650px;
-      margin: 26px 0 0;
+      margin: 22px 0 0;
       color: var(--muted);
       font-size: 19px;
       line-height: 1.66;
@@ -1327,7 +1335,7 @@ function renderLandingHtml() {
 
     .hero-note strong {
       color: var(--ink);
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .actions {
@@ -1335,7 +1343,7 @@ function renderLandingHtml() {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
       max-width: 680px;
-      margin-top: 34px;
+      margin-top: 24px;
     }
 
     .btn {
@@ -1432,7 +1440,7 @@ function renderLandingHtml() {
       border-radius: 999px;
       padding: 7px 10px;
       font-size: 12px;
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .mock-body {
@@ -1452,7 +1460,7 @@ function renderLandingHtml() {
       font-size: 22px;
       line-height: 1.2;
       letter-spacing: -0.65px;
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .mock-title p {
@@ -1479,13 +1487,13 @@ function renderLandingHtml() {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: .7px;
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .stat-value {
       margin-top: 9px;
       font-size: 25px;
-      font-weight: 560;
+      font-weight: 540;
       letter-spacing: -0.8px;
     }
 
@@ -1541,49 +1549,50 @@ function renderLandingHtml() {
 
     .row strong {
       color: var(--ink);
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .section {
-      padding: 58px 0;
+      padding: 38px 0;
     }
 
     .section-head {
       max-width: 720px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     .section h2 {
       margin: 0 0 8px;
-      font-size: clamp(28px, 3.4vw, 44px);
+      font-size: clamp(24px, 2.55vw, 34px);
       line-height: 1.08;
-      letter-spacing: -1.55px;
+      letter-spacing: -0.95px;
       font-weight: 520;
     }
 
     #systems .section-head h2 {
-      font-size: clamp(27px, 3.15vw, 40px);
-      letter-spacing: -1.35px;
+      font-size: clamp(23px, 2.25vw, 30px);
+      letter-spacing: -0.75px;
     }
 
     #workflow.section {
-      padding-bottom: 30px;
+      padding-top: 26px;
+      padding-bottom: 12px;
     }
 
     #workflow .section-head h2 {
-      font-size: clamp(25px, 2.7vw, 34px);
-      letter-spacing: -1.05px;
+      font-size: clamp(22px, 2.0vw, 27px);
+      letter-spacing: -0.7px;
     }
 
     #access.section {
-      padding-top: 22px;
+      padding-top: 4px;
     }
 
     .section .lead {
       margin: 0;
       color: var(--muted);
-      font-size: 16px;
-      line-height: 1.55;
+      font-size: 15px;
+      line-height: 1.5;
       font-weight: 400;
     }
 
@@ -1597,7 +1606,7 @@ function renderLandingHtml() {
       background: rgba(255,255,255,0.74);
       border: 1px solid var(--line);
       border-radius: 26px;
-      padding: 28px;
+      padding: 22px;
       box-shadow: var(--shadow-soft);
     }
 
@@ -1605,14 +1614,14 @@ function renderLandingHtml() {
       color: var(--green-dark);
       font-size: 12px;
       font-weight: 540;
-      margin-bottom: 28px;
+      margin-bottom: 22px;
     }
 
     .card h3 {
       margin: 0 0 10px;
       font-size: 21px;
       letter-spacing: -0.45px;
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .card p {
@@ -1632,7 +1641,7 @@ function renderLandingHtml() {
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 24px;
-      padding: 24px;
+      padding: 22px;
       box-shadow: var(--shadow-soft);
     }
 
@@ -1646,15 +1655,15 @@ function renderLandingHtml() {
       background: var(--green-soft);
       color: var(--green-dark);
       font-size: 13px;
-      font-weight: 560;
-      margin-bottom: 20px;
+      font-weight: 540;
+      margin-bottom: 16px;
     }
 
     .flow-step h3 {
       margin: 0 0 8px;
       font-size: 18px;
       letter-spacing: -0.35px;
-      font-weight: 560;
+      font-weight: 540;
     }
 
     .flow-step p {
@@ -1668,7 +1677,7 @@ function renderLandingHtml() {
       background: var(--ink);
       color: #fff;
       border-radius: 34px;
-      padding: 36px;
+      padding: 32px;
       display: grid;
       grid-template-columns: 1.2fr .8fr;
       gap: 24px;
@@ -1788,7 +1797,7 @@ function renderLandingHtml() {
       </a>
       <div class="nav-links">
         <a href="#systems">Systems</a>
-        <a href="#workflow">Workflow</a>
+        <a href="#workflow">How it works</a>
         <a href="#access">Access</a>
         <a class="nav-cta" href="/login">Live Dashboard</a>
       </div>
@@ -1798,9 +1807,9 @@ function renderLandingHtml() {
   <main>
     <section class="wrap hero">
       <div>
-        <div class="badge"><span class="dot"></span><b>Private live trade dashboard</b></div>
+        <a class="badge" href="/login"><span class="dot"></span><b>Private live trade dashboard</b></a>
         <h1>Trading systems.<br><span class="accent">Tracked live.</span></h1>
-        <div class="smart-slogan">Engineered signals. Observable execution.</div>
+        <div class="smart-slogan">Structured signals. Visible outcomes.</div>
         <p class="hero-text">
           Vixale builds and monitors systematic trading workflows: signals, execution alerts, live status, and private forward-test tracking.
         </p>
@@ -1889,7 +1898,7 @@ function renderLandingHtml() {
 
     <section id="workflow" class="wrap section">
       <div class="section-head">
-        <h2>Signal to visibility.</h2>
+        <h2>From signal to live visibility.</h2>
         <p class="lead">
           The system is designed to make the trading process observable from signal generation to closed trade history.
         </p>
@@ -1991,7 +2000,7 @@ function renderLoginHtml(errorMessage = '') {
       font-size: 32px;
       line-height: 1.1;
       letter-spacing: -1.2px;
-      font-weight: 560;
+      font-weight: 540;
     }
 
     p {
@@ -2005,7 +2014,7 @@ function renderLoginHtml(errorMessage = '') {
       display: block;
       color: var(--muted);
       font-size: 12px;
-      font-weight: 560;
+      font-weight: 540;
       text-transform: uppercase;
       letter-spacing: .7px;
       margin-bottom: 8px;
@@ -2178,7 +2187,7 @@ function renderDashboardHtml(data) {
     .wrap {
       max-width: 1440px;
       margin: 0 auto;
-      padding: 28px;
+      padding: 24px;
     }
 
     .top-actions {
@@ -2229,10 +2238,10 @@ function renderDashboardHtml(data) {
       background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.045));
       border: 1px solid var(--line);
       border-radius: 28px;
-      padding: 28px;
+      padding: 24px;
       box-shadow: 0 40px 120px rgba(0,0,0,0.38);
       backdrop-filter: blur(18px);
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     .topline {
