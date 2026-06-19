@@ -1106,6 +1106,14 @@ function renderLandingHtml() {
       box-sizing: border-box;
     }
 
+    /* Vixale no-bold typography reset */
+    b, strong { font-weight: 500; }
+    button, a, input, td, th, div, p, span, h1, h2, h3 {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+
     html {
       scroll-behavior: smooth;
     }
@@ -1195,7 +1203,7 @@ function renderLandingHtml() {
 
     .brand-name {
       font-size: 18px;
-      font-weight: 640;
+      font-weight: 500;
       letter-spacing: 0.16em;
     }
 
@@ -1254,7 +1262,7 @@ function renderLandingHtml() {
       background: rgba(255,255,255,0.82);
       color: #26302c;
       font-size: 13px;
-      font-weight: 520;
+      font-weight: 500;
       box-shadow: 0 16px 42px rgba(16, 20, 19, 0.06);
       margin-bottom: 14px;
       overflow: hidden;
@@ -1298,7 +1306,7 @@ function renderLandingHtml() {
       font-size: clamp(34px, 4.0vw, 50px);
       line-height: 1.08;
       letter-spacing: -1.7px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .smart-slogan {
@@ -1335,7 +1343,7 @@ function renderLandingHtml() {
 
     .hero-note strong {
       color: var(--ink);
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .actions {
@@ -1354,7 +1362,7 @@ function renderLandingHtml() {
       padding: 13px 16px;
       border-radius: 14px;
       font-size: 14px;
-      font-weight: 520;
+      font-weight: 500;
       letter-spacing: -0.1px;
       border: 1px solid var(--line-2);
       background: rgba(255,255,255,0.72);
@@ -1440,7 +1448,7 @@ function renderLandingHtml() {
       border-radius: 999px;
       padding: 7px 10px;
       font-size: 12px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .mock-body {
@@ -1460,7 +1468,7 @@ function renderLandingHtml() {
       font-size: 22px;
       line-height: 1.2;
       letter-spacing: -0.65px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .mock-title p {
@@ -1487,13 +1495,13 @@ function renderLandingHtml() {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: .7px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .stat-value {
       margin-top: 9px;
       font-size: 25px;
-      font-weight: 540;
+      font-weight: 500;
       letter-spacing: -0.8px;
     }
 
@@ -1549,7 +1557,7 @@ function renderLandingHtml() {
 
     .row strong {
       color: var(--ink);
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .section {
@@ -1566,7 +1574,7 @@ function renderLandingHtml() {
       font-size: clamp(24px, 2.55vw, 34px);
       line-height: 1.08;
       letter-spacing: -0.95px;
-      font-weight: 520;
+      font-weight: 500;
     }
 
     #systems .section-head h2 {
@@ -1613,7 +1621,7 @@ function renderLandingHtml() {
     .card-number {
       color: var(--green-dark);
       font-size: 12px;
-      font-weight: 540;
+      font-weight: 500;
       margin-bottom: 22px;
     }
 
@@ -1621,7 +1629,7 @@ function renderLandingHtml() {
       margin: 0 0 10px;
       font-size: 21px;
       letter-spacing: -0.45px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .card p {
@@ -1655,7 +1663,7 @@ function renderLandingHtml() {
       background: var(--green-soft);
       color: var(--green-dark);
       font-size: 13px;
-      font-weight: 540;
+      font-weight: 500;
       margin-bottom: 12px;
     }
 
@@ -1663,7 +1671,7 @@ function renderLandingHtml() {
       margin: 0 0 8px;
       font-size: 18px;
       letter-spacing: -0.35px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     .flow-step p {
@@ -1691,7 +1699,7 @@ function renderLandingHtml() {
       font-size: clamp(27px, 3.1vw, 38px);
       line-height: 1.06;
       letter-spacing: -1.65px;
-      font-weight: 520;
+      font-weight: 500;
     }
 
     .access p {
@@ -1737,7 +1745,7 @@ function renderLandingHtml() {
 
     .footer strong {
       color: var(--ink);
-      font-weight: 620;
+      font-weight: 500;
     }
 
 
@@ -1824,7 +1832,7 @@ function renderLandingHtml() {
   <main>
     <section class="wrap hero">
       <div>
-        <a class="badge" href="/login"><span class="dot"></span><b>Private live trade dashboard</b></a>
+        <a class="badge" href="/login"><span class="dot"></span><span>Private live trade dashboard</span></a>
         <h1>Trading systems.<br><span class="accent">Tracked live.</span></h1>
         <div class="smart-slogan">Structured signals. Visible outcomes.</div>
         <p class="hero-text">
@@ -1977,6 +1985,14 @@ function renderLoginHtml(errorMessage = '') {
 
     * { box-sizing: border-box; }
 
+    /* Vixale no-bold typography reset */
+    b, strong { font-weight: 500; }
+    button, a, input, td, th, div, p, span, h1, h2, h3 {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -2005,7 +2021,7 @@ function renderLoginHtml(errorMessage = '') {
 
     .logo {
       font-size: 20px;
-      font-weight: 620;
+      font-weight: 500;
       letter-spacing: -0.35px;
       margin-bottom: 30px;
     }
@@ -2017,7 +2033,7 @@ function renderLoginHtml(errorMessage = '') {
       font-size: 32px;
       line-height: 1.1;
       letter-spacing: -1.2px;
-      font-weight: 540;
+      font-weight: 500;
     }
 
     p {
@@ -2031,7 +2047,7 @@ function renderLoginHtml(errorMessage = '') {
       display: block;
       color: var(--muted);
       font-size: 12px;
-      font-weight: 540;
+      font-weight: 500;
       text-transform: uppercase;
       letter-spacing: .7px;
       margin-bottom: 8px;
@@ -2061,7 +2077,7 @@ function renderLoginHtml(errorMessage = '') {
       padding: 14px 18px;
       background: var(--ink);
       color: #fff;
-      font-weight: 540;
+      font-weight: 500;
       font-size: 15px;
       cursor: pointer;
     }
@@ -2070,7 +2086,7 @@ function renderLoginHtml(errorMessage = '') {
       margin-top: 14px;
       color: var(--red);
       font-size: 14px;
-      font-weight: 520;
+      font-weight: 500;
     }
 
     .links {
@@ -2178,25 +2194,42 @@ function renderDashboardHtml(data) {
   <title>Vixale Live Strategy Dashboard</title>
   <style>
     :root {
-      --bg: #05070c;
-      --line: rgba(255,255,255,0.12);
-      --text: #f5f7fb;
-      --muted: #9da9bc;
-      --green: #00e676;
-      --red: #ff4d5e;
-      --white: #ffffff;
+      --page: #f7fbf8;
+      --page2: #eef8f2;
+      --card: rgba(255,255,255,0.88);
+      --card-solid: #ffffff;
+      --text: #121815;
+      --muted: #63716a;
+      --muted2: #87938d;
+      --line: #dfe9e3;
+      --line2: #ccded4;
+      --green: #008f4a;
+      --green2: #0bbf6a;
+      --green-soft: #e9fff3;
+      --red: #d8424f;
+      --shadow: 0 18px 54px rgba(21, 48, 34, 0.08);
+      --shadow-soft: 0 10px 30px rgba(21, 48, 34, 0.055);
     }
 
     * { box-sizing: border-box; }
 
+    /* Vixale no-bold typography reset */
+    b, strong { font-weight: 500; }
+    body, button, a, input, table, th, td, div, p, span, h1, h2, h3 {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: geometricPrecision;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
     body {
       margin: 0;
       background:
-        radial-gradient(circle at 12% 4%, rgba(90,169,255,0.22), transparent 30%),
-        radial-gradient(circle at 85% 12%, rgba(0,230,118,0.12), transparent 28%),
-        linear-gradient(180deg, #05070c 0%, #070b12 100%);
+        radial-gradient(circle at 10% 0%, rgba(0, 143, 74, 0.10), transparent 34%),
+        radial-gradient(circle at 90% 7%, rgba(0, 143, 74, 0.075), transparent 30%),
+        linear-gradient(180deg, #f8fcfa 0%, #f3faf6 42%, #ffffff 100%);
       color: var(--text);
-      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      font-weight: 400;
     }
 
     a { color: inherit; text-decoration: none; }
@@ -2211,9 +2244,9 @@ function renderDashboardHtml(data) {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
       flex-wrap: wrap;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .home-link, .dash-btn {
@@ -2221,18 +2254,23 @@ function renderDashboardHtml(data) {
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 11px 14px;
+      padding: 10px 14px;
       border-radius: 999px;
-      background: rgba(255,255,255,0.055);
+      background: rgba(255,255,255,0.86);
       border: 1px solid var(--line);
-      color: var(--muted);
+      color: #17201b;
       font-size: 13px;
-      font-weight: 850;
+      line-height: 1.2;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      box-shadow: 0 8px 24px rgba(21, 48, 34, 0.045);
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
     }
 
     .home-link:hover, .dash-btn:hover {
-      color: var(--text);
-      background: rgba(255,255,255,0.09);
+      transform: translateY(-1px);
+      border-color: var(--line2);
+      background: #ffffff;
     }
 
     .dashboard-links {
@@ -2241,24 +2279,27 @@ function renderDashboardHtml(data) {
       flex-wrap: wrap;
     }
 
-    .dash-btn {
-      color: var(--text);
+    .dash-btn.primary {
+      background: #0f1512;
+      border-color: #0f1512;
+      color: #ffffff;
+      font-weight: 400;
+      box-shadow: 0 12px 32px rgba(15, 21, 18, 0.12);
     }
 
-    .dash-btn.primary {
-      background: var(--green);
-      border-color: var(--green);
-      color: #031008;
+    .dash-btn.primary:hover {
+      background: #18211d;
+      border-color: #18211d;
     }
 
     .hero {
-      background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.045));
+      background: rgba(255,255,255,0.86);
       border: 1px solid var(--line);
-      border-radius: 28px;
+      border-radius: 30px;
       padding: 24px;
-      box-shadow: 0 40px 120px rgba(0,0,0,0.38);
+      box-shadow: var(--shadow);
       backdrop-filter: blur(18px);
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .topline {
@@ -2271,15 +2312,20 @@ function renderDashboardHtml(data) {
 
     .brand h1 {
       margin: 0;
-      font-size: 36px;
-      letter-spacing: -1.4px;
-      line-height: 1.05;
+      font-size: 30px;
+      line-height: 1.08;
+      font-weight: 500;
+      letter-spacing: -0.045em;
+      color: #111815;
     }
 
     .subtitle {
       color: var(--muted);
       font-size: 14px;
+      line-height: 1.45;
       margin-top: 7px;
+      font-weight: 400;
+      letter-spacing: -0.01em;
     }
 
     .badge {
@@ -2288,11 +2334,12 @@ function renderDashboardHtml(data) {
       gap: 8px;
       padding: 9px 12px;
       border-radius: 999px;
-      background: rgba(0, 230, 118, 0.10);
-      border: 1px solid rgba(0, 230, 118, 0.24);
+      background: var(--green-soft);
+      border: 1px solid #bfe9d2;
       color: var(--green);
-      font-weight: 900;
       font-size: 13px;
+      line-height: 1.2;
+      font-weight: 400;
       white-space: nowrap;
     }
 
@@ -2300,65 +2347,72 @@ function renderDashboardHtml(data) {
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: var(--green);
-      box-shadow: 0 0 20px var(--green);
+      background: var(--green2);
+      box-shadow: 0 0 18px rgba(11,191,106,.45);
     }
 
     .updated {
-      color: var(--muted);
-      font-size: 13px;
-      margin-top: 14px;
+      color: var(--muted2);
+      font-size: 12.5px;
+      line-height: 1.4;
+      font-weight: 400;
+      margin-top: 13px;
+      font-variant-numeric: tabular-nums;
     }
 
     .cards {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
-      gap: 14px;
-      margin-top: 18px;
+      gap: 12px;
+      margin-top: 20px;
     }
 
     .card {
-      background: rgba(0,0,0,0.16);
+      background: rgba(255,255,255,0.92);
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px 16px;
-      min-height: 112px;
+      border-radius: 20px;
+      padding: 16px 15px;
+      min-height: 96px;
+      box-shadow: var(--shadow-soft);
     }
 
     .card .label {
-      color: var(--muted);
-      font-size: 12px;
+      color: var(--muted2);
+      font-size: 11px;
+      line-height: 1.2;
       text-transform: uppercase;
-      letter-spacing: 0.75px;
-      font-weight: 900;
+      letter-spacing: 0.06em;
+      font-weight: 400;
     }
 
     .card .value {
-      margin-top: 13px;
-      font-size: 26px;
-      font-weight: 950;
-      letter-spacing: -0.6px;
+      margin-top: 12px;
+      font-size: 24px;
+      line-height: 1.06;
+      font-weight: 400;
+      letter-spacing: -0.035em;
+      font-variant-numeric: tabular-nums;
     }
 
     .positive { color: var(--green) !important; }
     .negative { color: var(--red) !important; }
     .neutral { color: var(--text) !important; }
-    .long { color: var(--green); font-weight: 950; }
-    .short { color: var(--red); font-weight: 950; }
+    .long { color: var(--green); font-weight: 400; }
+    .short { color: var(--red); font-weight: 400; }
 
     .section {
-      background: rgba(255,255,255,0.055);
+      background: rgba(255,255,255,0.86);
       border: 1px solid var(--line);
-      border-radius: 22px;
+      border-radius: 24px;
       overflow: hidden;
-      margin-top: 18px;
-      box-shadow: 0 24px 70px rgba(0,0,0,0.22);
+      margin-top: 15px;
+      box-shadow: var(--shadow-soft);
       backdrop-filter: blur(14px);
     }
 
     .section-header {
-      padding: 16px 18px;
-      background: rgba(255,255,255,0.055);
+      padding: 14px 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,252,249,0.94));
       border-bottom: 1px solid var(--line);
       display: flex;
       justify-content: space-between;
@@ -2369,12 +2423,17 @@ function renderDashboardHtml(data) {
     .section-header h2 {
       margin: 0;
       font-size: 16px;
-      letter-spacing: -0.2px;
+      line-height: 1.25;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: #111815;
     }
 
     .section-header span {
-      color: var(--muted);
+      color: var(--muted2);
       font-size: 12px;
+      line-height: 1.35;
+      font-weight: 400;
     }
 
     .table-wrap { overflow-x: auto; }
@@ -2383,23 +2442,34 @@ function renderDashboardHtml(data) {
       width: 100%;
       border-collapse: collapse;
       min-width: 900px;
+      background: rgba(255,255,255,0.80);
     }
 
     th, td {
-      padding: 11px 14px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
+      padding: 13px 14px;
+      border-bottom: 1px solid #eef4f1;
       text-align: right;
-      font-size: 13px;
       white-space: nowrap;
+      vertical-align: middle;
+      font-variant-numeric: tabular-nums;
     }
 
     th {
-      color: var(--muted);
+      color: var(--muted2);
       font-size: 11px;
+      line-height: 1.2;
       text-transform: uppercase;
-      letter-spacing: 0.65px;
-      background: rgba(0,0,0,0.16);
-      font-weight: 950;
+      letter-spacing: 0.055em;
+      background: #fbfefd;
+      font-weight: 400;
+    }
+
+    td {
+      color: #202924;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 400;
+      letter-spacing: -0.01em;
     }
 
     td:first-child, th:first-child,
@@ -2407,28 +2477,33 @@ function renderDashboardHtml(data) {
       text-align: left;
     }
 
-    tr:hover td { background: rgba(90, 169, 255, 0.055); }
+    tr:hover td { background: #f5fbf8; }
 
     .ticker {
-      font-weight: 950;
-      color: var(--white);
+      color: #121815;
+      font-weight: 500;
+      letter-spacing: -0.012em;
     }
 
     .empty {
-      padding: 24px 18px;
+      padding: 22px 18px;
       color: var(--muted);
       font-size: 14px;
+      line-height: 1.5;
+      font-weight: 400;
     }
 
     .footer {
-      margin-top: 20px;
-      color: var(--muted);
+      margin-top: 18px;
+      color: #6f7a75;
       font-size: 12px;
-      line-height: 1.6;
+      line-height: 1.62;
+      font-weight: 400;
       border: 1px solid var(--line);
-      background: rgba(255,255,255,0.045);
-      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      border-radius: 20px;
       padding: 16px 18px;
+      box-shadow: 0 10px 34px rgba(21, 48, 34, 0.05);
     }
 
     @media (max-width: 1100px) {
@@ -2437,14 +2512,15 @@ function renderDashboardHtml(data) {
 
     @media (max-width: 720px) {
       .wrap { padding: 14px; }
-      .brand h1 { font-size: 27px; }
+      .brand h1 { font-size: 25px; }
       .cards { grid-template-columns: repeat(2, 1fr); }
-      .card { min-height: 94px; }
+      .card { min-height: 90px; }
       .card .value { font-size: 21px; }
       .dash-btn, .home-link { width: 100%; }
       .dashboard-links { width: 100%; }
+      th, td { font-size: 13px; padding: 12px 10px; }
     }
-  </style>
+</style>
 </head>
 <body>
   <div class="wrap">
