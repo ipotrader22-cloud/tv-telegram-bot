@@ -1044,6 +1044,607 @@ async function getDashboardData() {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LANDING PAGE HTML
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderLandingHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vixale | Trading Systems, Engineered</title>
+  <meta name="description" content="Vixale builds, tests, and monitors algorithmic trading systems with live forward-test transparency." />
+  <style>
+    :root {
+      --bg: #060a12;
+      --panel: #0f1724;
+      --panel2: #131d2b;
+      --line: #223044;
+      --text: #eef5ff;
+      --muted: #9fb2ca;
+      --green: #00e676;
+      --red: #ff4d5e;
+      --blue: #4da3ff;
+      --white: #ffffff;
+      --gold: #ffd166;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(77, 163, 255, 0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(0, 230, 118, 0.12), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(255, 209, 102, 0.07), transparent 22%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, Arial, Helvetica, sans-serif;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(18px);
+      background: rgba(6, 10, 18, 0.76);
+      border-bottom: 1px solid rgba(34, 48, 68, 0.75);
+    }
+
+    .nav-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 16px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .logo {
+      font-weight: 950;
+      font-size: 22px;
+      letter-spacing: -0.4px;
+    }
+
+    .logo span {
+      color: var(--green);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .nav-links a:hover {
+      color: var(--white);
+    }
+
+    .nav-cta {
+      border: 1px solid rgba(0, 230, 118, 0.32);
+      background: rgba(0, 230, 118, 0.10);
+      color: var(--green) !important;
+      padding: 10px 14px;
+      border-radius: 999px;
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0 22px;
+    }
+
+    .hero {
+      padding: 86px 0 68px;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 44px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: rgba(77, 163, 255, 0.10);
+      border: 1px solid rgba(77, 163, 255, 0.24);
+      color: #b9d9ff;
+      font-size: 13px;
+      font-weight: 900;
+      margin-bottom: 18px;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 18px var(--green);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(44px, 6vw, 76px);
+      line-height: 0.96;
+      letter-spacing: -2.8px;
+    }
+
+    .grad {
+      background: linear-gradient(135deg, var(--white), #b8d5ff 48%, var(--green));
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .hero-text {
+      margin-top: 22px;
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.65;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 30px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-weight: 900;
+      border: 1px solid var(--line);
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: var(--green);
+      color: #031008;
+      border-color: var(--green);
+      box-shadow: 0 12px 30px rgba(0, 230, 118, 0.18);
+    }
+
+    .btn-secondary {
+      background: rgba(15, 23, 36, 0.82);
+      color: var(--text);
+    }
+
+    .hero-card {
+      border: 1px solid var(--line);
+      background: linear-gradient(145deg, rgba(15,23,36,0.95), rgba(8,13,22,0.95));
+      border-radius: 24px;
+      padding: 22px;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+    }
+
+    .mini-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .mini-title {
+      font-weight: 950;
+      font-size: 18px;
+    }
+
+    .live-badge {
+      color: var(--green);
+      background: rgba(0,230,118,0.10);
+      border: 1px solid rgba(0,230,118,0.25);
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .mini-box {
+      background: rgba(17,26,40,0.86);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    .mini-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      font-weight: 900;
+    }
+
+    .mini-value {
+      margin-top: 10px;
+      font-size: 25px;
+      font-weight: 950;
+    }
+
+    .positive {
+      color: var(--green);
+    }
+
+    .negative {
+      color: var(--red);
+    }
+
+    .mock-table {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .mock-row {
+      display: grid;
+      grid-template-columns: 1fr 0.8fr 0.8fr 0.9fr;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(34,48,68,0.55);
+      font-size: 13px;
+    }
+
+    .mock-row:last-child {
+      border-bottom: 0;
+    }
+
+    .mock-head {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.7px;
+      font-weight: 950;
+      background: rgba(8,13,22,0.58);
+    }
+
+    .section {
+      padding: 64px 0;
+    }
+
+    .section h2 {
+      font-size: clamp(30px, 4vw, 46px);
+      margin: 0 0 12px;
+      letter-spacing: -1.4px;
+    }
+
+    .section-lead {
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.65;
+      max-width: 760px;
+      margin-bottom: 28px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .service-card {
+      border: 1px solid var(--line);
+      background: rgba(15,23,36,0.78);
+      border-radius: 20px;
+      padding: 24px;
+      min-height: 210px;
+    }
+
+    .service-card .icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(77,163,255,0.12);
+      border: 1px solid rgba(77,163,255,0.25);
+      color: #b9d9ff;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .service-card h3 {
+      margin: 0 0 10px;
+      font-size: 19px;
+    }
+
+    .service-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.58;
+      font-size: 15px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(15,23,36,0.78);
+      border-radius: 22px;
+      padding: 26px;
+    }
+
+    .bullets {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .bullet {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .check {
+      color: var(--green);
+      font-weight: 950;
+      margin-top: 1px;
+    }
+
+    .cta {
+      border: 1px solid rgba(0,230,118,0.24);
+      background: linear-gradient(135deg, rgba(0,230,118,0.10), rgba(77,163,255,0.09));
+      border-radius: 28px;
+      padding: 36px;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .cta h2 {
+      margin: 0 0 8px;
+      font-size: 34px;
+    }
+
+    .cta p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      max-width: 720px;
+    }
+
+    .footer {
+      padding: 34px 0;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    @media (max-width: 920px) {
+      .hero {
+        grid-template-columns: 1fr;
+        padding-top: 54px;
+      }
+
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      .nav-links a:not(.nav-cta) {
+        display: none;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .nav-inner {
+        padding: 14px;
+      }
+
+      .wrap {
+        padding: 0 14px;
+      }
+
+      .mini-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .mock-row {
+        grid-template-columns: 1fr 0.8fr;
+      }
+
+      .hero-actions {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="logo">Vixale<span>.</span></a>
+      <div class="nav-links">
+        <a href="#systems">Systems</a>
+        <a href="#transparency">Transparency</a>
+        <a href="#access">Access</a>
+        <a class="nav-cta" href="/dashboard">Live Dashboard</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="wrap hero">
+      <div>
+        <div class="eyebrow"><span class="pulse"></span> Algorithmic trading systems + live tracking</div>
+        <h1>Trading Systems, <span class="grad">Engineered.</span></h1>
+        <p class="hero-text">
+          Vixale builds, tests, and monitors algorithmic trading systems with a focus on execution, transparency, and forward-test visibility for active traders.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/dashboard">View Live Dashboard</a>
+          <a class="btn btn-secondary" href="#access">Request Strategy Access</a>
+        </div>
+      </div>
+
+      <div class="hero-card">
+        <div class="mini-top">
+          <div class="mini-title">Live Strategy Tracker</div>
+          <div class="live-badge">● LIVE</div>
+        </div>
+
+        <div class="mini-grid">
+          <div class="mini-box">
+            <div class="mini-label">Open Positions</div>
+            <div class="mini-value">Live</div>
+          </div>
+          <div class="mini-box">
+            <div class="mini-label">Pending Orders</div>
+            <div class="mini-value">Tracked</div>
+          </div>
+          <div class="mini-box">
+            <div class="mini-label">Running P&L</div>
+            <div class="mini-value positive">Visible</div>
+          </div>
+          <div class="mini-box">
+            <div class="mini-label">Closed Trades</div>
+            <div class="mini-value">Logged</div>
+          </div>
+        </div>
+
+        <div class="mock-table">
+          <div class="mock-row mock-head">
+            <div>Symbol</div>
+            <div>Side</div>
+            <div>Status</div>
+            <div>P&L</div>
+          </div>
+          <div class="mock-row">
+            <div><strong>NVDA</strong></div>
+            <div class="positive"><strong>LONG</strong></div>
+            <div>Open</div>
+            <div class="positive">+$248</div>
+          </div>
+          <div class="mock-row">
+            <div><strong>NFLX</strong></div>
+            <div class="negative"><strong>SHORT</strong></div>
+            <div>Closed</div>
+            <div class="positive">+$277</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="systems" class="wrap section">
+      <h2>What Vixale Builds</h2>
+      <p class="section-lead">
+        A practical trading infrastructure layer: strategy research, signal delivery, execution automation, and live monitoring.
+      </p>
+
+      <div class="cards">
+        <div class="service-card">
+          <div class="icon">⚙️</div>
+          <h3>Trading Systems</h3>
+          <p>Custom strategy logic, backtesting workflows, optimization support, and deployment-ready execution rules.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="icon">📡</div>
+          <h3>Live Signals</h3>
+          <p>Structured trade alerts with entry, target, stop, quantity, and lifecycle tracking from setup to close.</p>
+        </div>
+
+        <div class="service-card">
+          <div class="icon">🤖</div>
+          <h3>Execution Automation</h3>
+          <p>TradingView alerts, broker bridge logic, Telegram notifications, and live trade ledger infrastructure.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="transparency" class="wrap section">
+      <div class="split">
+        <div class="panel">
+          <h2>Forward-Test Transparency</h2>
+          <p class="section-lead">
+            A strategy is only useful when its live behavior can be monitored. Vixale keeps a structured journal of setups, fills, pending orders, open positions, and closed trades.
+          </p>
+          <a class="btn btn-primary" href="/dashboard">Open Live Dashboard</a>
+        </div>
+
+        <div class="panel">
+          <h2>What traders can see</h2>
+          <div class="bullets">
+            <div class="bullet"><span class="check">✓</span><span>Current open positions and running P&L</span></div>
+            <div class="bullet"><span class="check">✓</span><span>Pending orders waiting for entry</span></div>
+            <div class="bullet"><span class="check">✓</span><span>Recent closed trades with P&L and exit type</span></div>
+            <div class="bullet"><span class="check">✓</span><span>Win rate, total closed P&L, and daily closed P&L</span></div>
+            <div class="bullet"><span class="check">✓</span><span>Auto-refreshing dashboard for live forward-test review</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="access" class="wrap section">
+      <div class="cta">
+        <div>
+          <h2>Request Strategy Access</h2>
+          <p>
+            Vixale is currently focused on forward-tested trading systems, signal infrastructure, and automation workflows for active traders.
+          </p>
+        </div>
+        <a class="btn btn-primary" href="mailto:info@vixale.com">Contact Vixale</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <strong>Disclaimer:</strong> This website and dashboard are for educational and informational purposes only and do not constitute financial advice, investment advice, or an offer to buy or sell securities. Results may include paper trading, simulated execution, or forward-testing data. Trading involves risk, and future results are not guaranteed.
+  </footer>
+</body>
+</html>`;
+}
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // DASHBOARD HTML
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1383,7 +1984,7 @@ function renderDashboardHtml(data) {
       <div class="topline">
         <div class="brand">
           <h1>Vixale Live Strategy Dashboard</h1>
-          <div class="subtitle">Live forward-test trade tracker</div>
+          <div class="subtitle">Live forward-test / paper-trading tracker</div>
           <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
         </div>
         <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
@@ -1570,12 +2171,16 @@ app.get('/dashboard', async (req, res) => {
   }
 });
 
-app.post('/', handleTradingViewWebhook);
-app.post('/tv', handleTradingViewWebhook);
-
-app.get('/', (req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
+
+app.get('/', (req, res) => {
+  res.status(200).send(renderLandingHtml());
+});
+
+app.post('/', handleTradingViewWebhook);
+app.post('/tv', handleTradingViewWebhook);
 
 const PORT = process.env.PORT || 10000;
 
