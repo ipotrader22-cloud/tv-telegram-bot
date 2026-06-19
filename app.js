@@ -184,6 +184,69 @@ function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
   return enriched;
 }
 
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function moneyClass(value) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  if (n > 0) return 'positive';
+  if (n < 0) return 'negative';
+  return 'neutral';
+}
+
+function sideClass(side) {
+  const s = String(side || '').toUpperCase();
+  if (s === 'LONG') return 'long';
+  if (s === 'SHORT') return 'short';
+  return '';
+}
+
+function num(value, decimals = 2) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  return n.toFixed(decimals);
+}
+
+function pct(value) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  return `${n.toFixed(2)}%`;
+}
+
+function safeDateText(value) {
+  return String(value || '').replace('T', ' ').slice(0, 19);
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+
+  return header.split(';').reduce((cookies, part) => {
+    const [key, ...valueParts] = part.trim().split('=');
+
+    if (!key) return cookies;
+
+    cookies[key] = decodeURIComponent(valueParts.join('=') || '');
+    return cookies;
+  }, {});
+}
+
+function isDashboardAuthorized(req) {
+  const keyFromQuery = String(req.query.key || '').trim();
+  const cookies = parseCookies(req);
+  const keyFromCookie = String(cookies.vixale_dashboard_key || '').trim();
+  const dashboardKey = String(DASHBOARD_KEY || '').trim();
+
+  return Boolean(dashboardKey) && (keyFromQuery === dashboardKey || keyFromCookie === dashboardKey);
+}
+
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // OLD TEXT ALERT PARSER — keeps older TV scripts working
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2397,13 +2460,14 @@ app.post('/dashboard-login', (req, res) => {
     return res.status(500).send('Dashboard key is not configured.');
   }
 
-  const password = String(req.body.password || '');
+  const password = String(req.body.password || '').trim();
+  const dashboardKey = String(DASHBOARD_KEY || '').trim();
 
-  if (password !== DASHBOARD_KEY) {
+  if (password !== dashboardKey) {
     return res.status(401).send(renderLoginHtml('Incorrect password. Please try again.'));
   }
 
-  res.cookie('vixale_dashboard_key', DASHBOARD_KEY, {
+  res.cookie('vixale_dashboard_key', String(DASHBOARD_KEY || '').trim(), {
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
@@ -2419,10 +2483,11 @@ app.get('/dashboard', async (req, res) => {
       return res.status(500).send('Dashboard key is not configured.');
     }
 
-    const keyFromQuery = String(req.query.key || '');
+    const keyFromQuery = String(req.query.key || '').trim();
+    const dashboardKey = String(DASHBOARD_KEY || '').trim();
 
-    if (keyFromQuery === DASHBOARD_KEY) {
-      res.cookie('vixale_dashboard_key', DASHBOARD_KEY, {
+    if (keyFromQuery === dashboardKey) {
+      res.cookie('vixale_dashboard_key', String(DASHBOARD_KEY || '').trim(), {
         httpOnly: true,
         secure: true,
         sameSite: 'lax',
