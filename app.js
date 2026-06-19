@@ -1235,12 +1235,12 @@ function renderLandingHtml() {
     }
 
     .hero {
-      min-height: 620px;
+      min-height: 500px;
       display: grid;
       grid-template-columns: 1.02fr 0.98fr;
-      gap: 48px;
+      gap: 38px;
       align-items: center;
-      padding: 64px 0 42px;
+      padding: 48px 0 8px;
     }
 
     .badge {
@@ -1256,7 +1256,7 @@ function renderLandingHtml() {
       font-size: 13px;
       font-weight: 520;
       box-shadow: 0 16px 42px rgba(16, 20, 19, 0.06);
-      margin-bottom: 22px;
+      margin-bottom: 14px;
       overflow: hidden;
       cursor: pointer;
       transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
@@ -1302,9 +1302,9 @@ function renderLandingHtml() {
     }
 
     .smart-slogan {
-      margin-top: 16px;
+      margin-top: 13px;
       color: #26302c;
-      font-size: 18px;
+      font-size: 17px;
       line-height: 1.45;
       letter-spacing: -0.35px;
       font-weight: 430;
@@ -1317,7 +1317,7 @@ function renderLandingHtml() {
 
     .hero-text {
       max-width: 650px;
-      margin: 22px 0 0;
+      margin: 18px 0 0;
       color: var(--muted);
       font-size: 19px;
       line-height: 1.66;
@@ -1326,7 +1326,7 @@ function renderLandingHtml() {
 
     .hero-note {
       max-width: 650px;
-      margin-top: 16px;
+      margin-top: 13px;
       color: #4a5551;
       font-size: 15px;
       line-height: 1.58;
@@ -1343,7 +1343,7 @@ function renderLandingHtml() {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
       max-width: 680px;
-      margin-top: 24px;
+      margin-top: 18px;
     }
 
     .btn {
@@ -1414,7 +1414,7 @@ function renderLandingHtml() {
     }
 
     .product-top {
-      padding: 18px 20px;
+      padding: 14px 18px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1444,7 +1444,7 @@ function renderLandingHtml() {
     }
 
     .mock-body {
-      padding: 20px;
+      padding: 16px;
     }
 
     .mock-title {
@@ -1452,7 +1452,7 @@ function renderLandingHtml() {
       justify-content: space-between;
       align-items: flex-start;
       gap: 16px;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
     }
 
     .mock-title h2 {
@@ -1479,7 +1479,7 @@ function renderLandingHtml() {
       border: 1px solid var(--line);
       background: #fbfdfb;
       border-radius: 18px;
-      padding: 15px;
+      padding: 13px;
     }
 
     .stat-label {
@@ -1506,8 +1506,8 @@ function renderLandingHtml() {
     }
 
     .chart {
-      height: 132px;
-      margin-top: 14px;
+      height: 104px;
+      margin-top: 12px;
       border: 1px solid var(--line);
       border-radius: 20px;
       background:
@@ -1527,7 +1527,7 @@ function renderLandingHtml() {
     }
 
     .rows {
-      margin-top: 14px;
+      margin-top: 12px;
       border: 1px solid var(--line);
       border-radius: 18px;
       overflow: hidden;
@@ -1537,7 +1537,7 @@ function renderLandingHtml() {
       display: grid;
       grid-template-columns: 1fr .85fr .85fr .9fr;
       gap: 10px;
-      padding: 13px 14px;
+      padding: 11px 14px;
       border-bottom: 1px solid var(--line);
       font-size: 13px;
       color: #59645f;
@@ -1553,12 +1553,12 @@ function renderLandingHtml() {
     }
 
     .section {
-      padding: 38px 0;
+      padding: 28px 0;
     }
 
     .section-head {
       max-width: 720px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .section h2 {
@@ -1575,8 +1575,8 @@ function renderLandingHtml() {
     }
 
     #workflow.section {
-      padding-top: 26px;
-      padding-bottom: 12px;
+      padding-top: 18px;
+      padding-bottom: 0;
     }
 
     #workflow .section-head h2 {
@@ -1585,7 +1585,7 @@ function renderLandingHtml() {
     }
 
     #access.section {
-      padding-top: 4px;
+      padding-top: 0;
     }
 
     .section .lead {
@@ -1656,7 +1656,7 @@ function renderLandingHtml() {
       color: var(--green-dark);
       font-size: 13px;
       font-weight: 540;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .flow-step h3 {
@@ -1674,20 +1674,21 @@ function renderLandingHtml() {
     }
 
     .access {
-      background: var(--ink);
-      color: #fff;
+      background: linear-gradient(135deg, rgba(233, 255, 244, 0.92), rgba(255, 255, 255, 0.96));
+      color: var(--ink);
+      border: 1px solid #cfe9dc;
       border-radius: 34px;
-      padding: 32px;
+      padding: 30px;
       display: grid;
       grid-template-columns: 1.2fr .8fr;
       gap: 24px;
       align-items: center;
-      box-shadow: 0 32px 90px rgba(16,20,19,.18);
+      box-shadow: 0 28px 80px rgba(16,20,19,.08);
     }
 
     .access h2 {
       margin: 0 0 10px;
-      font-size: clamp(30px, 3.6vw, 44px);
+      font-size: clamp(27px, 3.1vw, 38px);
       line-height: 1.06;
       letter-spacing: -1.65px;
       font-weight: 520;
@@ -1695,7 +1696,7 @@ function renderLandingHtml() {
 
     .access p {
       margin: 0;
-      color: #bac3bf;
+      color: var(--muted);
       font-size: 16px;
       line-height: 1.56;
       max-width: 690px;
@@ -1703,7 +1704,7 @@ function renderLandingHtml() {
 
     .access .small {
       margin-top: 14px;
-      color: #8d9994;
+      color: #5c6863;
       font-size: 13px;
     }
 
@@ -1713,16 +1714,17 @@ function renderLandingHtml() {
     }
 
     .access-actions .btn {
-      background: #fff;
-      border-color: #fff;
-      color: var(--ink);
+      background: var(--green-soft);
+      border-color: #bfead5;
+      color: #075f39;
+      box-shadow: 0 12px 34px rgba(11,207,116,0.10);
     }
 
     .access-actions .btn.secondary {
-      background: rgba(255,255,255,0.08);
-      color: #fff;
-      border-color: rgba(255,255,255,0.16);
-      box-shadow: none;
+      background: rgba(255,255,255,0.78);
+      color: var(--ink);
+      border-color: var(--line-2);
+      box-shadow: 0 10px 30px rgba(16,20,19,0.04);
     }
 
     .footer {
@@ -1736,6 +1738,21 @@ function renderLandingHtml() {
     .footer strong {
       color: var(--ink);
       font-weight: 620;
+    }
+
+
+
+    /* compact landing spacing refinements */
+    #systems {
+      margin-top: -16px;
+    }
+
+    #workflow {
+      margin-top: -8px;
+    }
+
+    .access {
+      margin-top: 4px;
     }
 
     @media (max-width: 980px) {
@@ -1792,7 +1809,7 @@ function renderLandingHtml() {
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-word">
           <span class="brand-name">VIXALE</span>
-          <span class="brand-tagline">observable execution</span>
+          <span class="brand-tagline">systematic trade lab</span>
         </span>
       </a>
       <div class="nav-links">
@@ -2196,7 +2213,7 @@ function renderDashboardHtml(data) {
       align-items: center;
       gap: 14px;
       flex-wrap: wrap;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .home-link, .dash-btn {
@@ -2241,7 +2258,7 @@ function renderDashboardHtml(data) {
       padding: 24px;
       box-shadow: 0 40px 120px rgba(0,0,0,0.38);
       backdrop-filter: blur(18px);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .topline {
@@ -2297,7 +2314,7 @@ function renderDashboardHtml(data) {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
       gap: 14px;
-      margin-top: 24px;
+      margin-top: 18px;
     }
 
     .card {
@@ -2369,7 +2386,7 @@ function renderDashboardHtml(data) {
     }
 
     th, td {
-      padding: 13px 14px;
+      padding: 11px 14px;
       border-bottom: 1px solid rgba(255,255,255,0.07);
       text-align: right;
       font-size: 13px;
