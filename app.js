@@ -12,14 +12,14 @@ const CHAT_ID = process.env.CHAT_ID;
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
+const DASHBOARD_KEY = process.env.DASHBOARD_KEY || '';
+
 const TRADES_SHEET = 'Trades';
 const PENDING_SHEET = 'Pending';
 const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
 
-// These events still process Google Sheets / ledger,
-// but they will not spam Telegram.
 const SILENT_TELEGRAM_EVENTS = new Set([
   'CANCEL',
 ]);
@@ -181,8 +181,48 @@ function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
   return enriched;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function moneyClass(value) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  if (n > 0) return 'positive';
+  if (n < 0) return 'negative';
+  return 'neutral';
+}
+
+function sideClass(side) {
+  const s = String(side || '').toUpperCase();
+  if (s === 'LONG') return 'long';
+  if (s === 'SHORT') return 'short';
+  return '';
+}
+
+function num(value, decimals = 2) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  return n.toFixed(decimals);
+}
+
+function pct(value) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  return `${n.toFixed(2)}%`;
+}
+
+function safeDateText(value) {
+  return String(value || '').replace('T', ' ').slice(0, 19);
+}
+
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// OLD TEXT ALERT PARSER — keeps older TV scripts working
+// OLD TEXT ALERT PARSER
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseTradingViewMessage(message) {
@@ -289,7 +329,7 @@ function parseTradingViewMessage(message) {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// NEW JSON ALERT PARSER — for new FVG live TV script
+// NEW JSON ALERT PARSER
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseJsonTradingViewAlert(data) {
@@ -312,9 +352,6 @@ function parseJsonTradingViewAlert(data) {
   const event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
 
   const symbol = String(data.symbol || '').trim();
-
-  // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
-  // That lets us remove all pending rows by symbol.
   const side = data.side ? String(data.side).trim().toUpperCase() : '';
 
   const entry = cleanNumber(data.entry);
@@ -766,14 +803,12 @@ async function processLedger(row) {
 
   if (!row || row.event === 'UNKNOWN') return row;
 
-  // SETUP → Pending only. Not an executed trade.
   if (row.event === 'SETUP') {
     if (!row.trade_id) return row;
     await upsertPending(sheets, row);
     return row;
   }
 
-  // FILL → remove Pending, add/update Open Positions, append to Trades.
   if (row.event === 'FILL') {
     if (!row.trade_id) return row;
 
@@ -784,7 +819,6 @@ async function processLedger(row) {
     return row;
   }
 
-  // CANCEL / EOD_RESET / NEW_DAY_RESET / CANCEL_REPLACE
   if (row.event === 'CANCEL') {
     if (row.trade_id) {
       await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
@@ -800,7 +834,6 @@ async function processLedger(row) {
     return row;
   }
 
-  // TP / SL / EOD → first enrich from Open Positions, then write Trades + Closed Trades.
   if (row.event === 'TP' || row.event === 'SL' || row.event === 'EOD') {
     if (!row.trade_id) return row;
 
@@ -867,6 +900,617 @@ async function sendTelegram(message) {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DASHBOARD DATA
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function parseOpenPositionRow(row) {
+  const entry = cleanNumber(row[5]);
+  const size = cleanNumber(row[6]);
+  const target = cleanNumber(row[7]);
+  const stop = cleanNumber(row[8]);
+  const last = cleanNumber(row[9]);
+  const openPnl = cleanNumber(row[10]);
+  const side = String(row[3] || '').toUpperCase();
+
+  let toTp = '';
+  let toStop = '';
+  let exposure = '';
+
+  if (entry !== '' && size !== '') {
+    exposure = Number((entry * size).toFixed(2));
+  }
+
+  if (last !== '' && last !== 0 && target !== '') {
+    if (side === 'LONG') {
+      toTp = Number((((target - last) / last) * 100).toFixed(2));
+    } else if (side === 'SHORT') {
+      toTp = Number((((last - target) / last) * 100).toFixed(2));
+    }
+  }
+
+  if (last !== '' && last !== 0 && stop !== '') {
+    if (side === 'LONG') {
+      toStop = Number((((last - stop) / last) * 100).toFixed(2));
+    } else if (side === 'SHORT') {
+      toStop = Number((((stop - last) / last) * 100).toFixed(2));
+    }
+  }
+
+  return {
+    trade_id: row[0] || '',
+    open_time: row[1] || '',
+    symbol: row[2] || '',
+    side,
+    status: row[4] || '',
+    entry,
+    size,
+    target,
+    stop,
+    last,
+    open_pnl: openPnl,
+    to_tp: toTp,
+    to_stop: toStop,
+    exposure,
+  };
+}
+
+function parsePendingRow(row) {
+  return {
+    trade_id: row[0] || '',
+    timestamp: row[1] || '',
+    symbol: row[2] || '',
+    side: String(row[3] || '').toUpperCase(),
+    status: row[4] || '',
+    entry: cleanNumber(row[5]),
+    size: cleanNumber(row[6]),
+    target: cleanNumber(row[7]),
+    stop: cleanNumber(row[8]),
+  };
+}
+
+function parseClosedTradeRow(row) {
+  return {
+    trade_id: row[0] || '',
+    open_time: row[1] || '',
+    close_time: row[2] || '',
+    symbol: row[3] || '',
+    side: String(row[4] || '').toUpperCase(),
+    entry: cleanNumber(row[5]),
+    exit: cleanNumber(row[6]),
+    size: cleanNumber(row[7]),
+    result: cleanNumber(row[8]),
+    event: row[9] || '',
+  };
+}
+
+async function getDashboardData() {
+  const sheets = await getSheetsClient();
+
+  if (!sheets) {
+    throw new Error('Google Sheets client is not configured.');
+  }
+
+  const [openValues, pendingValues, closedValues] = await Promise.all([
+    readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
+    readSheet(sheets, PENDING_SHEET, 'A:J'),
+    readSheet(sheets, CLOSED_TRADES_SHEET, 'A:L'),
+  ]);
+
+  const openPositions = openValues
+    .slice(1)
+    .filter(row => row[0])
+    .map(parseOpenPositionRow);
+
+  const pendingOrders = pendingValues
+    .slice(1)
+    .filter(row => row[0])
+    .map(parsePendingRow);
+
+  const closedTradesAll = closedValues
+    .slice(1)
+    .filter(row => row[0])
+    .map(parseClosedTradeRow)
+    .filter(row => row.result !== '' && row.entry !== '' && row.exit !== '' && row.size !== '');
+
+  closedTradesAll.sort((a, b) => String(b.close_time).localeCompare(String(a.close_time)));
+
+  const today = nowNy().slice(0, 10);
+
+  const openPnl = openPositions.reduce((sum, row) => sum + (cleanNumber(row.open_pnl) || 0), 0);
+  const exposure = openPositions.reduce((sum, row) => sum + (cleanNumber(row.exposure) || 0), 0);
+  const totalClosedPnl = closedTradesAll.reduce((sum, row) => sum + (cleanNumber(row.result) || 0), 0);
+
+  const closedToday = closedTradesAll.filter(row => String(row.close_time || '').slice(0, 10) === today);
+  const closedPnlToday = closedToday.reduce((sum, row) => sum + (cleanNumber(row.result) || 0), 0);
+
+  const winners = closedTradesAll.filter(row => cleanNumber(row.result) > 0).length;
+  const winRate = closedTradesAll.length > 0 ? (winners / closedTradesAll.length) * 100 : 0;
+
+  return {
+    updated_at: nowNy(),
+    open_positions: openPositions,
+    pending_orders: pendingOrders,
+    recent_closed_trades: closedTradesAll.slice(0, 20),
+    summary: {
+      open_count: openPositions.length,
+      pending_count: pendingOrders.length,
+      open_pnl: Number(openPnl.toFixed(2)),
+      closed_pnl_today: Number(closedPnlToday.toFixed(2)),
+      total_closed_pnl: Number(totalClosedPnl.toFixed(2)),
+      win_rate: Number(winRate.toFixed(2)),
+      exposure: Number(exposure.toFixed(2)),
+    },
+  };
+}
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DASHBOARD HTML
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderMoney(value) {
+  const n = cleanNumber(value);
+  if (n === '') return '';
+  return formatMoney(n);
+}
+
+function renderDashboardHtml(data) {
+  const s = data.summary;
+
+  const openRows = data.open_positions.map(row => `
+    <tr>
+      <td class="ticker">${escapeHtml(row.symbol)}</td>
+      <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
+      <td>${num(row.entry)}</td>
+      <td>${num(row.last)}</td>
+      <td>${num(row.target)}</td>
+      <td>${num(row.stop)}</td>
+      <td>${num(row.size, 0)}</td>
+      <td class="${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl)}</td>
+      <td>${pct(row.to_tp)}</td>
+      <td>${pct(row.to_stop)}</td>
+      <td class="positive">${renderMoney(row.exposure)}</td>
+      <td>${escapeHtml(row.status)}</td>
+    </tr>
+  `).join('');
+
+  const pendingRows = data.pending_orders.map(row => `
+    <tr>
+      <td class="ticker">${escapeHtml(row.symbol)}</td>
+      <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
+      <td>${num(row.entry)}</td>
+      <td>${num(row.target)}</td>
+      <td>${num(row.stop)}</td>
+      <td>${num(row.size, 0)}</td>
+      <td>${escapeHtml(row.status)}</td>
+      <td>${escapeHtml(safeDateText(row.timestamp))}</td>
+      <td>${escapeHtml(row.trade_id)}</td>
+    </tr>
+  `).join('');
+
+  const closedRows = data.recent_closed_trades.map(row => `
+    <tr>
+      <td class="ticker">${escapeHtml(row.trade_id)}</td>
+      <td>${escapeHtml(safeDateText(row.open_time))}</td>
+      <td>${escapeHtml(safeDateText(row.close_time))}</td>
+      <td class="ticker">${escapeHtml(row.symbol)}</td>
+      <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
+      <td>${num(row.entry)}</td>
+      <td>${num(row.exit)}</td>
+      <td>${num(row.size, 0)}</td>
+      <td class="${moneyClass(row.result)}">${renderMoney(row.result)}</td>
+      <td>${escapeHtml(row.event)}</td>
+    </tr>
+  `).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="refresh" content="30" />
+  <title>Vixale Live Strategy Dashboard</title>
+  <style>
+    :root {
+      --bg: #070b13;
+      --panel: #0f1724;
+      --panel2: #151f2d;
+      --card: #111a28;
+      --line: #223044;
+      --text: #eaf2ff;
+      --muted: #8fa3bd;
+      --green: #00e676;
+      --red: #ff4d5e;
+      --yellow: #ffd166;
+      --blue: #4da3ff;
+      --white: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(77, 163, 255, 0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(0, 230, 118, 0.10), transparent 28%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, Arial, Helvetica, sans-serif;
+    }
+
+    .wrap {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(17,26,40,0.96), rgba(10,15,24,0.96));
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.32);
+      margin-bottom: 22px;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 34px;
+      letter-spacing: -0.6px;
+      line-height: 1.05;
+    }
+
+    .brand .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: rgba(0, 230, 118, 0.10);
+      border: 1px solid rgba(0, 230, 118, 0.25);
+      color: var(--green);
+      font-weight: 700;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 20px var(--green);
+    }
+
+    .updated {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 14px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .card {
+      background: rgba(15, 23, 36, 0.86);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 16px;
+      min-height: 110px;
+    }
+
+    .card .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      font-weight: 800;
+    }
+
+    .card .value {
+      margin-top: 13px;
+      font-size: 25px;
+      font-weight: 900;
+      letter-spacing: -0.4px;
+    }
+
+    .positive {
+      color: var(--green) !important;
+    }
+
+    .negative {
+      color: var(--red) !important;
+    }
+
+    .neutral {
+      color: var(--text) !important;
+    }
+
+    .long {
+      color: var(--green);
+      font-weight: 900;
+    }
+
+    .short {
+      color: var(--red);
+      font-weight: 900;
+    }
+
+    .section {
+      background: rgba(15, 23, 36, 0.90);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      margin-top: 18px;
+      box-shadow: 0 14px 40px rgba(0,0,0,0.22);
+    }
+
+    .section-header {
+      padding: 16px 18px;
+      background: rgba(21, 31, 45, 0.92);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0.2px;
+    }
+
+    .section-header span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+    }
+
+    th, td {
+      padding: 13px 14px;
+      border-bottom: 1px solid rgba(34,48,68,0.55);
+      text-align: right;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.65px;
+      background: rgba(8, 13, 22, 0.48);
+      font-weight: 900;
+    }
+
+    td:first-child, th:first-child,
+    td:nth-child(2), th:nth-child(2) {
+      text-align: left;
+    }
+
+    tr:hover td {
+      background: rgba(77, 163, 255, 0.055);
+    }
+
+    .ticker {
+      font-weight: 900;
+      color: var(--white);
+    }
+
+    .empty {
+      padding: 24px 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .footer {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      border: 1px solid var(--line);
+      background: rgba(15, 23, 36, 0.62);
+      border-radius: 16px;
+      padding: 16px 18px;
+    }
+
+    @media (max-width: 1100px) {
+      .cards {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 720px) {
+      .wrap {
+        padding: 14px;
+      }
+
+      .brand h1 {
+        font-size: 26px;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .card {
+        min-height: 92px;
+      }
+
+      .card .value {
+        font-size: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="topline">
+        <div class="brand">
+          <h1>Vixale Live Strategy Dashboard</h1>
+          <div class="subtitle">Live forward-test trade tracker</div>
+          <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
+        </div>
+        <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="label">Open Positions</div>
+          <div class="value">${escapeHtml(s.open_count)}</div>
+        </div>
+        <div class="card">
+          <div class="label">Pending Orders</div>
+          <div class="value">${escapeHtml(s.pending_count)}</div>
+        </div>
+        <div class="card">
+          <div class="label">Open P&L</div>
+          <div class="value ${moneyClass(s.open_pnl)}">${renderMoney(s.open_pnl)}</div>
+        </div>
+        <div class="card">
+          <div class="label">Closed P&L Today</div>
+          <div class="value ${moneyClass(s.closed_pnl_today)}">${renderMoney(s.closed_pnl_today)}</div>
+        </div>
+        <div class="card">
+          <div class="label">Total Closed P&L</div>
+          <div class="value ${moneyClass(s.total_closed_pnl)}">${renderMoney(s.total_closed_pnl)}</div>
+        </div>
+        <div class="card">
+          <div class="label">Win Rate</div>
+          <div class="value">${pct(s.win_rate)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Live Open Positions</h2>
+        <span>Total exposure: ${renderMoney(s.exposure)}</span>
+      </div>
+      <div class="table-wrap">
+        ${data.open_positions.length ? `
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Last</th>
+              <th>Target</th>
+              <th>Stop</th>
+              <th>Qty</th>
+              <th>Open P&L</th>
+              <th>To TP</th>
+              <th>To Stop</th>
+              <th>Exposure</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${openRows}</tbody>
+        </table>
+        ` : `<div class="empty">No open positions.</div>`}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Pending Orders</h2>
+        <span>Working setup orders waiting for entry</span>
+      </div>
+      <div class="table-wrap">
+        ${data.pending_orders.length ? `
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Target</th>
+              <th>Stop</th>
+              <th>Qty</th>
+              <th>Status</th>
+              <th>Time</th>
+              <th>Trade ID</th>
+            </tr>
+          </thead>
+          <tbody>${pendingRows}</tbody>
+        </table>
+        ` : `<div class="empty">No pending orders.</div>`}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Recent Closed Trades</h2>
+        <span>Latest 20 completed trades</span>
+      </div>
+      <div class="table-wrap">
+        ${data.recent_closed_trades.length ? `
+        <table>
+          <thead>
+            <tr>
+              <th>Trade ID</th>
+              <th>Open Time</th>
+              <th>Close Time</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>Qty</th>
+              <th>P&L</th>
+              <th>Event</th>
+            </tr>
+          </thead>
+          <tbody>${closedRows}</tbody>
+        </table>
+        ` : `<div class="empty">No closed trades yet.</div>`}
+      </div>
+    </div>
+
+    <div class="footer">
+      <strong>Disclaimer:</strong> Live strategy tracking dashboard. This page is for educational and informational purposes only and does not constitute financial advice. Results may include paper trading or forward-testing data. Trading involves risk, and future results are not guaranteed.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // WEBHOOK ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -905,6 +1549,26 @@ async function handleTradingViewWebhook(req, res) {
     res.status(500).send('Error');
   }
 }
+
+app.get('/dashboard', async (req, res) => {
+  try {
+    if (!DASHBOARD_KEY) {
+      return res.status(500).send('Dashboard key is not configured.');
+    }
+
+    const key = String(req.query.key || '');
+
+    if (key !== DASHBOARD_KEY) {
+      return res.status(401).send('Unauthorized');
+    }
+
+    const data = await getDashboardData();
+    res.status(200).send(renderDashboardHtml(data));
+  } catch (err) {
+    console.error('Dashboard error:', err);
+    res.status(500).send('Dashboard error');
+  }
+});
 
 app.post('/', handleTradingViewWebhook);
 app.post('/tv', handleTradingViewWebhook);
