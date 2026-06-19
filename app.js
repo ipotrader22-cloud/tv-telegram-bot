@@ -3,7 +3,10 @@ const { google } = require('googleapis');
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(express.text({ type: '*/*', limit: '2mb' }));
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
@@ -20,9 +23,7 @@ const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
 
-const SILENT_TELEGRAM_EVENTS = new Set([
-  'CANCEL',
-]);
+const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL']);
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BASIC HELPERS
@@ -89,7 +90,6 @@ function parseUpdatedRowNumber(updatedRange) {
 
 function formatMoney(value) {
   const n = cleanNumber(value);
-
   if (n === '') return '';
 
   const sign = n > 0 ? '+' : n < 0 ? '-' : '';
@@ -100,7 +100,6 @@ function formatMoney(value) {
 
 function formatPercent(value) {
   const n = cleanNumber(value);
-
   if (n === '') return '';
 
   const sign = n > 0 ? '+' : n < 0 ? '-' : '';
@@ -219,6 +218,27 @@ function pct(value) {
 
 function safeDateText(value) {
   return String(value || '').replace('T', ' ').slice(0, 19);
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+
+  return header.split(';').reduce((cookies, part) => {
+    const [key, ...valueParts] = part.trim().split('=');
+
+    if (!key) return cookies;
+
+    cookies[key] = decodeURIComponent(valueParts.join('=') || '');
+    return cookies;
+  }, {});
+}
+
+function isDashboardAuthorized(req) {
+  const keyFromQuery = String(req.query.key || '');
+  const cookies = parseCookies(req);
+  const keyFromCookie = cookies.vixale_dashboard_key || '';
+
+  return DASHBOARD_KEY && (keyFromQuery === DASHBOARD_KEY || keyFromCookie === DASHBOARD_KEY);
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -340,10 +360,8 @@ function parseJsonTradingViewAlert(data) {
     ENTRY_FILL: 'FILL',
     TP: 'TP',
     CLOSE_STOP: 'SL',
-
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
-
     EOD_RESET: 'CANCEL',
     NEW_DAY_RESET: 'CANCEL',
     CANCEL_REPLACE: 'CANCEL',
@@ -1507,7 +1525,7 @@ function renderLandingHtml() {
         <a href="#systems">Systems</a>
         <a href="#transparency">Transparency</a>
         <a href="#access">Access</a>
-        <a class="nav-cta" href="/dashboard">Live Dashboard</a>
+        <a class="nav-cta" href="/login">Live Dashboard</a>
       </div>
     </div>
   </nav>
@@ -1521,7 +1539,7 @@ function renderLandingHtml() {
           Vixale builds, tests, and monitors algorithmic trading systems with a focus on execution, transparency, and forward-test visibility for active traders.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="/dashboard">View Live Dashboard</a>
+          <a class="btn btn-primary" href="/login">View Live Dashboard</a>
           <a class="btn btn-secondary" href="#access">Request Strategy Access</a>
         </div>
       </div>
@@ -1608,7 +1626,7 @@ function renderLandingHtml() {
           <p class="section-lead">
             A strategy is only useful when its live behavior can be monitored. Vixale keeps a structured journal of setups, fills, pending orders, open positions, and closed trades.
           </p>
-          <a class="btn btn-primary" href="/dashboard">Open Live Dashboard</a>
+          <a class="btn btn-primary" href="/login">Open Live Dashboard</a>
         </div>
 
         <div class="panel">
@@ -1640,6 +1658,158 @@ function renderLandingHtml() {
   <footer class="wrap footer">
     <strong>Disclaimer:</strong> This website and dashboard are for educational and informational purposes only and do not constitute financial advice, investment advice, or an offer to buy or sell securities. Results may include paper trading, simulated execution, or forward-testing data. Trading involves risk, and future results are not guaranteed.
   </footer>
+</body>
+</html>`;
+}
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LOGIN HTML
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderLoginHtml(errorMessage = '') {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vixale Dashboard Login</title>
+  <style>
+    :root {
+      --bg: #060a12;
+      --panel: #0f1724;
+      --line: #223044;
+      --text: #eef5ff;
+      --muted: #9fb2ca;
+      --green: #00e676;
+      --red: #ff4d5e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at top left, rgba(77, 163, 255, 0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(0, 230, 118, 0.12), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 440px;
+      background: linear-gradient(135deg, rgba(17,26,40,0.96), rgba(10,15,24,0.96));
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 950;
+      margin-bottom: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .logo span {
+      color: var(--green);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.4px;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 10px 0 24px;
+    }
+
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      background: #070b13;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--text);
+      padding: 14px 15px;
+      font-size: 16px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: rgba(0, 230, 118, 0.55);
+      box-shadow: 0 0 0 4px rgba(0, 230, 118, 0.08);
+    }
+
+    button {
+      width: 100%;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 18px;
+      background: var(--green);
+      color: #031008;
+      font-weight: 950;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .error {
+      margin-top: 14px;
+      color: var(--red);
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .back {
+      display: inline-block;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .back:hover {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">Vixale<span>.</span></div>
+    <h1>Dashboard Access</h1>
+    <p>Enter the dashboard password to view the live forward-test tracker.</p>
+
+    <form method="POST" action="/dashboard-login">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
+      <button type="submit">Open Dashboard</button>
+    </form>
+
+    ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
+
+    <a class="back" href="/">← Back to Vixale</a>
+  </div>
 </body>
 </html>`;
 }
@@ -2151,16 +2321,60 @@ async function handleTradingViewWebhook(req, res) {
   }
 }
 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SITE ROUTES
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app.get('/', (req, res) => {
+  res.status(200).send(renderLandingHtml());
+});
+
+app.get('/login', (req, res) => {
+  res.status(200).send(renderLoginHtml());
+});
+
+app.post('/dashboard-login', (req, res) => {
+  if (!DASHBOARD_KEY) {
+    return res.status(500).send('Dashboard key is not configured.');
+  }
+
+  const password = String(req.body.password || '');
+
+  if (password !== DASHBOARD_KEY) {
+    return res.status(401).send(renderLoginHtml('Incorrect password. Please try again.'));
+  }
+
+  res.cookie('vixale_dashboard_key', DASHBOARD_KEY, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 12,
+  });
+
+  return res.redirect('/dashboard');
+});
+
 app.get('/dashboard', async (req, res) => {
   try {
     if (!DASHBOARD_KEY) {
       return res.status(500).send('Dashboard key is not configured.');
     }
 
-    const key = String(req.query.key || '');
+    const keyFromQuery = String(req.query.key || '');
 
-    if (key !== DASHBOARD_KEY) {
-      return res.status(401).send('Unauthorized');
+    if (keyFromQuery === DASHBOARD_KEY) {
+      res.cookie('vixale_dashboard_key', DASHBOARD_KEY, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        maxAge: 1000 * 60 * 60 * 12,
+      });
+
+      return res.redirect('/dashboard');
+    }
+
+    if (!isDashboardAuthorized(req)) {
+      return res.redirect('/login');
     }
 
     const data = await getDashboardData();
@@ -2175,10 +2389,7 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-app.get('/', (req, res) => {
-  res.status(200).send(renderLandingHtml());
-});
-
+// Webhook endpoints
 app.post('/', handleTradingViewWebhook);
 app.post('/tv', handleTradingViewWebhook);
 
