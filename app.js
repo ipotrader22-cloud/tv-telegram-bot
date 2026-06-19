@@ -1083,25 +1083,23 @@ function renderLandingHtml() {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vixale | Systematic Trading Infrastructure</title>
-  <meta name="description" content="Private live trade dashboard access for systematic trading signals, execution, and transparent forward-test tracking." />
+  <title>Vixale | Trading Systems, Engineered</title>
+  <meta name="description" content="Vixale builds, tests, and monitors algorithmic trading systems with private live dashboard access." />
   <style>
     :root {
-      --paper: #f7f8fb;
-      --paper-soft: #eef2f7;
-      --ink: #111318;
-      --ink-soft: #303642;
-      --muted: #6b7280;
-      --muted-2: #8a94a6;
-      --white: #ffffff;
-      --line: rgba(17, 24, 39, 0.10);
-      --line-strong: rgba(17, 24, 39, 0.16);
-      --green: #13c77b;
-      --green-dark: #07945a;
-      --blue: #3b82f6;
-      --shadow: 0 24px 70px rgba(15, 23, 42, 0.09);
-      --shadow-soft: 0 14px 36px rgba(15, 23, 42, 0.07);
-      --radius: 28px;
+      --bg: #fbfcfb;
+      --paper: #ffffff;
+      --paper-soft: #f4f7f4;
+      --ink: #101413;
+      --muted: #68736f;
+      --muted-2: #8b9691;
+      --line: #e3e9e5;
+      --line-2: #d7e1db;
+      --green: #0bcf74;
+      --green-dark: #078f51;
+      --green-soft: #e9fff4;
+      --shadow: 0 24px 70px rgba(16, 20, 19, 0.08);
+      --shadow-soft: 0 14px 40px rgba(16, 20, 19, 0.06);
     }
 
     * {
@@ -1116,10 +1114,10 @@ function renderLandingHtml() {
       margin: 0;
       color: var(--ink);
       background:
-        radial-gradient(circle at 16% 0%, rgba(59, 130, 246, 0.16), transparent 28%),
-        radial-gradient(circle at 86% 7%, rgba(19, 199, 123, 0.16), transparent 30%),
-        linear-gradient(180deg, #fbfcff 0%, var(--paper) 45%, #ffffff 100%);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Segoe UI", Arial, sans-serif;
+        radial-gradient(circle at 20% 0%, rgba(11, 207, 116, 0.14), transparent 30%),
+        radial-gradient(circle at 86% 8%, rgba(11, 207, 116, 0.10), transparent 28%),
+        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 58%, #ffffff 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
     }
@@ -1132,30 +1130,29 @@ function renderLandingHtml() {
     .nav {
       position: sticky;
       top: 0;
-      z-index: 20;
-      background: rgba(251, 252, 255, 0.78);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(17, 24, 39, 0.06);
+      z-index: 30;
+      background: rgba(251, 252, 251, 0.78);
+      backdrop-filter: blur(22px);
+      border-bottom: 1px solid rgba(227, 233, 229, 0.74);
     }
 
     .nav-inner {
       max-width: 1160px;
       margin: 0 auto;
-      padding: 16px 22px;
+      padding: 18px 24px;
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 18px;
+      align-items: center;
+      gap: 22px;
     }
 
     .logo {
       font-size: 20px;
-      line-height: 1;
-      letter-spacing: -0.04em;
-      font-weight: 560;
+      font-weight: 620;
+      letter-spacing: -0.35px;
     }
 
-    .logo-dot {
+    .logo span {
       color: var(--green);
     }
 
@@ -1163,185 +1160,179 @@ function renderLandingHtml() {
       display: flex;
       align-items: center;
       gap: 22px;
-      color: #5b6473;
+      color: var(--muted);
       font-size: 14px;
-      font-weight: 440;
+      font-weight: 480;
     }
 
     .nav-links a:hover {
       color: var(--ink);
     }
 
-    .nav-pill {
-      padding: 9px 14px;
+    .nav-cta {
+      padding: 10px 15px;
+      border: 1px solid var(--line-2);
       border-radius: 999px;
       color: var(--ink) !important;
-      background: rgba(255, 255, 255, 0.72);
-      border: 1px solid var(--line);
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+      background: rgba(255,255,255,0.72);
+      box-shadow: 0 8px 24px rgba(16, 20, 19, 0.04);
     }
 
     .wrap {
       max-width: 1160px;
       margin: 0 auto;
-      padding: 0 22px;
+      padding: 0 24px;
     }
 
     .hero {
-      min-height: 720px;
-      padding: 86px 0 72px;
+      min-height: 760px;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(380px, 0.82fr);
-      gap: 54px;
+      grid-template-columns: 1.02fr 0.98fr;
+      gap: 56px;
       align-items: center;
+      padding: 86px 0 72px;
     }
 
-    .eyebrow {
+    .badge {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      margin-bottom: 26px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.72);
+      gap: 9px;
+      padding: 9px 13px;
       border: 1px solid var(--line);
-      color: #3f4754;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.76);
+      color: #26302c;
       font-size: 13px;
-      line-height: 1;
-      font-weight: 460;
-      box-shadow: 0 12px 34px rgba(15, 23, 42, 0.045);
+      font-weight: 520;
+      box-shadow: 0 10px 32px rgba(16, 20, 19, 0.05);
+      margin-bottom: 26px;
     }
 
-    .pulse {
+    .dot {
       width: 9px;
       height: 9px;
-      border-radius: 50%;
+      border-radius: 999px;
       background: var(--green);
-      box-shadow: 0 0 0 6px rgba(19, 199, 123, 0.13);
+      box-shadow: 0 0 0 7px rgba(11, 207, 116, 0.13);
     }
 
-    .hero h1 {
+    h1 {
       margin: 0;
-      max-width: 760px;
-      color: #0f1117;
-      font-size: clamp(46px, 6.1vw, 74px);
-      line-height: 1.03;
-      letter-spacing: -0.065em;
-      font-weight: 510;
+      max-width: 720px;
+      font-size: clamp(48px, 6.8vw, 84px);
+      line-height: 1.02;
+      letter-spacing: -3.8px;
+      font-weight: 580;
     }
 
-    .hero h1 .soft {
-      color: #50596a;
-      font-weight: 430;
+    .accent {
+      color: var(--green-dark);
     }
 
     .hero-text {
       max-width: 650px;
-      margin: 24px 0 0;
-      color: #586173;
+      margin: 26px 0 0;
+      color: var(--muted);
       font-size: 19px;
-      line-height: 1.62;
-      letter-spacing: -0.015em;
-      font-weight: 380;
+      line-height: 1.66;
+      font-weight: 400;
     }
 
-    .access-note {
+    .hero-note {
       max-width: 650px;
-      margin: 16px 0 0;
-      color: #747d8d;
-      font-size: 15.5px;
-      line-height: 1.62;
-      font-weight: 380;
+      margin-top: 16px;
+      color: #4a5551;
+      font-size: 15px;
+      line-height: 1.58;
+      font-weight: 400;
     }
 
-    .access-note strong {
-      color: var(--ink-soft);
-      font-weight: 500;
+    .hero-note strong {
+      color: var(--ink);
+      font-weight: 560;
     }
 
     .actions {
-      margin-top: 30px;
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      max-width: 640px;
+      gap: 12px;
+      max-width: 680px;
+      margin-top: 34px;
     }
 
     .btn {
-      min-height: 46px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0 16px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.72);
+      min-height: 48px;
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 520;
+      letter-spacing: -0.1px;
+      border: 1px solid var(--line-2);
+      background: rgba(255,255,255,0.72);
       color: var(--ink);
-      font-size: 14.5px;
-      font-weight: 460;
-      letter-spacing: -0.01em;
-      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.045);
+      box-shadow: 0 10px 30px rgba(16, 20, 19, 0.04);
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
       white-space: nowrap;
-      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease;
     }
 
     .btn:hover {
       transform: translateY(-1px);
+      border-color: #c7d4cc;
+      box-shadow: 0 16px 40px rgba(16, 20, 19, 0.07);
       background: #fff;
-      border-color: var(--line-strong);
-      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.075);
     }
 
     .btn-primary {
-      background: #111318;
-      border-color: #111318;
+      background: var(--ink);
+      border-color: var(--ink);
       color: #fff;
     }
 
     .btn-primary:hover {
-      background: #1b1e25;
-      border-color: #1b1e25;
+      background: #000;
+      border-color: #000;
     }
 
-    .btn-tinted {
-      color: #06472d;
-      background: rgba(19, 199, 123, 0.095);
-      border-color: rgba(19, 199, 123, 0.22);
+    .btn-green {
+      background: var(--green-soft);
+      border-color: #bfead5;
+      color: #075f39;
     }
 
-    .hero-visual {
+    .visual {
       position: relative;
     }
 
-    .glow {
+    .visual::before {
+      content: "";
       position: absolute;
-      inset: -70px -80px auto auto;
-      width: 340px;
-      height: 340px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(19, 199, 123, 0.18), transparent 65%);
-      filter: blur(6px);
-      pointer-events: none;
+      width: 420px;
+      height: 420px;
+      right: -80px;
+      top: -70px;
+      background: radial-gradient(circle, rgba(11,207,116,0.18), transparent 64%);
+      border-radius: 999px;
+      z-index: -1;
     }
 
     .product-card {
-      position: relative;
-      border-radius: 30px;
-      border: 1px solid rgba(255,255,255,0.75);
-      background: rgba(255,255,255,0.66);
-      box-shadow: var(--shadow-strong);
+      background: rgba(255,255,255,0.82);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
       overflow: hidden;
       backdrop-filter: blur(18px);
     }
 
     .product-top {
-      height: 48px;
+      padding: 18px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 18px;
-      border-bottom: 1px solid rgba(17,24,39,0.08);
-      background: rgba(255,255,255,0.56);
+      border-bottom: 1px solid var(--line);
     }
 
     .window-dots {
@@ -1352,76 +1343,94 @@ function renderLandingHtml() {
     .window-dots span {
       width: 10px;
       height: 10px;
-      border-radius: 50%;
-      background: rgba(17,24,39,0.18);
+      border-radius: 999px;
+      background: #d6ddd8;
     }
 
-    .product-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      color: var(--green-dark);
+    .live-pill {
+      color: #087246;
+      background: #eafff4;
+      border: 1px solid #c8efdb;
+      border-radius: 999px;
+      padding: 7px 10px;
       font-size: 12px;
-      font-weight: 540;
+      font-weight: 560;
     }
 
-    .product-body {
-      padding: 18px;
-      background:
-        radial-gradient(circle at 20% 0%, rgba(59,130,246,0.10), transparent 30%),
-        linear-gradient(180deg, rgba(255,255,255,0.76), rgba(255,255,255,0.46));
+    .mock-body {
+      padding: 20px;
     }
 
-    .metric-row {
+    .mock-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .mock-title h2 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: -0.65px;
+      font-weight: 560;
+    }
+
+    .mock-title p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .stat-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 12px;
     }
 
-    .metric {
-      padding: 14px;
+    .stat {
+      border: 1px solid var(--line);
+      background: #fbfdfb;
       border-radius: 18px;
-      background: rgba(255,255,255,0.72);
-      border: 1px solid rgba(17,24,39,0.07);
+      padding: 15px;
     }
 
-    .metric-label {
+    .stat-label {
       color: var(--muted-2);
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.055em;
-      font-weight: 520;
+      letter-spacing: .7px;
+      font-weight: 560;
     }
 
-    .metric-value {
-      margin-top: 8px;
-      color: var(--ink);
-      font-size: 24px;
-      letter-spacing: -0.04em;
-      font-weight: 520;
+    .stat-value {
+      margin-top: 9px;
+      font-size: 25px;
+      font-weight: 560;
+      letter-spacing: -0.8px;
     }
 
     .positive {
-      color: var(--green-dark) !important;
+      color: var(--green-dark);
     }
 
     .negative {
-      color: #d04455 !important;
+      color: #d7424f;
     }
 
     .chart {
-      height: 150px;
-      border-radius: 22px;
-      border: 1px solid rgba(17,24,39,0.07);
+      height: 132px;
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
       background:
-        linear-gradient(180deg, rgba(19,199,123,0.11), transparent 72%),
-        repeating-linear-gradient(90deg, rgba(17,24,39,0.035) 0 1px, transparent 1px 48px),
-        repeating-linear-gradient(0deg, rgba(17,24,39,0.035) 0 1px, transparent 1px 42px),
-        rgba(255,255,255,0.64);
-      overflow: hidden;
+        linear-gradient(180deg, rgba(11,207,116,0.08), transparent),
+        linear-gradient(90deg, rgba(16,20,19,0.04) 1px, transparent 1px),
+        linear-gradient(rgba(16,20,19,0.04) 1px, transparent 1px);
+      background-size: auto, 44px 44px, 44px 44px;
       position: relative;
-      margin-bottom: 12px;
+      overflow: hidden;
     }
 
     .chart svg {
@@ -1431,96 +1440,90 @@ function renderLandingHtml() {
       height: 100%;
     }
 
-    .mini-table {
-      overflow: hidden;
+    .rows {
+      margin-top: 14px;
+      border: 1px solid var(--line);
       border-radius: 18px;
-      border: 1px solid rgba(17,24,39,0.07);
-      background: rgba(255,255,255,0.62);
+      overflow: hidden;
     }
 
-    .mini-table-row {
+    .row {
       display: grid;
-      grid-template-columns: 1fr 0.8fr 0.8fr 0.9fr;
+      grid-template-columns: 1fr .85fr .85fr .9fr;
       gap: 10px;
-      padding: 12px 14px;
-      border-bottom: 1px solid rgba(17,24,39,0.06);
-      color: #596275;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
       font-size: 13px;
-      font-weight: 400;
+      color: #59645f;
     }
 
-    .mini-table-row:last-child {
+    .row:last-child {
       border-bottom: 0;
     }
 
-    .mini-table-row strong {
+    .row strong {
       color: var(--ink);
-      font-weight: 530;
+      font-weight: 560;
     }
 
     .section {
-      padding: 72px 0;
+      padding: 74px 0;
     }
 
     .section-head {
       max-width: 760px;
-      margin-bottom: 26px;
+      margin-bottom: 30px;
     }
 
     .section h2 {
-      margin: 0;
-      color: var(--ink);
-      font-size: clamp(34px, 4.6vw, 56px);
-      line-height: 1.08;
-      letter-spacing: -0.055em;
-      font-weight: 500;
+      margin: 0 0 14px;
+      font-size: clamp(34px, 4.5vw, 58px);
+      line-height: 1.05;
+      letter-spacing: -2.3px;
+      font-weight: 560;
     }
 
-    .section p.lead {
-      margin: 14px 0 0;
-      color: #667085;
+    .section .lead {
+      margin: 0;
+      color: var(--muted);
       font-size: 18px;
-      line-height: 1.62;
-      font-weight: 380;
+      line-height: 1.64;
+      font-weight: 400;
     }
 
     .cards {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
+      gap: 16px;
     }
 
-    .info-card {
-      min-height: 225px;
-      padding: 24px;
-      border-radius: 26px;
-      background: rgba(255,255,255,0.72);
+    .card {
+      background: rgba(255,255,255,0.74);
       border: 1px solid var(--line);
+      border-radius: 26px;
+      padding: 28px;
       box-shadow: var(--shadow-soft);
     }
 
-    .info-card .kicker {
+    .card-number {
       color: var(--green-dark);
-      font-size: 12px;
-      font-weight: 540;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-bottom: 58px;
+      font-size: 13px;
+      font-weight: 560;
+      margin-bottom: 46px;
     }
 
-    .info-card h3 {
+    .card h3 {
       margin: 0 0 10px;
-      font-size: 22px;
-      letter-spacing: -0.04em;
-      font-weight: 520;
+      font-size: 21px;
+      letter-spacing: -0.45px;
+      font-weight: 560;
     }
 
-    .info-card p {
+    .card p {
       margin: 0;
-      color: #667085;
+      color: var(--muted);
       font-size: 15px;
-      line-height: 1.58;
-      font-weight: 380;
+      line-height: 1.6;
     }
 
     .flow {
@@ -1530,158 +1533,144 @@ function renderLandingHtml() {
     }
 
     .flow-step {
-      min-height: 155px;
-      padding: 22px;
-      border-radius: 24px;
-      background: rgba(255,255,255,0.68);
+      background: #fff;
       border: 1px solid var(--line);
-      box-shadow: 0 14px 34px rgba(15,23,42,0.045);
+      border-radius: 24px;
+      padding: 24px;
+      box-shadow: var(--shadow-soft);
     }
 
     .flow-step span {
-      display: inline-flex;
       width: 34px;
       height: 34px;
+      border-radius: 12px;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      border-radius: 50%;
-      background: #111318;
-      color: #fff;
+      background: var(--green-soft);
+      color: var(--green-dark);
       font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 18px;
+      font-weight: 560;
+      margin-bottom: 20px;
     }
 
     .flow-step h3 {
       margin: 0 0 8px;
       font-size: 18px;
-      letter-spacing: -0.035em;
-      font-weight: 520;
+      letter-spacing: -0.35px;
+      font-weight: 560;
     }
 
     .flow-step p {
       margin: 0;
-      color: #667085;
-      font-size: 14.5px;
+      color: var(--muted);
+      font-size: 14px;
       line-height: 1.55;
-      font-weight: 380;
     }
 
-    .access-panel {
-      display: grid;
-      grid-template-columns: 1.08fr 0.92fr;
-      gap: 24px;
-      align-items: center;
+    .access {
+      background: var(--ink);
+      color: #fff;
       border-radius: 34px;
-      padding: 34px;
-      border: 1px solid rgba(17,24,39,0.08);
-      background:
-        radial-gradient(circle at 10% 0%, rgba(59,130,246,0.13), transparent 34%),
-        radial-gradient(circle at 88% 16%, rgba(19,199,123,0.13), transparent 32%),
-        rgba(255,255,255,0.76);
-      box-shadow: var(--shadow);
+      padding: 42px;
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 28px;
+      align-items: center;
+      box-shadow: 0 32px 90px rgba(16,20,19,.18);
     }
 
-    .access-panel h2 {
+    .access h2 {
+      margin: 0 0 12px;
+      font-size: clamp(34px, 4.5vw, 56px);
+      line-height: 1.04;
+      letter-spacing: -2.3px;
+      font-weight: 540;
+    }
+
+    .access p {
       margin: 0;
-      font-size: clamp(34px, 4.4vw, 56px);
-      line-height: 1.05;
-      letter-spacing: -0.06em;
-      font-weight: 500;
-    }
-
-    .access-panel p {
-      margin: 15px 0 0;
-      color: #5f6979;
+      color: #bac3bf;
       font-size: 17px;
       line-height: 1.62;
-      font-weight: 380;
+      max-width: 690px;
     }
 
-    .small-note {
+    .access .small {
       margin-top: 14px;
-      color: #8a94a6;
-      font-size: 13.5px;
-      line-height: 1.5;
+      color: #8d9994;
+      font-size: 13px;
     }
 
-    .access-buttons {
+    .access-actions {
       display: grid;
-      gap: 10px;
+      gap: 12px;
+    }
+
+    .access-actions .btn {
+      background: #fff;
+      border-color: #fff;
+      color: var(--ink);
+    }
+
+    .access-actions .btn.secondary {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      border-color: rgba(255,255,255,0.16);
+      box-shadow: none;
     }
 
     .footer {
-      padding: 34px 0;
+      padding: 38px 0;
+      color: var(--muted);
       border-top: 1px solid var(--line);
-      color: #747d8d;
       font-size: 13px;
-      line-height: 1.65;
-      font-weight: 380;
+      line-height: 1.7;
     }
 
-    @media (max-width: 1080px) {
-      .hero {
+    @media (max-width: 980px) {
+      .hero,
+      .access {
         grid-template-columns: 1fr;
+      }
+
+      .hero {
         min-height: auto;
-        padding-top: 72px;
-      }
-
-      .hero-copy {
-        text-align: center;
-      }
-
-      .hero h1,
-      .hero-text,
-      .access-note,
-      .actions {
-        margin-left: auto;
-        margin-right: auto;
-      }
-
-      .hero-visual {
-        max-width: 690px;
-        margin: 0 auto;
+        padding-top: 56px;
       }
 
       .cards,
-      .flow,
-      .access-panel {
+      .flow {
         grid-template-columns: 1fr;
+      }
+
+      .actions {
+        grid-template-columns: 1fr;
+      }
+
+      .nav-links a:not(.nav-cta) {
+        display: none;
       }
     }
 
-    @media (max-width: 760px) {
-      .nav-inner,
-      .wrap {
+    @media (max-width: 560px) {
+      .wrap,
+      .nav-inner {
         padding-left: 16px;
         padding-right: 16px;
       }
 
-      .nav-links a:not(.nav-pill) {
-        display: none;
+      h1 {
+        font-size: 48px;
+        letter-spacing: -2.5px;
       }
 
-      .hero {
-        padding-top: 54px;
-      }
-
-      .hero h1 {
-        font-size: clamp(42px, 12vw, 58px);
-        letter-spacing: -0.06em;
-      }
-
-      .hero-text {
-        font-size: 17px;
-      }
-
-      .actions {
-        grid-template-columns: 1fr;
-        max-width: 420px;
-      }
-
-      .metric-row,
-      .mini-table-row {
+      .row {
         grid-template-columns: 1fr 1fr;
+      }
+
+      .stat-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -1689,79 +1678,75 @@ function renderLandingHtml() {
 <body>
   <nav class="nav">
     <div class="nav-inner">
-      <a class="logo" href="/">Vixale<span class="logo-dot">.</span></a>
+      <a href="/" class="logo">Vixale<span>.</span></a>
       <div class="nav-links">
         <a href="#systems">Systems</a>
         <a href="#workflow">Workflow</a>
         <a href="#access">Access</a>
-        <a class="nav-pill" href="/login">Live Dashboard</a>
+        <a class="nav-cta" href="/login">Live Dashboard</a>
       </div>
     </div>
   </nav>
 
   <main>
     <section class="wrap hero">
-      <div class="hero-copy">
-        <div class="eyebrow"><span class="pulse"></span> Private live trade dashboard</div>
-        <h1>Systematic trading infrastructure<span class="soft">, monitored live.</span></h1>
+      <div>
+        <div class="badge"><span class="dot"></span> Private live trade dashboard</div>
+        <h1>Trading systems.<br><span class="accent">Tracked live.</span></h1>
         <p class="hero-text">
-          Vixale turns strategy signals into a clean workflow: alerts, execution tracking, Telegram updates, and a private live dashboard.
+          Vixale builds and monitors systematic trading workflows: signals, execution alerts, live status, and private forward-test tracking.
         </p>
-        <p class="access-note">
+        <p class="hero-note">
           To request access to the <strong>Live Trade Dashboard</strong>, message us on Telegram or join the channel for updates.
         </p>
-
         <div class="actions">
-          <a class="btn btn-primary" href="/login">View Dashboard</a>
-          <a class="btn btn-tinted" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
-          <a class="btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Channel</a>
+          <a class="btn btn-primary" href="/login">View Live Dashboard</a>
+          <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
+          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Contact on Telegram</a>
         </div>
       </div>
 
-      <div class="hero-visual">
-        <div class="glow"></div>
+      <div class="visual">
         <div class="product-card">
           <div class="product-top">
             <div class="window-dots"><span></span><span></span><span></span></div>
-            <div class="product-status"><span class="pulse"></span> Live tracking</div>
+            <div class="live-pill">● Live tracking</div>
           </div>
-          <div class="product-body">
-            <div class="metric-row">
-              <div class="metric">
-                <div class="metric-label">Open P&L</div>
-                <div class="metric-value positive">+$1,248</div>
-              </div>
-              <div class="metric">
-                <div class="metric-label">Win rate</div>
-                <div class="metric-value">67.4%</div>
-              </div>
-              <div class="metric">
-                <div class="metric-label">Pending</div>
-                <div class="metric-value">4</div>
-              </div>
-              <div class="metric">
-                <div class="metric-label">Closed today</div>
-                <div class="metric-value positive">+$532</div>
+          <div class="mock-body">
+            <div class="mock-title">
+              <div>
+                <h2>Strategy Dashboard</h2>
+                <p>Forward-test trade monitoring</p>
               </div>
             </div>
-
+            <div class="stat-grid">
+              <div class="stat">
+                <div class="stat-label">Open P&L</div>
+                <div class="stat-value positive">+$1,248</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Win rate</div>
+                <div class="stat-value">67.4%</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Pending</div>
+                <div class="stat-value">4</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Closed today</div>
+                <div class="stat-value positive">+$532</div>
+              </div>
+            </div>
             <div class="chart">
-              <svg viewBox="0 0 620 180" preserveAspectRatio="none">
-                <path d="M0,132 C54,114 78,141 130,109 C181,77 216,90 268,62 C323,30 358,87 421,52 C488,14 528,47 620,24" fill="none" stroke="rgba(7,148,90,0.92)" stroke-width="4" stroke-linecap="round"/>
-                <path d="M0,132 C54,114 78,141 130,109 C181,77 216,90 268,62 C323,30 358,87 421,52 C488,14 528,47 620,24 L620,180 L0,180 Z" fill="rgba(19,199,123,0.10)"/>
+              <svg viewBox="0 0 600 160" preserveAspectRatio="none">
+                <path d="M0,118 C70,90 96,128 150,100 C205,72 236,86 288,60 C348,30 382,82 440,50 C502,18 546,38 600,22" fill="none" stroke="rgba(7,143,81,0.92)" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0,118 C70,90 96,128 150,100 C205,72 236,86 288,60 C348,30 382,82 440,50 C502,18 546,38 600,22 L600,160 L0,160 Z" fill="rgba(11,207,116,0.10)"/>
               </svg>
             </div>
-
-            <div class="mini-table">
-              <div class="mini-table-row">
-                <div><strong>NVDA</strong></div><div class="positive">LONG</div><div>OPEN</div><div class="positive">+$248</div>
-              </div>
-              <div class="mini-table-row">
-                <div><strong>NFLX</strong></div><div class="negative">SHORT</div><div>CLOSED</div><div class="positive">+$277</div>
-              </div>
-              <div class="mini-table-row">
-                <div><strong>META</strong></div><div class="positive">LONG</div><div>PENDING</div><div>—</div>
-              </div>
+            <div class="rows">
+              <div class="row"><div><strong>NVDA</strong></div><div class="positive">LONG</div><div>Open</div><div class="positive">+$248</div></div>
+              <div class="row"><div><strong>NFLX</strong></div><div class="negative">SHORT</div><div>Closed</div><div class="positive">+$277</div></div>
+              <div class="row"><div><strong>META</strong></div><div class="positive">LONG</div><div>Pending</div><div>—</div></div>
             </div>
           </div>
         </div>
@@ -1770,58 +1755,58 @@ function renderLandingHtml() {
 
     <section id="systems" class="wrap section">
       <div class="section-head">
-        <h2>Not a signal room. A trading system layer.</h2>
+        <h2>Built for structure, not noise.</h2>
         <p class="lead">
-          The product is built around process: defined rules, structured alerts, order lifecycle tracking, and transparent reporting.
+          A clean trading infrastructure layer for strategy alerts, position tracking, and forward-test visibility.
         </p>
       </div>
       <div class="cards">
-        <div class="info-card">
-          <div class="kicker">01 / Logic</div>
-          <h3>Rules-based signals</h3>
-          <p>Strategy events are structured around setup, entry, target, stop, cancellation, and close logic.</p>
+        <div class="card">
+          <div class="card-number">01 / Signals</div>
+          <h3>Structured trade alerts</h3>
+          <p>Every setup carries symbol, side, entry, target, stop, and status data.</p>
         </div>
-        <div class="info-card">
-          <div class="kicker">02 / Execution</div>
-          <h3>Operational workflow</h3>
-          <p>Signals can flow into Telegram, broker automation, and a live ledger without manual spreadsheet work.</p>
+        <div class="card">
+          <div class="card-number">02 / Monitoring</div>
+          <h3>Live position tracking</h3>
+          <p>Pending orders, open positions, closed trades, and P&L are tracked in one place.</p>
         </div>
-        <div class="info-card">
-          <div class="kicker">03 / Visibility</div>
+        <div class="card">
+          <div class="card-number">03 / Access</div>
           <h3>Private dashboard</h3>
-          <p>Approved traders can view live positions, pending orders, closed trades, and full history behind the login.</p>
+          <p>Dashboard access is shared selectively with traders who request access.</p>
         </div>
       </div>
     </section>
 
     <section id="workflow" class="wrap section">
       <div class="section-head">
-        <h2>From signal to evidence.</h2>
+        <h2>Signal to visibility.</h2>
         <p class="lead">
-          Every part of the workflow is designed to make the strategy easier to monitor, audit, and understand.
+          The system is designed to make the trading process observable from signal generation to closed trade history.
         </p>
       </div>
       <div class="flow">
-        <div class="flow-step"><span>1</span><h3>Signal</h3><p>TradingView strategy event triggers with structured trade data.</p></div>
-        <div class="flow-step"><span>2</span><h3>Route</h3><p>The alert can route into broker bridge logic and reporting layers.</p></div>
-        <div class="flow-step"><span>3</span><h3>Notify</h3><p>Telegram updates show entries, exits, stops, and P&L events.</p></div>
-        <div class="flow-step"><span>4</span><h3>Track</h3><p>The private dashboard keeps live and closed trade records organized.</p></div>
+        <div class="flow-step"><span>1</span><h3>Signal</h3><p>TradingView generates structured strategy events.</p></div>
+        <div class="flow-step"><span>2</span><h3>Alert</h3><p>Telegram receives readable trade lifecycle updates.</p></div>
+        <div class="flow-step"><span>3</span><h3>Ledger</h3><p>Trade events are written into the tracking ledger.</p></div>
+        <div class="flow-step"><span>4</span><h3>Dashboard</h3><p>Traders review live status and forward-test results.</p></div>
       </div>
     </section>
 
     <section id="access" class="wrap section">
-      <div class="access-panel">
+      <div class="access">
         <div>
           <h2>Request dashboard access.</h2>
           <p>
-            The Live Trade Dashboard is private. To request the password, contact us directly on Telegram or join the Telegram channel for updates.
+            The Live Trade Dashboard is private. Contact us on Telegram to request password access, or join the channel for strategy updates.
           </p>
-          <div class="small-note">Full Google Sheets trade history is available only after dashboard login.</div>
+          <div class="small">Full trade history is available only inside the password-protected dashboard.</div>
         </div>
-        <div class="access-buttons">
-          <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
-          <a class="btn btn-tinted" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
-          <a class="btn" href="/login">Dashboard Login</a>
+        <div class="access-actions">
+          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
+          <a class="btn secondary" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
+          <a class="btn secondary" href="/login">Dashboard Login</a>
         </div>
       </div>
     </section>
@@ -1847,18 +1832,16 @@ function renderLoginHtml(errorMessage = '') {
   <title>Vixale Dashboard Login</title>
   <style>
     :root {
-      --bg: #f5f5f7;
-      --surface: rgba(255,255,255,0.82);
-      --ink: #0b0d12;
-      --muted: #667085;
-      --line: rgba(20, 26, 38, 0.10);
-      --green: #0bbf6a;
-      --red: #e5484d;
+      --bg: #fbfcfb;
+      --paper: #ffffff;
+      --ink: #101413;
+      --muted: #68736f;
+      --line: #e3e9e5;
+      --green: #0bcf74;
+      --red: #d7424f;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -1866,11 +1849,11 @@ function renderLoginHtml(errorMessage = '') {
       display: grid;
       place-items: center;
       background:
-        radial-gradient(circle at 14% 9%, rgba(37, 99, 235, 0.13), transparent 30%),
-        radial-gradient(circle at 86% 15%, rgba(11, 191, 106, 0.16), transparent 28%),
-        linear-gradient(180deg, #fbfbfd 0%, var(--bg) 100%);
+        radial-gradient(circle at 18% 6%, rgba(11,207,116,0.15), transparent 32%),
+        radial-gradient(circle at 84% 10%, rgba(11,207,116,0.10), transparent 28%),
+        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 100%);
       color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, Segoe UI, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
       padding: 24px;
     }
@@ -1878,121 +1861,112 @@ function renderLoginHtml(errorMessage = '') {
     .card {
       width: 100%;
       max-width: 440px;
-      background: var(--surface);
-      border: 1px solid rgba(255,255,255,0.78);
-      border-radius: 30px;
+      background: rgba(255,255,255,0.84);
+      border: 1px solid var(--line);
+      border-radius: 28px;
       padding: 34px;
-      box-shadow: 0 30px 90px rgba(18,26,43,0.12);
-      backdrop-filter: blur(20px);
+      box-shadow: 0 28px 80px rgba(16,20,19,0.08);
+      backdrop-filter: blur(18px);
     }
 
     .logo {
-      display: inline-flex;
-      align-items: center;
-      gap: 0;
-      font-size: 22px;
-      font-weight: 650;
-      letter-spacing: -0.5px;
-      margin-bottom: 26px;
+      font-size: 20px;
+      font-weight: 620;
+      letter-spacing: -0.35px;
+      margin-bottom: 30px;
     }
 
-    .logo span {
-      color: var(--green);
-    }
+    .logo span { color: var(--green); }
 
     h1 {
       margin: 0;
-      font-size: 34px;
-      line-height: 1.05;
-      letter-spacing: -1.4px;
-      font-weight: 650;
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: -1.2px;
+      font-weight: 560;
     }
 
     p {
       color: var(--muted);
-      line-height: 1.6;
-      margin: 12px 0 28px;
-      font-size: 15.5px;
+      line-height: 1.58;
+      margin: 12px 0 26px;
+      font-size: 15px;
     }
 
     label {
       display: block;
-      color: #475467;
-      font-size: 13px;
-      font-weight: 520;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 560;
+      text-transform: uppercase;
+      letter-spacing: .7px;
       margin-bottom: 8px;
     }
 
     input {
       width: 100%;
-      background: rgba(255,255,255,0.74);
+      background: #fff;
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 14px;
       color: var(--ink);
-      padding: 15px 16px;
+      padding: 14px 15px;
       font-size: 16px;
       outline: none;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
     }
 
     input:focus {
-      border-color: rgba(11, 191, 106, 0.45);
-      box-shadow: 0 0 0 4px rgba(11, 191, 106, 0.10);
+      border-color: rgba(11,207,116,.55);
+      box-shadow: 0 0 0 4px rgba(11,207,116,.10);
     }
 
     button {
       width: 100%;
       margin-top: 14px;
       border: 0;
-      border-radius: 999px;
+      border-radius: 14px;
       padding: 14px 18px;
-      background: #0b0d12;
-      color: #ffffff;
+      background: var(--ink);
+      color: #fff;
       font-weight: 540;
       font-size: 15px;
       cursor: pointer;
-      box-shadow: 0 14px 34px rgba(11,13,18,0.16);
     }
 
     .error {
       margin-top: 14px;
       color: var(--red);
-      font-weight: 520;
       font-size: 14px;
+      font-weight: 520;
     }
 
     .links {
       display: flex;
       justify-content: space-between;
       gap: 14px;
-      margin-top: 22px;
       flex-wrap: wrap;
+      margin-top: 20px;
     }
 
     .links a {
       color: var(--muted);
       font-size: 14px;
+      text-decoration: none;
     }
 
-    .links a:hover {
-      color: var(--ink);
-    }
+    .links a:hover { color: var(--ink); }
   </style>
 </head>
 <body>
   <div class="card">
-    <a class="logo" href="/">Vixale<span>.</span></a>
-    <h1>Private dashboard access.</h1>
-    <p>Enter your dashboard password to view live positions, pending orders, P&L, and full trade-history access.</p>
-
+    <div class="logo">Vixale<span>.</span></div>
+    <h1>Dashboard access</h1>
+    <p>Enter the dashboard password to view live tracking and the full trade history link.</p>
     <form method="POST" action="/dashboard-login">
-      <label for="password">Dashboard password</label>
+      <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
       <button type="submit">Open Dashboard</button>
     </form>
-
     ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
-
     <div class="links">
       <a href="/">← Back to Home</a>
       <a href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
