@@ -1083,26 +1083,25 @@ function renderLandingHtml() {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vixale | Trading Systems, Engineered</title>
-  <meta name="description" content="Vixale builds and monitors systematic trading infrastructure with private live dashboard access." />
+  <title>Vixale | Systematic Trading Infrastructure</title>
+  <meta name="description" content="Private live trade dashboard access for systematic trading signals, execution, and transparent forward-test tracking." />
   <style>
     :root {
-      --bg: #f5f5f7;
-      --surface: rgba(255,255,255,0.78);
-      --surface-solid: #ffffff;
-      --ink: #0b0d12;
-      --muted: #667085;
-      --line: rgba(20, 26, 38, 0.10);
-      --soft-line: rgba(20, 26, 38, 0.075);
-      --green: #0bbf6a;
-      --green-dark: #07864b;
-      --blue: #2563eb;
-      --dark: #090d14;
-      --shadow: 0 24px 70px rgba(18, 26, 43, 0.10);
-      --shadow-strong: 0 34px 100px rgba(18, 26, 43, 0.16);
-      --radius-xl: 32px;
-      --radius-lg: 24px;
-      --radius-md: 16px;
+      --paper: #f7f8fb;
+      --paper-soft: #eef2f7;
+      --ink: #111318;
+      --ink-soft: #303642;
+      --muted: #6b7280;
+      --muted-2: #8a94a6;
+      --white: #ffffff;
+      --line: rgba(17, 24, 39, 0.10);
+      --line-strong: rgba(17, 24, 39, 0.16);
+      --green: #13c77b;
+      --green-dark: #07945a;
+      --blue: #3b82f6;
+      --shadow: 0 24px 70px rgba(15, 23, 42, 0.09);
+      --shadow-soft: 0 14px 36px rgba(15, 23, 42, 0.07);
+      --radius: 28px;
     }
 
     * {
@@ -1115,14 +1114,14 @@ function renderLandingHtml() {
 
     body {
       margin: 0;
-      background:
-        radial-gradient(circle at 16% 8%, rgba(37, 99, 235, 0.14), transparent 28%),
-        radial-gradient(circle at 86% 12%, rgba(11, 191, 106, 0.16), transparent 27%),
-        linear-gradient(180deg, #fbfbfd 0%, var(--bg) 48%, #ffffff 100%);
       color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, Segoe UI, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 16% 0%, rgba(59, 130, 246, 0.16), transparent 28%),
+        radial-gradient(circle at 86% 7%, rgba(19, 199, 123, 0.16), transparent 30%),
+        linear-gradient(180deg, #fbfcff 0%, var(--paper) 45%, #ffffff 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Segoe UI", Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
-      text-rendering: geometricPrecision;
+      text-rendering: optimizeLegibility;
     }
 
     a {
@@ -1133,66 +1132,68 @@ function renderLandingHtml() {
     .nav {
       position: sticky;
       top: 0;
-      z-index: 50;
-      backdrop-filter: blur(22px);
-      background: rgba(251, 251, 253, 0.72);
-      border-bottom: 1px solid var(--soft-line);
+      z-index: 20;
+      background: rgba(251, 252, 255, 0.78);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(17, 24, 39, 0.06);
     }
 
     .nav-inner {
-      max-width: 1180px;
+      max-width: 1160px;
       margin: 0 auto;
-      padding: 15px 24px;
+      padding: 16px 22px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 24px;
+      justify-content: space-between;
+      gap: 18px;
     }
 
     .logo {
-      font-size: 21px;
-      font-weight: 650;
-      letter-spacing: -0.55px;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 560;
     }
 
-    .logo span {
+    .logo-dot {
       color: var(--green);
     }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 24px;
-      color: #596275;
+      gap: 22px;
+      color: #5b6473;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 440;
     }
 
     .nav-links a:hover {
       color: var(--ink);
     }
 
-    .nav-cta {
-      color: white !important;
-      background: #0b0d12;
+    .nav-pill {
       padding: 9px 14px;
       border-radius: 999px;
-      box-shadow: 0 10px 25px rgba(11,13,18,0.14);
+      color: var(--ink) !important;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
     }
 
     .wrap {
-      max-width: 1180px;
+      max-width: 1160px;
       margin: 0 auto;
-      padding: 0 24px;
+      padding: 0 22px;
     }
 
     .hero {
-      padding: 92px 0 68px;
+      min-height: 720px;
+      padding: 86px 0 72px;
       display: grid;
-      grid-template-columns: 1.02fr 0.98fr;
-      gap: 58px;
+      grid-template-columns: minmax(0, 1fr) minmax(380px, 0.82fr);
+      gap: 54px;
       align-items: center;
-      min-height: 760px;
     }
 
     .eyebrow {
@@ -1200,241 +1201,227 @@ function renderLandingHtml() {
       align-items: center;
       gap: 10px;
       padding: 8px 12px;
-      border: 1px solid var(--line);
+      margin-bottom: 26px;
       border-radius: 999px;
-      color: #344054;
-      background: rgba(255,255,255,0.66);
-      box-shadow: 0 10px 30px rgba(18,26,43,0.05);
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      color: #3f4754;
       font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 24px;
+      line-height: 1;
+      font-weight: 460;
+      box-shadow: 0 12px 34px rgba(15, 23, 42, 0.045);
     }
 
     .pulse {
-      width: 8px;
-      height: 8px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
       background: var(--green);
-      box-shadow: 0 0 0 5px rgba(11,191,106,0.12), 0 0 22px rgba(11,191,106,0.55);
+      box-shadow: 0 0 0 6px rgba(19, 199, 123, 0.13);
     }
 
-    h1 {
+    .hero h1 {
       margin: 0;
-      max-width: 780px;
-      font-size: clamp(56px, 7.2vw, 92px);
-      line-height: 0.94;
-      letter-spacing: -4.6px;
-      font-weight: 680;
+      max-width: 760px;
+      color: #0f1117;
+      font-size: clamp(46px, 6.1vw, 74px);
+      line-height: 1.03;
+      letter-spacing: -0.065em;
+      font-weight: 510;
+    }
+
+    .hero h1 .soft {
+      color: #50596a;
+      font-weight: 430;
     }
 
     .hero-text {
-      margin: 26px 0 0;
-      max-width: 640px;
-      color: #475467;
-      font-size: 21px;
-      line-height: 1.55;
-      letter-spacing: -0.2px;
-      font-weight: 400;
+      max-width: 650px;
+      margin: 24px 0 0;
+      color: #586173;
+      font-size: 19px;
+      line-height: 1.62;
+      letter-spacing: -0.015em;
+      font-weight: 380;
     }
 
     .access-note {
       max-width: 650px;
-      margin: 18px 0 0;
-      color: #667085;
-      font-size: 16px;
-      line-height: 1.65;
+      margin: 16px 0 0;
+      color: #747d8d;
+      font-size: 15.5px;
+      line-height: 1.62;
+      font-weight: 380;
     }
 
     .access-note strong {
-      color: var(--ink);
-      font-weight: 600;
+      color: var(--ink-soft);
+      font-weight: 500;
     }
 
     .actions {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 12px;
-      margin-top: 32px;
-      align-items: center;
+      margin-top: 30px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      max-width: 640px;
     }
 
     .btn {
+      min-height: 46px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 46px;
-      padding: 0 18px;
+      padding: 0 16px;
       border-radius: 999px;
-      font-size: 15px;
-      font-weight: 520;
       border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
       color: var(--ink);
-      background: rgba(255,255,255,0.72);
-      box-shadow: 0 10px 26px rgba(18,26,43,0.055);
-      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      font-size: 14.5px;
+      font-weight: 460;
+      letter-spacing: -0.01em;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.045);
       white-space: nowrap;
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease;
     }
 
     .btn:hover {
       transform: translateY(-1px);
-      box-shadow: 0 14px 34px rgba(18,26,43,0.08);
-      background: white;
+      background: #fff;
+      border-color: var(--line-strong);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.075);
     }
 
     .btn-primary {
-      background: #0b0d12;
-      color: white;
-      border-color: #0b0d12;
+      background: #111318;
+      border-color: #111318;
+      color: #fff;
     }
 
     .btn-primary:hover {
-      background: #181b22;
+      background: #1b1e25;
+      border-color: #1b1e25;
     }
 
-    .btn-green {
-      color: #053b23;
-      border-color: rgba(11,191,106,0.22);
-      background: rgba(11,191,106,0.105);
+    .btn-tinted {
+      color: #06472d;
+      background: rgba(19, 199, 123, 0.095);
+      border-color: rgba(19, 199, 123, 0.22);
     }
 
     .hero-visual {
       position: relative;
-      min-height: 520px;
     }
 
-    .halo {
+    .glow {
       position: absolute;
-      inset: -60px -60px auto auto;
-      width: 390px;
-      height: 390px;
+      inset: -70px -80px auto auto;
+      width: 340px;
+      height: 340px;
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(11,191,106,0.20), transparent 64%);
-      filter: blur(8px);
-      z-index: 0;
+      background: radial-gradient(circle, rgba(19, 199, 123, 0.18), transparent 65%);
+      filter: blur(6px);
+      pointer-events: none;
     }
 
-    .product-frame {
+    .product-card {
       position: relative;
-      z-index: 2;
-      background: rgba(255,255,255,0.74);
-      border: 1px solid rgba(255,255,255,0.70);
-      border-radius: 34px;
-      padding: 14px;
+      border-radius: 30px;
+      border: 1px solid rgba(255,255,255,0.75);
+      background: rgba(255,255,255,0.66);
       box-shadow: var(--shadow-strong);
-      backdrop-filter: blur(18px);
-      transform: rotate(-1deg);
-    }
-
-    .product-inner {
       overflow: hidden;
-      border-radius: 24px;
-      border: 1px solid rgba(15,23,42,0.08);
-      background: #090d14;
-      color: white;
+      backdrop-filter: blur(18px);
     }
 
     .product-top {
+      height: 48px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 16px 18px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      background: rgba(255,255,255,0.035);
+      justify-content: space-between;
+      padding: 0 18px;
+      border-bottom: 1px solid rgba(17,24,39,0.08);
+      background: rgba(255,255,255,0.56);
     }
 
-    .dotset {
+    .window-dots {
       display: flex;
       gap: 7px;
     }
 
-    .dotset span {
+    .window-dots span {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: rgba(255,255,255,0.26);
+      background: rgba(17,24,39,0.18);
     }
 
-    .live-badge {
-      color: #72f2ae;
+    .product-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--green-dark);
       font-size: 12px;
-      font-weight: 600;
-      border: 1px solid rgba(114,242,174,0.24);
-      border-radius: 999px;
-      padding: 6px 10px;
-      background: rgba(114,242,174,0.10);
+      font-weight: 540;
     }
 
-    .mock-body {
+    .product-body {
       padding: 18px;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(59,130,246,0.10), transparent 30%),
+        linear-gradient(180deg, rgba(255,255,255,0.76), rgba(255,255,255,0.46));
     }
 
-    .mock-title {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: end;
-      margin-bottom: 16px;
-    }
-
-    .mock-title h2 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 620;
-      letter-spacing: -0.5px;
-    }
-
-    .mock-title small {
-      color: rgba(255,255,255,0.46);
-      font-size: 12px;
-    }
-
-    .metric-grid {
+    .metric-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 10px;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .metric {
-      border: 1px solid rgba(255,255,255,0.08);
-      background: rgba(255,255,255,0.05);
-      border-radius: 16px;
       padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(17,24,39,0.07);
     }
 
     .metric-label {
-      color: rgba(255,255,255,0.50);
+      color: var(--muted-2);
       font-size: 11px;
-      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.055em;
+      font-weight: 520;
     }
 
     .metric-value {
-      margin-top: 9px;
-      font-size: 22px;
-      font-weight: 610;
-      letter-spacing: -0.4px;
+      margin-top: 8px;
+      color: var(--ink);
+      font-size: 24px;
+      letter-spacing: -0.04em;
+      font-weight: 520;
     }
 
-    .green {
-      color: #45e893;
+    .positive {
+      color: var(--green-dark) !important;
     }
 
-    .red {
-      color: #ff6b78;
+    .negative {
+      color: #d04455 !important;
     }
 
     .chart {
-      position: relative;
       height: 150px;
-      border-radius: 18px;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 22px;
+      border: 1px solid rgba(17,24,39,0.07);
       background:
-        linear-gradient(180deg, rgba(69,232,147,0.12), transparent),
-        linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px),
-        linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px);
-      background-size: auto, 42px 42px, 42px 42px;
-      margin-bottom: 14px;
+        linear-gradient(180deg, rgba(19,199,123,0.11), transparent 72%),
+        repeating-linear-gradient(90deg, rgba(17,24,39,0.035) 0 1px, transparent 1px 48px),
+        repeating-linear-gradient(0deg, rgba(17,24,39,0.035) 0 1px, transparent 1px 42px),
+        rgba(255,255,255,0.64);
+      overflow: hidden;
+      position: relative;
+      margin-bottom: 12px;
     }
 
     .chart svg {
@@ -1444,291 +1431,257 @@ function renderLandingHtml() {
       height: 100%;
     }
 
-    .trade-row {
+    .mini-table {
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid rgba(17,24,39,0.07);
+      background: rgba(255,255,255,0.62);
+    }
+
+    .mini-table-row {
       display: grid;
-      grid-template-columns: 1fr 0.9fr 0.9fr 0.9fr;
+      grid-template-columns: 1fr 0.8fr 0.8fr 0.9fr;
       gap: 10px;
-      padding: 12px 2px;
-      border-top: 1px solid rgba(255,255,255,0.07);
-      color: rgba(255,255,255,0.64);
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(17,24,39,0.06);
+      color: #596275;
       font-size: 13px;
+      font-weight: 400;
     }
 
-    .trade-row strong {
-      color: white;
-      font-weight: 600;
+    .mini-table-row:last-child {
+      border-bottom: 0;
     }
 
-    .float-card {
-      position: absolute;
-      z-index: 3;
-      right: -22px;
-      bottom: 42px;
-      width: 210px;
-      padding: 16px;
-      border-radius: 22px;
-      background: rgba(255,255,255,0.82);
-      border: 1px solid rgba(255,255,255,0.72);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
-    }
-
-    .float-card .label {
-      color: #667085;
-      font-size: 12px;
-    }
-
-    .float-card .value {
-      margin-top: 8px;
-      font-size: 25px;
-      font-weight: 650;
-      letter-spacing: -0.65px;
+    .mini-table-row strong {
+      color: var(--ink);
+      font-weight: 530;
     }
 
     .section {
-      padding: 76px 0;
+      padding: 72px 0;
     }
 
     .section-head {
-      max-width: 820px;
-      margin-bottom: 28px;
+      max-width: 760px;
+      margin-bottom: 26px;
     }
 
     .section h2 {
-      margin: 0 0 14px;
-      font-size: clamp(34px, 4.6vw, 58px);
-      line-height: 1.04;
-      letter-spacing: -2.4px;
-      font-weight: 650;
-    }
-
-    .lead {
       margin: 0;
-      color: #667085;
-      font-size: 19px;
-      line-height: 1.62;
-      max-width: 780px;
+      color: var(--ink);
+      font-size: clamp(34px, 4.6vw, 56px);
+      line-height: 1.08;
+      letter-spacing: -0.055em;
+      font-weight: 500;
     }
 
-    .feature-grid {
+    .section p.lead {
+      margin: 14px 0 0;
+      color: #667085;
+      font-size: 18px;
+      line-height: 1.62;
+      font-weight: 380;
+    }
+
+    .cards {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
+      gap: 14px;
     }
 
-    .feature-card {
-      background: rgba(255,255,255,0.70);
-      border: 1px solid rgba(15,23,42,0.08);
-      border-radius: 28px;
-      padding: 28px;
-      box-shadow: 0 16px 48px rgba(18,26,43,0.055);
-      min-height: 250px;
+    .info-card {
+      min-height: 225px;
+      padding: 24px;
+      border-radius: 26px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
     }
 
-    .feature-card .index {
+    .info-card .kicker {
       color: var(--green-dark);
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.6px;
-      margin-bottom: 48px;
+      font-size: 12px;
+      font-weight: 540;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 58px;
     }
 
-    .feature-card h3 {
+    .info-card h3 {
       margin: 0 0 10px;
-      font-size: 23px;
-      letter-spacing: -0.55px;
-      font-weight: 620;
+      font-size: 22px;
+      letter-spacing: -0.04em;
+      font-weight: 520;
     }
 
-    .feature-card p {
+    .info-card p {
       margin: 0;
       color: #667085;
-      line-height: 1.62;
-      font-size: 15.5px;
+      font-size: 15px;
+      line-height: 1.58;
+      font-weight: 380;
     }
 
-    .workflow {
+    .flow {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 12px;
     }
 
-    .step {
-      background: #ffffff;
-      border: 1px solid rgba(15,23,42,0.08);
-      border-radius: 26px;
-      padding: 24px;
-      box-shadow: 0 12px 36px rgba(18,26,43,0.045);
-      min-height: 180px;
+    .flow-step {
+      min-height: 155px;
+      padding: 22px;
+      border-radius: 24px;
+      background: rgba(255,255,255,0.68);
+      border: 1px solid var(--line);
+      box-shadow: 0 14px 34px rgba(15,23,42,0.045);
     }
 
-    .step-number {
+    .flow-step span {
+      display: inline-flex;
       width: 34px;
       height: 34px;
-      border-radius: 999px;
-      display: grid;
-      place-items: center;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: #111318;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
       margin-bottom: 18px;
-      color: var(--green-dark);
-      background: rgba(11,191,106,0.10);
-      font-weight: 600;
     }
 
-    .step h3 {
+    .flow-step h3 {
       margin: 0 0 8px;
       font-size: 18px;
-      font-weight: 620;
-      letter-spacing: -0.25px;
+      letter-spacing: -0.035em;
+      font-weight: 520;
     }
 
-    .step p {
+    .flow-step p {
       margin: 0;
       color: #667085;
-      line-height: 1.55;
       font-size: 14.5px;
+      line-height: 1.55;
+      font-weight: 380;
     }
 
     .access-panel {
       display: grid;
       grid-template-columns: 1.08fr 0.92fr;
-      gap: 22px;
+      gap: 24px;
       align-items: center;
+      border-radius: 34px;
+      padding: 34px;
+      border: 1px solid rgba(17,24,39,0.08);
       background:
-        radial-gradient(circle at 12% 16%, rgba(11,191,106,0.18), transparent 32%),
-        linear-gradient(135deg, #0b0d12 0%, #121826 100%);
-      color: white;
-      border-radius: 36px;
-      padding: 42px;
-      box-shadow: 0 34px 100px rgba(18,26,43,0.18);
-      overflow: hidden;
-      position: relative;
-    }
-
-    .access-panel:after {
-      content: "";
-      position: absolute;
-      width: 320px;
-      height: 320px;
-      border-radius: 50%;
-      right: -120px;
-      top: -110px;
-      background: radial-gradient(circle, rgba(37,99,235,0.28), transparent 65%);
-    }
-
-    .access-panel > * {
-      position: relative;
-      z-index: 2;
+        radial-gradient(circle at 10% 0%, rgba(59,130,246,0.13), transparent 34%),
+        radial-gradient(circle at 88% 16%, rgba(19,199,123,0.13), transparent 32%),
+        rgba(255,255,255,0.76);
+      box-shadow: var(--shadow);
     }
 
     .access-panel h2 {
-      margin: 0 0 14px;
-      font-size: clamp(34px, 4.6vw, 58px);
-      letter-spacing: -2.2px;
-      line-height: 1.04;
-      font-weight: 650;
+      margin: 0;
+      font-size: clamp(34px, 4.4vw, 56px);
+      line-height: 1.05;
+      letter-spacing: -0.06em;
+      font-weight: 500;
     }
 
     .access-panel p {
-      margin: 0;
-      color: rgba(255,255,255,0.70);
-      line-height: 1.65;
+      margin: 15px 0 0;
+      color: #5f6979;
       font-size: 17px;
-      max-width: 680px;
+      line-height: 1.62;
+      font-weight: 380;
+    }
+
+    .small-note {
+      margin-top: 14px;
+      color: #8a94a6;
+      font-size: 13.5px;
+      line-height: 1.5;
     }
 
     .access-buttons {
       display: grid;
-      gap: 12px;
-    }
-
-    .access-buttons .btn {
-      background: rgba(255,255,255,0.10);
-      color: white;
-      border-color: rgba(255,255,255,0.14);
-      box-shadow: none;
-      width: 100%;
-    }
-
-    .access-buttons .btn-primary {
-      background: white;
-      color: #0b0d12;
-      border-color: white;
-    }
-
-    .tiny {
-      margin-top: 14px;
-      color: rgba(255,255,255,0.54);
-      font-size: 13px;
-      line-height: 1.55;
+      gap: 10px;
     }
 
     .footer {
-      padding: 34px 0 42px;
-      color: #667085;
-      border-top: 1px solid var(--soft-line);
+      padding: 34px 0;
+      border-top: 1px solid var(--line);
+      color: #747d8d;
       font-size: 13px;
-      line-height: 1.7;
+      line-height: 1.65;
+      font-weight: 380;
     }
 
-    @media (max-width: 980px) {
-      .hero,
+    @media (max-width: 1080px) {
+      .hero {
+        grid-template-columns: 1fr;
+        min-height: auto;
+        padding-top: 72px;
+      }
+
+      .hero-copy {
+        text-align: center;
+      }
+
+      .hero h1,
+      .hero-text,
+      .access-note,
+      .actions {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .hero-visual {
+        max-width: 690px;
+        margin: 0 auto;
+      }
+
+      .cards,
+      .flow,
       .access-panel {
         grid-template-columns: 1fr;
       }
-
-      .hero {
-        min-height: auto;
-        padding-top: 58px;
-      }
-
-      .feature-grid,
-      .workflow {
-        grid-template-columns: 1fr;
-      }
-
-      .float-card {
-        display: none;
-      }
-
-      .actions {
-        flex-wrap: wrap;
-      }
     }
 
-    @media (max-width: 640px) {
-      .wrap,
-      .nav-inner {
+    @media (max-width: 760px) {
+      .nav-inner,
+      .wrap {
         padding-left: 16px;
         padding-right: 16px;
       }
 
-      h1 {
-        letter-spacing: -2.8px;
-      }
-
-      .nav-links a:not(.nav-cta) {
+      .nav-links a:not(.nav-pill) {
         display: none;
       }
 
+      .hero {
+        padding-top: 54px;
+      }
+
+      .hero h1 {
+        font-size: clamp(42px, 12vw, 58px);
+        letter-spacing: -0.06em;
+      }
+
+      .hero-text {
+        font-size: 17px;
+      }
+
       .actions {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .btn {
-        width: 100%;
-      }
-
-      .metric-grid {
         grid-template-columns: 1fr;
+        max-width: 420px;
       }
 
-      .trade-row {
+      .metric-row,
+      .mini-table-row {
         grid-template-columns: 1fr 1fr;
-      }
-
-      .product-frame {
-        transform: none;
       }
     }
   </style>
@@ -1736,140 +1689,139 @@ function renderLandingHtml() {
 <body>
   <nav class="nav">
     <div class="nav-inner">
-      <a class="logo" href="/">Vixale<span>.</span></a>
+      <a class="logo" href="/">Vixale<span class="logo-dot">.</span></a>
       <div class="nav-links">
         <a href="#systems">Systems</a>
         <a href="#workflow">Workflow</a>
         <a href="#access">Access</a>
-        <a class="nav-cta" href="/login">Live Dashboard</a>
+        <a class="nav-pill" href="/login">Live Dashboard</a>
       </div>
     </div>
   </nav>
 
   <main>
     <section class="wrap hero">
-      <div>
+      <div class="hero-copy">
         <div class="eyebrow"><span class="pulse"></span> Private live trade dashboard</div>
-        <h1>Systematic trade execution, monitored live.</h1>
+        <h1>Systematic trading infrastructure<span class="soft">, monitored live.</span></h1>
         <p class="hero-text">
-          Vixale is a trading-systems infrastructure project: signals, execution workflow, Telegram alerts, and a private live dashboard for forward-test visibility.
+          Vixale turns strategy signals into a clean workflow: alerts, execution tracking, Telegram updates, and a private live dashboard.
         </p>
         <p class="access-note">
-          To receive access to the <strong>Live Trade Dashboard</strong>, request the password on Telegram or join the channel for updates.
+          To request access to the <strong>Live Trade Dashboard</strong>, message us on Telegram or join the channel for updates.
         </p>
+
         <div class="actions">
-          <a class="btn btn-primary" href="/login">View Live Dashboard</a>
-          <a class="btn btn-green" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
-          <a class="btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
+          <a class="btn btn-primary" href="/login">View Dashboard</a>
+          <a class="btn btn-tinted" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
+          <a class="btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Channel</a>
         </div>
       </div>
 
       <div class="hero-visual">
-        <div class="halo"></div>
-        <div class="product-frame">
-          <div class="product-inner">
-            <div class="product-top">
-              <div class="dotset"><span></span><span></span><span></span></div>
-              <div class="live-badge">● LIVE TRACKING</div>
+        <div class="glow"></div>
+        <div class="product-card">
+          <div class="product-top">
+            <div class="window-dots"><span></span><span></span><span></span></div>
+            <div class="product-status"><span class="pulse"></span> Live tracking</div>
+          </div>
+          <div class="product-body">
+            <div class="metric-row">
+              <div class="metric">
+                <div class="metric-label">Open P&L</div>
+                <div class="metric-value positive">+$1,248</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Win rate</div>
+                <div class="metric-value">67.4%</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Pending</div>
+                <div class="metric-value">4</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Closed today</div>
+                <div class="metric-value positive">+$532</div>
+              </div>
             </div>
-            <div class="mock-body">
-              <div class="mock-title">
-                <h2>Strategy Dashboard</h2>
-                <small>auto-refresh · protected</small>
-              </div>
 
-              <div class="metric-grid">
-                <div class="metric">
-                  <div class="metric-label">Open P&L</div>
-                  <div class="metric-value green">+$1,248</div>
-                </div>
-                <div class="metric">
-                  <div class="metric-label">Win Rate</div>
-                  <div class="metric-value">67.4%</div>
-                </div>
-                <div class="metric">
-                  <div class="metric-label">Pending</div>
-                  <div class="metric-value">4</div>
-                </div>
-              </div>
+            <div class="chart">
+              <svg viewBox="0 0 620 180" preserveAspectRatio="none">
+                <path d="M0,132 C54,114 78,141 130,109 C181,77 216,90 268,62 C323,30 358,87 421,52 C488,14 528,47 620,24" fill="none" stroke="rgba(7,148,90,0.92)" stroke-width="4" stroke-linecap="round"/>
+                <path d="M0,132 C54,114 78,141 130,109 C181,77 216,90 268,62 C323,30 358,87 421,52 C488,14 528,47 620,24 L620,180 L0,180 Z" fill="rgba(19,199,123,0.10)"/>
+              </svg>
+            </div>
 
-              <div class="chart">
-                <svg viewBox="0 0 620 170" preserveAspectRatio="none">
-                  <path d="M0,125 C56,96 98,128 142,94 C190,58 236,76 286,52 C340,26 382,76 430,44 C486,6 540,38 620,18" fill="none" stroke="rgba(69,232,147,0.95)" stroke-width="5" stroke-linecap="round"/>
-                  <path d="M0,125 C56,96 98,128 142,94 C190,58 236,76 286,52 C340,26 382,76 430,44 C486,6 540,38 620,18 L620,170 L0,170 Z" fill="rgba(69,232,147,0.10)"/>
-                </svg>
+            <div class="mini-table">
+              <div class="mini-table-row">
+                <div><strong>NVDA</strong></div><div class="positive">LONG</div><div>OPEN</div><div class="positive">+$248</div>
               </div>
-
-              <div class="trade-row"><div><strong>NVDA</strong></div><div class="green">LONG</div><div>OPEN</div><div class="green">+$248</div></div>
-              <div class="trade-row"><div><strong>NFLX</strong></div><div class="red">SHORT</div><div>CLOSED</div><div class="green">+$277</div></div>
-              <div class="trade-row"><div><strong>META</strong></div><div class="green">LONG</div><div>PENDING</div><div>—</div></div>
+              <div class="mini-table-row">
+                <div><strong>NFLX</strong></div><div class="negative">SHORT</div><div>CLOSED</div><div class="positive">+$277</div>
+              </div>
+              <div class="mini-table-row">
+                <div><strong>META</strong></div><div class="positive">LONG</div><div>PENDING</div><div>—</div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="float-card">
-          <div class="label">Full history</div>
-          <div class="value">inside dashboard</div>
         </div>
       </div>
     </section>
 
     <section id="systems" class="wrap section">
       <div class="section-head">
-        <h2>Built as infrastructure, not hype.</h2>
+        <h2>Not a signal room. A trading system layer.</h2>
         <p class="lead">
-          The product is designed around process: rules, execution, logging, and transparency. No vague alerts. No screenshots without context.
+          The product is built around process: defined rules, structured alerts, order lifecycle tracking, and transparent reporting.
         </p>
       </div>
-
-      <div class="feature-grid">
-        <div class="feature-card">
-          <div class="index">01 / Strategy logic</div>
-          <h3>Clear trade lifecycle</h3>
-          <p>Each setup is tracked from signal to entry, target, stop, cancellation, or end-of-day close.</p>
+      <div class="cards">
+        <div class="info-card">
+          <div class="kicker">01 / Logic</div>
+          <h3>Rules-based signals</h3>
+          <p>Strategy events are structured around setup, entry, target, stop, cancellation, and close logic.</p>
         </div>
-        <div class="feature-card">
-          <div class="index">02 / Execution workflow</div>
-          <h3>Designed for automation</h3>
-          <p>Signals can flow from TradingView into Telegram, broker bridge logic, and a structured trade ledger.</p>
+        <div class="info-card">
+          <div class="kicker">02 / Execution</div>
+          <h3>Operational workflow</h3>
+          <p>Signals can flow into Telegram, broker automation, and a live ledger without manual spreadsheet work.</p>
         </div>
-        <div class="feature-card">
-          <div class="index">03 / Private visibility</div>
-          <h3>Dashboard access</h3>
-          <p>Approved users can view the live tracker and full trade-history link behind a password wall.</p>
+        <div class="info-card">
+          <div class="kicker">03 / Visibility</div>
+          <h3>Private dashboard</h3>
+          <p>Approved traders can view live positions, pending orders, closed trades, and full history behind the login.</p>
         </div>
       </div>
     </section>
 
     <section id="workflow" class="wrap section">
       <div class="section-head">
-        <h2>One workflow from signal to record.</h2>
+        <h2>From signal to evidence.</h2>
         <p class="lead">
-          A clean pipeline for forward-test visibility: strategy signal, execution event, Telegram notification, dashboard, and complete history.
+          Every part of the workflow is designed to make the strategy easier to monitor, audit, and understand.
         </p>
       </div>
-
-      <div class="workflow">
-        <div class="step"><div class="step-number">1</div><h3>Signal</h3><p>TradingView strategy events produce structured alerts.</p></div>
-        <div class="step"><div class="step-number">2</div><h3>Execution</h3><p>Orders and cancels can be handled by the local broker bridge.</p></div>
-        <div class="step"><div class="step-number">3</div><h3>Alerts</h3><p>Telegram receives readable trade lifecycle updates.</p></div>
-        <div class="step"><div class="step-number">4</div><h3>Dashboard</h3><p>Positions, pending orders, P&L, and closed trades are tracked live.</p></div>
+      <div class="flow">
+        <div class="flow-step"><span>1</span><h3>Signal</h3><p>TradingView strategy event triggers with structured trade data.</p></div>
+        <div class="flow-step"><span>2</span><h3>Route</h3><p>The alert can route into broker bridge logic and reporting layers.</p></div>
+        <div class="flow-step"><span>3</span><h3>Notify</h3><p>Telegram updates show entries, exits, stops, and P&L events.</p></div>
+        <div class="flow-step"><span>4</span><h3>Track</h3><p>The private dashboard keeps live and closed trade records organized.</p></div>
       </div>
     </section>
 
     <section id="access" class="wrap section">
       <div class="access-panel">
         <div>
-          <h2>Request access to the Live Trade Dashboard.</h2>
+          <h2>Request dashboard access.</h2>
           <p>
-            Dashboard access is private. Contact us on Telegram to request the password, or join the channel for updates and strategy announcements.
+            The Live Trade Dashboard is private. To request the password, contact us directly on Telegram or join the Telegram channel for updates.
           </p>
-          <div class="tiny">Full Google Sheets trade history is available only inside the password-protected dashboard.</div>
+          <div class="small-note">Full Google Sheets trade history is available only after dashboard login.</div>
         </div>
         <div class="access-buttons">
-          <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
-          <a class="btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
-          <a class="btn" href="/login">Open Dashboard Login</a>
+          <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
+          <a class="btn btn-tinted" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
+          <a class="btn" href="/login">Dashboard Login</a>
         </div>
       </div>
     </section>
