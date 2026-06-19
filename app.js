@@ -1084,411 +1084,350 @@ function renderLandingHtml() {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vixale | Trading Systems, Engineered</title>
-  <meta name="description" content="Vixale builds, tests, and monitors algorithmic trading systems with private live dashboard access." />
+  <meta name="description" content="Vixale builds and monitors algorithmic trading systems with private live dashboard access." />
   <style>
     :root {
-      --bg: #fbfcfb;
-      --paper: #ffffff;
-      --paper-soft: #f4f7f4;
-      --ink: #101413;
-      --muted: #68736f;
-      --muted-2: #8b9691;
-      --line: #e3e9e5;
-      --line-2: #d7e1db;
-      --green: #0bcf74;
-      --green-dark: #078f51;
-      --green-soft: #e9fff4;
-      --shadow: 0 24px 70px rgba(16, 20, 19, 0.08);
-      --shadow-soft: 0 14px 40px rgba(16, 20, 19, 0.06);
+      --bg: #05070c;
+      --text: #f5f7fb;
+      --muted: #9da9bc;
+      --muted2: #c3ccda;
+      --green: #00e676;
+      --blue: #5aa9ff;
+      --red: #ff4d5e;
+      --line: rgba(255,255,255,0.12);
+      --line2: rgba(255,255,255,0.22);
+      --panel: rgba(255,255,255,0.055);
+      --panel2: rgba(255,255,255,0.085);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html {
-      scroll-behavior: smooth;
-    }
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
-      color: var(--ink);
       background:
-        radial-gradient(circle at 20% 0%, rgba(11, 207, 116, 0.14), transparent 30%),
-        radial-gradient(circle at 86% 8%, rgba(11, 207, 116, 0.10), transparent 28%),
-        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 58%, #ffffff 100%);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
+        radial-gradient(circle at 12% 4%, rgba(90,169,255,0.24), transparent 30%),
+        radial-gradient(circle at 85% 12%, rgba(0,230,118,0.16), transparent 28%),
+        radial-gradient(circle at 50% 95%, rgba(255,255,255,0.055), transparent 26%),
+        linear-gradient(180deg, #05070c 0%, #070b12 52%, #03050a 100%);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      overflow-x: hidden;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
+    a { color: inherit; text-decoration: none; }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.035;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.9) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.9) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: radial-gradient(circle at center, black, transparent 80%);
     }
 
     .nav {
       position: sticky;
       top: 0;
-      z-index: 30;
-      background: rgba(251, 252, 251, 0.78);
+      z-index: 20;
       backdrop-filter: blur(22px);
-      border-bottom: 1px solid rgba(227, 233, 229, 0.74);
+      background: rgba(5, 7, 12, 0.72);
+      border-bottom: 1px solid var(--line);
     }
 
     .nav-inner {
-      max-width: 1160px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 18px 24px;
+      padding: 16px 22px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 22px;
+      gap: 18px;
     }
 
     .logo {
-      font-size: 20px;
-      font-weight: 620;
-      letter-spacing: -0.35px;
+      font-size: 22px;
+      font-weight: 950;
+      letter-spacing: -0.6px;
     }
 
-    .logo span {
-      color: var(--green);
-    }
+    .logo span { color: var(--green); }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 22px;
+      gap: 20px;
       color: var(--muted);
       font-size: 14px;
-      font-weight: 480;
+      font-weight: 750;
     }
 
-    .nav-links a:hover {
-      color: var(--ink);
-    }
+    .nav-links a:hover { color: var(--text); }
 
     .nav-cta {
-      padding: 10px 15px;
-      border: 1px solid var(--line-2);
+      color: #06100a !important;
+      background: var(--green);
       border-radius: 999px;
-      color: var(--ink) !important;
-      background: rgba(255,255,255,0.72);
-      box-shadow: 0 8px 24px rgba(16, 20, 19, 0.04);
+      padding: 10px 14px;
+      box-shadow: 0 0 30px rgba(0,230,118,0.18);
     }
 
     .wrap {
-      max-width: 1160px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 0 24px;
+      padding: 0 22px;
+      position: relative;
+      z-index: 2;
     }
 
     .hero {
       min-height: 760px;
       display: grid;
-      grid-template-columns: 1.02fr 0.98fr;
-      gap: 56px;
+      grid-template-columns: 1fr 0.92fr;
+      gap: 52px;
       align-items: center;
-      padding: 86px 0 72px;
+      padding: 80px 0 72px;
     }
 
-    .badge {
+    .eyebrow {
       display: inline-flex;
       align-items: center;
-      gap: 9px;
+      gap: 10px;
       padding: 9px 13px;
-      border: 1px solid var(--line);
+      border: 1px solid rgba(255,255,255,0.14);
       border-radius: 999px;
-      background: rgba(255,255,255,0.76);
-      color: #26302c;
+      color: var(--muted2);
+      background: rgba(255,255,255,0.055);
       font-size: 13px;
-      font-weight: 520;
-      box-shadow: 0 10px 32px rgba(16, 20, 19, 0.05);
-      margin-bottom: 26px;
+      font-weight: 850;
+      margin-bottom: 22px;
     }
 
-    .dot {
-      width: 9px;
-      height: 9px;
+    .pulse {
+      width: 8px;
+      height: 8px;
       border-radius: 999px;
       background: var(--green);
-      box-shadow: 0 0 0 7px rgba(11, 207, 116, 0.13);
+      box-shadow: 0 0 22px var(--green);
     }
 
     h1 {
       margin: 0;
-      max-width: 720px;
-      font-size: clamp(48px, 6.8vw, 84px);
-      line-height: 1.02;
-      letter-spacing: -3.8px;
-      font-weight: 580;
+      font-size: clamp(52px, 8vw, 94px);
+      line-height: 0.91;
+      letter-spacing: -4.2px;
+      max-width: 780px;
     }
 
-    .accent {
-      color: var(--green-dark);
+    .grad {
+      background: linear-gradient(135deg, #ffffff 0%, #d8e6ff 45%, var(--green) 100%);
+      -webkit-background-clip: text;
+      color: transparent;
     }
 
     .hero-text {
-      max-width: 650px;
       margin: 26px 0 0;
-      color: var(--muted);
+      max-width: 635px;
+      color: var(--muted2);
       font-size: 19px;
-      line-height: 1.66;
-      font-weight: 400;
+      line-height: 1.62;
     }
 
-    .hero-note {
-      max-width: 650px;
-      margin-top: 16px;
-      color: #4a5551;
+    .access-note {
+      margin-top: 18px;
+      color: var(--muted);
       font-size: 15px;
-      line-height: 1.58;
-      font-weight: 400;
+      line-height: 1.55;
+      max-width: 630px;
     }
 
-    .hero-note strong {
-      color: var(--ink);
-      font-weight: 560;
-    }
+    .access-note strong { color: var(--text); }
 
     .actions {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      max-width: 680px;
-      margin-top: 34px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 13px;
+      margin-top: 30px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 48px;
-      padding: 13px 16px;
-      border-radius: 14px;
-      font-size: 14px;
-      font-weight: 520;
-      letter-spacing: -0.1px;
-      border: 1px solid var(--line-2);
-      background: rgba(255,255,255,0.72);
-      color: var(--ink);
-      box-shadow: 0 10px 30px rgba(16, 20, 19, 0.04);
-      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
-      white-space: nowrap;
+      gap: 9px;
+      border-radius: 15px;
+      padding: 14px 18px;
+      font-weight: 900;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.055);
+      color: var(--text);
+      transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
     }
 
     .btn:hover {
-      transform: translateY(-1px);
-      border-color: #c7d4cc;
-      box-shadow: 0 16px 40px rgba(16, 20, 19, 0.07);
-      background: #fff;
+      transform: translateY(-2px);
+      border-color: var(--line2);
+      background: rgba(255,255,255,0.09);
     }
 
     .btn-primary {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: #fff;
+      background: var(--green);
+      border-color: var(--green);
+      color: #031008;
+      box-shadow: 0 16px 38px rgba(0,230,118,0.18);
     }
 
-    .btn-primary:hover {
-      background: #000;
-      border-color: #000;
-    }
+    .btn-primary:hover { background: #19f284; }
 
-    .btn-green {
-      background: var(--green-soft);
-      border-color: #bfead5;
-      color: #075f39;
-    }
+    .btn-ghost { color: var(--muted2); }
 
-    .visual {
-      position: relative;
-    }
+    .hero-visual { position: relative; }
 
-    .visual::before {
-      content: "";
+    .orb {
       position: absolute;
-      width: 420px;
-      height: 420px;
-      right: -80px;
-      top: -70px;
-      background: radial-gradient(circle, rgba(11,207,116,0.18), transparent 64%);
+      width: 360px;
+      height: 360px;
       border-radius: 999px;
+      background: radial-gradient(circle, rgba(0,230,118,0.18), transparent 64%);
+      top: -70px;
+      right: -80px;
+      filter: blur(8px);
       z-index: -1;
     }
 
-    .product-card {
-      background: rgba(255,255,255,0.82);
-      border: 1px solid var(--line);
+    .mock-window {
+      border: 1px solid rgba(255,255,255,0.16);
+      background: linear-gradient(145deg, rgba(255,255,255,0.11), rgba(255,255,255,0.045));
       border-radius: 28px;
-      box-shadow: var(--shadow);
+      padding: 14px;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.55);
+      backdrop-filter: blur(16px);
+      transform: rotate(-1deg);
+    }
+
+    .mock-inner {
+      background: rgba(4,8,14,0.88);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
       overflow: hidden;
-      backdrop-filter: blur(18px);
     }
 
-    .product-top {
-      padding: 18px 20px;
+    .window-top {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid var(--line);
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.04);
     }
 
-    .window-dots {
-      display: flex;
-      gap: 7px;
-    }
+    .dots { display: flex; gap: 7px; }
 
-    .window-dots span {
+    .dots span {
       width: 10px;
       height: 10px;
       border-radius: 999px;
-      background: #d6ddd8;
+      background: rgba(255,255,255,0.28);
     }
 
-    .live-pill {
-      color: #087246;
-      background: #eafff4;
-      border: 1px solid #c8efdb;
-      border-radius: 999px;
-      padding: 7px 10px;
+    .live {
       font-size: 12px;
-      font-weight: 560;
+      font-weight: 900;
+      color: var(--green);
+      background: rgba(0,230,118,0.10);
+      border: 1px solid rgba(0,230,118,0.24);
+      border-radius: 999px;
+      padding: 6px 9px;
     }
 
-    .mock-body {
-      padding: 20px;
-    }
-
-    .mock-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
-      margin-bottom: 18px;
-    }
-
-    .mock-title h2 {
-      margin: 0;
-      font-size: 22px;
-      line-height: 1.2;
-      letter-spacing: -0.65px;
-      font-weight: 560;
-    }
-
-    .mock-title p {
-      margin: 6px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .stat-grid {
+    .metric-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+      gap: 10px;
+      padding: 16px;
     }
 
-    .stat {
-      border: 1px solid var(--line);
-      background: #fbfdfb;
-      border-radius: 18px;
+    .metric {
+      background: rgba(255,255,255,0.055);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 16px;
       padding: 15px;
     }
 
-    .stat-label {
-      color: var(--muted-2);
+    .metric-label {
+      color: var(--muted);
       font-size: 11px;
+      letter-spacing: 0.7px;
       text-transform: uppercase;
-      letter-spacing: .7px;
-      font-weight: 560;
+      font-weight: 900;
     }
 
-    .stat-value {
-      margin-top: 9px;
+    .metric-value {
+      margin-top: 10px;
       font-size: 25px;
-      font-weight: 560;
-      letter-spacing: -0.8px;
+      font-weight: 950;
+      letter-spacing: -0.6px;
     }
 
-    .positive {
-      color: var(--green-dark);
-    }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
 
-    .negative {
-      color: #d7424f;
-    }
-
-    .chart {
-      height: 132px;
-      margin-top: 14px;
-      border: 1px solid var(--line);
-      border-radius: 20px;
+    .mini-chart {
+      height: 125px;
+      margin: 4px 16px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.09);
       background:
-        linear-gradient(180deg, rgba(11,207,116,0.08), transparent),
-        linear-gradient(90deg, rgba(16,20,19,0.04) 1px, transparent 1px),
-        linear-gradient(rgba(16,20,19,0.04) 1px, transparent 1px);
+        linear-gradient(180deg, rgba(0,230,118,0.16), transparent),
+        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
       background-size: auto, 44px 44px, 44px 44px;
       position: relative;
       overflow: hidden;
     }
 
-    .chart svg {
+    .mini-chart svg {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
     }
 
-    .rows {
-      margin-top: 14px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      overflow: hidden;
-    }
-
-    .row {
+    .ticker-row {
       display: grid;
-      grid-template-columns: 1fr .85fr .85fr .9fr;
-      gap: 10px;
-      padding: 13px 14px;
-      border-bottom: 1px solid var(--line);
+      grid-template-columns: 1fr 0.8fr 0.9fr 0.9fr;
+      gap: 12px;
+      padding: 13px 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
       font-size: 13px;
-      color: #59645f;
+      color: var(--muted2);
     }
 
-    .row:last-child {
-      border-bottom: 0;
-    }
+    .ticker-row strong { color: var(--text); }
 
-    .row strong {
-      color: var(--ink);
-      font-weight: 560;
-    }
-
-    .section {
-      padding: 74px 0;
-    }
+    .section { padding: 72px 0; }
 
     .section-head {
-      max-width: 760px;
-      margin-bottom: 30px;
+      max-width: 780px;
+      margin-bottom: 28px;
     }
 
     .section h2 {
-      margin: 0 0 14px;
-      font-size: clamp(34px, 4.5vw, 58px);
-      line-height: 1.05;
-      letter-spacing: -2.3px;
-      font-weight: 560;
+      margin: 0 0 12px;
+      font-size: clamp(34px, 4.5vw, 54px);
+      letter-spacing: -2.2px;
+      line-height: 1.02;
     }
 
-    .section .lead {
+    .section p.lead {
       margin: 0;
-      color: var(--muted);
+      color: var(--muted2);
       font-size: 18px;
-      line-height: 1.64;
-      font-weight: 400;
+      line-height: 1.65;
     }
 
     .cards {
@@ -1498,25 +1437,27 @@ function renderLandingHtml() {
     }
 
     .card {
-      background: rgba(255,255,255,0.74);
+      background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 26px;
-      padding: 28px;
-      box-shadow: var(--shadow-soft);
+      border-radius: 24px;
+      padding: 26px;
+      min-height: 240px;
+      backdrop-filter: blur(18px);
     }
 
-    .card-number {
-      color: var(--green-dark);
+    .card .num {
+      color: var(--green);
+      font-weight: 950;
       font-size: 13px;
-      font-weight: 560;
-      margin-bottom: 46px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 44px;
     }
 
     .card h3 {
-      margin: 0 0 10px;
-      font-size: 21px;
-      letter-spacing: -0.45px;
-      font-weight: 560;
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: -0.6px;
     }
 
     .card p {
@@ -1532,119 +1473,92 @@ function renderLandingHtml() {
       gap: 12px;
     }
 
-    .flow-step {
-      background: #fff;
+    .flow-box {
+      background: rgba(255,255,255,0.055);
       border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 24px;
-      box-shadow: var(--shadow-soft);
+      border-radius: 22px;
+      padding: 22px;
+      min-height: 150px;
     }
 
-    .flow-step span {
-      width: 34px;
-      height: 34px;
-      border-radius: 12px;
+    .flow-box span {
       display: inline-flex;
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
       align-items: center;
       justify-content: center;
-      background: var(--green-soft);
-      color: var(--green-dark);
-      font-size: 13px;
-      font-weight: 560;
-      margin-bottom: 20px;
+      background: rgba(0,230,118,0.10);
+      border: 1px solid rgba(0,230,118,0.23);
+      color: var(--green);
+      font-weight: 950;
+      margin-bottom: 16px;
     }
 
-    .flow-step h3 {
+    .flow-box h3 {
       margin: 0 0 8px;
       font-size: 18px;
-      letter-spacing: -0.35px;
-      font-weight: 560;
     }
 
-    .flow-step p {
+    .flow-box p {
       margin: 0;
       color: var(--muted);
-      font-size: 14px;
       line-height: 1.55;
+      font-size: 14px;
     }
 
-    .access {
-      background: var(--ink);
-      color: #fff;
-      border-radius: 34px;
-      padding: 42px;
+    .access-panel {
       display: grid;
-      grid-template-columns: 1.2fr .8fr;
-      gap: 28px;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      background: linear-gradient(135deg, rgba(0,230,118,0.12), rgba(90,169,255,0.08));
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 30px;
+      padding: 34px;
       align-items: center;
-      box-shadow: 0 32px 90px rgba(16,20,19,.18);
     }
 
-    .access h2 {
+    .access-panel h2 {
+      font-size: clamp(32px, 4vw, 50px);
       margin: 0 0 12px;
-      font-size: clamp(34px, 4.5vw, 56px);
-      line-height: 1.04;
-      letter-spacing: -2.3px;
-      font-weight: 540;
+      letter-spacing: -1.8px;
     }
 
-    .access p {
-      margin: 0;
-      color: #bac3bf;
+    .access-panel p {
+      color: var(--muted2);
+      line-height: 1.65;
       font-size: 17px;
-      line-height: 1.62;
-      max-width: 690px;
+      margin: 0;
     }
 
-    .access .small {
-      margin-top: 14px;
-      color: #8d9994;
-      font-size: 13px;
-    }
-
-    .access-actions {
+    .access-buttons {
       display: grid;
       gap: 12px;
     }
 
-    .access-actions .btn {
-      background: #fff;
-      border-color: #fff;
-      color: var(--ink);
-    }
-
-    .access-actions .btn.secondary {
-      background: rgba(255,255,255,0.08);
-      color: #fff;
-      border-color: rgba(255,255,255,0.16);
-      box-shadow: none;
+    .small-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
     }
 
     .footer {
-      padding: 38px 0;
+      padding: 36px 0;
       color: var(--muted);
       border-top: 1px solid var(--line);
       font-size: 13px;
       line-height: 1.7;
     }
 
-    @media (max-width: 980px) {
-      .hero,
-      .access {
-        grid-template-columns: 1fr;
-      }
-
+    @media (max-width: 960px) {
       .hero {
-        min-height: auto;
-        padding-top: 56px;
-      }
-
-      .cards,
-      .flow {
         grid-template-columns: 1fr;
+        min-height: auto;
+        padding-top: 54px;
       }
 
-      .actions {
+      .cards, .flow, .access-panel {
         grid-template-columns: 1fr;
       }
 
@@ -1654,34 +1568,30 @@ function renderLandingHtml() {
     }
 
     @media (max-width: 560px) {
-      .wrap,
-      .nav-inner {
-        padding-left: 16px;
-        padding-right: 16px;
+      .wrap, .nav-inner {
+        padding-left: 15px;
+        padding-right: 15px;
       }
 
-      h1 {
-        font-size: 48px;
-        letter-spacing: -2.5px;
-      }
+      h1 { letter-spacing: -2.4px; }
 
-      .row {
-        grid-template-columns: 1fr 1fr;
-      }
+      .btn { width: 100%; }
 
-      .stat-grid {
-        grid-template-columns: 1fr;
-      }
+      .metric-grid { grid-template-columns: 1fr; }
+
+      .ticker-row { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 <body>
+  <div class="noise"></div>
+
   <nav class="nav">
     <div class="nav-inner">
       <a href="/" class="logo">Vixale<span>.</span></a>
       <div class="nav-links">
         <a href="#systems">Systems</a>
-        <a href="#workflow">Workflow</a>
+        <a href="#transparency">Transparency</a>
         <a href="#access">Access</a>
         <a class="nav-cta" href="/login">Live Dashboard</a>
       </div>
@@ -1691,62 +1601,74 @@ function renderLandingHtml() {
   <main>
     <section class="wrap hero">
       <div>
-        <div class="badge"><span class="dot"></span> Private live trade dashboard</div>
-        <h1>Trading systems.<br><span class="accent">Tracked live.</span></h1>
+        <div class="eyebrow"><span class="pulse"></span> Live-tested trading infrastructure</div>
+        <h1>Trading Systems, <span class="grad">Engineered.</span></h1>
         <p class="hero-text">
-          Vixale builds and monitors systematic trading workflows: signals, execution alerts, live status, and private forward-test tracking.
+          Vixale builds, monitors, and documents algorithmic trading systems with a clean execution workflow and private live dashboard access.
         </p>
-        <p class="hero-note">
-          To request access to the <strong>Live Trade Dashboard</strong>, message us on Telegram or join the channel for updates.
+        <p class="access-note">
+          To request access to the <strong>Live Trade Dashboard</strong>, contact us on Telegram or join the Telegram channel for updates.
         </p>
+
         <div class="actions">
           <a class="btn btn-primary" href="/login">View Live Dashboard</a>
-          <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
-          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Contact on Telegram</a>
+          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
+          <a class="btn btn-ghost" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
         </div>
       </div>
 
-      <div class="visual">
-        <div class="product-card">
-          <div class="product-top">
-            <div class="window-dots"><span></span><span></span><span></span></div>
-            <div class="live-pill">● Live tracking</div>
-          </div>
-          <div class="mock-body">
-            <div class="mock-title">
-              <div>
-                <h2>Strategy Dashboard</h2>
-                <p>Forward-test trade monitoring</p>
+      <div class="hero-visual">
+        <div class="orb"></div>
+        <div class="mock-window">
+          <div class="mock-inner">
+            <div class="window-top">
+              <div class="dots"><span></span><span></span><span></span></div>
+              <div class="live">● LIVE TRACKING</div>
+            </div>
+
+            <div class="metric-grid">
+              <div class="metric">
+                <div class="metric-label">Open P&L</div>
+                <div class="metric-value positive">+$1,248</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Win Rate</div>
+                <div class="metric-value">67.4%</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Pending Orders</div>
+                <div class="metric-value">4</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Closed Today</div>
+                <div class="metric-value positive">+$532</div>
               </div>
             </div>
-            <div class="stat-grid">
-              <div class="stat">
-                <div class="stat-label">Open P&L</div>
-                <div class="stat-value positive">+$1,248</div>
-              </div>
-              <div class="stat">
-                <div class="stat-label">Win rate</div>
-                <div class="stat-value">67.4%</div>
-              </div>
-              <div class="stat">
-                <div class="stat-label">Pending</div>
-                <div class="stat-value">4</div>
-              </div>
-              <div class="stat">
-                <div class="stat-label">Closed today</div>
-                <div class="stat-value positive">+$532</div>
-              </div>
-            </div>
-            <div class="chart">
+
+            <div class="mini-chart">
               <svg viewBox="0 0 600 160" preserveAspectRatio="none">
-                <path d="M0,118 C70,90 96,128 150,100 C205,72 236,86 288,60 C348,30 382,82 440,50 C502,18 546,38 600,22" fill="none" stroke="rgba(7,143,81,0.92)" stroke-width="5" stroke-linecap="round"/>
-                <path d="M0,118 C70,90 96,128 150,100 C205,72 236,86 288,60 C348,30 382,82 440,50 C502,18 546,38 600,22 L600,160 L0,160 Z" fill="rgba(11,207,116,0.10)"/>
+                <path d="M0,118 C55,92 82,132 132,102 C185,68 210,86 260,58 C325,22 365,78 420,46 C478,12 520,38 600,18" fill="none" stroke="rgba(0,230,118,0.95)" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0,118 C55,92 82,132 132,102 C185,68 210,86 260,58 C325,22 365,78 420,46 C478,12 520,38 600,18 L600,160 L0,160 Z" fill="rgba(0,230,118,0.10)"/>
               </svg>
             </div>
-            <div class="rows">
-              <div class="row"><div><strong>NVDA</strong></div><div class="positive">LONG</div><div>Open</div><div class="positive">+$248</div></div>
-              <div class="row"><div><strong>NFLX</strong></div><div class="negative">SHORT</div><div>Closed</div><div class="positive">+$277</div></div>
-              <div class="row"><div><strong>META</strong></div><div class="positive">LONG</div><div>Pending</div><div>—</div></div>
+
+            <div class="ticker-row">
+              <div><strong>NVDA</strong></div>
+              <div class="positive">LONG</div>
+              <div>OPEN</div>
+              <div class="positive">+$248</div>
+            </div>
+            <div class="ticker-row">
+              <div><strong>NFLX</strong></div>
+              <div class="negative">SHORT</div>
+              <div>CLOSED</div>
+              <div class="positive">+$277</div>
+            </div>
+            <div class="ticker-row">
+              <div><strong>META</strong></div>
+              <div class="positive">LONG</div>
+              <div>PENDING</div>
+              <div>—</div>
             </div>
           </div>
         </div>
@@ -1755,58 +1677,84 @@ function renderLandingHtml() {
 
     <section id="systems" class="wrap section">
       <div class="section-head">
-        <h2>Built for structure, not noise.</h2>
+        <h2>Built like trading software, not a signal room.</h2>
         <p class="lead">
-          A clean trading infrastructure layer for strategy alerts, position tracking, and forward-test visibility.
+          The system is designed around structured alerts, execution workflow, tracking, and clean reporting.
         </p>
       </div>
+
       <div class="cards">
         <div class="card">
-          <div class="card-number">01 / Signals</div>
-          <h3>Structured trade alerts</h3>
-          <p>Every setup carries symbol, side, entry, target, stop, and status data.</p>
+          <div class="num">01 / Research</div>
+          <h3>Strategy Logic</h3>
+          <p>Rules-based trading systems with defined entry, target, stop, and lifecycle events.</p>
         </div>
+
         <div class="card">
-          <div class="card-number">02 / Monitoring</div>
-          <h3>Live position tracking</h3>
-          <p>Pending orders, open positions, closed trades, and P&L are tracked in one place.</p>
+          <div class="num">02 / Signals</div>
+          <h3>Live Alerts</h3>
+          <p>Signal delivery with structured trade data: symbol, side, entry, target, stop, and quantity.</p>
         </div>
+
         <div class="card">
-          <div class="card-number">03 / Access</div>
-          <h3>Private dashboard</h3>
-          <p>Dashboard access is shared selectively with traders who request access.</p>
+          <div class="num">03 / Tracking</div>
+          <h3>Live Dashboard</h3>
+          <p>Private dashboard access for open positions, pending orders, closed trades, and P&L tracking.</p>
         </div>
       </div>
     </section>
 
-    <section id="workflow" class="wrap section">
+    <section id="transparency" class="wrap section">
       <div class="section-head">
-        <h2>Signal to visibility.</h2>
+        <h2>Signal → execution → tracking.</h2>
         <p class="lead">
-          The system is designed to make the trading process observable from signal generation to closed trade history.
+          Vixale focuses on the full workflow: from strategy signal to broker bridge, notifications, and transparent trade logging.
         </p>
       </div>
+
       <div class="flow">
-        <div class="flow-step"><span>1</span><h3>Signal</h3><p>TradingView generates structured strategy events.</p></div>
-        <div class="flow-step"><span>2</span><h3>Alert</h3><p>Telegram receives readable trade lifecycle updates.</p></div>
-        <div class="flow-step"><span>3</span><h3>Ledger</h3><p>Trade events are written into the tracking ledger.</p></div>
-        <div class="flow-step"><span>4</span><h3>Dashboard</h3><p>Traders review live status and forward-test results.</p></div>
+        <div class="flow-box">
+          <span>1</span>
+          <h3>TradingView Signal</h3>
+          <p>Strategy alerts generate structured setup, entry, target, stop, and close events.</p>
+        </div>
+
+        <div class="flow-box">
+          <span>2</span>
+          <h3>Execution Bridge</h3>
+          <p>Signals can be routed into an execution workflow for broker-side order handling.</p>
+        </div>
+
+        <div class="flow-box">
+          <span>3</span>
+          <h3>Telegram Alerts</h3>
+          <p>Trade events are delivered to Telegram with readable status and P&L details.</p>
+        </div>
+
+        <div class="flow-box">
+          <span>4</span>
+          <h3>Live Dashboard</h3>
+          <p>Open positions, pending orders, and closed trades are tracked in a private dashboard.</p>
+        </div>
       </div>
     </section>
 
     <section id="access" class="wrap section">
-      <div class="access">
+      <div class="access-panel">
         <div>
-          <h2>Request dashboard access.</h2>
+          <h2>Request access to the Live Trade Dashboard.</h2>
           <p>
-            The Live Trade Dashboard is private. Contact us on Telegram to request password access, or join the channel for strategy updates.
+            Dashboard access is private. To request the password, contact us on Telegram or join the channel for updates and strategy announcements.
           </p>
-          <div class="small">Full trade history is available only inside the password-protected dashboard.</div>
+          <div class="small-note">
+            Full trade history is available only inside the password-protected dashboard.
+          </div>
         </div>
-        <div class="access-actions">
-          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
-          <a class="btn secondary" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
-          <a class="btn secondary" href="/login">Dashboard Login</a>
+
+        <div class="access-buttons">
+          <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
+          <a class="btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
+          <a class="btn btn-ghost" href="/login">Go to Dashboard Login</a>
         </div>
       </div>
     </section>
@@ -1832,13 +1780,12 @@ function renderLoginHtml(errorMessage = '') {
   <title>Vixale Dashboard Login</title>
   <style>
     :root {
-      --bg: #fbfcfb;
-      --paper: #ffffff;
-      --ink: #101413;
-      --muted: #68736f;
-      --line: #e3e9e5;
-      --green: #0bcf74;
-      --red: #d7424f;
+      --bg: #05070c;
+      --line: rgba(255,255,255,0.14);
+      --text: #f5f7fb;
+      --muted: #9da9bc;
+      --green: #00e676;
+      --red: #ff4d5e;
     }
 
     * { box-sizing: border-box; }
@@ -1849,102 +1796,99 @@ function renderLoginHtml(errorMessage = '') {
       display: grid;
       place-items: center;
       background:
-        radial-gradient(circle at 18% 6%, rgba(11,207,116,0.15), transparent 32%),
-        radial-gradient(circle at 84% 10%, rgba(11,207,116,0.10), transparent 28%),
-        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 100%);
-      color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
+        radial-gradient(circle at top left, rgba(90, 169, 255, 0.22), transparent 34%),
+        radial-gradient(circle at top right, rgba(0, 230, 118, 0.14), transparent 30%),
+        linear-gradient(180deg, #05070c 0%, #070b12 100%);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       padding: 24px;
     }
 
     .card {
       width: 100%;
-      max-width: 440px;
-      background: rgba(255,255,255,0.84);
+      max-width: 450px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.045));
       border: 1px solid var(--line);
       border-radius: 28px;
       padding: 34px;
-      box-shadow: 0 28px 80px rgba(16,20,19,0.08);
+      box-shadow: 0 40px 120px rgba(0,0,0,0.55);
       backdrop-filter: blur(18px);
     }
 
     .logo {
-      font-size: 20px;
-      font-weight: 620;
-      letter-spacing: -0.35px;
-      margin-bottom: 30px;
+      font-size: 28px;
+      font-weight: 950;
+      margin-bottom: 10px;
+      letter-spacing: -0.6px;
     }
 
     .logo span { color: var(--green); }
 
     h1 {
       margin: 0;
-      font-size: 32px;
-      line-height: 1.1;
-      letter-spacing: -1.2px;
-      font-weight: 560;
+      font-size: 26px;
+      letter-spacing: -0.8px;
     }
 
     p {
       color: var(--muted);
       line-height: 1.58;
-      margin: 12px 0 26px;
-      font-size: 15px;
+      margin: 11px 0 26px;
     }
 
     label {
       display: block;
       color: var(--muted);
       font-size: 12px;
-      font-weight: 560;
+      font-weight: 900;
       text-transform: uppercase;
-      letter-spacing: .7px;
+      letter-spacing: 0.8px;
       margin-bottom: 8px;
     }
 
     input {
       width: 100%;
-      background: #fff;
+      background: rgba(0,0,0,0.24);
       border: 1px solid var(--line);
-      border-radius: 14px;
-      color: var(--ink);
-      padding: 14px 15px;
+      border-radius: 15px;
+      color: var(--text);
+      padding: 15px;
       font-size: 16px;
       outline: none;
     }
 
     input:focus {
-      border-color: rgba(11,207,116,.55);
-      box-shadow: 0 0 0 4px rgba(11,207,116,.10);
+      border-color: rgba(0, 230, 118, 0.55);
+      box-shadow: 0 0 0 4px rgba(0, 230, 118, 0.08);
     }
 
     button {
       width: 100%;
-      margin-top: 14px;
+      margin-top: 16px;
       border: 0;
-      border-radius: 14px;
-      padding: 14px 18px;
-      background: var(--ink);
-      color: #fff;
-      font-weight: 540;
+      border-radius: 15px;
+      padding: 15px 18px;
+      background: var(--green);
+      color: #031008;
+      font-weight: 950;
       font-size: 15px;
       cursor: pointer;
+      box-shadow: 0 16px 38px rgba(0,230,118,0.18);
     }
 
     .error {
       margin-top: 14px;
       color: var(--red);
+      font-weight: 850;
       font-size: 14px;
-      font-weight: 520;
     }
 
     .links {
       display: flex;
       justify-content: space-between;
       gap: 14px;
-      flex-wrap: wrap;
       margin-top: 20px;
+      flex-wrap: wrap;
     }
 
     .links a {
@@ -1953,20 +1897,23 @@ function renderLoginHtml(errorMessage = '') {
       text-decoration: none;
     }
 
-    .links a:hover { color: var(--ink); }
+    .links a:hover { color: var(--text); }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="logo">Vixale<span>.</span></div>
-    <h1>Dashboard access</h1>
-    <p>Enter the dashboard password to view live tracking and the full trade history link.</p>
+    <h1>Live Dashboard Access</h1>
+    <p>Enter the dashboard password to view the live trade tracker and full trade history link.</p>
+
     <form method="POST" action="/dashboard-login">
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
       <button type="submit">Open Dashboard</button>
     </form>
+
     ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
+
     <div class="links">
       <a href="/">← Back to Home</a>
       <a href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
