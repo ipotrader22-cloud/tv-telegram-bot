@@ -11,6 +11,8 @@ app.use(express.text({ type: '*/*', limit: '2mb' }));
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
+// Private admin chat for website leads/forms. Use numeric Telegram chat_id, not @username.
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || process.env.PASSWORD_REQUEST_CHAT_ID || '';
 
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -895,16 +897,18 @@ async function processLedger(row) {
 // TELEGRAM
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function sendTelegram(message) {
-  if (!TOKEN || !CHAT_ID) {
-    console.log('Telegram env vars missing. Skipping Telegram.');
+async function sendTelegram(message, chatId = CHAT_ID) {
+  const targetChatId = String(chatId || '').trim();
+
+  if (!TOKEN || !targetChatId) {
+    console.log('Telegram env vars missing or target chat is empty. Skipping Telegram.');
     return;
   }
 
   const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
 
   const payload = {
-    chat_id: CHAT_ID,
+    chat_id: targetChatId,
     text: message,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
@@ -923,7 +927,7 @@ async function sendTelegram(message) {
     console.log('Telegram HTML parse failed. Retrying without parse_mode.');
 
     const fallbackPayload = {
-      chat_id: CHAT_ID,
+      chat_id: targetChatId,
       text: message,
       disable_web_page_preview: true,
     };
@@ -937,6 +941,15 @@ async function sendTelegram(message) {
     data = await response.json();
     console.log('Telegram fallback response:', JSON.stringify(data));
   }
+}
+
+async function sendAdminTelegram(message) {
+  if (!ADMIN_CHAT_ID) {
+    console.log('ADMIN_CHAT_ID is not configured. Skipping private admin Telegram notification.');
+    return;
+  }
+
+  await sendTelegram(message, ADMIN_CHAT_ID);
 }
 
 
@@ -1375,7 +1388,7 @@ function renderLandingHtml() {
       display: grid;
       grid-template-columns: minmax(310px, 0.76fr) minmax(0, 1.24fr);
       gap: 64px;
-      align-items: start;
+      align-items: stretch;
       padding: 36px 0 18px;
     }
 
@@ -1385,6 +1398,8 @@ function renderLandingHtml() {
       min-width: 0;
       max-width: 420px;
       justify-self: center;
+      display: flex;
+      align-items: stretch;
     }
 
     .hero > div:first-child {
@@ -1392,6 +1407,9 @@ function renderLandingHtml() {
       justify-self: start;
       max-width: 700px;
       padding-top: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
 
     .badge {
@@ -1455,11 +1473,11 @@ function renderLandingHtml() {
 
     .smart-slogan {
       margin-top: 13px;
-      color: #26302c;
-      font-size: 17px;
+      color: #111816;
+      font-size: 18px;
       line-height: 1.45;
       letter-spacing: -0.35px;
-      font-weight: 430;
+      font-weight: 620;
       max-width: 650px;
     }
 
@@ -1470,19 +1488,19 @@ function renderLandingHtml() {
     .hero-text {
       max-width: 650px;
       margin: 18px 0 0;
-      color: var(--muted);
+      color: #2f3b37;
       font-size: 19px;
       line-height: 1.66;
-      font-weight: 400;
+      font-weight: 520;
     }
 
     .hero-note {
       max-width: 650px;
       margin-top: 13px;
-      color: #4a5551;
-      font-size: 15px;
-      line-height: 1.58;
-      font-weight: 400;
+      color: #24302c;
+      font-size: 15.5px;
+      line-height: 1.62;
+      font-weight: 500;
     }
 
     .hero-note strong {
@@ -1557,12 +1575,16 @@ function renderLandingHtml() {
     }
 
     .product-card {
+      width: 100%;
+      min-height: 100%;
       background: rgba(255,255,255,0.82);
       border: 1px solid var(--line);
       border-radius: 28px;
       box-shadow: var(--shadow);
       overflow: hidden;
       backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
     }
 
     .product-top {
@@ -1597,6 +1619,9 @@ function renderLandingHtml() {
 
     .mock-body {
       padding: 14px;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
 
     .mock-title {
@@ -1658,12 +1683,12 @@ function renderLandingHtml() {
     }
 
     .chart {
-      height: 86px;
+      height: 96px;
       margin-top: 12px;
       border: 1px solid var(--line);
       border-radius: 20px;
       background:
-        linear-gradient(180deg, rgba(11,207,116,0.08), transparent),
+        linear-gradient(180deg, rgba(11,207,116,0.13), rgba(11,207,116,0.03)),
         linear-gradient(90deg, rgba(16,20,19,0.04) 1px, transparent 1px),
         linear-gradient(rgba(16,20,19,0.04) 1px, transparent 1px);
       background-size: auto, 44px 44px, 44px 44px;
@@ -2322,10 +2347,10 @@ function renderLandingHtml() {
         </a>
         <div class="smart-slogan">See the signals. See the trades. See the results.</div>
         <p class="hero-text">
-          Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records results in a private dashboard.
+          Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.
         </p>
         <p class="hero-note">
-          The live dashboard is password-protected. Request access, watch the system first, and then choose what you want next: signals, broker connection, strategy testing, or your own trading bot.
+          The live dashboard is password-protected. Get the password by email, watch the system first, and choose your next step only when you are ready.
         </p>
         <div class="actions">
           <a class="btn btn-primary" href="#password-access">Get Password by Email</a>
@@ -2350,11 +2375,11 @@ function renderLandingHtml() {
             <div class="stat-grid">
               <div class="stat">
                 <div class="stat-label">Open P&L</div>
-                <div class="stat-value positive">+$1,248</div>
+                <div class="stat-value positive">+$97,854</div>
               </div>
               <div class="stat">
                 <div class="stat-label">Win rate</div>
-                <div class="stat-value">67.4%</div>
+                <div class="stat-value">77%</div>
               </div>
               <div class="stat">
                 <div class="stat-label">Pending setups</div>
@@ -2367,8 +2392,14 @@ function renderLandingHtml() {
             </div>
             <div class="chart">
               <svg viewBox="0 0 600 160" preserveAspectRatio="none">
-                <path d="M0,118 C70,90 96,128 150,100 C205,72 236,86 288,60 C348,30 382,82 440,50 C502,18 546,38 600,22" fill="none" stroke="rgba(7,143,81,0.92)" stroke-width="5" stroke-linecap="round"/>
-                <path d="M0,118 C70,90 96,128 150,100 C205,72 236,86 288,60 C348,30 382,82 440,50 C502,18 546,38 600,22 L600,160 L0,160 Z" fill="rgba(11,207,116,0.10)"/>
+                <defs>
+                  <linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="rgba(7,143,81,0.24)" />
+                    <stop offset="100%" stop-color="rgba(11,207,116,0.03)" />
+                  </linearGradient>
+                </defs>
+                <path d="M0,126 C42,116 74,112 108,116 C146,121 178,126 214,111 C250,96 278,88 312,78 C342,69 370,72 402,79 C438,87 470,72 506,60 C540,48 568,47 600,38" fill="none" stroke="rgba(7,143,81,0.96)" stroke-width="5" stroke-linecap="round"/>
+                <path d="M0,126 C42,116 74,112 108,116 C146,121 178,126 214,111 C250,96 278,88 312,78 C342,69 370,72 402,79 C438,87 470,72 506,60 C540,48 568,47 600,38 L600,160 L0,160 Z" fill="url(#equityFill)"/>
               </svg>
             </div>
             <div class="rows">
@@ -2789,18 +2820,25 @@ function renderLandingHtml() {
 // PASSWORD REQUEST THANK YOU HTML
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function renderPasswordSentHtml(email = '', name = '') {
+function renderPasswordSentHtml(email = '', name = '', emailStatus = 'sent') {
   const safeEmail = escapeHtml(email || '');
   const safeName = escapeHtml(name || '');
+  const password = escapeHtml(String(DASHBOARD_KEY || '').trim());
+  const directUrl = dashboardDirectUrl();
+  const showEmailLine = Boolean(safeEmail);
+
+  const statusText = emailStatus === 'sent'
+    ? 'We also sent the password to your email.'
+    : 'Email delivery can take a moment. Your access is ready below.';
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vixale | Password Sent</title>
+  <title>Vixale | Dashboard Access Ready</title>
   <style>
-    :root { --ink:#101413; --muted:#68736f; --line:#e3e9e5; --green:#0bcf74; }
+    :root { --ink:#101413; --muted:#68736f; --line:#e3e9e5; --green:#0bcf74; --green-dark:#078f51; --soft:#f4f7f4; }
     * { box-sizing: border-box; }
     body {
       margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
@@ -2808,13 +2846,17 @@ function renderPasswordSentHtml(email = '', name = '') {
       color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,"Segoe UI",Arial,sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    .card { width:100%; max-width:600px; background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:30px; padding:34px; box-shadow:0 28px 80px rgba(16,20,19,.08); }
-    .badge { display:inline-flex; align-items:center; gap:10px; padding:10px 15px; border:1px solid rgba(184,216,198,.9); border-radius:999px; background:#fff; font-size:13px; font-weight:500; margin-bottom:18px; }
+    .card { width:100%; max-width:640px; background:rgba(255,255,255,.9); border:1px solid var(--line); border-radius:30px; padding:34px; box-shadow:0 28px 80px rgba(16,20,19,.08); }
+    .badge { display:inline-flex; align-items:center; gap:10px; padding:10px 15px; border:1px solid rgba(184,216,198,.9); border-radius:999px; background:#fff; font-size:13px; font-weight:600; margin-bottom:18px; }
     .dot { width:10px; height:10px; border-radius:999px; background:var(--green); box-shadow:0 0 0 7px rgba(11,207,116,.13); }
-    h1 { margin:0; font-size:clamp(32px,5vw,48px); line-height:1.05; letter-spacing:-1.6px; font-weight:500; }
+    h1 { margin:0; font-size:clamp(32px,5vw,48px); line-height:1.05; letter-spacing:-1.6px; font-weight:600; }
     p { color:var(--muted); line-height:1.62; margin:14px 0 0; font-size:16px; }
+    strong { color: var(--ink); font-weight: 600; }
+    .password-box { margin:22px 0 4px; padding:18px 20px; border:1px solid #dfe8e2; border-radius:18px; background:var(--soft); }
+    .password-label { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#74807b; margin-bottom:8px; font-weight:600; }
+    .password-value { font-size:26px; line-height:1.15; letter-spacing:.04em; color:var(--ink); font-weight:700; word-break:break-word; }
     .actions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:24px; }
-    .btn { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:13px 16px; border-radius:14px; font-size:14px; font-weight:500; border:1px solid var(--line); background:#fff; color:var(--ink); text-decoration:none; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; min-height:50px; padding:13px 16px; border-radius:14px; font-size:14px; font-weight:600; border:1px solid var(--line); background:#fff; color:var(--ink); text-decoration:none; }
     .btn-primary { background:var(--ink); border-color:var(--ink); color:#fff; }
     .small { color:#5c6863; font-size:13px; margin-top:18px; line-height:1.5; }
     @media (max-width:560px){ .actions { grid-template-columns:1fr; } }
@@ -2822,15 +2864,19 @@ function renderPasswordSentHtml(email = '', name = '') {
 </head>
 <body>
   <div class="card">
-    <div class="badge"><span class="dot"></span><span>Password sent</span></div>
-    <h1>${safeName ? `Thanks, ${safeName}.` : 'Check your email.'}</h1>
-    <p>We sent the Live Dashboard password to <strong>${safeEmail}</strong>.</p>
-    <p>Open the email, use the password, and start watching the system when you are ready.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="/login">Go To Login</a>
-      <a class="btn" href="/">Back to Home</a>
+    <div class="badge"><span class="dot"></span><span>Dashboard access ready</span></div>
+    <h1>${safeName ? `Thanks, ${safeName}.` : 'Your access is ready.'}</h1>
+    <p>${showEmailLine ? `We received your request for <strong>${safeEmail}</strong>. ` : ''}${statusText}</p>
+    <p>You can start watching the live system now. Save the password below or use the direct dashboard button.</p>
+    <div class="password-box">
+      <div class="password-label">Dashboard password</div>
+      <div class="password-value">${password || 'Password not configured'}</div>
     </div>
-    <div class="small">If the email is not there, check spam or promotions. Trading involves risk and results are not guaranteed.</div>
+    <div class="actions">
+      <a class="btn btn-primary" href="${directUrl}">Open Live Dashboard</a>
+      <a class="btn" href="/login">Go To Login</a>
+    </div>
+    <div class="small">Trading involves risk. The dashboard is for transparency, tracking, and education. Results are not guaranteed.</div>
   </div>
 </body>
 </html>`;
@@ -3828,7 +3874,7 @@ app.post('/password-request', async (req, res) => {
       'Status: <b>Password email sent automatically</b>',
     ].filter(Boolean).join('\n');
 
-    await sendTelegram(telegramMessage);
+    await sendAdminTelegram(telegramMessage);
 
     return res.status(200).send(renderPasswordSentHtml(email, name));
   } catch (err) {
@@ -3838,7 +3884,7 @@ app.post('/password-request', async (req, res) => {
       const body = req.body || {};
       const email = String(body.email || '').trim().toLowerCase();
       const name = String(body.name || '').trim();
-      await sendTelegram([
+      await sendAdminTelegram([
         '⚠️ <b>Password Request Email Failed</b>',
         '',
         name ? `Name: <b>${escapeHtml(name)}</b>` : '',
@@ -3849,7 +3895,15 @@ app.post('/password-request', async (req, res) => {
       console.error('Password failure Telegram notify failed:', tgErr);
     }
 
-    return res.status(500).send('Password email could not be sent right now. Please try again soon.');
+    const fallbackBody = req.body || {};
+    const fallbackEmail = String(fallbackBody.email || '').trim().toLowerCase();
+    const fallbackName = String(fallbackBody.name || '').trim();
+
+    if (DASHBOARD_KEY && isValidEmail(fallbackEmail)) {
+      return res.status(200).send(renderPasswordSentHtml(fallbackEmail, fallbackName, 'ready'));
+    }
+
+    return res.status(500).send('Dashboard access could not be prepared right now. Please try again soon.');
   }
 });
 
@@ -3886,7 +3940,7 @@ app.post('/strategy-review', async (req, res) => {
       escapeHtml(rules),
     ].filter(Boolean).join('\n');
 
-    await sendTelegram(message);
+    await sendAdminTelegram(message);
 
     return res.status(200).send(renderStrategyReceivedHtml(name));
   } catch (err) {
@@ -3925,7 +3979,7 @@ app.post('/appointment-request', async (req, res) => {
       notes ? escapeHtml(notes) : '',
     ].filter(Boolean).join('\n');
 
-    await sendTelegram(message);
+    await sendAdminTelegram(message);
 
     return res.status(200).send(renderSimpleReceivedHtml('Appointment request received', name));
   } catch (err) {
@@ -3964,7 +4018,7 @@ app.post('/bot-request', async (req, res) => {
       escapeHtml(description),
     ].filter(Boolean).join('\n');
 
-    await sendTelegram(message);
+    await sendAdminTelegram(message);
 
     return res.status(200).send(renderSimpleReceivedHtml('Bot request received', name));
   } catch (err) {
