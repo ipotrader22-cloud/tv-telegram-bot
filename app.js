@@ -17,8 +17,19 @@ const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || '';
 
+// Email delivery for password requests.
+// Recommended Render env vars:
+// RESEND_API_KEY=...
+// EMAIL_FROM=Vixale <access@vixale.com>
+// SITE_BASE_URL=https://www.vixale.com
+// PASSWORD_REQUEST_BCC=your@email.com (optional)
+const SITE_BASE_URL = String(process.env.SITE_BASE_URL || 'https://www.vixale.com').replace(/\/+$/, '');
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'Vixale <access@vixale.com>';
+const PASSWORD_REQUEST_BCC = process.env.PASSWORD_REQUEST_BCC || '';
+
 const TELEGRAM_DM_URL = 'https://t.me/tradervip22';
-const TELEGRAM_CHANNEL_URL = 'https://t.me/+0yWY1QdYuqkxYzhi';
+const TELEGRAM_CHANNEL_URL = 'https://t.me/tradervip22';
 const FULL_HISTORY_URL = 'https://docs.google.com/spreadsheets/d/1m0skLrbtBY0XRpJjOK-iY0IU1qc94SMnOybeh7C71Jg/edit?gid=1698117325#gid=1698117325';
 
 const TRADES_SHEET = 'Trades';
@@ -930,6 +941,102 @@ async function sendTelegram(message) {
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EMAIL HELPERS — PASSWORD REQUESTS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function dashboardLoginUrl() {
+  return `${SITE_BASE_URL}/login`;
+}
+
+function dashboardDirectUrl() {
+  if (!DASHBOARD_KEY) return dashboardLoginUrl();
+  return `${SITE_BASE_URL}/dashboard?key=${encodeURIComponent(String(DASHBOARD_KEY).trim())}`;
+}
+
+async function sendEmail({ to, subject, html, text, bcc }) {
+  if (!RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not configured. Add it in Render environment variables to send password emails.');
+  }
+
+  const payload = {
+    from: EMAIL_FROM,
+    to: [to],
+    subject,
+    html,
+    text,
+  };
+
+  if (bcc) {
+    payload.bcc = [bcc];
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(`Email send failed: ${response.status} ${JSON.stringify(data)}`);
+  }
+
+  console.log('Password email sent:', to, JSON.stringify(data));
+  return data;
+}
+
+function renderPasswordEmailHtml(name = '') {
+  const safeName = escapeHtml(name || '');
+  const greeting = safeName ? `Hi ${safeName},` : 'Hi,';
+  const directUrl = dashboardDirectUrl();
+  const loginUrl = dashboardLoginUrl();
+  const password = escapeHtml(String(DASHBOARD_KEY || '').trim());
+
+  return `
+  <div style="margin:0;padding:0;background:#f6f9f6;color:#101413;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+    <div style="max-width:620px;margin:0 auto;padding:34px 18px;">
+      <div style="background:#ffffff;border:1px solid #e3e9e5;border-radius:24px;padding:28px;box-shadow:0 18px 50px rgba(16,20,19,.07);">
+        <div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#078f51;font-weight:600;margin-bottom:14px;">Vixale Live Dashboard</div>
+        <h1 style="margin:0 0 14px;font-size:30px;line-height:1.12;letter-spacing:-.8px;color:#101413;">Your dashboard password is ready.</h1>
+        <p style="font-size:16px;line-height:1.6;color:#4d5a55;margin:0 0 16px;">${greeting}</p>
+        <p style="font-size:16px;line-height:1.6;color:#4d5a55;margin:0 0 18px;">You requested access to the Vixale live trading dashboard. You can use the password below or open the dashboard directly from the button.</p>
+        <div style="background:#f4f7f4;border:1px solid #dfe8e2;border-radius:16px;padding:16px 18px;margin:20px 0;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#74807b;margin-bottom:8px;">Dashboard password</div>
+          <div style="font-size:24px;font-weight:700;color:#101413;letter-spacing:.03em;">${password}</div>
+        </div>
+        <a href="${directUrl}" style="display:inline-block;background:#101413;color:#ffffff;text-decoration:none;border-radius:14px;padding:14px 20px;font-size:15px;font-weight:600;margin:4px 0 18px;">Open Live Dashboard</a>
+        <p style="font-size:14px;line-height:1.6;color:#68736f;margin:0 0 10px;">If the button does not work, go to ${loginUrl} and enter the password above.</p>
+        <p style="font-size:13px;line-height:1.6;color:#8b9691;margin:18px 0 0;">Trading involves risk. The dashboard is for transparency, tracking, and education. Results are not guaranteed.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPasswordEmailText(name = '') {
+  const greeting = name ? `Hi ${name},` : 'Hi,';
+  return [
+    greeting,
+    '',
+    'You requested access to the Vixale live trading dashboard.',
+    '',
+    `Dashboard password: ${String(DASHBOARD_KEY || '').trim()}`,
+    `Direct dashboard link: ${dashboardDirectUrl()}`,
+    `Login page: ${dashboardLoginUrl()}`,
+    '',
+    'Trading involves risk. The dashboard is for transparency, tracking, and education. Results are not guaranteed.',
+  ].join('\n');
+}
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // DASHBOARD DATA
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1264,23 +1371,27 @@ function renderLandingHtml() {
     }
 
     .hero {
-      min-height: 500px;
+      min-height: auto;
       display: grid;
-      grid-template-columns: .78fr 1.22fr;
-      gap: 18px;
-      align-items: center;
-      padding: 42px 0 8px;
+      grid-template-columns: minmax(310px, 0.76fr) minmax(0, 1.24fr);
+      gap: 64px;
+      align-items: start;
+      padding: 36px 0 18px;
     }
 
     .hero > .visual {
-      order: -1;
-      width: 70%;
-      min-width: 340px;
+      order: 1;
+      width: 100%;
+      min-width: 0;
+      max-width: 420px;
       justify-self: center;
     }
 
     .hero > div:first-child {
+      order: 2;
       justify-self: start;
+      max-width: 700px;
+      padding-top: 0;
     }
 
     .badge {
@@ -1334,10 +1445,10 @@ function renderLandingHtml() {
 
     h1 {
       margin: 0;
-      max-width: 760px;
-      font-size: clamp(34px, 3.8vw, 48px);
-      line-height: 1.05;
-      letter-spacing: -1.7px;
+      max-width: 740px;
+      font-size: clamp(34px, 4.2vw, 56px);
+      line-height: 1.04;
+      letter-spacing: -1.9px;
       font-weight: 500;
       white-space: nowrap;
     }
@@ -1641,6 +1752,8 @@ function renderLandingHtml() {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 16px;
+      align-items: stretch;
+      grid-auto-rows: 1fr;
     }
 
     .card {
@@ -1649,6 +1762,9 @@ function renderLandingHtml() {
       border-radius: 26px;
       padding: 22px;
       box-shadow: var(--shadow-soft);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
 
     .card-number {
@@ -1784,11 +1900,15 @@ function renderLandingHtml() {
 
 
     .card-action {
-      margin-top: 18px;
+      margin-top: auto;
       width: 100%;
       min-height: 44px;
       font-size: 13px;
       border-radius: 14px;
+    }
+
+    .card p {
+      margin-bottom: 20px;
     }
 
     .watch-block {
@@ -2110,12 +2230,19 @@ function renderLandingHtml() {
       .hero {
         min-height: auto;
         padding-top: 44px;
+        gap: 28px;
       }
 
       .hero > .visual {
-        width: 78%;
+        order: 2;
+        width: 76%;
         min-width: 0;
-        max-width: 520px;
+        max-width: 560px;
+      }
+
+      .hero > div:first-child {
+        order: 1;
+        max-width: 100%;
       }
 
       .cards,
@@ -2148,7 +2275,7 @@ function renderLandingHtml() {
       }
 
       .hero > .visual {
-        width: 92%;
+        width: 94%;
       }
 
       .row {
@@ -2201,7 +2328,7 @@ function renderLandingHtml() {
           The live dashboard is password-protected. Request access, watch the system first, and then choose what you want next: signals, broker connection, strategy testing, or your own trading bot.
         </p>
         <div class="actions">
-          <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Password</a>
+          <a class="btn btn-primary" href="#password-access">Get Password by Email</a>
           <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Get Telegram Signals</a>
           <a class="btn" href="/login">Dashboard Login</a>
         </div>
@@ -2254,6 +2381,45 @@ function renderLandingHtml() {
       </div>
     </section>
 
+    <section id="password-access" class="wrap section">
+      <div class="strategy-form-box">
+        <div class="strategy-form-copy">
+          <div class="badge"><span class="dot"></span><span>Password by email</span></div>
+          <h2>Get the dashboard password in your inbox.</h2>
+          <p>
+            No Telegram message needed. Enter your email and we will automatically send the Live Dashboard password and login link.
+          </p>
+          <p>
+            You can open the dashboard, watch the system, and decide your next step when you are ready.
+          </p>
+          <div class="soft-list">
+            <div><strong>Simple.</strong> Email in, password out.</div>
+            <div><strong>Comfortable.</strong> You can watch first and contact us later.</div>
+            <div><strong>Private.</strong> The dashboard stays password-protected.</div>
+          </div>
+        </div>
+
+        <form class="strategy-form" method="POST" action="/password-request">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="password_name">Your name</label>
+              <input id="password_name" name="name" type="text" placeholder="John" autocomplete="name" />
+            </div>
+            <div class="form-field">
+              <label for="password_email">Email</label>
+              <input id="password_email" name="email" type="email" placeholder="you@example.com" autocomplete="email" required />
+            </div>
+            <div class="hidden-field">
+              <label for="password_website">Website</label>
+              <input id="password_website" name="website" type="text" autocomplete="off" tabindex="-1" />
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit">Send Me The Password</button>
+          <div class="form-help">We send the dashboard password automatically by email. Trading involves risk and results are not guaranteed.</div>
+        </form>
+      </div>
+    </section>
+
     <section id="live-system" class="wrap section">
       <div class="watch-block">
         <div>
@@ -2266,7 +2432,7 @@ function renderLandingHtml() {
             The dashboard shows active trade ideas, open trades, closed trades, and tracked results. You do not have to connect a broker or place a trade to understand what is happening.
           </p>
           <div class="actions" style="grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 460px;">
-            <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Password</a>
+            <a class="btn btn-primary" href="#password-access">Get Password by Email</a>
             <a class="btn btn-green" href="/login">Dashboard Login</a>
           </div>
         </div>
@@ -2282,29 +2448,29 @@ function renderLandingHtml() {
     <section id="why-it-makes-sense" class="wrap section">
       <div class="reason-box">
         <div>
-          <div class="badge"><span class="dot"></span><span>Clear rules. Clear tracking.</span></div>
-          <h2>Why the Vixale approach makes sense.</h2>
+          <div class="badge"><span class="dot"></span><span>First you watch. Then you decide.</span></div>
+          <h2>See what the system is doing.</h2>
           <p class="lead">
-            Markets can feel messy when every decision depends on emotion, timing, and guesswork. Vixale makes the process easier to follow.
+            You do not have to understand everything at once. Open the dashboard and follow the system step by step.
           </p>
           <p class="simple-note">
-            The system waits for specific trade conditions, sends an alert when a setup appears, tracks the trade, and records the result. You are not asked to trust a story. You can watch the process live.
+            The dashboard shows trade ideas, open trades, closed trades, and results. That makes it easier to understand what is happening before you choose your next step.
           </p>
           <div class="actions" style="grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 500px;">
-            <a class="btn btn-primary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Dashboard Password</a>
+            <a class="btn btn-primary" href="#password-access">Get Password by Email</a>
             <a class="btn" href="/login">Open Login Page</a>
           </div>
         </div>
         <div class="reason-copy">
-          <h3>Not a prediction story. A visible process.</h3>
+          <h3>Simple: idea → trade → result.</h3>
           <p>
-            The value is not only in one signal. The value is in seeing the same process repeat over time: setup, alert, trade status, result, and review.
+            A trade idea appears. If it becomes active, the dashboard tracks it. When it closes, the result is recorded. You can come back and check everything.
           </p>
           <div class="reason-list">
-            <div class="reason-item"><span>1</span><div><strong>Rules instead of impulse</strong>The system reacts only when defined conditions appear.</div></div>
-            <div class="reason-item"><span>2</span><div><strong>Tracking instead of guessing</strong>Open trades, closed trades, and results are recorded in one place.</div></div>
-            <div class="reason-item"><span>3</span><div><strong>Visibility instead of blind trust</strong>You can see what the system is doing before deciding your next step.</div></div>
-            <div class="reason-item"><span>4</span><div><strong>Review instead of memory</strong>Every trade becomes part of a record that can be checked and improved.</div></div>
+            <div class="reason-item"><span>1</span><div><strong>A trade idea appears</strong>The system finds a setup and sends an alert.</div></div>
+            <div class="reason-item"><span>2</span><div><strong>The trade is tracked</strong>You can see if it is pending, open, or closed.</div></div>
+            <div class="reason-item"><span>3</span><div><strong>The result is recorded</strong>You can come back and check what happened.</div></div>
+            <div class="reason-item"><span>4</span><div><strong>You stay in control</strong>You choose whether to watch, get signals, automate, or build your own system.</div></div>
           </div>
         </div>
       </div>
@@ -2323,7 +2489,7 @@ function renderLandingHtml() {
           <div class="card-number">01 / Watch</div>
           <h3>I want to watch first</h3>
           <p>Open the live dashboard and see how the system tracks signals, trades, and results.</p>
-          <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Password</a>
+          <a class="btn card-action" href="#password-access">Get Password by Email</a>
         </div>
         <div class="card">
           <div class="card-number">02 / Signals</div>
@@ -2560,7 +2726,7 @@ function renderLandingHtml() {
           <div class="small">No hype. Clear tracking, simple explanations, and honest feedback.</div>
         </div>
         <div class="access-actions" style="grid-template-columns: repeat(3, minmax(0, 1fr)); display: grid;">
-          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Password</a>
+          <a class="btn" href="#password-access">Get Password by Email</a>
           <a class="btn secondary" href="#appointment">Book Setup Call</a>
           <a class="btn secondary" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Get Telegram Signals</a>
         </div>
@@ -2602,7 +2768,7 @@ function renderLandingHtml() {
           <div class="small">The dashboard is for transparency, tracking, and education. Trading always involves risk.</div>
         </div>
         <div class="access-actions">
-          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Password</a>
+          <a class="btn" href="#password-access">Get Password by Email</a>
           <a class="btn secondary" href="/login">Dashboard Login</a>
           <a class="btn secondary" href="#appointment">Book Setup Call</a>
         </div>
@@ -2614,6 +2780,58 @@ function renderLandingHtml() {
   <footer class="wrap footer">
     <strong>Important Risk Disclosure:</strong> Vixale is not a registered investment adviser, broker-dealer, commodity trading adviser, fiduciary, law firm, accounting firm, or tax adviser. All website content, Telegram messages, alerts, dashboards, spreadsheets, trade examples, strategy references, performance figures, and related materials are provided strictly for educational, research, and informational purposes only. Nothing presented by Vixale is personalized financial, investment, trading, legal, tax, or accounting advice, and nothing should be interpreted as an offer, solicitation, recommendation, endorsement, instruction, or invitation to buy, sell, short, hold, or trade any security, option, futures contract, cryptocurrency, derivative, or other financial instrument. Results may be backtested, hypothetical, simulated, paper-traded, forward-tested, delayed, incomplete, based on assumptions, affected by data errors, and materially different from live brokerage execution. Past performance, win rate, P&L, examples, charts, alerts, or strategy history are not guarantees, promises, projections, or reliable indicators of future results. Trading and investing involve substantial risk, including the possible loss of some or all capital. You alone are responsible for all trading decisions, position sizing, risk controls, broker selection, order execution, taxes, and compliance with applicable laws and regulations. Consult properly licensed professionals before making any financial decisions. By using this website, dashboard, Telegram channel, spreadsheets, or related materials, you agree that Vixale and its operators are not liable for any losses, damages, missed profits, execution differences, delays, outages, data inaccuracies, or reliance on any information provided.
   </footer>
+</body>
+</html>`;
+}
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PASSWORD REQUEST THANK YOU HTML
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderPasswordSentHtml(email = '', name = '') {
+  const safeEmail = escapeHtml(email || '');
+  const safeName = escapeHtml(name || '');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vixale | Password Sent</title>
+  <style>
+    :root { --ink:#101413; --muted:#68736f; --line:#e3e9e5; --green:#0bcf74; }
+    * { box-sizing: border-box; }
+    body {
+      margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+      background: radial-gradient(circle at 18% 6%, rgba(11,207,116,.15), transparent 32%), linear-gradient(180deg,#fbfcfb 0%,#f6f9f6 100%);
+      color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,"Segoe UI",Arial,sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .card { width:100%; max-width:600px; background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:30px; padding:34px; box-shadow:0 28px 80px rgba(16,20,19,.08); }
+    .badge { display:inline-flex; align-items:center; gap:10px; padding:10px 15px; border:1px solid rgba(184,216,198,.9); border-radius:999px; background:#fff; font-size:13px; font-weight:500; margin-bottom:18px; }
+    .dot { width:10px; height:10px; border-radius:999px; background:var(--green); box-shadow:0 0 0 7px rgba(11,207,116,.13); }
+    h1 { margin:0; font-size:clamp(32px,5vw,48px); line-height:1.05; letter-spacing:-1.6px; font-weight:500; }
+    p { color:var(--muted); line-height:1.62; margin:14px 0 0; font-size:16px; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:24px; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:13px 16px; border-radius:14px; font-size:14px; font-weight:500; border:1px solid var(--line); background:#fff; color:var(--ink); text-decoration:none; }
+    .btn-primary { background:var(--ink); border-color:var(--ink); color:#fff; }
+    .small { color:#5c6863; font-size:13px; margin-top:18px; line-height:1.5; }
+    @media (max-width:560px){ .actions { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge"><span class="dot"></span><span>Password sent</span></div>
+    <h1>${safeName ? `Thanks, ${safeName}.` : 'Check your email.'}</h1>
+    <p>We sent the Live Dashboard password to <strong>${safeEmail}</strong>.</p>
+    <p>Open the email, use the password, and start watching the system when you are ready.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/login">Go To Login</a>
+      <a class="btn" href="/">Back to Home</a>
+    </div>
+    <div class="small">If the email is not there, check spam or promotions. Trading involves risk and results are not guaranteed.</div>
+  </div>
 </body>
 </html>`;
 }
@@ -2960,7 +3178,7 @@ function renderLoginHtml(errorMessage = '') {
   <div class="card">
     <div class="logo">Vixale<span>.</span></div>
     <h1>Dashboard access</h1>
-    <p>Enter the dashboard password to view live tracking and the full trade history link.</p>
+    <p>Enter the dashboard password. If you do not have it yet, you can get it by email from the home page.</p>
     <form method="POST" action="/dashboard-login">
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
@@ -2969,7 +3187,7 @@ function renderLoginHtml(errorMessage = '') {
     ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
     <div class="links">
       <a href="/">← Back to Home</a>
-      <a href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access</a>
+      <a href="/#password-access">Get password by email</a>
     </div>
   </div>
 </body>
@@ -3379,7 +3597,7 @@ function renderDashboardHtml(data) {
 
       <div class="dashboard-links">
         <a class="dash-btn primary" href="${FULL_HISTORY_URL}" target="_blank" rel="noopener noreferrer">Full Trade History</a>
-        <a class="dash-btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Telegram Channel</a>
+        <a class="dash-btn" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Telegram</a>
         <a class="dash-btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Contact</a>
       </div>
     </div>
@@ -3569,6 +3787,71 @@ app.get('/login', (req, res) => {
 });
 
 
+
+
+app.post('/password-request', async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    if (body.website) {
+      return res.status(200).send(renderPasswordSentHtml('', ''));
+    }
+
+    if (!DASHBOARD_KEY) {
+      return res.status(500).send('Dashboard password is not configured.');
+    }
+
+    const name = String(body.name || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
+
+    if (!isValidEmail(email)) {
+      return res.status(400).send('Please enter a valid email address.');
+    }
+
+    const subject = 'Your Vixale Live Dashboard password';
+    const html = renderPasswordEmailHtml(name);
+    const text = renderPasswordEmailText(name);
+
+    await sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+      bcc: PASSWORD_REQUEST_BCC || undefined,
+    });
+
+    const telegramMessage = [
+      '🔐 <b>New Dashboard Password Request</b>',
+      '',
+      name ? `Name: <b>${escapeHtml(name)}</b>` : '',
+      `Email: <b>${escapeHtml(email)}</b>`,
+      'Status: <b>Password email sent automatically</b>',
+    ].filter(Boolean).join('\n');
+
+    await sendTelegram(telegramMessage);
+
+    return res.status(200).send(renderPasswordSentHtml(email, name));
+  } catch (err) {
+    console.error('Password request form error:', err);
+
+    try {
+      const body = req.body || {};
+      const email = String(body.email || '').trim().toLowerCase();
+      const name = String(body.name || '').trim();
+      await sendTelegram([
+        '⚠️ <b>Password Request Email Failed</b>',
+        '',
+        name ? `Name: <b>${escapeHtml(name)}</b>` : '',
+        email ? `Email: <b>${escapeHtml(email)}</b>` : '',
+        `Error: <code>${escapeHtml(err.message || String(err))}</code>`,
+      ].filter(Boolean).join('\n'));
+    } catch (tgErr) {
+      console.error('Password failure Telegram notify failed:', tgErr);
+    }
+
+    return res.status(500).send('Password email could not be sent right now. Please try again soon.');
+  }
+});
 
 app.post('/strategy-review', async (req, res) => {
   try {
