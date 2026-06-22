@@ -1083,8 +1083,8 @@ function renderLandingHtml() {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vixale | Trading Systems, Engineered</title>
-  <meta name="description" content="Vixale builds, tests, and monitors algorithmic trading systems with private live dashboard access." />
+  <title>Vixale | Live Trading System, Signals & Automation</title>
+  <meta name="description" content="Watch a live trading system, join Telegram signals, connect TWS / Interactive Brokers automation, or build your own trading workflow with Vixale." />
   <style>
     :root {
       --bg: #fbfcfb;
@@ -1750,6 +1750,95 @@ function renderLandingHtml() {
 
 
 
+    .card-action {
+      margin-top: 18px;
+      width: 100%;
+      min-height: 44px;
+      font-size: 13px;
+      border-radius: 14px;
+    }
+
+    .watch-block {
+      background: rgba(255,255,255,0.74);
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      padding: 28px;
+      box-shadow: var(--shadow-soft);
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 22px;
+      align-items: center;
+    }
+
+    .watch-points {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .watch-point {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px;
+      background: #fbfdfb;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .watch-point strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .partner-box {
+      background: linear-gradient(135deg, rgba(16,20,19,0.98), rgba(29,39,34,0.96));
+      color: #fff;
+      border-radius: 34px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+      box-shadow: 0 28px 90px rgba(16,20,19,0.14);
+    }
+
+    .partner-box h2,
+    .partner-box .lead,
+    .partner-box p {
+      color: #fff;
+    }
+
+    .partner-box .lead,
+    .partner-box p {
+      color: rgba(255,255,255,0.74);
+    }
+
+    .partner-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .partner-list div {
+      padding: 12px 13px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.84);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .simple-note {
+      margin-top: 14px;
+      color: #5c6863;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+
     /* compact landing spacing refinements */
     #systems {
       margin-top: -16px;
@@ -1765,7 +1854,9 @@ function renderLandingHtml() {
 
     @media (max-width: 980px) {
       .hero,
-      .access {
+      .access,
+      .watch-block,
+      .partner-box {
         grid-template-columns: 1fr;
       }
 
@@ -1775,7 +1866,9 @@ function renderLandingHtml() {
       }
 
       .cards,
-      .flow {
+      .flow,
+      .watch-points,
+      .partner-list {
         grid-template-columns: 1fr;
       }
 
@@ -1821,8 +1914,9 @@ function renderLandingHtml() {
         </span>
       </a>
       <div class="nav-links">
-        <a href="#systems">Systems</a>
-        <a href="#workflow">How it works</a>
+        <a href="#live-system">Live System</a>
+        <a href="#systems">Services</a>
+        <a href="#partners">Partners</a>
         <a href="#access">Access</a>
         <a class="nav-cta" href="/login">Live Dashboard</a>
       </div>
@@ -1832,19 +1926,19 @@ function renderLandingHtml() {
   <main>
     <section class="wrap hero">
       <div>
-        <a class="badge" href="/login"><span class="dot"></span><span>Private live trade dashboard</span></a>
-        <h1>Trading systems.<br><span class="accent">Tracked live.</span></h1>
-        <div class="smart-slogan">Structured signals. Visible outcomes.</div>
+        <a class="badge" href="/login"><span class="dot"></span><span>Live trading system running now</span></a>
+        <h1>Watch our trading system<br><span class="accent">live.</span></h1>
+        <div class="smart-slogan">Signals, trades, and results tracked in real time.</div>
         <p class="hero-text">
-          Vixale builds and monitors systematic trading workflows: signals, execution alerts, live status, and private forward-test tracking.
+          Vixale runs a live trading workflow that sends trade signals, tracks open positions, records closed trades, and shows performance inside a private dashboard.
         </p>
         <p class="hero-note">
-          To request access to the <strong>Live Trade Dashboard</strong>, message us on Telegram or join the channel for updates.
+          Start by watching the <strong>Live Trade Dashboard</strong>. Then choose what you need: Telegram signals, TWS / Interactive Brokers automation, strategy testing, custom bot development, or a trading product for your audience.
         </p>
         <div class="actions">
           <a class="btn btn-primary" href="/login">View Live Dashboard</a>
-          <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
-          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Contact on Telegram</a>
+          <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Signals</a>
+          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Build My Trading System</a>
         </div>
       </div>
 
@@ -1857,8 +1951,8 @@ function renderLandingHtml() {
           <div class="mock-body">
             <div class="mock-title">
               <div>
-                <h2>Strategy Dashboard</h2>
-                <p>Forward-test trade monitoring</p>
+                <h2>Live Trade Dashboard</h2>
+                <p>Signals, positions, and results</p>
               </div>
             </div>
             <div class="stat-grid">
@@ -1895,63 +1989,135 @@ function renderLandingHtml() {
       </div>
     </section>
 
+    <section id="live-system" class="wrap section">
+      <div class="watch-block">
+        <div>
+          <div class="badge"><span class="dot"></span><span>See it live before you decide</span></div>
+          <h2>Before you buy anything, watch the system work.</h2>
+          <p class="lead">
+            Our trading workflow is already running. Signals are generated, trades are tracked, and results are recorded in a live dashboard.
+          </p>
+          <p class="simple-note">
+            Use the dashboard to see active setups, open trades, closed trades, trade status, and performance tracking. If you like what you see, you can join the signals, connect automation, or ask us to build a similar workflow for you.
+          </p>
+          <div class="actions" style="grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 460px;">
+            <a class="btn btn-primary" href="/login">Open Live Dashboard</a>
+            <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Signals</a>
+          </div>
+        </div>
+        <div class="watch-points">
+          <div class="watch-point"><strong>Open positions</strong>See what the system is currently holding.</div>
+          <div class="watch-point"><strong>Pending setups</strong>Track signals before they become trades.</div>
+          <div class="watch-point"><strong>Closed trades</strong>Review trade history and outcomes.</div>
+          <div class="watch-point"><strong>Live P&L</strong>Monitor performance as it updates.</div>
+        </div>
+      </div>
+    </section>
+
     <section id="systems" class="wrap section">
       <div class="section-head">
-        <h2>Built for structure, not noise.</h2>
+        <h2>What can Vixale do for you?</h2>
         <p class="lead">
-          A clean trading infrastructure layer for strategy alerts, position tracking, and forward-test visibility.
+          You do not need to build everything from zero. Start with our live system, use the signals, connect automation, or bring us your own trading idea.
         </p>
       </div>
       <div class="cards">
         <div class="card">
-          <div class="card-number">01 / Signals</div>
-          <h3>Structured trade alerts</h3>
-          <p>Every setup carries symbol, side, entry, target, stop, and status data.</p>
+          <div class="card-number">01 / Watch</div>
+          <h3>Watch the live system</h3>
+          <p>Start with the dashboard and see how signals, open trades, closed trades, and results are tracked in real time.</p>
+          <a class="btn card-action" href="/login">View Dashboard</a>
         </div>
         <div class="card">
-          <div class="card-number">02 / Monitoring</div>
-          <h3>Live position tracking</h3>
-          <p>Pending orders, open positions, closed trades, and P&L are tracked in one place.</p>
+          <div class="card-number">02 / Signals</div>
+          <h3>Get Telegram signals</h3>
+          <p>Receive trade alerts from our active trading system directly in Telegram.</p>
+          <a class="btn card-action btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Signals</a>
         </div>
         <div class="card">
-          <div class="card-number">03 / Access</div>
-          <h3>Private dashboard</h3>
-          <p>Dashboard access is shared selectively with traders who request access.</p>
+          <div class="card-number">03 / Automation</div>
+          <h3>Connect your TWS / IBKR</h3>
+          <p>Already use Interactive Brokers? We can help connect signals into your TWS workflow.</p>
+          <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Connect TWS</a>
+        </div>
+        <div class="card">
+          <div class="card-number">04 / Setup</div>
+          <h3>Set up your workflow</h3>
+          <p>Need help with the technical side? We can organize alerts, tracking, broker connection, and dashboard visibility.</p>
+          <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Set Up My Workflow</a>
+        </div>
+        <div class="card">
+          <div class="card-number">05 / Research</div>
+          <h3>Test your strategy</h3>
+          <p>Have a trading idea? We can code it, backtest it, forward-test it, and explain whether it looks usable.</p>
+          <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Test My Strategy</a>
+        </div>
+        <div class="card">
+          <div class="card-number">06 / Custom bot</div>
+          <h3>Build a custom trading bot</h3>
+          <p>Need your own trading system? We can build and connect a bot based on your rules, risk model, and broker setup.</p>
+          <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Build My Bot</a>
         </div>
       </div>
     </section>
 
     <section id="workflow" class="wrap section">
       <div class="section-head">
-        <h2>From signal to live visibility.</h2>
+        <h2>How the workflow is connected.</h2>
         <p class="lead">
-          The system is designed to make the trading process observable from signal generation to closed trade history.
+          The goal is simple: a trading signal should not disappear in noise. It should be delivered, tracked, logged, and visible.
         </p>
       </div>
       <div class="flow">
-        <div class="flow-step"><span>1</span><h3>Signal</h3><p>TradingView generates structured strategy events.</p></div>
-        <div class="flow-step"><span>2</span><h3>Alert</h3><p>Telegram receives readable trade lifecycle updates.</p></div>
-        <div class="flow-step"><span>3</span><h3>Ledger</h3><p>Trade events are written into the tracking ledger.</p></div>
-        <div class="flow-step"><span>4</span><h3>Dashboard</h3><p>Traders review live status and forward-test results.</p></div>
+        <div class="flow-step"><span>1</span><h3>Signal</h3><p>The trading system generates a structured event.</p></div>
+        <div class="flow-step"><span>2</span><h3>Telegram</h3><p>You receive a readable alert with trade details.</p></div>
+        <div class="flow-step"><span>3</span><h3>Ledger</h3><p>The event is written into Google Sheets for tracking.</p></div>
+        <div class="flow-step"><span>4</span><h3>Dashboard</h3><p>You review status, positions, and results in one place.</p></div>
+      </div>
+    </section>
+
+    <section id="partners" class="wrap section">
+      <div class="partner-box">
+        <div>
+          <h2>Have an audience? Launch a trading product with Vixale.</h2>
+          <p>
+            If you run a Telegram channel, YouTube channel, Discord, newsletter, or trading community, we can help you turn your audience into a structured trading product.
+          </p>
+          <p>
+            You bring the audience. We bring the trading infrastructure: signals, dashboard, automation, research, tracking, and product packaging.
+          </p>
+          <a class="btn btn-green" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Partner With Vixale</a>
+        </div>
+        <div class="partner-list">
+          <div>Signal delivery</div>
+          <div>Live dashboard access</div>
+          <div>Strategy research</div>
+          <div>Custom bots</div>
+          <div>TWS / IBKR setup</div>
+          <div>White-label products</div>
+          <div>Performance tracking</div>
+          <div>Marketing packaging</div>
+        </div>
       </div>
     </section>
 
     <section id="access" class="wrap section">
       <div class="access">
         <div>
-          <h2>Request dashboard access.</h2>
+          <h2>Start with the live dashboard.</h2>
           <p>
-            The Live Trade Dashboard is private. Contact us on Telegram to request password access, or join the channel for strategy updates.
+            The Live Trade Dashboard is private. Contact us on Telegram to request password access, or join the channel to follow strategy updates.
           </p>
-          <div class="small">Full trade history is available only inside the password-protected dashboard.</div>
+          <div class="small">The dashboard is for transparency and monitoring. Trading involves risk and results are not guaranteed.</div>
         </div>
         <div class="access-actions">
-          <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Access on Telegram</a>
-          <a class="btn secondary" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Channel</a>
-          <a class="btn secondary" href="/login">Dashboard Login</a>
+          <a class="btn" href="/login">Dashboard Login</a>
+          <a class="btn secondary" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Join Telegram Signals</a>
+          <a class="btn secondary" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Request Setup / Consultation</a>
         </div>
       </div>
     </section>
+
   </main>
 
   <footer class="wrap footer">
