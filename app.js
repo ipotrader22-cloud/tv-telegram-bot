@@ -64,9 +64,34 @@ function extract(regex, text) {
   return match ? match[1].trim() : '';
 }
 
+function normalizeSymbol(symbol) {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) return '';
+
+  // TradingView can send symbols as NFLX or NASDAQ:NFLX.
+  // For matching Google Sheets rows, both must be treated as the same symbol.
+  const parts = raw.split(':');
+  return parts[parts.length - 1];
+}
+
+function normalizeTradeId(tradeId) {
+  const raw = String(tradeId || '').trim().toUpperCase();
+  if (!raw) return '';
+
+  const match = raw.match(/^(.*)_(LONG|SHORT)$/);
+  if (!match) {
+    return raw.includes(':') ? raw.replace(/^.*:/, '') : raw;
+  }
+
+  return `${normalizeSymbol(match[1])}_${match[2]}`;
+}
+
 function makeTradeId(symbol, side) {
-  if (!symbol || !side) return '';
-  return `${symbol}_${side}`.toUpperCase();
+  const cleanSymbol = normalizeSymbol(symbol);
+  const cleanSide = String(side || '').trim().toUpperCase();
+
+  if (!cleanSymbol || !cleanSide) return '';
+  return `${cleanSymbol}_${cleanSide}`;
 }
 
 function nowNy() {
@@ -377,12 +402,21 @@ function parseJsonTradingViewAlert(data) {
   const eventMap = {
     SETUP: 'SETUP',
     ENTRY_FILL: 'FILL',
+    FILL: 'FILL',
     TP: 'TP',
     CLOSE_STOP: 'SL',
+    SL: 'SL',
 
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
 
+    CANCEL: 'CANCEL',
+    CANCELED: 'CANCEL',
+    CANCELLED: 'CANCEL',
+    SETUP_CANCELED: 'CANCEL',
+    SETUP_CANCELLED: 'CANCEL',
+    ORDER_CANCELED: 'CANCEL',
+    ORDER_CANCELLED: 'CANCEL',
     EOD_RESET: 'CANCEL',
     NEW_DAY_RESET: 'CANCEL',
     CANCEL_REPLACE: 'CANCEL',
@@ -570,10 +604,13 @@ async function readSheet(sheets, sheetName, range = 'A:Z') {
 }
 
 function findRowIndexByTradeId(values, tradeId) {
-  if (!tradeId) return -1;
+  const wanted = normalizeTradeId(tradeId);
+  if (!wanted) return -1;
 
   for (let i = 1; i < values.length; i++) {
-    if ((values[i][0] || '').toUpperCase() === tradeId.toUpperCase()) {
+    const current = normalizeTradeId(values[i][0] || '');
+
+    if (current === wanted) {
       return i + 1;
     }
   }
@@ -624,22 +661,47 @@ async function removeRowByTradeId(sheets, sheetName, tradeId) {
 }
 
 async function removePendingRowsBySymbol(sheets, symbol) {
-  if (!symbol) return 0;
+  const wantedSymbol = normalizeSymbol(symbol);
+  if (!wantedSymbol) return 0;
 
   const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
   let removedCount = 0;
 
   for (let i = values.length - 1; i >= 1; i--) {
     const row = values[i];
-    const rowSymbol = String(row[2] || '').toUpperCase();
+    const rowSymbol = normalizeSymbol(row[2] || '');
 
-    if (rowSymbol === String(symbol).toUpperCase()) {
+    if (rowSymbol === wantedSymbol) {
       await deleteSheetRow(sheets, PENDING_SHEET, i + 1);
       removedCount++;
     }
   }
 
-  console.log(`Pending rows removed by symbol ${symbol}: ${removedCount}`);
+  console.log(`Pending rows removed by symbol ${wantedSymbol}: ${removedCount}`);
+  return removedCount;
+}
+
+async function removePendingRowsBySymbolAndSide(sheets, symbol, side) {
+  const wantedSymbol = normalizeSymbol(symbol);
+  const wantedSide = String(side || '').trim().toUpperCase();
+
+  if (!wantedSymbol || !wantedSide) return 0;
+
+  const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
+  let removedCount = 0;
+
+  for (let i = values.length - 1; i >= 1; i--) {
+    const row = values[i];
+    const rowSymbol = normalizeSymbol(row[2] || '');
+    const rowSide = String(row[3] || '').trim().toUpperCase();
+
+    if (rowSymbol === wantedSymbol && rowSide === wantedSide) {
+      await deleteSheetRow(sheets, PENDING_SHEET, i + 1);
+      removedCount++;
+    }
+  }
+
+  console.log(`Pending rows removed by symbol/side ${wantedSymbol}/${wantedSide}: ${removedCount}`);
   return removedCount;
 }
 
@@ -862,17 +924,29 @@ async function processLedger(row) {
   }
 
   if (row.event === 'CANCEL') {
+    let removedPending = null;
+    let removedCount = 0;
+
+    // First try exact / normalized trade_id match.
+    // Example: NASDAQ:NFLX_SHORT and NFLX_SHORT are treated as the same row.
     if (row.trade_id) {
-      await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
+      removedPending = await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
+      removedCount = removedPending ? 1 : 0;
       await cleanupLegacyPositionIfExists(sheets, row.trade_id);
-      return row;
     }
 
-    if (row.symbol) {
-      await removePendingRowsBySymbol(sheets, row.symbol);
-      return row;
+    // If trade_id did not match, fall back to symbol + side.
+    // This protects the dashboard when TradingView / bridge changes trade_id formatting.
+    if (!removedCount && row.symbol && row.side) {
+      removedCount = await removePendingRowsBySymbolAndSide(sheets, row.symbol, row.side);
     }
 
+    // Reset events may arrive without side. In that case, remove all pending rows for the symbol.
+    if (!removedCount && row.symbol) {
+      removedCount = await removePendingRowsBySymbol(sheets, row.symbol);
+    }
+
+    console.log('Cancel cleanup finished:', row.trade_id || '', row.symbol || '', row.side || '', 'removed:', removedCount);
     return row;
   }
 
@@ -2829,7 +2903,7 @@ function renderLandingHtmlRu() {
   const replacements = [
     ['<html lang="en">', '<html lang="ru">'],
     ['<title>Vixale | Live Trading System</title>', '<title>Vixale | Живая торговая система</title>'],
-    ['Watch a live trading system, get Telegram signals, connect Interactive Brokers / TWS, or build your own trading bot with Vixale.', 'Смотрите торговую систему Vixale, получайте сигналы в Telegram, подключайте Interactive Brokers / TWS или заказывайте собственного торгового робота.'],
+    ['Watch a live trading system, get Telegram signals, connect Interactive Brokers / TWS, or build your own trading bot with Vixale.', 'Смотрите живую торговую систему Vixale, получайте сигналы в Telegram, подключайте Interactive Brokers / TWS или заказывайте собственного торгового робота.'],
 
     ['Live System', 'Живая система'],
     ['Start Here', 'Начать'],
@@ -2838,10 +2912,10 @@ function renderLandingHtmlRu() {
     ['Live Dashboard', 'Live Dashboard'],
 
     ['Watch a <span class="accent">live trading system.</span>', 'Смотрите <span class="accent">живую торговую систему.</span>'],
-    ['Live trading, easy to watch', 'Трейдинг экран в реальном времени. 9:30-16:00 NY Time'],
-    ['See the signals. See the trades. See the results.', 'Сигналы и трейды в реальном времени. Наблюдайте сделки. Живые результаты.'],
-    ['Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.', 'Vixale показывает работу торговой системы в реальном времени: сигналы, открытые сделки, закрытые сделки и результаты — всё на одном торговом экране.'],
-    ['The live dashboard is password-protected. Get the password by email, watch the system first, and choose your next step only when you are ready.', 'Получите пароль на email или через Телеграм, сначала просто посмотрите систему в работе, а следующий шаг выбирайте только когда будете готовы.'],
+    ['Live trading, easy to watch', 'Живая торговля, удобно смотреть'],
+    ['See the signals. See the trades. See the results.', 'Видите сигналы. Видите сделки. Видите результаты.'],
+    ['Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.', 'Vixale показывает работу торговой системы в реальном времени: сигналы, открытые сделки, закрытые сделки и результаты — всё в одном приватном дашборде.'],
+    ['The live dashboard is password-protected. Get the password by email, watch the system first, and choose your next step only when you are ready.', 'Dashboard закрыт паролем. Получите пароль на email, сначала просто посмотрите систему в работе, а следующий шаг выбирайте только когда будете готовы.'],
     ['Get Password by Email', 'Получить пароль на email'],
     ['Get Telegram Signals', 'Получать сигналы в Telegram'],
     ['Dashboard Login', 'Войти в dashboard'],
@@ -2856,9 +2930,9 @@ function renderLandingHtmlRu() {
     ['Pending Setups', 'Ожидают входа'],
     ['Closed today', 'Закрыто сегодня'],
     ['Closed Today', 'Закрыто сегодня'],
-    ['Open', 'Открытые Позиции'],
-    ['Closed', 'Закрытые Позиции'],
-    ['Pending', 'Ожидает заполнения трейда'],
+    ['Open', 'Открыта'],
+    ['Closed', 'Закрыта'],
+    ['Pending', 'Ожидает'],
 
     ['Password by email', 'Пароль на email'],
     ['Get the dashboard password in your inbox.', 'Получите пароль от dashboard на email.'],
