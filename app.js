@@ -1431,6 +1431,14 @@ function renderLandingHtml() {
       transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
     }
 
+
+
+    .hero-badge-under-title {
+      align-self: flex-start;
+      margin-top: 16px;
+      margin-bottom: 14px;
+    }
+
     .badge:hover {
       transform: translateY(-1px);
       border-color: rgba(11, 207, 116, 0.45);
@@ -2341,10 +2349,10 @@ function renderLandingHtml() {
   <main>
     <section class="wrap hero">
       <div>
-        <a class="badge" href="/login"><span class="dot"></span><span>Live trading, easy to watch</span></a>
         <a class="hero-title-link" href="/login" aria-label="Open Live Trade Dashboard">
           <h1>Watch a <span class="accent">live trading system.</span></h1>
         </a>
+        <a class="badge hero-badge-under-title" href="/login"><span class="dot"></span><span>Live trading, easy to watch</span></a>
         <div class="smart-slogan">See the signals. See the trades. See the results.</div>
         <p class="hero-text">
           Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.
@@ -2814,6 +2822,200 @@ function renderLandingHtml() {
 </body>
 </html>`;
 }
+
+function renderLandingHtmlRu() {
+  let html = renderLandingHtml();
+
+  const replacements = [
+    ['<html lang="en">', '<html lang="ru">'],
+    ['<title>Vixale | Live Trading System</title>', '<title>Vixale | Живая торговая система</title>'],
+    ['Watch a live trading system, get Telegram signals, connect Interactive Brokers / TWS, or build your own trading bot with Vixale.', 'Смотрите живую торговую систему Vixale, получайте сигналы в Telegram, подключайте Interactive Brokers / TWS или заказывайте собственного торгового робота.'],
+
+    ['live trading system', 'живая торговая система'],
+    ['Live System', 'Живая система'],
+    ['Start Here', 'Начать'],
+    ['Why It Makes Sense', 'Как это устроено'],
+    ['Creators', 'Для авторов'],
+    ['Live Dashboard', 'Live Dashboard'],
+
+    ['Watch a <span class="accent">live trading system.</span>', 'Смотрите <span class="accent">живую торговую систему.</span>'],
+    ['Live trading, easy to watch', 'Живая торговля, удобно смотреть'],
+    ['See the signals. See the trades. See the results.', 'Видите сигналы. Видите сделки. Видите результаты.'],
+    ['Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.', 'Vixale запускает торговую систему, которая находит торговые идеи, отправляет сигналы, отслеживает открытые сделки и сохраняет результаты в закрытом dashboard.'],
+    ['The live dashboard is password-protected. Get the password by email, watch the system first, and choose your next step only when you are ready.', 'Dashboard закрыт паролем. Получите пароль на email, сначала просто посмотрите систему в работе, а следующий шаг выбирайте только когда будете готовы.'],
+    ['Get Password by Email', 'Получить пароль на email'],
+    ['Get Telegram Signals', 'Получать сигналы в Telegram'],
+    ['Dashboard Login', 'Войти в dashboard'],
+
+    ['Live Trade Dashboard', 'Live Trade Dashboard'],
+    ['A simple view of what the system is doing right now', 'Простой экран, где видно, что система делает сейчас'],
+    ['Open P&L', 'Открытый P&L'],
+    ['Win rate', 'Win rate'],
+    ['Win Rate', 'Win rate'],
+    ['Pending setups', 'Ожидают входа'],
+    ['Pending Setups', 'Ожидают входа'],
+    ['Closed today', 'Закрыто сегодня'],
+    ['Closed Today', 'Закрыто сегодня'],
+    ['Open', 'Открыта'],
+    ['Closed', 'Закрыта'],
+    ['Pending', 'Ожидает'],
+
+    ['Password by email', 'Пароль на email'],
+    ['Get the dashboard password in your inbox.', 'Получите пароль от dashboard на email.'],
+    ['No Telegram message needed. Enter your email and we will automatically send the Live Dashboard password and login link.', 'Не нужно сразу писать в Telegram. Оставьте email — мы отправим пароль и ссылку для входа.'],
+    ['You can open the dashboard, watch the system, and decide your next step when you are ready.', 'Вы сможете открыть dashboard, посмотреть систему и спокойно выбрать следующий шаг, когда будете готовы.'],
+    ['Simple.', 'Просто.'],
+    ['Email in, password out.', 'Оставили email — получили пароль.'],
+    ['Comfortable.', 'Комфортно.'],
+    ['You can watch first and contact us later.', 'Сначала можно просто посмотреть, а написать нам позже.'],
+    ['Private.', 'Закрыто.'],
+    ['The dashboard stays password-protected.', 'Dashboard остается под паролем.'],
+    ['Your name', 'Ваше имя'],
+    ['Email', 'Email'],
+    ['Send Me The Password', 'Отправить мне пароль'],
+    ['We send the dashboard password automatically by email. Trading involves risk and results are not guaranteed.', 'Мы отправляем пароль автоматически на email. Торговля связана с риском, результаты не гарантированы.'],
+
+    ['Start simple: watch first', 'Начните просто: сначала посмотрите'],
+    ['You can start without trading anything.', 'Можно начать без единой сделки.'],
+    ['Open the dashboard and see what the system is doing before you make any decision.', 'Откройте dashboard и посмотрите, что делает система, прежде чем принимать решение.'],
+    ['The dashboard shows active trade ideas, open trades, closed trades, and tracked results. You do not have to connect a broker or place a trade to understand what is happening.', 'Dashboard показывает торговые идеи, открытые сделки, закрытые сделки и результаты. Чтобы понять, что происходит, не нужно сразу подключать брокера или открывать сделку.'],
+    ['Open trades', 'Открытые сделки'],
+    ['See which trades are currently active.', 'Видно, какие сделки сейчас открыты.'],
+    ['Trade ideas', 'Торговые идеи'],
+    ['See what the system is watching before a trade opens.', 'Видно, что система отслеживает до входа в сделку.'],
+    ['Closed trades', 'Закрытые сделки'],
+    ['Review completed trades and recorded results.', 'Можно посмотреть завершенные сделки и результат.'],
+    ['Clear tracking', 'Понятное отслеживание'],
+    ['Follow the process without guessing.', 'Понятно, что происходит, без догадок.'],
+
+    ['First you watch. Then you decide.', 'Сначала смотрите. Потом решаете.'],
+    ['See what the system is doing.', 'Видно, что делает система.'],
+    ['You do not have to understand everything at once. Open the dashboard and follow the system step by step.', 'Не нужно понимать всё сразу. Откройте dashboard и смотрите на систему шаг за шагом.'],
+    ['The dashboard shows trade ideas, open trades, closed trades, and results. That makes it easier to understand what is happening before you choose your next step.', 'Dashboard показывает торговые идеи, открытые сделки, закрытые сделки и результаты. Так проще понять, что происходит, прежде чем выбирать следующий шаг.'],
+    ['Open Login Page', 'Открыть вход'],
+    ['Simple: idea → trade → result.', 'Просто: идея → сделка → результат.'],
+    ['A trade idea appears. If it becomes active, the dashboard tracks it. When it closes, the result is recorded. You can come back and check everything.', 'Появляется торговая идея. Если она становится сделкой, dashboard отслеживает ее. Когда сделка закрывается, результат сохраняется. Можно вернуться и всё проверить.'],
+    ['A trade idea appears', 'Появляется торговая идея'],
+    ['The system finds a setup and sends an alert.', 'Система находит ситуацию и отправляет сигнал.'],
+    ['The trade is tracked', 'Сделка отслеживается'],
+    ['You can see if it is pending, open, or closed.', 'Видно, она ожидает входа, открыта или уже закрыта.'],
+    ['The result is recorded', 'Результат сохраняется'],
+    ['You can come back and check what happened.', 'Можно вернуться и посмотреть, что произошло.'],
+    ['You stay in control', 'Вы сохраняете контроль'],
+    ['You choose whether to watch, get signals, automate, or build your own system.', 'Вы сами выбираете: смотреть, получать сигналы, подключать автоматизацию или строить свою систему.'],
+
+    ['What can we help you with?', 'С чем мы можем помочь?'],
+    ['Start where you are. You do not need to have everything figured out. Choose the step that feels right for you.', 'Начните с того места, где вы сейчас. Не нужно заранее во всем разбираться. Выберите шаг, который вам подходит.'],
+    ['01 / Watch', '01 / Смотреть'],
+    ['I want to watch first', 'Хочу сначала посмотреть'],
+    ['Open the live dashboard and see how the system tracks signals, trades, and results.', 'Откройте live dashboard и посмотрите, как система отслеживает сигналы, сделки и результаты.'],
+    ['02 / Signals', '02 / Сигналы'],
+    ['I want trading signals', 'Хочу торговые сигналы'],
+    ['Get Telegram alerts when the system finds a trade setup.', 'Получайте сигналы в Telegram, когда система находит торговую идею.'],
+    ['03 / Automation', '03 / Автоматизация'],
+    ['I want trades to be automated', 'Хочу автоматизировать сделки'],
+    ['Automation requires Interactive Brokers / TWS. Book a setup call and we will check what you have, what is missing, and the safest next step.', 'Для автоматизации нужен Interactive Brokers / TWS. Запишитесь на короткий звонок — мы посмотрим, что уже есть, чего не хватает и какой следующий шаг будет самым аккуратным.'],
+    ['Book Automation Call', 'Записаться на звонок'],
+    ['04 / Setup', '04 / Настройка'],
+    ['I need help setting this up', 'Мне нужна помощь с настройкой'],
+    ['Not sure where to start? Book a short setup call. We will map the account, alerts, dashboard, and the next clean step.', 'Не знаете, с чего начать? Запишитесь на короткий звонок. Мы разберем брокера, сигналы, dashboard и следующий понятный шаг.'],
+    ['Book Setup Call', 'Записаться на звонок'],
+    ['05 / Research', '05 / Проверка стратегии'],
+    ['I have my own strategy', 'У меня есть своя стратегия'],
+    ['Send us your idea. We can test it, code it, and tell you honestly if it looks usable.', 'Опишите идею. Мы можем ее протестировать, запрограммировать и честно сказать, выглядит ли она рабочей.'],
+    ['Test My Strategy', 'Проверить стратегию'],
+    ['06 / Custom bot', '06 / Свой бот'],
+    ['I want my own trading bot', 'Хочу своего торгового бота'],
+    ['Tell us what you want the bot to do. You can describe it in simple words and we will turn it into a clear build plan.', 'Расскажите простыми словами, что должен делать бот. Мы превратим это в понятный план разработки.'],
+    ['Start Bot Builder Chat', 'Описать бота'],
+
+    ['Setup call', 'Звонок по настройке'],
+    ['Book a quick setup call.', 'Запишитесь на короткий setup call.'],
+    ['If you want automation or help getting started, this is the easiest next step. Tell us what you have now and we will reply with a simple plan.', 'Если нужна автоматизация или помощь на старте, это самый простой следующий шаг. Расскажите, что у вас уже есть, и мы ответим понятным планом.'],
+    ['For automated trading, you will need Interactive Brokers and TWS. If you do not have it ready yet, we can still explain what has to be prepared.', 'Для автоматической торговли нужен Interactive Brokers и TWS. Если пока этого нет, мы объясним, что нужно подготовить.'],
+    ['Best for automation.', 'Подходит для автоматизации.'],
+    ['We check TWS / IBKR, alerts, and trade tracking.', 'Проверим TWS / IBKR, сигналы и отслеживание сделок.'],
+    ['Best for beginners.', 'Подходит для новичков.'],
+    ['We help you understand the setup before you connect anything.', 'Поможем понять настройку до того, как что-либо подключать.'],
+    ['Your email or Telegram', 'Ваш email или Telegram'],
+    ['What do you need?', 'Что вам нужно?'],
+    ['Best time to talk', 'Удобное время'],
+    ['Tell us what you have now', 'Расскажите, что у вас уже есть'],
+    ['Send Setup Request', 'Отправить заявку'],
+
+    ['Bot Builder Chat', 'Описание торгового бота'],
+    ['Describe your trading bot idea.', 'Опишите идею торгового бота.'],
+    ['You do not need perfect technical language. Describe what you want the bot to watch, when it should enter, when it should exit, and what account or broker you want to use.', 'Не нужно писать техническим языком. Опишите, что бот должен отслеживать, когда входить, когда выходить и какой брокер или счет планируется использовать.'],
+    ['We will turn your message into a clear build plan and tell you what is realistic.', 'Мы превратим описание в понятный план разработки и скажем, что реально сделать.'],
+    ['Market', 'Рынок'],
+    ['Platform', 'Платформа'],
+    ['Describe the bot in simple words', 'Опишите бота простыми словами'],
+    ['Send Bot Request', 'Отправить запрос по боту'],
+
+    ['Strategy review', 'Проверка стратегии'],
+    ['Send us your trading rules.', 'Отправьте правила вашей стратегии.'],
+    ['You can describe your idea in normal language. Tell us what market you trade, when you enter, when you exit, and what you want to know.', 'Можно описать идею обычным языком. Напишите, какой рынок вы торгуете, когда входите, когда выходите и что хотите узнать.'],
+    ['We can code it, backtest it, forward-test it, and give you a clear opinion: what looks usable, what looks weak, and what should be improved.', 'Мы можем запрограммировать, протестировать и дать понятное мнение: что выглядит рабочим, что слабое и что стоит улучшить.'],
+    ['Helpful for ideas.', 'Полезно для идей.'],
+    ['We turn loose rules into testable logic.', 'Превращаем общие правила в проверяемую логику.'],
+    ['Honest review.', 'Честная оценка.'],
+    ['If something looks weak, we say it clearly.', 'Если что-то выглядит слабо, мы скажем прямо.'],
+    ['Email or Telegram', 'Email или Telegram'],
+    ['Your experience level', 'Ваш уровень'],
+    ['What do you want us to check?', 'Что нужно проверить?'],
+    ['Your strategy rules', 'Правила стратегии'],
+    ['Send Strategy For Review', 'Отправить стратегию на проверку'],
+
+    ['New to trading systems?', 'Новичок в торговых системах?'],
+    ['It is okay if you do not know where to start.', 'Нормально, если пока непонятно, с чего начать.'],
+    ['Many people are interested in trading systems but get lost in broker settings, alerts, code, and risk rules. We help make the process easier to understand. You can start by watching the system, then ask questions, then decide if signals, automation, or a custom setup makes sense for you.', 'Многим интересны торговые системы, но их быстро перегружают брокеры, сигналы, код и риск-правила. Мы помогаем сделать процесс понятнее. Сначала можно просто смотреть систему, потом задавать вопросы и только потом решать, нужны ли сигналы, автоматизация или своя настройка.'],
+    ['Ask Us Where To Start', 'Спросить, с чего начать'],
+
+    ['For creators & communities', 'Для авторов и сообществ'],
+    ['Have an audience? We can help you launch a trading product.', 'Есть аудитория? Мы поможем запустить торговый продукт.'],
+    ['If you run a Telegram channel, YouTube channel, Discord, newsletter, or trading community, you do not need to build the trading stack from zero.', 'Если у вас Telegram-канал, YouTube, Discord, рассылка или трейдерское сообщество, не нужно строить всё с нуля.'],
+    ['You bring the audience. We bring the trading system, dashboard, alerts, automation, research, tracking, and product packaging.', 'Вы приводите аудиторию. Мы даем систему, dashboard, сигналы, автоматизацию, исследование, отслеживание и упаковку продукта.'],
+    ['Signal delivery', 'Доставка сигналов'],
+    ['Live dashboard access', 'Доступ к live dashboard'],
+    ['Trade tracking', 'Отслеживание сделок'],
+    ['Strategy research', 'Исследование стратегий'],
+    ['Custom bots', 'Кастомные боты'],
+    ['Broker automation setup', 'Настройка брокера и автоматизации'],
+    ['White-label signal products', 'Signal-продукты под вашим брендом'],
+    ['Client onboarding structure', 'Структура подключения клиентов'],
+    ['Marketing and product packaging', 'Маркетинг и упаковка продукта'],
+    ['Partner With Vixale', 'Стать партнером Vixale'],
+    ['Built for creators who want more than content — a real trading product behind the brand.', 'Для авторов, которые хотят больше, чем контент: настоящий торговый продукт за своим брендом.'],
+
+    ['Our approach', 'Наш подход'],
+    ['No hype. No pressure. No confusing language.', 'Без хайпа. Без давления. Без лишней сложности.'],
+    ['We want you to understand what you are looking at. If something is technical, we explain it. If a system does not look good, we say it. If a setup is risky, we do not pretend it is safe.', 'Мы хотим, чтобы вы понимали, на что смотрите. Если что-то техническое — объясняем. Если система выглядит слабо — говорим прямо. Если идея рискованная — не делаем вид, что это безопасно.'],
+    ['Watch before you decide', 'Смотрите перед решением'],
+    ['Ask questions before you connect anything', 'Задавайте вопросы до подключения'],
+    ['Understand the risk before trading', 'Понимайте риск до торговли'],
+    ['Use signals manually or with automation', 'Используйте сигналы вручную или с автоматизацией'],
+    ['Build only what makes sense', 'Стройте только то, что имеет смысл'],
+
+    ['Start by watching the live system.', 'Начните с наблюдения за live-системой.'],
+    ['Open the dashboard, see how the system works, and decide your next step when you are ready.', 'Откройте dashboard, посмотрите, как работает система, и выбирайте следующий шаг, когда будете готовы.'],
+    ['Talk To Us', 'Написать нам'],
+
+    ['Important Risk Disclosure:', 'Важное раскрытие рисков:'],
+    ['Important risk note', 'Важное предупреждение о риске'],
+  ];
+
+  for (const [from, to] of replacements) {
+    html = html.split(from).join(to);
+  }
+
+  return html;
+}
+
+function isRussianRequest(req) {
+  const host = String(req.hostname || req.headers.host || '').toLowerCase();
+  return host.startsWith('ru.') || String(req.query.lang || '').toLowerCase() === 'ru';
+}
+
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3825,7 +4027,7 @@ async function handleTradingViewWebhook(req, res) {
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 app.get('/', (req, res) => {
-  res.status(200).send(renderLandingHtml());
+  res.status(200).send(isRussianRequest(req) ? renderLandingHtmlRu() : renderLandingHtml());
 });
 
 app.get('/login', (req, res) => {
