@@ -1853,6 +1853,218 @@ function renderLandingHtml() {
       line-height: 1.4;
     }
 
+
+    .reason-box {
+      background: linear-gradient(135deg, rgba(255,255,255,0.86), rgba(233,255,244,0.72));
+      border: 1px solid #cfe9dc;
+      border-radius: 34px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: .92fr 1.08fr;
+      gap: 26px;
+      align-items: start;
+      box-shadow: 0 24px 80px rgba(16,20,19,0.08);
+    }
+
+    .reason-box h2 {
+      margin: 0 0 10px;
+      font-size: clamp(27px, 3.0vw, 38px);
+      line-height: 1.08;
+      letter-spacing: -1.25px;
+      font-weight: 500;
+    }
+
+    .reason-copy {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      padding: 24px;
+      box-shadow: 0 16px 46px rgba(16,20,19,0.05);
+    }
+
+    .reason-copy h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      line-height: 1.22;
+      letter-spacing: -0.55px;
+      font-weight: 500;
+    }
+
+    .reason-copy p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .reason-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .reason-item {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdfb;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .reason-item span {
+      width: 28px;
+      height: 28px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      font-weight: 500;
+      font-size: 13px;
+    }
+
+    .reason-item strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+      font-weight: 500;
+    }
+
+
+    .strategy-form-box {
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      padding: 30px;
+      box-shadow: var(--shadow-soft);
+      display: grid;
+      grid-template-columns: .95fr 1.05fr;
+      gap: 26px;
+      align-items: start;
+    }
+
+    .strategy-form-copy h2 {
+      margin: 0 0 10px;
+      font-size: clamp(27px, 3.0vw, 38px);
+      line-height: 1.08;
+      letter-spacing: -1.25px;
+      font-weight: 500;
+    }
+
+    .strategy-form-copy p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.62;
+    }
+
+    .soft-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .soft-list div {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdfb;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      padding: 12px 13px;
+    }
+
+    .soft-list strong {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .strategy-form {
+      background: #fbfdfb;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      padding: 22px;
+      box-shadow: 0 16px 46px rgba(16,20,19,0.05);
+    }
+
+    .strategy-form label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: .65px;
+      margin: 0 0 8px;
+    }
+
+    .strategy-form input,
+    .strategy-form select,
+    .strategy-form textarea {
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--ink);
+      padding: 13px 14px;
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .16s ease, box-shadow .16s ease;
+    }
+
+    .strategy-form textarea {
+      min-height: 150px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .strategy-form input:focus,
+    .strategy-form select:focus,
+    .strategy-form textarea:focus {
+      border-color: rgba(11,207,116,.55);
+      box-shadow: 0 0 0 4px rgba(11,207,116,.10);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .form-field {
+      margin-bottom: 14px;
+    }
+
+    .form-field.full {
+      grid-column: 1 / -1;
+    }
+
+    .form-help {
+      color: var(--muted-2);
+      font-size: 12.5px;
+      line-height: 1.45;
+      margin-top: 7px;
+    }
+
+    .strategy-form .btn {
+      width: 100%;
+      border: 0;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    .hidden-field {
+      display: none;
+    }
+
+
     .simple-note {
       margin-top: 14px;
       color: #5c6863;
@@ -1878,7 +2090,9 @@ function renderLandingHtml() {
       .hero,
       .access,
       .watch-block,
-      .partner-box {
+      .partner-box,
+      .reason-box,
+      .strategy-form-box {
         grid-template-columns: 1fr;
       }
 
@@ -1920,8 +2134,13 @@ function renderLandingHtml() {
         grid-template-columns: 1fr 1fr;
       }
 
-      .stat-grid {
+      .stat-grid,
+      .form-grid {
         grid-template-columns: 1fr;
+      }
+
+      .form-field.full {
+        grid-column: auto;
       }
     }
   </style>
@@ -1939,7 +2158,7 @@ function renderLandingHtml() {
       <div class="nav-links">
         <a href="#live-system">Live System</a>
         <a href="#systems">Start Here</a>
-        <a href="#simple-steps">Simple Steps</a>
+        <a href="#why-it-makes-sense">Why It Makes Sense</a>
         <a href="#partners">Creators</a>
         <a class="nav-cta" href="/login">Live Dashboard</a>
       </div>
@@ -2039,6 +2258,38 @@ function renderLandingHtml() {
       </div>
     </section>
 
+    <section id="why-it-makes-sense" class="wrap section">
+      <div class="reason-box">
+        <div>
+          <div class="badge"><span class="dot"></span><span>Clear rules. Clear tracking.</span></div>
+          <h2>Why the Vixale approach makes sense.</h2>
+          <p class="lead">
+            Markets can feel messy when every decision depends on emotion, timing, and guesswork. Vixale makes the process easier to follow.
+          </p>
+          <p class="simple-note">
+            The system waits for specific trade conditions, sends an alert when a setup appears, tracks the trade, and records the result. You are not asked to trust a story. You can watch the process live.
+          </p>
+          <div class="actions" style="grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 500px;">
+            <a class="btn btn-primary" href="/login">Watch the Process Live</a>
+            <a class="btn" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Ask How It Works</a>
+          </div>
+        </div>
+        <div class="reason-copy">
+          <h3>Not a prediction story. A visible process.</h3>
+          <p>
+            The value is not only in one signal. The value is in seeing the same process repeat over time: setup, alert, trade status, result, and review.
+          </p>
+          <div class="reason-list">
+            <div class="reason-item"><span>1</span><div><strong>Rules instead of impulse</strong>The system reacts only when defined conditions appear.</div></div>
+            <div class="reason-item"><span>2</span><div><strong>Tracking instead of guessing</strong>Open trades, closed trades, and results are recorded in one place.</div></div>
+            <div class="reason-item"><span>3</span><div><strong>Visibility instead of blind trust</strong>You can see what the system is doing before deciding your next step.</div></div>
+            <div class="reason-item"><span>4</span><div><strong>Review instead of memory</strong>Every trade becomes part of a record that can be checked and improved.</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
     <section id="systems" class="wrap section">
       <div class="section-head">
         <h2>What can we help you with?</h2>
@@ -2075,7 +2326,7 @@ function renderLandingHtml() {
           <div class="card-number">05 / Research</div>
           <h3>I have my own strategy</h3>
           <p>Send us your idea. We can test it, code it, and tell you honestly if it looks usable.</p>
-          <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Test My Strategy</a>
+          <a class="btn card-action" href="#strategy-review">Test My Strategy</a>
         </div>
         <div class="card">
           <div class="card-number">06 / Custom bot</div>
@@ -2083,6 +2334,74 @@ function renderLandingHtml() {
           <p>We can build a custom bot based on your rules, risk settings, and trading account setup.</p>
           <a class="btn card-action" href="${TELEGRAM_DM_URL}" target="_blank" rel="noopener noreferrer">Build My Bot</a>
         </div>
+      </div>
+    </section>
+
+    <section id="strategy-review" class="wrap section">
+      <div class="strategy-form-box">
+        <div class="strategy-form-copy">
+          <div class="badge"><span class="dot"></span><span>Have your own strategy?</span></div>
+          <h2>Send us your trading rules.</h2>
+          <p>
+            You do not need to write a perfect technical document. Just describe the idea in your own words.
+          </p>
+          <p>
+            We will look at the rules, ask the right questions, and tell you what the next step should be: clean it up, test it, code it, or leave it alone.
+          </p>
+          <div class="soft-list">
+            <div><strong>Simple is fine.</strong> Tell us what you buy, what you sell, and when you get out.</div>
+            <div><strong>No pressure.</strong> This is only a first look, not a commitment.</div>
+            <div><strong>Honest feedback.</strong> If the idea is weak, we will not pretend it is ready.</div>
+          </div>
+        </div>
+
+        <form class="strategy-form" method="POST" action="/strategy-review">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="strategy_name">Your name</label>
+              <input id="strategy_name" name="name" type="text" placeholder="John" autocomplete="name" />
+            </div>
+            <div class="form-field">
+              <label for="strategy_contact">Email or Telegram</label>
+              <input id="strategy_contact" name="contact" type="text" placeholder="@username or email" autocomplete="email" required />
+            </div>
+            <div class="form-field">
+              <label for="strategy_market">Market</label>
+              <input id="strategy_market" name="market" type="text" placeholder="Stocks, options, futures, crypto..." />
+            </div>
+            <div class="form-field">
+              <label for="strategy_experience">Your level</label>
+              <select id="strategy_experience" name="experience">
+                <option value="New to trading systems">New to trading systems</option>
+                <option value="I trade manually">I trade manually</option>
+                <option value="I already have alerts or code">I already have alerts or code</option>
+                <option value="I manage a trading audience">I manage a trading audience</option>
+              </select>
+            </div>
+            <div class="form-field full">
+              <label for="strategy_rules">Describe your rules</label>
+              <textarea id="strategy_rules" name="rules" placeholder="Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours..." required></textarea>
+              <div class="form-help">Write it like you would explain it to a trader friend. We will help clean it up.</div>
+            </div>
+            <div class="form-field full">
+              <label for="strategy_goal">What do you want from us?</label>
+              <select id="strategy_goal" name="goal">
+                <option value="Tell me if this strategy makes sense">Tell me if this strategy makes sense</option>
+                <option value="Backtest this strategy">Backtest this strategy</option>
+                <option value="Code this strategy">Code this strategy</option>
+                <option value="Build a trading bot">Build a trading bot</option>
+                <option value="Package this for my audience">Package this for my audience</option>
+                <option value="Not sure yet">Not sure yet</option>
+              </select>
+            </div>
+            <div class="hidden-field">
+              <label for="website">Website</label>
+              <input id="website" name="website" type="text" autocomplete="off" tabindex="-1" />
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit">Send My Strategy</button>
+          <div class="form-help">We usually reply by Telegram or email. Trading involves risk, and this form does not create any financial-advice relationship.</div>
+        </form>
       </div>
     </section>
 
@@ -2168,6 +2487,152 @@ function renderLandingHtml() {
 </body>
 </html>`;
 }
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STRATEGY FORM THANK YOU HTML
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderStrategyReceivedHtml(name = '') {
+  const safeName = escapeHtml(name || '');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vixale | Strategy Received</title>
+  <style>
+    :root {
+      --bg: #fbfcfb;
+      --paper: #ffffff;
+      --ink: #101413;
+      --muted: #68736f;
+      --line: #e3e9e5;
+      --green: #0bcf74;
+      --green-dark: #078f51;
+      --green-soft: #e9fff4;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 18% 6%, rgba(11,207,116,0.15), transparent 32%),
+        radial-gradient(circle at 84% 10%, rgba(11,207,116,0.10), transparent 28%),
+        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 100%);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 560px;
+      background: rgba(255,255,255,0.86);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      padding: 34px;
+      box-shadow: 0 28px 80px rgba(16,20,19,0.08);
+      backdrop-filter: blur(18px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 15px;
+      border: 1px solid rgba(184, 216, 198, 0.9);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.82);
+      color: #26302c;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 18px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 7px rgba(11,207,116,0.13);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 5vw, 48px);
+      line-height: 1.05;
+      letter-spacing: -1.6px;
+      font-weight: 500;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.62;
+      margin: 14px 0 0;
+      font-size: 16px;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 500;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+
+    .small {
+      color: #5c6863;
+      font-size: 13px;
+      margin-top: 18px;
+    }
+
+    @media (max-width: 560px) {
+      .actions { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge"><span class="dot"></span><span>Strategy received</span></div>
+    <h1>${safeName ? `Thanks, ${safeName}.` : 'Thanks. We got it.'}</h1>
+    <p>Your trading rules were sent to Vixale. We will review the idea and reply by the contact you provided.</p>
+    <p>You can keep watching the live system while we review your strategy.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/login">View Live Dashboard</a>
+      <a class="btn" href="/">Back to Home</a>
+    </div>
+    <div class="small">This is a strategy review request, not financial advice. Trading involves risk and results are not guaranteed.</div>
+  </div>
+</body>
+</html>`;
+}
+
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LOGIN HTML
@@ -2924,6 +3389,50 @@ app.get('/', (req, res) => {
 
 app.get('/login', (req, res) => {
   res.status(200).send(renderLoginHtml());
+});
+
+
+
+app.post('/strategy-review', async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    // Basic honeypot for simple bots.
+    if (body.website) {
+      return res.status(200).send(renderStrategyReceivedHtml(''));
+    }
+
+    const name = String(body.name || '').trim();
+    const contact = String(body.contact || '').trim();
+    const market = String(body.market || '').trim();
+    const experience = String(body.experience || '').trim();
+    const goal = String(body.goal || '').trim();
+    const rules = String(body.rules || '').trim();
+
+    if (!contact || !rules) {
+      return res.status(400).send('Please provide your contact and strategy rules.');
+    }
+
+    const message = [
+      '🧠 <b>New Strategy Review Request</b>',
+      '',
+      name ? `Name: <b>${escapeHtml(name)}</b>` : '',
+      `Contact: <b>${escapeHtml(contact)}</b>`,
+      market ? `Market: <b>${escapeHtml(market)}</b>` : '',
+      experience ? `Level: <b>${escapeHtml(experience)}</b>` : '',
+      goal ? `Goal: <b>${escapeHtml(goal)}</b>` : '',
+      '',
+      '<b>Rules:</b>',
+      escapeHtml(rules),
+    ].filter(Boolean).join('\n');
+
+    await sendTelegram(message);
+
+    return res.status(200).send(renderStrategyReceivedHtml(name));
+  } catch (err) {
+    console.error('Strategy review form error:', err);
+    return res.status(500).send('Strategy review form error. Please try again or contact us on Telegram.');
+  }
 });
 
 app.post('/dashboard-login', (req, res) => {
