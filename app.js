@@ -1140,6 +1140,7 @@ function renderLandingHtml() {
       color: inherit;
       text-decoration: none;
       cursor: pointer;
+      margin-top: -2px;
     }
 
     .hero-title-link h1,
@@ -1322,11 +1323,12 @@ function renderLandingHtml() {
 
     h1 {
       margin: 0;
-      max-width: 680px;
-      font-size: clamp(34px, 4.0vw, 50px);
-      line-height: 1.08;
+      max-width: 760px;
+      font-size: clamp(34px, 3.8vw, 48px);
+      line-height: 1.05;
       letter-spacing: -1.7px;
       font-weight: 500;
+      white-space: nowrap;
     }
 
     .smart-slogan {
@@ -1909,8 +1911,9 @@ function renderLandingHtml() {
       }
 
       h1 {
-        font-size: 48px;
-        letter-spacing: -2.5px;
+        font-size: 42px;
+        letter-spacing: -2.1px;
+        white-space: normal;
       }
 
       .row {
@@ -1948,7 +1951,7 @@ function renderLandingHtml() {
       <div>
         <a class="badge" href="/login"><span class="dot"></span><span>Live trading, easy to watch</span></a>
         <a class="hero-title-link" href="/login" aria-label="Open Live Trade Dashboard">
-          <h1>Watch our trading system<br><span class="accent">live.</span></h1>
+          <h1>Watch a <span class="accent">live trading system.</span></h1>
         </a>
         <div class="smart-slogan">See the signals. See the trades. See the results.</div>
         <p class="hero-text">
