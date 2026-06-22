@@ -2829,7 +2829,7 @@ function renderLandingHtmlRu() {
   const replacements = [
     ['<html lang="en">', '<html lang="ru">'],
     ['<title>Vixale | Live Trading System</title>', '<title>Vixale | Живая торговая система</title>'],
-    ['Watch a live trading system, get Telegram signals, connect Interactive Brokers / TWS, or build your own trading bot with Vixale.', 'Смотрите живую торговую систему Vixale, получайте сигналы в Telegram, подключайте Interactive Brokers / TWS или заказывайте собственного торгового робота.'],
+    ['Watch a live trading system, get Telegram signals, connect Interactive Brokers / TWS, or build your own trading bot with Vixale.', 'Смотрите торговую систему Vixale, получайте сигналы в Telegram, подключайте Interactive Brokers / TWS или заказывайте собственного торгового робота.'],
 
     ['Live System', 'Живая система'],
     ['Start Here', 'Начать'],
@@ -2838,10 +2838,10 @@ function renderLandingHtmlRu() {
     ['Live Dashboard', 'Live Dashboard'],
 
     ['Watch a <span class="accent">live trading system.</span>', 'Смотрите <span class="accent">живую торговую систему.</span>'],
-    ['Live trading, easy to watch', 'Живая торговля, удобно смотреть'],
-    ['See the signals. See the trades. See the results.', 'Видите сигналы. Видите сделки. Видите результаты.'],
-    ['Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.', 'Vixale показывает работу торговой системы в реальном времени: сигналы, открытые сделки, закрытые сделки и результаты — всё в одном приватном дашборде.'],
-    ['The live dashboard is password-protected. Get the password by email, watch the system first, and choose your next step only when you are ready.', 'Dashboard закрыт паролем. Получите пароль на email, сначала просто посмотрите систему в работе, а следующий шаг выбирайте только когда будете готовы.'],
+    ['Live trading, easy to watch', 'Трейдинг экран в реальном времени. 9:30-16:00 NY Time'],
+    ['See the signals. See the trades. See the results.', 'Сигналы и трейды в реальном времени. Наблюдайте сделки. Живые результаты.'],
+    ['Vixale runs a live trading system that finds trade setups, sends alerts, tracks open trades, and records every result inside a private dashboard.', 'Vixale показывает работу торговой системы в реальном времени: сигналы, открытые сделки, закрытые сделки и результаты — всё на одном торговом экране.'],
+    ['The live dashboard is password-protected. Get the password by email, watch the system first, and choose your next step only when you are ready.', 'Получите пароль на email или через Телеграм, сначала просто посмотрите систему в работе, а следующий шаг выбирайте только когда будете готовы.'],
     ['Get Password by Email', 'Получить пароль на email'],
     ['Get Telegram Signals', 'Получать сигналы в Telegram'],
     ['Dashboard Login', 'Войти в dashboard'],
@@ -2856,9 +2856,9 @@ function renderLandingHtmlRu() {
     ['Pending Setups', 'Ожидают входа'],
     ['Closed today', 'Закрыто сегодня'],
     ['Closed Today', 'Закрыто сегодня'],
-    ['Open', 'Открыта'],
-    ['Closed', 'Закрыта'],
-    ['Pending', 'Ожидает'],
+    ['Open', 'Открытые Позиции'],
+    ['Closed', 'Закрытые Позиции'],
+    ['Pending', 'Ожидает заполнения трейда'],
 
     ['Password by email', 'Пароль на email'],
     ['Get the dashboard password in your inbox.', 'Получите пароль от dashboard на email.'],
