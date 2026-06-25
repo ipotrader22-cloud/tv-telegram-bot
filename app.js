@@ -300,7 +300,7 @@ function parseTradingViewMessage(message) {
 
   const headerMatch = raw.match(/([A-Z0-9:_\.\-!]+)\s+(LONG|SHORT)/i);
   if (headerMatch) {
-    symbol = headerMatch[1].trim().replace(/^[^A-Z0-9]+/i, '');
+    symbol = headerMatch[1].trim().replace(/^[^A-Z0-9:_\.\-!]+/i, '');
     side = headerMatch[2].trim().toUpperCase();
   }
 
@@ -308,11 +308,11 @@ function parseTradingViewMessage(message) {
     event = 'CANCEL';
   } else if (/Entry filled/i.test(raw) || /\bFILLED\b/i.test(firstLine)) {
     event = 'FILL';
-  } else if (/EOD CLOSE/i.test(firstLine)) {
+  } else if (/EOD CLOSE|RTH END CLOSE/i.test(firstLine) || /RTH End Close/i.test(raw)) {
     event = 'EOD';
   } else if (/TARGET HIT|TAKE PROFIT|\bTP\b/i.test(firstLine) || /ЦЕЛЬ/i.test(firstLine) || /Profit:/i.test(raw)) {
     event = 'TP';
-  } else if (/STOP LOSS|\bSTOP\b|\bSL\b/i.test(firstLine) || /СТОП/i.test(firstLine) || /Actual loss:/i.test(raw)) {
+  } else if (/STOP LOSS|\bSTOP\b|\bSL\b|CLOSE STOP/i.test(firstLine) || /СТОП/i.test(firstLine) || /Actual loss:/i.test(raw)) {
     event = 'SL';
   } else if (/SETUP/i.test(firstLine)) {
     event = 'SETUP';
@@ -321,10 +321,12 @@ function parseTradingViewMessage(message) {
   }
 
   const entry =
+    cleanNumber(extract(/Entry Limit:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Entry filled:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Entry:\s*([0-9\.,-]+)/i, raw));
 
   const size =
+    cleanNumber(extract(/Qty:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Suggested Size:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Size:\s*([0-9\.,-]+)/i, raw));
 
@@ -337,14 +339,16 @@ function parseTradingViewMessage(message) {
     cleanNumber(extract(/Entry filled:\s*([0-9\.,-]+)/i, raw));
 
   const close =
+    cleanNumber(extract(/Exit Close:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Close:\s*([0-9\.,-]+)/i, raw));
 
   const stop =
     cleanNumber(extract(/СТОП на закрытие (?:ниже|выше)\s*([0-9\.,-]+)/i, raw)) ||
+    cleanNumber(extract(/Stop:\s*close beyond\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Stop:\s*([0-9\.,-]+)/i, raw));
 
   let exit = '';
-  if (event === 'TP') exit = filled || close;
+  if (event === 'TP') exit = filled || close || target;
   if (event === 'SL' || event === 'EOD') exit = close || filled;
 
   let result = '';
@@ -398,15 +402,22 @@ function parseTradingViewMessage(message) {
 
 function parseJsonTradingViewAlert(data) {
   const eventRaw = String(data.event || '').toUpperCase();
+  const exitTypeRaw = String(data.exit_type || '').toUpperCase();
 
   const eventMap = {
     SETUP: 'SETUP',
+    ENTRY: 'SETUP',
     ENTRY_FILL: 'FILL',
     FILL: 'FILL',
+
     TP: 'TP',
+    TARGET: 'TP',
+
     CLOSE_STOP: 'SL',
+    STOP: 'SL',
     SL: 'SL',
 
+    EOD: 'EOD',
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
 
@@ -422,16 +433,31 @@ function parseJsonTradingViewAlert(data) {
     CANCEL_REPLACE: 'CANCEL',
   };
 
-  const event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
+  let event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
 
-  const symbol = String(data.symbol || '').trim();
+  if (eventRaw === 'EXIT') {
+    if (exitTypeRaw === 'TARGET') event = 'TP';
+    else if (exitTypeRaw === 'STOP') event = 'SL';
+    else if (exitTypeRaw === 'EOD') event = 'EOD';
+    else event = 'UNKNOWN';
+  }
+
+  const symbol = String(data.symbol || data.ticker || '').trim();
 
   // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
   // That lets us remove all pending rows by symbol.
   const side = data.side ? String(data.side).trim().toUpperCase() : '';
 
-  const entry = cleanNumber(data.entry);
-  const size = cleanNumber(data.qty);
+  const entry =
+    cleanNumber(data.entry) ||
+    cleanNumber(data.entry_price) ||
+    cleanNumber(data.price);
+
+  const size =
+    cleanNumber(data.qty) ||
+    cleanNumber(data.size) ||
+    cleanNumber(data.quantity);
+
   const target = cleanNumber(data.target);
   const stop = cleanNumber(data.stop);
   const price = cleanNumber(data.price);
@@ -4060,6 +4086,24 @@ function renderDashboardHtml(data) {
 // WEBHOOK ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+function isRecognizedTradeWebhook(row) {
+  if (!row) return false;
+
+  const event = String(row.event || '').toUpperCase();
+
+  if (event === 'UNKNOWN') return false;
+
+  if (event === 'CANCEL') {
+    return Boolean(row.symbol || row.trade_id);
+  }
+
+  if (['SETUP', 'FILL', 'TP', 'SL', 'EOD'].includes(event)) {
+    return Boolean(row.symbol && row.side);
+  }
+
+  return false;
+}
+
 async function handleTradingViewWebhook(req, res) {
   try {
     const isJsonObject =
@@ -4072,6 +4116,11 @@ async function handleTradingViewWebhook(req, res) {
     const parsedRow = isJsonObject
       ? parseJsonTradingViewAlert(req.body)
       : parseTradingViewMessage(message);
+
+    if (!isRecognizedTradeWebhook(parsedRow)) {
+      console.log('Ignored unknown webhook payload:', message.slice(0, 500));
+      return res.status(200).send('IGNORED');
+    }
 
     let finalRow = parsedRow;
 
