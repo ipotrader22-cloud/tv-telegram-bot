@@ -150,10 +150,22 @@ function formatPercent(value) {
   return `${sign}${abs}%`;
 }
 
+function firstCleanNumber(...values) {
+  for (const value of values) {
+    const n = cleanNumber(value);
+    if (n !== '') return n;
+  }
+
+  return '';
+}
+
 function calcResult(openPosition, closeRow) {
-  const entry = cleanNumber(openPosition?.entry);
-  const exit = cleanNumber(closeRow?.exit);
-  const size = cleanNumber(openPosition?.size || closeRow?.size);
+  // Primary path: use the real open position from Google Sheets.
+  // Fallback path: if Open Positions did not contain a matching row, calculate from the close payload itself.
+  // This protects Telegram / Closed Trades from showing $0.00 when the close alert has entry, exit, side, and qty.
+  const entry = firstCleanNumber(openPosition?.entry, closeRow?.entry, closeRow?.entry_price);
+  const exit = firstCleanNumber(closeRow?.exit, closeRow?.price, closeRow?.exit_price, closeRow?.filled_price, closeRow?.fill_price);
+  const size = firstCleanNumber(openPosition?.size, closeRow?.size, closeRow?.qty, closeRow?.quantity);
   const side = String(openPosition?.side || closeRow?.side || '').toUpperCase();
 
   if (entry === '' || exit === '' || size === '' || !side) return '';
@@ -170,9 +182,9 @@ function calcResult(openPosition, closeRow) {
 }
 
 function calcResultPercent(openPosition, closeRow) {
-  const entry = cleanNumber(openPosition?.entry || closeRow?.entry);
-  const size = cleanNumber(openPosition?.size || closeRow?.size);
-  const result = cleanNumber(closeRow?.result);
+  const entry = firstCleanNumber(openPosition?.entry, closeRow?.entry, closeRow?.entry_price);
+  const size = firstCleanNumber(openPosition?.size, closeRow?.size, closeRow?.qty, closeRow?.quantity);
+  const result = firstCleanNumber(closeRow?.result, closeRow?.pnl, closeRow?.realized_pnl, closeRow?.p_l);
 
   if (entry === '' || size === '' || result === '') return '';
 
@@ -181,6 +193,22 @@ function calcResultPercent(openPosition, closeRow) {
   if (!Number.isFinite(notional) || notional === 0) return '';
 
   return Number(((result / notional) * 100).toFixed(2));
+}
+
+function ensureClosePnlFallback(row, openPosition = null) {
+  if (!row || !['TP', 'SL', 'EOD'].includes(row.event)) return row;
+
+  const enriched = { ...row };
+
+  if (enriched.result === '' || enriched.result === undefined || enriched.result === null) {
+    enriched.result = calcResult(openPosition, enriched);
+  }
+
+  if (enriched.result_pct === '' || enriched.result_pct === undefined || enriched.result_pct === null) {
+    enriched.result_pct = calcResultPercent(openPosition, enriched);
+  }
+
+  return enriched;
 }
 
 function pnlTelegramLine(row) {
@@ -197,7 +225,12 @@ function pnlTelegramLine(row) {
 }
 
 function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
-  if (!openPosition) return closeRow;
+  if (!openPosition) {
+    return ensureClosePnlFallback({
+      ...closeRow,
+      status: 'closed',
+    });
+  }
 
   const enriched = {
     ...closeRow,
@@ -211,15 +244,7 @@ function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
     status: 'closed',
   };
 
-  if (enriched.result === '') {
-    enriched.result = calcResult(openPosition, enriched);
-  }
-
-  if (enriched.result_pct === '' || enriched.result_pct === undefined) {
-    enriched.result_pct = calcResultPercent(openPosition, enriched);
-  }
-
-  return enriched;
+  return ensureClosePnlFallback(enriched, openPosition);
 }
 
 
@@ -300,7 +325,7 @@ function parseTradingViewMessage(message) {
 
   const headerMatch = raw.match(/([A-Z0-9:_\.\-!]+)\s+(LONG|SHORT)/i);
   if (headerMatch) {
-    symbol = headerMatch[1].trim().replace(/^[^A-Z0-9]+/i, '');
+    symbol = headerMatch[1].trim().replace(/^[^A-Z0-9:_\.\-!]+/i, '');
     side = headerMatch[2].trim().toUpperCase();
   }
 
@@ -308,11 +333,11 @@ function parseTradingViewMessage(message) {
     event = 'CANCEL';
   } else if (/Entry filled/i.test(raw) || /\bFILLED\b/i.test(firstLine)) {
     event = 'FILL';
-  } else if (/EOD CLOSE/i.test(firstLine)) {
+  } else if (/EOD CLOSE|RTH END CLOSE/i.test(firstLine) || /RTH End Close/i.test(raw)) {
     event = 'EOD';
   } else if (/TARGET HIT|TAKE PROFIT|\bTP\b/i.test(firstLine) || /ЦЕЛЬ/i.test(firstLine) || /Profit:/i.test(raw)) {
     event = 'TP';
-  } else if (/STOP LOSS|\bSTOP\b|\bSL\b/i.test(firstLine) || /СТОП/i.test(firstLine) || /Actual loss:/i.test(raw)) {
+  } else if (/STOP LOSS|\bSTOP\b|\bSL\b|CLOSE STOP/i.test(firstLine) || /СТОП/i.test(firstLine) || /Actual loss:/i.test(raw)) {
     event = 'SL';
   } else if (/SETUP/i.test(firstLine)) {
     event = 'SETUP';
@@ -321,10 +346,12 @@ function parseTradingViewMessage(message) {
   }
 
   const entry =
+    cleanNumber(extract(/Entry Limit:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Entry filled:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Entry:\s*([0-9\.,-]+)/i, raw));
 
   const size =
+    cleanNumber(extract(/Qty:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Suggested Size:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Size:\s*([0-9\.,-]+)/i, raw));
 
@@ -337,14 +364,16 @@ function parseTradingViewMessage(message) {
     cleanNumber(extract(/Entry filled:\s*([0-9\.,-]+)/i, raw));
 
   const close =
+    cleanNumber(extract(/Exit Close:\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Close:\s*([0-9\.,-]+)/i, raw));
 
   const stop =
     cleanNumber(extract(/СТОП на закрытие (?:ниже|выше)\s*([0-9\.,-]+)/i, raw)) ||
+    cleanNumber(extract(/Stop:\s*close beyond\s*([0-9\.,-]+)/i, raw)) ||
     cleanNumber(extract(/Stop:\s*([0-9\.,-]+)/i, raw));
 
   let exit = '';
-  if (event === 'TP') exit = filled || close;
+  if (event === 'TP') exit = filled || close || target;
   if (event === 'SL' || event === 'EOD') exit = close || filled;
 
   let result = '';
@@ -398,15 +427,22 @@ function parseTradingViewMessage(message) {
 
 function parseJsonTradingViewAlert(data) {
   const eventRaw = String(data.event || '').toUpperCase();
+  const exitTypeRaw = String(data.exit_type || '').toUpperCase();
 
   const eventMap = {
     SETUP: 'SETUP',
+    ENTRY: 'SETUP',
     ENTRY_FILL: 'FILL',
     FILL: 'FILL',
+
     TP: 'TP',
+    TARGET: 'TP',
+
     CLOSE_STOP: 'SL',
+    STOP: 'SL',
     SL: 'SL',
 
+    EOD: 'EOD',
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
 
@@ -422,26 +458,65 @@ function parseJsonTradingViewAlert(data) {
     CANCEL_REPLACE: 'CANCEL',
   };
 
-  const event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
+  let event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
 
-  const symbol = String(data.symbol || '').trim();
+  if (eventRaw === 'EXIT') {
+    if (exitTypeRaw === 'TARGET') event = 'TP';
+    else if (exitTypeRaw === 'STOP') event = 'SL';
+    else if (exitTypeRaw === 'EOD') event = 'EOD';
+    else event = 'UNKNOWN';
+  }
+
+  const symbol = String(data.symbol || data.ticker || '').trim();
 
   // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
   // That lets us remove all pending rows by symbol.
   const side = data.side ? String(data.side).trim().toUpperCase() : '';
 
-  const entry = cleanNumber(data.entry);
-  const size = cleanNumber(data.qty);
+  const entry =
+    cleanNumber(data.entry) ||
+    cleanNumber(data.entry_price) ||
+    cleanNumber(data.price);
+
+  const size =
+    cleanNumber(data.qty) ||
+    cleanNumber(data.size) ||
+    cleanNumber(data.quantity);
+
   const target = cleanNumber(data.target);
   const stop = cleanNumber(data.stop);
-  const price = cleanNumber(data.price);
+  const price = firstCleanNumber(
+    data.price,
+    data.exit,
+    data.exit_price,
+    data.avg_fill_price,
+    data.average_fill_price,
+    data.filled_price,
+    data.fill_price,
+    data.last_fill_price
+  );
 
   let exit = '';
   if (event === 'TP' || event === 'SL' || event === 'EOD') {
     exit = price;
   }
 
-  let result = '';
+  let result = firstCleanNumber(
+    data.result,
+    data.result_usd,
+    data.pnl,
+    data.p_l,
+    data.realized_pnl,
+    data.realized_p_l
+  );
+
+  const resultPct = firstCleanNumber(
+    data.result_pct,
+    data.result_percent,
+    data.pnl_pct,
+    data.pnl_percent,
+    data.percent
+  );
 
   const trade_id = makeTradeId(symbol, side);
 
@@ -464,7 +539,7 @@ function parseJsonTradingViewAlert(data) {
     stop,
     exit,
     result,
-    result_pct: '',
+    result_pct: resultPct,
     status,
     raw: JSON.stringify(data, null, 2),
 
@@ -4060,6 +4135,24 @@ function renderDashboardHtml(data) {
 // WEBHOOK ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+function isRecognizedTradeWebhook(row) {
+  if (!row) return false;
+
+  const event = String(row.event || '').toUpperCase();
+
+  if (event === 'UNKNOWN') return false;
+
+  if (event === 'CANCEL') {
+    return Boolean(row.symbol || row.trade_id);
+  }
+
+  if (['SETUP', 'FILL', 'TP', 'SL', 'EOD'].includes(event)) {
+    return Boolean(row.symbol && row.side);
+  }
+
+  return false;
+}
+
 async function handleTradingViewWebhook(req, res) {
   try {
     const isJsonObject =
@@ -4073,6 +4166,11 @@ async function handleTradingViewWebhook(req, res) {
       ? parseJsonTradingViewAlert(req.body)
       : parseTradingViewMessage(message);
 
+    if (!isRecognizedTradeWebhook(parsedRow)) {
+      console.log('Ignored unknown webhook payload:', message.slice(0, 500));
+      return res.status(200).send('IGNORED');
+    }
+
     let finalRow = parsedRow;
 
     try {
@@ -4081,6 +4179,8 @@ async function handleTradingViewWebhook(req, res) {
       console.error('Google Sheets / ledger failed:', sheetErr);
       finalRow = parsedRow;
     }
+
+    finalRow = ensureClosePnlFallback(finalRow);
 
     if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
