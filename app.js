@@ -40,7 +40,7 @@ const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
 
-const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL']);
+const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT']);
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BASIC HELPERS
@@ -398,6 +398,7 @@ function parseTradingViewMessage(message) {
     event === 'SL' ? 'closed' :
     event === 'EOD' ? 'closed' :
     event === 'CANCEL' ? 'canceled' :
+    event === 'RECONCILE_FLAT' ? 'reconciled' :
     'unknown';
 
   const trade_id = makeTradeId(symbol, side);
@@ -456,6 +457,10 @@ function parseJsonTradingViewAlert(data) {
     EOD_RESET: 'CANCEL',
     NEW_DAY_RESET: 'CANCEL',
     CANCEL_REPLACE: 'CANCEL',
+
+    RECONCILE_FLAT: 'RECONCILE_FLAT',
+    IB_CONFIRMED_FLAT: 'RECONCILE_FLAT',
+    FLAT_RECONCILE: 'RECONCILE_FLAT',
   };
 
   let event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
@@ -525,6 +530,7 @@ function parseJsonTradingViewAlert(data) {
     event === 'FILL' ? 'open' :
     event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
     event === 'CANCEL' ? 'canceled' :
+    event === 'RECONCILE_FLAT' ? 'reconciled' :
     'unknown';
 
   return {
@@ -941,6 +947,33 @@ async function removeOpenPosition(sheets, tradeId) {
   };
 }
 
+async function removeOpenRowsBySymbolAndSide(sheets, symbol, side) {
+  const wantedSymbol = normalizeSymbol(symbol);
+  const wantedSide = String(side || '').trim().toUpperCase();
+  if (!wantedSymbol) return 0;
+
+  const values = await readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L');
+  let removedCount = 0;
+
+  for (let i = values.length - 1; i >= 1; i--) {
+    const row = values[i];
+    const rowSymbol = normalizeSymbol(row[2] || '');
+    const rowSide = String(row[3] || '').trim().toUpperCase();
+
+    if (rowSymbol === wantedSymbol && (!wantedSide || rowSide === wantedSide)) {
+      await deleteSheetRow(sheets, OPEN_POSITIONS_SHEET, i + 1);
+      removedCount++;
+    }
+  }
+
+  console.log(`Open rows removed by symbol ${wantedSymbol}${wantedSide ? ` ${wantedSide}` : ''}: ${removedCount}`);
+  return removedCount;
+}
+
+async function removeOpenRowsBySymbol(sheets, symbol) {
+  return removeOpenRowsBySymbolAndSide(sheets, symbol, '');
+}
+
 async function appendClosedTrade(sheets, openPosition, closeRow) {
   const closedRow = [
     closeRow.trade_id,
@@ -1022,6 +1055,28 @@ async function processLedger(row) {
     }
 
     console.log('Cancel cleanup finished:', row.trade_id || '', row.symbol || '', row.side || '', 'removed:', removedCount);
+    return row;
+  }
+
+  if (row.event === 'RECONCILE_FLAT') {
+    let removedPending = 0;
+    let removedOpen = 0;
+
+    if (row.symbol && row.side) {
+      removedPending = await removePendingRowsBySymbolAndSide(sheets, row.symbol, row.side);
+      removedOpen = await removeOpenRowsBySymbolAndSide(sheets, row.symbol, row.side);
+    } else if (row.symbol) {
+      removedPending = await removePendingRowsBySymbol(sheets, row.symbol);
+      removedOpen = await removeOpenRowsBySymbol(sheets, row.symbol);
+    }
+
+    try {
+      if (row.trade_id) await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+    } catch (err) {
+      console.log('Reconcile legacy cleanup skipped:', err.message);
+    }
+
+    console.log('Flat reconcile finished:', row.symbol || '', row.side || '', 'pending removed:', removedPending, 'open removed:', removedOpen);
     return row;
   }
 
@@ -4142,7 +4197,7 @@ function isRecognizedTradeWebhook(row) {
 
   if (event === 'UNKNOWN') return false;
 
-  if (event === 'CANCEL') {
+  if (event === 'CANCEL' || event === 'RECONCILE_FLAT') {
     return Boolean(row.symbol || row.trade_id);
   }
 
