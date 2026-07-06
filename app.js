@@ -74,6 +74,29 @@ function normalizeSymbol(symbol) {
   return parts[parts.length - 1];
 }
 
+function normalizeSide(side) {
+  const raw = String(side || '').trim().toUpperCase();
+
+  if (!raw) return '';
+  if (raw === 'BUY' || raw === 'BOUGHT' || raw === 'LONG') return 'LONG';
+  if (raw === 'SELL' || raw === 'SOLD' || raw === 'SHORT') return 'SHORT';
+
+  return raw;
+}
+
+function isIntradayStrategyName(value) {
+  const raw = String(value || '').toUpperCase();
+
+  return (
+    raw.includes('SUPER_TREND') ||
+    raw.includes('SUPERTREND') ||
+    raw.includes('VX_ST') ||
+    raw.includes('VIXALE_INTRADAY') ||
+    raw.includes('INTRADAY_V51') ||
+    raw.includes('V51')
+  );
+}
+
 function normalizeTradeId(tradeId) {
   const raw = String(tradeId || '').trim().toUpperCase();
   if (!raw) return '';
@@ -88,7 +111,7 @@ function normalizeTradeId(tradeId) {
 
 function makeTradeId(symbol, side) {
   const cleanSymbol = normalizeSymbol(symbol);
-  const cleanSide = String(side || '').trim().toUpperCase();
+  const cleanSide = normalizeSide(side);
 
   if (!cleanSymbol || !cleanSide) return '';
   return `${cleanSymbol}_${cleanSide}`;
@@ -326,7 +349,7 @@ function parseTradingViewMessage(message) {
   const headerMatch = raw.match(/([A-Z0-9:_\.\-!]+)\s+(LONG|SHORT)/i);
   if (headerMatch) {
     symbol = headerMatch[1].trim().replace(/^[^A-Z0-9:_\.\-!]+/i, '');
-    side = headerMatch[2].trim().toUpperCase();
+    side = normalizeSide(headerMatch[2]);
   }
 
   if (/CANCELED|CANCELLED/i.test(firstLine) || /CANCELED|CANCELLED/i.test(raw)) {
@@ -423,28 +446,45 @@ function parseTradingViewMessage(message) {
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// NEW JSON ALERT PARSER — for new FVG live TV script
+// NEW JSON ALERT PARSER — SuperTrend intraday v51 live TV script
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function parseJsonTradingViewAlert(data) {
-  const eventRaw = String(data.event || '').toUpperCase();
-  const exitTypeRaw = String(data.exit_type || '').toUpperCase();
+  const strategyRaw = String(data.strategy || data.strategy_name || data.system || '').trim();
+  const eventRaw = String(data.event || data.tv_event || data.alert_event || '').trim().toUpperCase();
+  const actionRaw = String(data.action || data.order_action || '').trim().toUpperCase();
+  const intentRaw = String(data.intent || '').trim().toUpperCase();
+  const exitTypeRaw = String(data.exit_type || data.exit_reason || '').trim().toUpperCase();
 
   const eventMap = {
     SETUP: 'SETUP',
-    ENTRY: 'SETUP',
+    SIGNAL: 'SETUP',
+
+    ENTRY: 'FILL',
     ENTRY_FILL: 'FILL',
+    FILLED: 'FILL',
     FILL: 'FILL',
+    OPEN: 'FILL',
+    POSITION_OPEN: 'FILL',
+    REVERSE_OR_ENTRY: 'FILL',
 
     TP: 'TP',
+    TAKE_PROFIT: 'TP',
     TARGET: 'TP',
+    TARGET_HIT: 'TP',
+    LIMIT_TARGET: 'TP',
+    TARGET_FILLED: 'TP',
 
     CLOSE_STOP: 'SL',
     STOP: 'SL',
+    STOP_LOSS: 'SL',
     SL: 'SL',
+    ATR_CLOSE_STOP: 'SL',
 
     EOD: 'EOD',
     EOD_CLOSE: 'EOD',
+    RTH_END_CLOSE: 'EOD',
+    FORCE_EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
 
     CANCEL: 'CANCEL',
@@ -463,33 +503,83 @@ function parseJsonTradingViewAlert(data) {
     FLAT_RECONCILE: 'RECONCILE_FLAT',
   };
 
-  let event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
+  let eventToken = eventRaw || actionRaw || intentRaw;
+  let event = eventMap[eventToken] || eventToken || 'UNKNOWN';
 
   if (eventRaw === 'EXIT') {
-    if (exitTypeRaw === 'TARGET') event = 'TP';
-    else if (exitTypeRaw === 'STOP') event = 'SL';
-    else if (exitTypeRaw === 'EOD') event = 'EOD';
+    if (exitTypeRaw === 'TARGET' || exitTypeRaw === 'TP' || actionRaw === 'TARGET') event = 'TP';
+    else if (exitTypeRaw === 'STOP' || exitTypeRaw === 'SL' || actionRaw === 'CLOSE_STOP') event = 'SL';
+    else if (exitTypeRaw === 'EOD' || actionRaw === 'EOD_CLOSE') event = 'EOD';
     else event = 'UNKNOWN';
   }
 
-  const symbol = String(data.symbol || data.ticker || '').trim();
+  // SuperTrend intraday v51 alerts are market-entry style alerts.
+  // In v51, SETUP means the strategy opened a position now.
+  // The dashboard should treat it as an open trade, not as a pending setup.
+  const intradayStrategy = isIntradayStrategyName(strategyRaw);
+  if (intradayStrategy && (eventRaw === 'SETUP' || eventRaw === 'ENTRY' || actionRaw === 'ENTRY' || intentRaw === 'REVERSE_OR_ENTRY')) {
+    event = 'FILL';
+  }
 
-  // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
-  // That lets us remove all pending rows by symbol.
-  const side = data.side ? String(data.side).trim().toUpperCase() : '';
+  if (actionRaw === 'BUY' || actionRaw === 'SELL') {
+    if (!eventRaw && !exitTypeRaw) event = 'FILL';
+  }
 
-  const entry =
-    cleanNumber(data.entry) ||
-    cleanNumber(data.entry_price) ||
-    cleanNumber(data.price);
+  const symbol = String(data.symbol || data.ticker || data.contract || '').trim();
 
-  const size =
-    cleanNumber(data.qty) ||
-    cleanNumber(data.size) ||
-    cleanNumber(data.quantity);
+  // Prefer explicit side. Fall back to action BUY/SELL when the new live script sends action-based payloads.
+  // BUY means LONG position intent; SELL means SHORT position intent.
+  const side = normalizeSide(data.side || data.position_side || (actionRaw === 'BUY' || actionRaw === 'SELL' ? actionRaw : ''));
 
-  const target = cleanNumber(data.target);
-  const stop = cleanNumber(data.stop);
+  const entry = firstCleanNumber(
+    data.entry,
+    data.entry_price,
+    data.entry_ref,
+    data.entry_reference_price,
+    data.reference_price,
+    data.avg_entry_price,
+    data.average_entry_price,
+    data.avg_fill_price,
+    data.average_fill_price,
+    data.filled_price,
+    data.fill_price,
+    data.price
+  );
+
+  const size = firstCleanNumber(
+    data.qty,
+    data.size,
+    data.quantity,
+    data.filled_qty,
+    data.fill_qty,
+    data.target_qty,
+    data.position_size,
+    data.shares,
+    data.contracts
+  );
+
+  const target = firstCleanNumber(
+    data.target,
+    data.target_price,
+    data.tp,
+    data.take_profit,
+    data.limit_target,
+    data.limit_price,
+    data.attached_target_price
+  );
+
+  const stop = firstCleanNumber(
+    data.stop,
+    data.stop_ref,
+    data.stop_price,
+    data.close_stop,
+    data.stop_reference,
+    data.st_stop_reference,
+    data.supertrend_stop,
+    data.atr_stop,
+    data.risk_stop
+  );
+
   const price = firstCleanNumber(
     data.price,
     data.exit,
@@ -498,7 +588,8 @@ function parseJsonTradingViewAlert(data) {
     data.average_fill_price,
     data.filled_price,
     data.fill_price,
-    data.last_fill_price
+    data.last_fill_price,
+    data.close
   );
 
   let exit = '';
@@ -549,16 +640,28 @@ function parseJsonTradingViewAlert(data) {
     status,
     raw: JSON.stringify(data, null, 2),
 
-    box_top: data.box_top ?? '',
-    box_bottom: data.box_bottom ?? '',
-    min_box_atr: data.min_box_atr ?? '',
-    depth_pct: data.depth_pct ?? '',
-    tp_atr: data.tp_atr ?? '',
-    qty_mode: data.qty_mode ?? '',
-    risk_pct: data.risk_pct ?? '',
-    max_position_pct: data.max_position_pct ?? '',
-    raw_event: eventRaw,
-    reason: data.reason ?? '',
+    strategy: strategyRaw,
+    action: actionRaw,
+    intent: intentRaw,
+    sec_type: data.sec_type ?? '',
+    asset_class: data.asset_class ?? '',
+    exchange: data.exchange ?? '',
+    currency: data.currency ?? '',
+    profile: data.profile ?? '',
+    timeframe: data.timeframe ?? '',
+    tv_ticker: data.tv_ticker ?? '',
+    tv_tickerid: data.tv_tickerid ?? '',
+    stop_type: data.stop_type ?? '',
+    target_type: data.target_type ?? '',
+    qty_source: data.qty_source ?? '',
+    tv_default_entry_qty: data.tv_default_entry_qty ?? '',
+    st_atr_period: data.st_atr_period ?? '',
+    st_factor: data.st_factor ?? '',
+    risk_atr_period: data.risk_atr_period ?? '',
+    atr_target_mult: data.atr_target_mult ?? '',
+    bar_time: data.bar_time ?? '',
+    raw_event: eventRaw || actionRaw || intentRaw,
+    reason: data.reason ?? data.exit_reason ?? '',
   };
 }
 
@@ -571,49 +674,50 @@ function formatTelegramMessage(row, originalMessage) {
 
   const titleBase = `${row.symbol || ''} ${row.side || ''}`.trim();
   const pnlLine = pnlTelegramLine(row);
+  const sideEmoji = row.side === 'SHORT' ? '🔴' : '🟢';
 
   if (row.event === 'SETUP') {
-    const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
-
     return [
-      `${emoji} <b>${titleBase} SETUP</b>`,
+      `${sideEmoji} <b>${titleBase} SETUP</b>`,
       '',
-      row.entry !== '' ? `📍 Entry Limit: <b>${row.entry}</b>` : '',
-      row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
-      row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
-      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      row.entry !== '' ? `Entry Ref: <b>${row.entry}</b>` : '',
+      row.target !== '' ? `Target Ref: <b>${row.target}</b>` : '',
+      row.stop !== '' ? `Stop Ref: <b>${row.stop}</b>` : '',
+      row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'FILL') {
     return [
-      `🎉 <b>${titleBase} FILLED</b>`,
+      `${sideEmoji} <b>${titleBase} OPENED</b>`,
       '',
-      row.entry !== '' ? `✅ Entry: <b>${row.entry}</b>` : '',
-      row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
-      row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
-      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+      row.target !== '' ? `Target: <b>${row.target}</b>` : '',
+      row.stop !== '' ? `Stop Ref: <b>${row.stop}</b>` : '',
+      row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'TP') {
     return [
-      `🎯 <b>${titleBase} TAKE PROFIT HIT</b>`,
+      `🎯 <b>${titleBase} TARGET HIT</b>`,
       '',
-      row.exit !== '' ? `✅ Exit Price: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
-      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      row.target !== '' ? `Target Ref: <b>${row.target}</b>` : '',
+      row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
       pnlLine,
     ].filter(Boolean).join('\n');
   }
 
   if (row.event === 'SL') {
     return [
-      `⛔ <b>${titleBase} CLOSE STOP</b>`,
+      `🛑 <b>${titleBase} STOP CLOSE</b>`,
       '',
-      row.exit !== '' ? `❌ Exit Close: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
-      row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      row.stop !== '' ? `Stop Ref: <b>${row.stop}</b>` : '',
+      row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
       pnlLine,
     ].filter(Boolean).join('\n');
   }
@@ -622,7 +726,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `⏰ <b>${titleBase || row.symbol} EOD CLOSE</b>`,
       '',
-      row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
       row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
       pnlLine,
@@ -639,7 +743,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `⚪ <b>${titleBase || row.symbol} ${resetText}</b>`,
       '',
-      row.reason ? `Reason: ${row.reason}` : '',
+      row.reason ? `Reason: ${escapeHtml(row.reason)}` : '',
     ].filter(Boolean).join('\n');
   }
 
@@ -4058,7 +4162,7 @@ function renderDashboardHtml(data) {
       <div class="topline">
         <div class="brand">
           <h1>Vixale Live Strategy Dashboard</h1>
-          <div class="subtitle">Private live forward-test / paper-trading tracker</div>
+          <div class="subtitle">Private intraday forward-test / paper-trading tracker</div>
           <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
         </div>
         <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
@@ -4094,7 +4198,7 @@ function renderDashboardHtml(data) {
 
     <div class="section">
       <div class="section-header">
-        <h2>Live Open Positions</h2>
+        <h2>Live Open Positions / Active Targets</h2>
         <span>Total exposure: ${renderMoney(s.exposure)}</span>
       </div>
       <div class="table-wrap">
@@ -4107,11 +4211,11 @@ function renderDashboardHtml(data) {
               <th>Entry</th>
               <th>Last</th>
               <th>Target</th>
-              <th>Stop</th>
+              <th>Stop Ref</th>
               <th>Qty</th>
               <th>Open P&L</th>
               <th>To TP</th>
-              <th>To Stop</th>
+              <th>To Stop Ref</th>
               <th>Exposure</th>
               <th>Status</th>
             </tr>
@@ -4125,7 +4229,7 @@ function renderDashboardHtml(data) {
     <div class="section">
       <div class="section-header">
         <h2>Pending Orders</h2>
-        <span>Working setup orders waiting for entry</span>
+        <span>Working setup orders waiting for entry / activation</span>
       </div>
       <div class="table-wrap">
         ${data.pending_orders.length ? `
@@ -4136,7 +4240,7 @@ function renderDashboardHtml(data) {
               <th>Side</th>
               <th>Entry</th>
               <th>Target</th>
-              <th>Stop</th>
+              <th>Stop Ref</th>
               <th>Qty</th>
               <th>Status</th>
               <th>Time</th>
