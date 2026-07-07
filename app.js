@@ -106,6 +106,16 @@ function makeTradeId(symbol, side) {
   return `${cleanSymbol}_${cleanSide}`;
 }
 
+function isV51IntradayName(value) {
+  const text = String(value || '').toUpperCase();
+  return text.includes('VX_ST_STK_INTRADAY_V51') || text.includes('ST_STOP_ATR_TARGET_WFO') || text.includes('_INTRADAY');
+}
+
+function isV51IntradayRow(row) {
+  if (!row) return false;
+  return isV51IntradayName(row.strategy) || isV51IntradayName(row.profile) || isV51IntradayName(row.raw);
+}
+
 function nowNy() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -441,6 +451,9 @@ function parseTradingViewMessage(message) {
 function parseJsonTradingViewAlert(data) {
   const eventRaw = String(data.event || '').toUpperCase();
   const exitTypeRaw = String(data.exit_type || '').toUpperCase();
+  const strategyName = String(data.strategy || data.strategy_name || '').trim();
+  const profileName = String(data.profile || data.alert_profile || '').trim();
+  const isV51Intraday = isV51IntradayName(strategyName) || isV51IntradayName(profileName);
 
   const eventMap = {
     SETUP: 'SETUP',
@@ -538,7 +551,7 @@ function parseJsonTradingViewAlert(data) {
   const trade_id = makeTradeId(symbol, side);
 
   const status =
-    event === 'SETUP' ? 'pending' :
+    event === 'SETUP' ? (isV51Intraday ? 'open' : 'pending') :
     event === 'FILL' ? 'open' :
     event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
     event === 'CANCEL' ? 'canceled' :
@@ -560,6 +573,18 @@ function parseJsonTradingViewAlert(data) {
     result_pct: resultPct,
     status,
     raw: JSON.stringify(data, null, 2),
+    strategy: strategyName,
+    profile: profileName,
+    sec_type: data.sec_type ?? '',
+    asset_class: data.asset_class ?? '',
+    exchange: data.exchange ?? '',
+    currency: data.currency ?? '',
+    stop_type: data.stop_type ?? '',
+    target_type: data.target_type ?? '',
+    st_atr_period: data.st_atr_period ?? '',
+    st_factor: data.st_factor ?? '',
+    risk_atr_period: data.risk_atr_period ?? '',
+    atr_target_mult: data.atr_target_mult ?? '',
 
     box_top: data.box_top ?? '',
     box_bottom: data.box_bottom ?? '',
@@ -586,6 +611,17 @@ function formatTelegramMessage(row, originalMessage) {
 
   if (row.event === 'SETUP') {
     const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
+
+    if (isV51IntradayRow(row)) {
+      return [
+        `${emoji} <b>${titleBase} OPENED</b>`,
+        '',
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 ATR Target: <b>${row.target}</b>` : '',
+        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
 
     return [
       `${emoji} <b>${titleBase} SETUP</b>`,
@@ -621,9 +657,9 @@ function formatTelegramMessage(row, originalMessage) {
 
   if (row.event === 'SL') {
     return [
-      `⛔ <b>${titleBase} CLOSE STOP</b>`,
+      `🛑 <b>${titleBase} MARKET STOP</b>`,
       '',
-      row.exit !== '' ? `❌ Exit Close: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `❌ Exit Price: <b>${row.exit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       pnlLine,
@@ -1029,6 +1065,21 @@ async function processLedger(row) {
 
   if (row.event === 'SETUP') {
     if (!row.trade_id) return row;
+
+    // SuperTrend intraday v51 sends SETUP as the actual opened-position signal.
+    // It should appear as an open position immediately, not as an FVG-style pending setup.
+    if (isV51IntradayRow(row)) {
+      const openRow = { ...row, status: 'open' };
+      await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+      await upsertOpenPosition(sheets, openRow, null);
+
+      const tradesRow = { ...openRow, event: 'FILL', raw_event: row.raw_event || 'SETUP' };
+      await appendToTradesSheet(sheets, tradesRow);
+
+      console.log('v51 SETUP treated as open position:', row.trade_id);
+      return openRow;
+    }
+
     await upsertPending(sheets, row);
     return row;
   }
@@ -1064,6 +1115,17 @@ async function processLedger(row) {
     // Reset events may arrive without side. In that case, remove all pending rows for the symbol.
     if (!removedCount && row.symbol) {
       removedCount = await removePendingRowsBySymbol(sheets, row.symbol);
+    }
+
+    // For SuperTrend intraday v51, a bridge/TWS rejection can come back as CANCEL
+    // after the app has already placed the SETUP in Open Positions. Clean it up too.
+    if (isV51IntradayRow(row)) {
+      const removedOpen = row.symbol && row.side
+        ? await removeOpenRowsBySymbolAndSide(sheets, row.symbol, row.side)
+        : row.symbol
+          ? await removeOpenRowsBySymbol(sheets, row.symbol)
+          : 0;
+      console.log('v51 cancel open cleanup removed:', removedOpen);
     }
 
     console.log('Cancel cleanup finished:', row.trade_id || '', row.symbol || '', row.side || '', 'removed:', removedCount);
@@ -4119,11 +4181,11 @@ function renderDashboardHtml(data) {
               <th>Entry</th>
               <th>Last</th>
               <th>Target</th>
-              <th>Stop</th>
+              <th>Stop Ref</th>
               <th>Qty</th>
               <th>Open P&L</th>
               <th>To TP</th>
-              <th>To Stop</th>
+              <th>To Stop Ref</th>
               <th>Exposure</th>
               <th>Status</th>
             </tr>
@@ -4148,7 +4210,7 @@ function renderDashboardHtml(data) {
               <th>Side</th>
               <th>Entry</th>
               <th>Target</th>
-              <th>Stop</th>
+              <th>Stop Ref</th>
               <th>Qty</th>
               <th>Status</th>
               <th>Time</th>
