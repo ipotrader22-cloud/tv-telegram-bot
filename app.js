@@ -31,6 +31,34 @@ const BRIDGE_URL = String(
   ''
 ).replace(/\/+$/, '');
 
+function envFlag(name, defaultValue = false) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return Boolean(defaultValue);
+  return /^(1|true|yes|on)$/i.test(String(raw).trim());
+}
+
+function envNumber(name, defaultValue) {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) ? n : defaultValue;
+}
+
+function envSymbolSet(name) {
+  return new Set(
+    String(process.env[name] || '')
+      .split(',')
+      .map(s => normalizeSymbol(s))
+      .filter(Boolean)
+  );
+}
+
+// Hard safety controls for Render -> local bridge/TWS forwarding.
+// Defaults are intentionally conservative. Telegram + Google Sheets still work when forwarding is disabled.
+const BRIDGE_FORWARD_ENABLED = envFlag('BRIDGE_FORWARD_ENABLED', false);
+const BRIDGE_DRY_RUN = envFlag('BRIDGE_DRY_RUN', true);
+const BRIDGE_ALLOW_MANUAL_TESTS = envFlag('BRIDGE_ALLOW_MANUAL_TESTS', false);
+const MAX_BRIDGE_QTY = Math.max(1, Math.floor(envNumber('MAX_BRIDGE_QTY', 1)));
+const BRIDGE_ALLOWED_SYMBOLS = envSymbolSet('BRIDGE_ALLOWED_SYMBOLS');
+
 // Email delivery for password requests.
 // Recommended Render env vars:
 // RESEND_API_KEY=...
@@ -4262,7 +4290,7 @@ function renderDashboardHtml(data) {
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// LOCAL BRIDGE / NGROK FORWARDING
+// LOCAL BRIDGE / NGROK FORWARDING — HARD SAFETY LAYER
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function bridgeEndpoint() {
@@ -4270,48 +4298,179 @@ function bridgeEndpoint() {
   return BRIDGE_URL.endsWith('/tv') ? BRIDGE_URL : `${BRIDGE_URL}/tv`;
 }
 
-function shouldForwardToBridge(row) {
-  if (!BRIDGE_URL || !row) return false;
+function bridgeLogPrefix(row) {
+  return `${row?.event || ''} ${row?.raw_event || ''} ${row?.symbol || ''} ${row?.side || ''}`.trim();
+}
 
+function isManualOrTestPayload(reqBody, row) {
+  const fields = [];
+
+  if (typeof reqBody === 'object' && reqBody !== null && !Buffer.isBuffer(reqBody)) {
+    fields.push(reqBody.strategy, reqBody.profile, reqBody.reason, reqBody.source, reqBody.note, reqBody.comment);
+  }
+
+  fields.push(row?.raw_event, row?.reason, row?.symbol, row?.trade_id, row?.raw);
+
+  const haystack = fields
+    .filter(v => v !== undefined && v !== null)
+    .map(v => String(v).toUpperCase())
+    .join(' ');
+
+  return /MANUAL|TEST|ZZZTEST|DUMMY|FAKE|SAFE_BRIDGE_TEST|SAFE_V51|WEBHOOK_TEST/.test(haystack);
+}
+
+function shouldForwardToBridge(reqBody, row) {
+  if (!BRIDGE_URL || !row) {
+    return { ok: false, reason: 'BRIDGE_URL missing or parsed row missing' };
+  }
+
+  if (!BRIDGE_FORWARD_ENABLED) {
+    return { ok: false, reason: 'BRIDGE_FORWARD_ENABLED is not true' };
+  }
+
+  const symbol = normalizeSymbol(row.symbol);
+  const side = String(row.side || '').toUpperCase();
   const event = String(row.event || '').toUpperCase();
   const rawEvent = String(row.raw_event || '').toUpperCase();
 
-  // TradingView v51 sends SETUP for market entry and CLOSE_STOP for market stop.
-  // TP/EOD/RECONCILE_FLAT are normally produced by the bridge/monitor and should not be sent back to the bridge.
-  if (event === 'SETUP') return true;
-  if (event === 'SL' && rawEvent === 'CLOSE_STOP') return true;
-  if (event === 'EOD' && (rawEvent === 'EOD' || rawEvent === 'EOD_CLOSE')) return true;
+  if (BRIDGE_ALLOWED_SYMBOLS.size > 0 && !BRIDGE_ALLOWED_SYMBOLS.has(symbol)) {
+    return { ok: false, reason: `symbol ${symbol} is not in BRIDGE_ALLOWED_SYMBOLS` };
+  }
 
-  return false;
+  if (isManualOrTestPayload(reqBody, row) && !BRIDGE_ALLOW_MANUAL_TESTS) {
+    return { ok: false, reason: 'manual/test payload blocked; set BRIDGE_ALLOW_MANUAL_TESTS=true only for controlled testing' };
+  }
+
+  if (['SETUP', 'SL', 'EOD'].includes(event) && !symbol) {
+    return { ok: false, reason: 'missing symbol' };
+  }
+
+  if (['SETUP', 'SL', 'EOD'].includes(event) && !['LONG', 'SHORT'].includes(side)) {
+    return { ok: false, reason: `invalid side: ${side || '(blank)'}` };
+  }
+
+  // TradingView v51 sends SETUP for opened position and CLOSE_STOP for market stop.
+  // TP/FILL/CANCEL/RECONCILE_FLAT are produced by bridge/IB or server cleanup and must not be sent back to bridge.
+  const forwardable =
+    event === 'SETUP' ||
+    (event === 'SL' && rawEvent === 'CLOSE_STOP') ||
+    (event === 'EOD' && (rawEvent === 'EOD' || rawEvent === 'EOD_CLOSE'));
+
+  if (!forwardable) {
+    return { ok: false, reason: `event not forwardable: event=${event} raw_event=${rawEvent}` };
+  }
+
+  const qty = cleanNumber(row.size);
+  if (qty === '' || qty <= 0) {
+    return { ok: false, reason: `invalid qty: ${row.size}` };
+  }
+
+  if (qty > MAX_BRIDGE_QTY) {
+    return { ok: false, reason: `qty ${qty} exceeds MAX_BRIDGE_QTY ${MAX_BRIDGE_QTY}` };
+  }
+
+  return { ok: true, reason: 'ok' };
 }
 
 function bridgePayload(reqBody, parsedRow) {
+  let payload;
+
   if (typeof reqBody === 'object' && reqBody !== null && !Buffer.isBuffer(reqBody)) {
-    return reqBody;
+    payload = { ...reqBody };
+  } else {
+    // Fallback for old text alerts. New v51 alerts are JSON, so this should rarely be used.
+    payload = {
+      source: 'RenderParsedTextAlert',
+      event: parsedRow.event,
+      symbol: parsedRow.symbol,
+      side: parsedRow.side,
+      entry: parsedRow.entry,
+      price: parsedRow.exit || parsedRow.entry,
+      target: parsedRow.target,
+      stop: parsedRow.stop,
+      qty: parsedRow.size,
+      trade_id: parsedRow.trade_id,
+      raw: parsedRow.raw,
+    };
   }
 
-  // Fallback for old text alerts. New v51 alerts are JSON, so this should rarely be used.
-  return {
-    source: 'RenderParsedTextAlert',
-    event: parsedRow.event,
-    symbol: parsedRow.symbol,
-    side: parsedRow.side,
-    entry: parsedRow.entry,
-    price: parsedRow.exit || parsedRow.entry,
-    target: parsedRow.target,
-    stop: parsedRow.stop,
-    qty: parsedRow.size,
-    trade_id: parsedRow.trade_id,
-    raw: parsedRow.raw,
+  // Server-side safety overrides.
+  // The bridge log showed dry_run=false when absent, so Render now always sends this field.
+  payload.dry_run = BRIDGE_DRY_RUN;
+  payload.render_forwarded_at = nowNy();
+  payload.render_safety = {
+    bridge_forward_enabled: BRIDGE_FORWARD_ENABLED,
+    bridge_dry_run: BRIDGE_DRY_RUN,
+    max_bridge_qty: MAX_BRIDGE_QTY,
+    manual_tests_allowed: BRIDGE_ALLOW_MANUAL_TESTS,
   };
+
+  return payload;
+}
+
+function validateBridgePayload(payload, parsedRow) {
+  const event = String(parsedRow?.event || payload?.event || '').toUpperCase();
+  const rawEvent = String(parsedRow?.raw_event || payload?.event || '').toUpperCase();
+  const side = String(parsedRow?.side || payload?.side || '').toUpperCase();
+  const symbol = normalizeSymbol(parsedRow?.symbol || payload?.symbol);
+  const qty = cleanNumber(parsedRow?.size || payload?.qty || payload?.quantity || payload?.size);
+
+  if (!symbol) return { ok: false, reason: 'missing symbol before bridge forward' };
+  if (!['LONG', 'SHORT'].includes(side)) return { ok: false, reason: `invalid side before bridge forward: ${side}` };
+  if (qty === '' || qty <= 0) return { ok: false, reason: `invalid qty before bridge forward: ${qty}` };
+  if (qty > MAX_BRIDGE_QTY) return { ok: false, reason: `qty ${qty} exceeds MAX_BRIDGE_QTY ${MAX_BRIDGE_QTY}` };
+
+  if (event === 'SETUP') {
+    const price = firstCleanNumber(payload?.price, payload?.entry, parsedRow?.entry);
+    const target = firstCleanNumber(payload?.target, parsedRow?.target);
+    const stop = firstCleanNumber(payload?.stop, parsedRow?.stop);
+
+    if (price === '' || target === '') {
+      return { ok: false, reason: 'SETUP missing price/target' };
+    }
+
+    // Directional sanity check for real v51 alerts.
+    // This blocks impossible targets such as LONG target <= signal price or SHORT target >= signal price.
+    if (side === 'LONG' && target <= price) {
+      return { ok: false, reason: `LONG target ${target} must be above signal price ${price}` };
+    }
+
+    if (side === 'SHORT' && target >= price) {
+      return { ok: false, reason: `SHORT target ${target} must be below signal price ${price}` };
+    }
+
+    if (stop !== '') {
+      if (side === 'LONG' && stop >= price) {
+        return { ok: false, reason: `LONG stop ref ${stop} should be below signal price ${price}` };
+      }
+
+      if (side === 'SHORT' && stop <= price) {
+        return { ok: false, reason: `SHORT stop ref ${stop} should be above signal price ${price}` };
+      }
+    }
+  }
+
+  if (event === 'SL' && rawEvent !== 'CLOSE_STOP') {
+    return { ok: false, reason: `SL bridge forward allowed only for CLOSE_STOP, got ${rawEvent}` };
+  }
+
+  return { ok: true, reason: 'ok' };
 }
 
 async function forwardToBridge(reqBody, parsedRow) {
   const url = bridgeEndpoint();
+  const decision = shouldForwardToBridge(reqBody, parsedRow);
 
-  if (!url || !shouldForwardToBridge(parsedRow)) {
-    console.log('Bridge forwarding skipped:', parsedRow?.event || '', parsedRow?.raw_event || '', parsedRow?.symbol || '', 'BRIDGE_URL configured:', Boolean(BRIDGE_URL));
-    return { forwarded: false, skipped: true };
+  if (!url || !decision.ok) {
+    console.log(
+      'Bridge forwarding skipped:',
+      bridgeLogPrefix(parsedRow),
+      'BRIDGE_URL configured:', Boolean(BRIDGE_URL),
+      'enabled:', BRIDGE_FORWARD_ENABLED,
+      'dry_run:', BRIDGE_DRY_RUN,
+      'reason:', decision.reason
+    );
+    return { forwarded: false, skipped: true, reason: decision.reason };
   }
 
   const controller = new AbortController();
@@ -4319,8 +4478,20 @@ async function forwardToBridge(reqBody, parsedRow) {
 
   try {
     const payload = bridgePayload(reqBody, parsedRow);
+    const validation = validateBridgePayload(payload, parsedRow);
 
-    console.log('Bridge forwarding:', parsedRow.event, parsedRow.raw_event || '', parsedRow.symbol || '', parsedRow.side || '', '->', url);
+    if (!validation.ok) {
+      console.log('Bridge forwarding blocked by safety validation:', bridgeLogPrefix(parsedRow), validation.reason);
+      return { forwarded: false, skipped: true, reason: validation.reason };
+    }
+
+    console.log(
+      'Bridge forwarding:',
+      bridgeLogPrefix(parsedRow),
+      '->', url,
+      'dry_run:', BRIDGE_DRY_RUN,
+      'max_qty:', MAX_BRIDGE_QTY
+    );
 
     const response = await fetch(url, {
       method: 'POST',
