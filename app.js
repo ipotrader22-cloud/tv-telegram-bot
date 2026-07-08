@@ -699,11 +699,10 @@ function formatTelegramMessage(row, originalMessage) {
 
     if (isOppositeFlipRow(row)) {
       return [
-        `${emoji} <b>${titleBase} OPENED</b>`,
+        `${emoji} <b>VIXALE POSITION OPENED</b>`,
         '',
+        `<b>${titleBase}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
-        `🔁 Exit: <b>opposite SuperTrend flip</b>`,
-        row.stop !== '' ? `🧭 ST Ref: <b>${row.stop}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -754,8 +753,9 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'SL') {
     if (isOppositeFlipRow(row)) {
       return [
-        `🔁 <b>${titleBase} OPPOSITE FLIP CLOSE</b>`,
+        `🔁 <b>VIXALE POSITION CLOSED</b>`,
         '',
+        `<b>${titleBase}</b>`,
         row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
