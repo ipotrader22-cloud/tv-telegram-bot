@@ -57,6 +57,9 @@ const BRIDGE_FORWARD_ENABLED = envFlag('BRIDGE_FORWARD_ENABLED', false);
 const BRIDGE_DRY_RUN = envFlag('BRIDGE_DRY_RUN', true);
 const BRIDGE_ALLOW_MANUAL_TESTS = envFlag('BRIDGE_ALLOW_MANUAL_TESTS', false);
 const MAX_BRIDGE_QTY = Math.max(1, Math.floor(envNumber('MAX_BRIDGE_QTY', 1)));
+// Used when Pine intentionally does not send qty because TradingView backtest sizing is handled separately.
+// This is the live broker/demo qty sent from Render to the local bridge/TWS.
+const BRIDGE_DEFAULT_QTY = Math.max(1, Math.floor(envNumber('BRIDGE_DEFAULT_QTY', 1)));
 const BRIDGE_ALLOWED_SYMBOLS = envSymbolSet('BRIDGE_ALLOWED_SYMBOLS');
 
 // Email delivery for password requests.
@@ -142,6 +145,39 @@ function isV51IntradayName(value) {
 function isV51IntradayRow(row) {
   if (!row) return false;
   return isV51IntradayName(row.strategy) || isV51IntradayName(row.profile) || isV51IntradayName(row.raw);
+}
+
+function isOppositeFlipName(value) {
+  const text = String(value || '').toUpperCase();
+  return text.includes('VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
+    text.includes('OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
+    text.includes('NONE_OPPOSITE_FLIP') ||
+    text.includes('NO_EOD_CLOSE');
+}
+
+function isOppositeFlipRow(row) {
+  if (!row) return false;
+  return isOppositeFlipName(row.strategy) ||
+    isOppositeFlipName(row.profile) ||
+    isOppositeFlipName(row.variant) ||
+    isOppositeFlipName(row.target_type) ||
+    isOppositeFlipName(row.eod_policy) ||
+    isOppositeFlipName(row.reason) ||
+    isOppositeFlipName(row.raw);
+}
+
+function isOpenOnSetupRow(row) {
+  return isV51IntradayRow(row) || isOppositeFlipRow(row);
+}
+
+function isNoTargetMode(rowOrPayload) {
+  if (!rowOrPayload) return false;
+  return isOppositeFlipName(rowOrPayload.target_type) ||
+    isOppositeFlipName(rowOrPayload.variant) ||
+    isOppositeFlipName(rowOrPayload.profile) ||
+    isOppositeFlipName(rowOrPayload.strategy) ||
+    isOppositeFlipName(rowOrPayload.eod_policy) ||
+    isOppositeFlipName(rowOrPayload.reason);
 }
 
 function nowNy() {
@@ -481,7 +517,11 @@ function parseJsonTradingViewAlert(data) {
   const exitTypeRaw = String(data.exit_type || '').toUpperCase();
   const strategyName = String(data.strategy || data.strategy_name || '').trim();
   const profileName = String(data.profile || data.alert_profile || '').trim();
+  const variantName = String(data.variant || '').trim();
+  const eodPolicy = String(data.eod_policy || '').trim();
   const isV51Intraday = isV51IntradayName(strategyName) || isV51IntradayName(profileName);
+  const isOppositeFlip = isOppositeFlipName(strategyName) || isOppositeFlipName(profileName) || isOppositeFlipName(variantName) || isOppositeFlipName(data.target_type) || isOppositeFlipName(eodPolicy);
+  const openOnSetup = isV51Intraday || isOppositeFlip;
 
   const eventMap = {
     SETUP: 'SETUP',
@@ -539,7 +579,8 @@ function parseJsonTradingViewAlert(data) {
   const size =
     cleanNumber(data.qty) ||
     cleanNumber(data.size) ||
-    cleanNumber(data.quantity);
+    cleanNumber(data.quantity) ||
+    BRIDGE_DEFAULT_QTY;
 
   const target = cleanNumber(data.target);
   const stop = cleanNumber(data.stop);
@@ -579,7 +620,7 @@ function parseJsonTradingViewAlert(data) {
   const trade_id = makeTradeId(symbol, side);
 
   const status =
-    event === 'SETUP' ? (isV51Intraday ? 'open' : 'pending') :
+    event === 'SETUP' ? (openOnSetup ? 'open' : 'pending') :
     event === 'FILL' ? 'open' :
     event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
     event === 'CANCEL' ? 'canceled' :
@@ -603,6 +644,8 @@ function parseJsonTradingViewAlert(data) {
     raw: JSON.stringify(data, null, 2),
     strategy: strategyName,
     profile: profileName,
+    variant: variantName,
+    eod_policy: eodPolicy,
     sec_type: data.sec_type ?? '',
     asset_class: data.asset_class ?? '',
     exchange: data.exchange ?? '',
@@ -639,6 +682,17 @@ function formatTelegramMessage(row, originalMessage) {
 
   if (row.event === 'SETUP') {
     const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
+
+    if (isOppositeFlipRow(row)) {
+      return [
+        `${emoji} <b>${titleBase} OPENED</b>`,
+        '',
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        `🔁 Exit: <b>opposite SuperTrend flip</b>`,
+        row.stop !== '' ? `🧭 ST Ref: <b>${row.stop}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
 
     if (isV51IntradayRow(row)) {
       return [
@@ -684,6 +738,17 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'SL') {
+    if (isOppositeFlipRow(row)) {
+      return [
+        `🔁 <b>${titleBase} OPPOSITE FLIP CLOSE</b>`,
+        '',
+        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
     return [
       `🛑 <b>${titleBase} MARKET STOP</b>`,
       '',
@@ -1094,9 +1159,9 @@ async function processLedger(row) {
   if (row.event === 'SETUP') {
     if (!row.trade_id) return row;
 
-    // SuperTrend intraday v51 sends SETUP as the actual opened-position signal.
-    // It should appear as an open position immediately, not as an FVG-style pending setup.
-    if (isV51IntradayRow(row)) {
+    // SuperTrend v51 and Opposite Flip send SETUP as the actual opened-position signal.
+    // It should appear as an open position immediately, not as an old pending setup.
+    if (isOpenOnSetupRow(row)) {
       const openRow = { ...row, status: 'open' };
       await cleanupLegacyPositionIfExists(sheets, row.trade_id);
       await upsertOpenPosition(sheets, openRow, null);
@@ -1104,7 +1169,7 @@ async function processLedger(row) {
       const tradesRow = { ...openRow, event: 'FILL', raw_event: row.raw_event || 'SETUP' };
       await appendToTradesSheet(sheets, tradesRow);
 
-      console.log('v51 SETUP treated as open position:', row.trade_id);
+      console.log('SETUP treated as open position:', row.trade_id, row.strategy || row.profile || '');
       return openRow;
     }
 
@@ -1145,15 +1210,15 @@ async function processLedger(row) {
       removedCount = await removePendingRowsBySymbol(sheets, row.symbol);
     }
 
-    // For SuperTrend intraday v51, a bridge/TWS rejection can come back as CANCEL
+    // For open-on-SETUP strategies, a bridge/TWS rejection can come back as CANCEL
     // after the app has already placed the SETUP in Open Positions. Clean it up too.
-    if (isV51IntradayRow(row)) {
+    if (isOpenOnSetupRow(row)) {
       const removedOpen = row.symbol && row.side
         ? await removeOpenRowsBySymbolAndSide(sheets, row.symbol, row.side)
         : row.symbol
           ? await removeOpenRowsBySymbol(sheets, row.symbol)
           : 0;
-      console.log('v51 cancel open cleanup removed:', removedOpen);
+      console.log('open-on-setup cancel open cleanup removed:', removedOpen);
     }
 
     console.log('Cancel cleanup finished:', row.trade_id || '', row.symbol || '', row.side || '', 'removed:', removedCount);
@@ -4398,10 +4463,15 @@ function bridgePayload(reqBody, parsedRow) {
   // The bridge log showed dry_run=false when absent, so Render now always sends this field.
   payload.dry_run = BRIDGE_DRY_RUN;
   payload.render_forwarded_at = nowNy();
+  if (cleanNumber(payload.qty) === '' && cleanNumber(payload.size) === '' && cleanNumber(payload.quantity) === '') {
+    payload.qty = BRIDGE_DEFAULT_QTY;
+    payload.qty_source = 'Render BRIDGE_DEFAULT_QTY';
+  }
   payload.render_safety = {
     bridge_forward_enabled: BRIDGE_FORWARD_ENABLED,
     bridge_dry_run: BRIDGE_DRY_RUN,
     max_bridge_qty: MAX_BRIDGE_QTY,
+    bridge_default_qty: BRIDGE_DEFAULT_QTY,
     manual_tests_allowed: BRIDGE_ALLOW_MANUAL_TESTS,
   };
 
@@ -4424,27 +4494,34 @@ function validateBridgePayload(payload, parsedRow) {
     const price = firstCleanNumber(payload?.price, payload?.entry, parsedRow?.entry);
     const target = firstCleanNumber(payload?.target, parsedRow?.target);
     const stop = firstCleanNumber(payload?.stop, parsedRow?.stop);
+    const noTargetMode = isNoTargetMode(payload) || isNoTargetMode(parsedRow);
 
-    if (price === '' || target === '') {
-      return { ok: false, reason: 'SETUP missing price/target' };
+    if (price === '') {
+      return { ok: false, reason: 'SETUP missing price/entry' };
     }
 
-    // Directional sanity check for real v51 alerts.
-    // This blocks impossible targets such as LONG target <= signal price or SHORT target >= signal price.
-    if (side === 'LONG' && target <= price) {
-      return { ok: false, reason: `LONG target ${target} must be above signal price ${price}` };
-    }
+    if (!noTargetMode) {
+      if (target === '') {
+        return { ok: false, reason: 'SETUP missing target' };
+      }
 
-    if (side === 'SHORT' && target >= price) {
-      return { ok: false, reason: `SHORT target ${target} must be below signal price ${price}` };
+      // Directional sanity check for real target-based v51 alerts.
+      // This blocks impossible targets such as LONG target <= signal price or SHORT target >= signal price.
+      if (side === 'LONG' && target <= price) {
+        return { ok: false, reason: `LONG target ${target} must be above signal price ${price}` };
+      }
+
+      if (side === 'SHORT' && target >= price) {
+        return { ok: false, reason: `SHORT target ${target} must be below signal price ${price}` };
+      }
     }
 
     if (stop !== '') {
-      if (side === 'LONG' && stop >= price) {
+      if (side === 'LONG' && stop >= price && !noTargetMode) {
         return { ok: false, reason: `LONG stop ref ${stop} should be below signal price ${price}` };
       }
 
-      if (side === 'SHORT' && stop <= price) {
+      if (side === 'SHORT' && stop <= price && !noTargetMode) {
         return { ok: false, reason: `SHORT stop ref ${stop} should be above signal price ${price}` };
       }
     }
@@ -4490,7 +4567,8 @@ async function forwardToBridge(reqBody, parsedRow) {
       bridgeLogPrefix(parsedRow),
       '->', url,
       'dry_run:', BRIDGE_DRY_RUN,
-      'max_qty:', MAX_BRIDGE_QTY
+      'max_qty:', MAX_BRIDGE_QTY,
+    'default_qty:', BRIDGE_DEFAULT_QTY
     );
 
     const response = await fetch(url, {
