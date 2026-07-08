@@ -180,6 +180,20 @@ function isNoTargetMode(rowOrPayload) {
     isOppositeFlipName(rowOrPayload.reason);
 }
 
+function sheetEventLabel(row) {
+  const event = String(row?.event || '').toUpperCase();
+  const rawEvent = String(row?.raw_event || '').toUpperCase();
+
+  // Opposite Flip uses CLOSE_STOP only as a normal reversal/flip exit.
+  // Keep internal event as SL for bridge-forward compatibility, but show it
+  // in Sheets / dashboard as FLIP_CLOSE instead of stop-loss.
+  if (isOppositeFlipRow(row) && event === 'SL' && rawEvent === 'CLOSE_STOP') {
+    return 'FLIP_CLOSE';
+  }
+
+  return event;
+}
+
 function nowNy() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -933,6 +947,8 @@ async function appendToTradesSheet(sheets, row) {
     return;
   }
 
+  const eventForSheet = sheetEventLabel(row);
+
   await sheets.spreadsheets.values.append({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${TRADES_SHEET}!A:K`,
@@ -942,7 +958,7 @@ async function appendToTradesSheet(sheets, row) {
         row.timestamp,
         row.symbol,
         row.side,
-        row.event,
+        eventForSheet,
         row.entry,
         row.size,
         row.target || row.exit,
@@ -954,7 +970,7 @@ async function appendToTradesSheet(sheets, row) {
     },
   });
 
-  console.log('Trades row appended:', row.symbol, row.side, row.event);
+  console.log('Trades row appended:', row.symbol, row.side, eventForSheet);
 }
 
 async function upsertPending(sheets, row) {
@@ -1116,6 +1132,8 @@ async function removeOpenRowsBySymbol(sheets, symbol) {
 }
 
 async function appendClosedTrade(sheets, openPosition, closeRow) {
+  const eventForSheet = sheetEventLabel(closeRow);
+
   const closedRow = [
     closeRow.trade_id,
     openPosition?.open_time || '',
@@ -1126,7 +1144,7 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     closeRow.exit || '',
     openPosition?.size || closeRow.size || '',
     closeRow.result,
-    closeRow.event,
+    eventForSheet,
     openPosition?.raw_open || '',
     closeRow.raw,
   ];
@@ -1138,7 +1156,7 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     requestBody: { values: [closedRow] },
   });
 
-  console.log('Closed trade appended:', closeRow.trade_id, closeRow.event, closeRow.result);
+  console.log('Closed trade appended:', closeRow.trade_id, eventForSheet, closeRow.result);
 }
 
 async function cleanupLegacyPositionIfExists(sheets, tradeId) {
@@ -1252,6 +1270,15 @@ async function processLedger(row) {
 
     const openPosition = await removeOpenPosition(sheets, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+
+    if (!openPosition && isOppositeFlipRow(row) && row.event === 'SL' && row.raw_event === 'CLOSE_STOP') {
+      console.log('Opposite flip close had no matching Open Positions row. Skipping fake Sheets close/PnL:', row.trade_id);
+      return {
+        ...row,
+        status: 'ignored_no_matching_open',
+        skip_telegram: true,
+      };
+    }
 
     const enrichedCloseRow = enrichCloseRowFromOpenPosition(row, openPosition);
 
@@ -4634,7 +4661,9 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
   finalRow = ensureClosePnlFallback(finalRow);
 
   try {
-    if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
+    if (finalRow.skip_telegram) {
+      console.log('Telegram skipped for row:', finalRow.event, finalRow.raw_event || '', finalRow.status || '');
+    } else if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
       await sendTelegram(telegramMessage);
     } else {
