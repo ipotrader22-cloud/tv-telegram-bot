@@ -4621,17 +4621,44 @@ function isRecognizedTradeWebhook(row) {
   return false;
 }
 
+async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) {
+  let finalRow = parsedRow;
+
+  try {
+    finalRow = (await processLedger(parsedRow)) || parsedRow;
+  } catch (sheetErr) {
+    console.error('Google Sheets / ledger failed:', sheetErr);
+    finalRow = parsedRow;
+  }
+
+  finalRow = ensureClosePnlFallback(finalRow);
+
+  try {
+    if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
+      const telegramMessage = formatTelegramMessage(finalRow, message);
+      await sendTelegram(telegramMessage);
+    } else {
+      console.log('Telegram skipped for silent event:', finalRow.event, finalRow.raw_event || '');
+    }
+  } catch (tgErr) {
+    console.error('Telegram send failed:', tgErr);
+  }
+
+  await forwardToBridge(reqBody, finalRow);
+}
+
 async function handleTradingViewWebhook(req, res) {
   try {
+    const reqBody = req.body;
     const isJsonObject =
-      typeof req.body === 'object' &&
-      req.body !== null &&
-      !Buffer.isBuffer(req.body);
+      typeof reqBody === 'object' &&
+      reqBody !== null &&
+      !Buffer.isBuffer(reqBody);
 
-    const message = normalizeRawMessage(req.body);
+    const message = normalizeRawMessage(reqBody);
 
     const parsedRow = isJsonObject
-      ? parseJsonTradingViewAlert(req.body)
+      ? parseJsonTradingViewAlert(reqBody)
       : parseTradingViewMessage(message);
 
     if (!isRecognizedTradeWebhook(parsedRow)) {
@@ -4639,30 +4666,22 @@ async function handleTradingViewWebhook(req, res) {
       return res.status(200).send('IGNORED');
     }
 
-    let finalRow = parsedRow;
-
-    try {
-      finalRow = (await processLedger(parsedRow)) || parsedRow;
-    } catch (sheetErr) {
-      console.error('Google Sheets / ledger failed:', sheetErr);
-      finalRow = parsedRow;
-    }
-
-    finalRow = ensureClosePnlFallback(finalRow);
-
-    if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
-      const telegramMessage = formatTelegramMessage(finalRow, message);
-      await sendTelegram(telegramMessage);
-    } else {
-      console.log('Telegram skipped for silent event:', finalRow.event, finalRow.raw_event || '');
-    }
-
-    await forwardToBridge(req.body, finalRow);
-
+    // TradingView has a short webhook timeout. Acknowledge immediately, then do
+    // Sheets / Telegram / bridge forwarding in the background.
     res.status(200).send('OK');
+
+    setImmediate(async () => {
+      try {
+        await processRecognizedTradingViewWebhook(reqBody, parsedRow, message);
+      } catch (err) {
+        console.error('Background webhook processing failed:', err);
+      }
+    });
   } catch (err) {
-    console.error('Error:', err);
-    res.status(500).send('Error');
+    console.error('Error before webhook acknowledgement:', err);
+    if (!res.headersSent) {
+      res.status(200).send('IGNORED');
+    }
   }
 }
 
