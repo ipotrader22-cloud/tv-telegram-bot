@@ -151,8 +151,7 @@ function isOppositeFlipName(value) {
   const text = String(value || '').toUpperCase();
   return text.includes('VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
     text.includes('OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
-    text.includes('NONE_OPPOSITE_FLIP') ||
-    text.includes('NO_EOD_CLOSE');
+    text.includes('NONE_OPPOSITE_FLIP');
 }
 
 function isOppositeFlipRow(row) {
@@ -161,23 +160,39 @@ function isOppositeFlipRow(row) {
     isOppositeFlipName(row.profile) ||
     isOppositeFlipName(row.variant) ||
     isOppositeFlipName(row.target_type) ||
-    isOppositeFlipName(row.eod_policy) ||
     isOppositeFlipName(row.reason) ||
     isOppositeFlipName(row.raw);
 }
 
+function isEmaPullbackName(value) {
+  const text = String(value || '').toUpperCase();
+  return text.includes('VX_EMA_CROSS_PULLBACK_ATR_TARGET') ||
+    text.includes('EMA_CROSS_PULLBACK_ATR_TARGET') ||
+    text.includes('EMA_CROSS_PULLBACK');
+}
+
+function isEmaPullbackRow(row) {
+  if (!row) return false;
+  return isEmaPullbackName(row.strategy) ||
+    isEmaPullbackName(row.profile) ||
+    isEmaPullbackName(row.variant) ||
+    isEmaPullbackName(row.reason) ||
+    isEmaPullbackName(row.raw);
+}
+
 function isOpenOnSetupRow(row) {
-  return isV51IntradayRow(row) || isOppositeFlipRow(row);
+  return isV51IntradayRow(row) || isOppositeFlipRow(row) || isEmaPullbackRow(row);
 }
 
 function isNoTargetMode(rowOrPayload) {
   if (!rowOrPayload) return false;
-  return isOppositeFlipName(rowOrPayload.target_type) ||
-    isOppositeFlipName(rowOrPayload.variant) ||
-    isOppositeFlipName(rowOrPayload.profile) ||
-    isOppositeFlipName(rowOrPayload.strategy) ||
-    isOppositeFlipName(rowOrPayload.eod_policy) ||
-    isOppositeFlipName(rowOrPayload.reason);
+
+  const targetType = String(rowOrPayload.target_type || rowOrPayload.targetType || '').toUpperCase();
+
+  return isOppositeFlipRow(rowOrPayload) ||
+    targetType === 'NONE' ||
+    targetType === 'NO_TARGET' ||
+    targetType.includes('NONE_OPPOSITE_FLIP');
 }
 
 function sheetEventLabel(row) {
@@ -534,8 +549,9 @@ function parseJsonTradingViewAlert(data) {
   const variantName = String(data.variant || '').trim();
   const eodPolicy = String(data.eod_policy || '').trim();
   const isV51Intraday = isV51IntradayName(strategyName) || isV51IntradayName(profileName);
-  const isOppositeFlip = isOppositeFlipName(strategyName) || isOppositeFlipName(profileName) || isOppositeFlipName(variantName) || isOppositeFlipName(data.target_type) || isOppositeFlipName(eodPolicy);
-  const openOnSetup = isV51Intraday || isOppositeFlip;
+  const isOppositeFlip = isOppositeFlipName(strategyName) || isOppositeFlipName(profileName) || isOppositeFlipName(variantName) || isOppositeFlipName(data.target_type);
+  const isEmaPullback = isEmaPullbackName(strategyName) || isEmaPullbackName(profileName) || isEmaPullbackName(variantName);
+  const openOnSetup = isV51Intraday || isOppositeFlip || isEmaPullback;
 
   const eventMap = {
     SETUP: 'SETUP',
@@ -697,7 +713,7 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'SETUP') {
     const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
 
-    if (isOppositeFlipRow(row)) {
+    if (isOppositeFlipRow(row) || isEmaPullbackRow(row)) {
       return [
         `${emoji} <b>VIXALE POSITION OPENED</b>`,
         '',
@@ -740,6 +756,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'TP') {
+    if (isEmaPullbackRow(row)) {
+      return [
+        `🎯 <b>VIXALE POSITION CLOSED</b>`,
+        '',
+        `<b>${titleBase}</b>`,
+        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
     return [
       `🎯 <b>${titleBase} TAKE PROFIT HIT</b>`,
       '',
@@ -751,7 +779,7 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'SL') {
-    if (isOppositeFlipRow(row)) {
+    if (isOppositeFlipRow(row) || isEmaPullbackRow(row)) {
       return [
         `🔁 <b>VIXALE POSITION CLOSED</b>`,
         '',
@@ -1140,9 +1168,9 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     closeRow.timestamp,
     closeRow.symbol || openPosition?.symbol || '',
     closeRow.side || openPosition?.side || '',
-    openPosition?.entry || closeRow.entry || '',
+    closeRow.entry || openPosition?.entry || '',
     closeRow.exit || '',
-    openPosition?.size || closeRow.size || '',
+    closeRow.size || openPosition?.size || '',
     closeRow.result,
     eventForSheet,
     openPosition?.raw_open || '',
@@ -1271,8 +1299,8 @@ async function processLedger(row) {
     const openPosition = await removeOpenPosition(sheets, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
 
-    if (!openPosition && isOppositeFlipRow(row) && row.event === 'SL' && row.raw_event === 'CLOSE_STOP') {
-      console.log('Opposite flip close had no matching Open Positions row. Skipping fake Sheets close/PnL:', row.trade_id);
+    if (!openPosition && (isOppositeFlipRow(row) || isEmaPullbackRow(row)) && row.event === 'SL' && row.raw_event === 'CLOSE_STOP') {
+      console.log('Close-stop had no matching Open Positions row. Skipping fake Sheets close/PnL:', row.trade_id);
       return {
         ...row,
         status: 'ignored_no_matching_open',
