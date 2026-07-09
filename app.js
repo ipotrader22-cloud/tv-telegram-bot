@@ -713,12 +713,23 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'SETUP') {
     const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
 
-    if (isOppositeFlipRow(row) || isEmaPullbackRow(row)) {
+    if (isOppositeFlipRow(row)) {
       return [
-        `${emoji} <b>VIXALE POSITION OPENED</b>`,
+        `${emoji} <b>Shrek opened ${row.side}</b>`,
+        '',
+        `<b>${row.symbol}</b>`,
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
+
+    if (isEmaPullbackRow(row)) {
+      return [
+        `🕺 <b>Elvis in the Building!</b>`,
         '',
         `<b>${titleBase}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -758,10 +769,10 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'TP') {
     if (isEmaPullbackRow(row)) {
       return [
-        `🎯 <b>VIXALE POSITION CLOSED</b>`,
+        `🎯 <b>Elvis hit target</b>`,
         '',
         `<b>${titleBase}</b>`,
-        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -779,12 +790,24 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'SL') {
-    if (isOppositeFlipRow(row) || isEmaPullbackRow(row)) {
+    if (isOppositeFlipRow(row)) {
       return [
-        `🔁 <b>VIXALE POSITION CLOSED</b>`,
+        `🔁 <b>Shrek closed ${row.side}</b>`,
         '',
-        `<b>${titleBase}</b>`,
-        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        `<b>${row.symbol}</b>`,
+        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
+    if (isEmaPullbackRow(row)) {
+      return [
+        `🎸 <b>Elvis has left the building</b>`,
+        '',
+        `<b>${titleBase} position closed</b>`,
+        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
