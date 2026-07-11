@@ -188,11 +188,16 @@ function isNoTargetMode(rowOrPayload) {
   if (!rowOrPayload) return false;
 
   const targetType = String(rowOrPayload.target_type || rowOrPayload.targetType || '').toUpperCase();
+  const variant = String(rowOrPayload.variant || '').toUpperCase();
 
-  return isOppositeFlipRow(rowOrPayload) ||
-    targetType === 'NONE' ||
+  // Shrek can now run in two live modes:
+  // 1) NONE_OPPOSITE_FLIP / no target
+  // 2) ATR_LIMIT_OPPOSITE_FLIP / attached TWS target
+  // Do NOT treat every Shrek/OppositeFlip payload as no-target anymore.
+  return targetType === 'NONE' ||
     targetType === 'NO_TARGET' ||
-    targetType.includes('NONE_OPPOSITE_FLIP');
+    targetType.includes('NONE_OPPOSITE_FLIP') ||
+    variant.includes('OPPOSITE_FLIP_ALWAYS_IN_MARKET');
 }
 
 function sheetEventLabel(row) {
@@ -719,6 +724,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -767,6 +773,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'TP') {
+    if (isOppositeFlipRow(row)) {
+      return [
+        `🎯 <b>Shrek hit target</b>`,
+        '',
+        `<b>${titleBase}</b>`,
+        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
     if (isEmaPullbackRow(row)) {
       return [
         `🎯 <b>Elvis hit target</b>`,
