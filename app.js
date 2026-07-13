@@ -1553,9 +1553,12 @@ function parseOpenPositionRow(row) {
     }
   }
 
+  const rawOpen = row[11] || '';
+
   return {
     trade_id: row[0] || '',
     open_time: row[1] || '',
+    system: strategyFamilyLabelFromRaw(rawOpen),
     symbol: row[2] || '',
     side,
     status: row[4] || '',
@@ -1568,28 +1571,108 @@ function parseOpenPositionRow(row) {
     to_tp: toTp,
     to_stop: toStop,
     exposure,
+    raw_open: rawOpen,
   };
 }
 
 function parsePendingRow(row) {
+  const raw = row[9] || '';
+  const side = String(row[3] || '').toUpperCase();
+  const entry = cleanNumber(row[5]);
+  const size = cleanNumber(row[6]);
+
   return {
     trade_id: row[0] || '',
     timestamp: row[1] || '',
+    system: strategyFamilyLabelFromRaw(raw),
     symbol: row[2] || '',
-    side: String(row[3] || '').toUpperCase(),
+    side,
     status: row[4] || '',
-    entry: cleanNumber(row[5]),
-    size: cleanNumber(row[6]),
+    entry,
+    size,
     target: cleanNumber(row[7]),
     stop: cleanNumber(row[8]),
+    order_type: 'ENTRY SETUP',
+    action: side === 'LONG' ? 'BUY' : side === 'SHORT' ? 'SELL SHORT' : 'ENTRY',
+    price: entry,
+    qty: size,
+    raw,
   };
 }
 
+
+function parseRawJsonSafe(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function strategyFamilyLabelFromRaw(...rawValues) {
+  const joined = rawValues.map(v => String(v || '')).join('\n');
+
+  if (isOppositeFlipName(joined)) return 'Shrek';
+  if (isEmaPullbackName(joined)) return 'Elvis';
+  if (isV51IntradayName(joined)) return 'Vixale';
+
+  for (const raw of rawValues) {
+    const parsed = parseRawJsonSafe(raw);
+    const fields = [
+      parsed.strategy,
+      parsed.strategy_name,
+      parsed.profile,
+      parsed.alert_profile,
+      parsed.variant,
+      parsed.target_type,
+      parsed.reason,
+    ].join(' ');
+
+    if (isOppositeFlipName(fields)) return 'Shrek';
+    if (isEmaPullbackName(fields)) return 'Elvis';
+    if (isV51IntradayName(fields)) return 'Vixale';
+  }
+
+  return '';
+}
+
+function exitActionForOpenPosition(side) {
+  const cleanSide = String(side || '').toUpperCase();
+  if (cleanSide === 'LONG') return 'SELL';
+  if (cleanSide === 'SHORT') return 'BUY TO COVER';
+  return 'EXIT';
+}
+
+function buildWorkingExitOrders(openPositions) {
+  return openPositions
+    .filter(row => row && row.target !== '' && row.size !== '')
+    .map(row => ({
+      trade_id: row.trade_id || '',
+      timestamp: row.open_time || '',
+      system: row.system || '',
+      symbol: row.symbol || '',
+      side: row.side || '',
+      order_type: 'TARGET EXIT',
+      action: exitActionForOpenPosition(row.side),
+      price: row.target,
+      qty: row.size,
+      status: 'working',
+    }));
+}
+
 function parseClosedTradeRow(row) {
+  const rawOpen = row[10] || '';
+  const rawClose = row[11] || '';
+
   return {
     trade_id: row[0] || '',
     open_time: row[1] || '',
     close_time: row[2] || '',
+    system: strategyFamilyLabelFromRaw(rawOpen, rawClose),
     symbol: row[3] || '',
     side: String(row[4] || '').toUpperCase(),
     entry: cleanNumber(row[5]),
@@ -1597,6 +1680,8 @@ function parseClosedTradeRow(row) {
     size: cleanNumber(row[7]),
     result: cleanNumber(row[8]),
     event: row[9] || '',
+    raw_open: rawOpen,
+    raw_close: rawClose,
   };
 }
 
@@ -1623,6 +1708,9 @@ async function getDashboardData() {
     .filter(row => row[0])
     .map(parsePendingRow);
 
+  const workingExitOrders = buildWorkingExitOrders(openPositions);
+  const workingOrders = [...pendingOrders, ...workingExitOrders];
+
   const closedTradesAll = closedValues
     .slice(1)
     .filter(row => row[0])
@@ -1647,10 +1735,11 @@ async function getDashboardData() {
     updated_at: nowNy(),
     open_positions: openPositions,
     pending_orders: pendingOrders,
+    working_orders: workingOrders,
     recent_closed_trades: closedTradesAll.slice(0, 20),
     summary: {
       open_count: openPositions.length,
-      pending_count: pendingOrders.length,
+      pending_count: workingOrders.length,
       open_pnl: Number(openPnl.toFixed(2)),
       closed_pnl_today: Number(closedPnlToday.toFixed(2)),
       total_closed_pnl: Number(totalClosedPnl.toFixed(2)),
@@ -3924,6 +4013,7 @@ function renderDashboardHtml(data) {
 
   const openRows = data.open_positions.map(row => `
     <tr>
+      <td>${escapeHtml(row.system)}</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
@@ -3939,14 +4029,15 @@ function renderDashboardHtml(data) {
     </tr>
   `).join('');
 
-  const pendingRows = data.pending_orders.map(row => `
+  const pendingRows = (data.working_orders || data.pending_orders || []).map(row => `
     <tr>
+      <td>${escapeHtml(row.system)}</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
-      <td>${num(row.entry)}</td>
-      <td>${num(row.target)}</td>
-      <td>${num(row.stop)}</td>
-      <td>${num(row.size, 0)}</td>
+      <td>${escapeHtml(row.order_type || 'ORDER')}</td>
+      <td>${escapeHtml(row.action || '')}</td>
+      <td>${num(row.price)}</td>
+      <td>${num(row.qty, 0)}</td>
       <td>${escapeHtml(row.status)}</td>
       <td>${escapeHtml(safeDateText(row.timestamp))}</td>
       <td>${escapeHtml(row.trade_id)}</td>
@@ -3955,6 +4046,7 @@ function renderDashboardHtml(data) {
 
   const closedRows = data.recent_closed_trades.map(row => `
     <tr>
+      <td>${escapeHtml(row.system)}</td>
       <td class="ticker">${escapeHtml(row.trade_id)}</td>
       <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td>${escapeHtml(safeDateText(row.close_time))}</td>
@@ -4224,7 +4316,7 @@ function renderDashboardHtml(data) {
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 900px;
+      min-width: 1040px;
       background: rgba(255,255,255,0.80);
     }
 
@@ -4333,7 +4425,7 @@ function renderDashboardHtml(data) {
           <div class="value">${escapeHtml(s.open_count)}</div>
         </div>
         <div class="card">
-          <div class="label">Pending Orders</div>
+          <div class="label">Working Orders</div>
           <div class="value">${escapeHtml(s.pending_count)}</div>
         </div>
         <div class="card">
@@ -4365,6 +4457,7 @@ function renderDashboardHtml(data) {
         <table>
           <thead>
             <tr>
+              <th>System</th>
               <th>Symbol</th>
               <th>Side</th>
               <th>Entry</th>
@@ -4387,19 +4480,20 @@ function renderDashboardHtml(data) {
 
     <div class="section">
       <div class="section-header">
-        <h2>Pending Orders</h2>
-        <span>Working setup orders waiting for entry</span>
+        <h2>Pending / Working Orders</h2>
+        <span>Open entry orders and attached target exit orders</span>
       </div>
       <div class="table-wrap">
-        ${data.pending_orders.length ? `
+        ${(data.working_orders || data.pending_orders || []).length ? `
         <table>
           <thead>
             <tr>
+              <th>System</th>
               <th>Symbol</th>
               <th>Side</th>
-              <th>Entry</th>
-              <th>Target</th>
-              <th>Stop Ref</th>
+              <th>Order Type</th>
+              <th>Action</th>
+              <th>Price</th>
               <th>Qty</th>
               <th>Status</th>
               <th>Time</th>
@@ -4408,7 +4502,7 @@ function renderDashboardHtml(data) {
           </thead>
           <tbody>${pendingRows}</tbody>
         </table>
-        ` : `<div class="empty">No pending orders.</div>`}
+        ` : `<div class="empty">No pending / working orders.</div>`}
       </div>
     </div>
 
@@ -4422,6 +4516,7 @@ function renderDashboardHtml(data) {
         <table>
           <thead>
             <tr>
+              <th>System</th>
               <th>Trade ID</th>
               <th>Open Time</th>
               <th>Close Time</th>
