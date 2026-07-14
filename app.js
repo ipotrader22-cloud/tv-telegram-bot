@@ -4954,6 +4954,8 @@ function validateBridgePayload(payload, parsedRow) {
     const target = firstCleanNumber(payload?.target, parsedRow?.target);
     const stop = firstCleanNumber(payload?.stop, parsedRow?.stop);
     const noTargetMode = isNoTargetMode(payload) || isNoTargetMode(parsedRow);
+    const stopType = String(payload?.stop_type || parsedRow?.stop_type || '').toUpperCase();
+    const noStopMode = stop === '' || stop <= 0 || stopType === 'NONE' || stopType.includes('NONE_OPPOSITE_FLIP');
 
     if (price === '') {
       return { ok: false, reason: 'SETUP missing price/entry' };
@@ -4975,12 +4977,14 @@ function validateBridgePayload(payload, parsedRow) {
       }
     }
 
-    if (stop !== '') {
-      if (side === 'LONG' && stop >= price && !noTargetMode) {
+    // Validate only a real positive stop reference. Shrek intentionally sends
+    // stop=0 with stop_type=NONE_OPPOSITE_FLIP in both no-target and ATR-target modes.
+    if (!noStopMode) {
+      if (side === 'LONG' && stop >= price) {
         return { ok: false, reason: `LONG stop ref ${stop} should be below signal price ${price}` };
       }
 
-      if (side === 'SHORT' && stop <= price && !noTargetMode) {
+      if (side === 'SHORT' && stop <= price) {
         return { ok: false, reason: `SHORT stop ref ${stop} should be above signal price ${price}` };
       }
     }
