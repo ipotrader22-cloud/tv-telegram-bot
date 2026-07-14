@@ -376,42 +376,23 @@ function recalcOpenPositionFromLast(row, lastPrice, quote = null) {
 }
 
 function enrichOpenPositionsWithLiveQuotes(openPositions) {
-  return openPositions.map(row => {
-    const quote = liveQuoteForSymbol(row.symbol);
-    if (quote && !quote.stale) {
-      return recalcOpenPositionFromLast(row, quote.price, quote);
-    }
-
-    return {
-      ...row,
-      quote_source: quote ? `${quote.source || 'TWS'} stale` : (row.last !== '' ? 'GoogleFinance fallback' : ''),
-      quote_time: quote ? formatNyTimeFromMs(quote.timestamp_ms) : '',
-      quote_age_seconds: quote ? quote.age_seconds : '',
-      quote_stale: quote ? Boolean(quote.stale) : false,
-    };
-  });
+  // GoogleFinance-only dashboard mode.
+  // Keep accepting /bridge/quotes for backwards compatibility, but do not use
+  // the TWS quote cache to override Google Sheets / GoogleFinance values.
+  return (openPositions || []).map(row => ({
+    ...row,
+    quote_source: row.last !== '' ? 'GoogleFinance' : '',
+    quote_time: '',
+    quote_age_seconds: '',
+    quote_stale: false,
+  }));
 }
 
 function quoteStatusForOpenPositions(openPositions) {
   const rows = openPositions || [];
-  const liveRows = rows.filter(row => String(row.quote_source || '').toUpperCase().includes('TWS') && !row.quote_stale);
-  const newestMs = liveRows.reduce((max, row) => {
-    const quote = liveQuoteForSymbol(row.symbol);
-    return quote && !quote.stale ? Math.max(max, Number(quote.timestamp_ms || 0)) : max;
-  }, 0);
-
-  if (liveRows.length > 0) {
-    return {
-      source: 'TWS live',
-      live_count: liveRows.length,
-      total_count: rows.length,
-      updated_time: formatNyTimeFromMs(newestMs),
-      stale_seconds: LIVE_QUOTE_STALE_SECONDS,
-    };
-  }
 
   return {
-    source: rows.length ? 'GoogleFinance fallback' : 'No open positions',
+    source: rows.length ? 'GoogleFinance' : 'No open positions',
     live_count: 0,
     total_count: rows.length,
     updated_time: '',
