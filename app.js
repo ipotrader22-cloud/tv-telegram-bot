@@ -1532,8 +1532,13 @@ async function processLedger(row) {
     const openPosition = await removeOpenPosition(sheets, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
 
-    if (!openPosition && (isOppositeFlipRow(row) || isEmaPullbackRow(row)) && row.event === 'SL' && row.raw_event === 'CLOSE_STOP') {
-      console.log('Close-stop had no matching Open Positions row. Skipping fake Sheets close/PnL:', row.trade_id);
+    if (!openPosition && isOpenOnSetupRow(row)) {
+      console.log(
+        'Execution-first close had no matching Open Positions row. Skipping duplicate/fake close:',
+        row.trade_id,
+        row.event,
+        row.raw_event || ''
+      );
       return {
         ...row,
         status: 'ignored_no_matching_open',
