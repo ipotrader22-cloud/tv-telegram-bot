@@ -86,6 +86,14 @@ const LEGACY_POSITIONS_SHEET = 'Positions';
 const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT']);
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LIVE QUOTE CACHE — updated by local TWS/IB bridge
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_STALE_SECONDS', 90)));
+const LIVE_QUOTES = new Map();
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BASIC HELPERS
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -229,6 +237,186 @@ function nowNy() {
   const get = type => parts.find(p => p.type === type)?.value || '';
 
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+function formatNyTimeFromMs(ms) {
+  const timeMs = Number(ms);
+  if (!Number.isFinite(timeMs) || timeMs <= 0) return '';
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(timeMs));
+
+  const get = type => parts.find(p => p.type === type)?.value || '';
+  return `${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+function parseQuoteTimestampMs(value) {
+  if (value === undefined || value === null || value === '') return Date.now();
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric < 10000000000 ? numeric * 1000 : numeric;
+  }
+
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function normalizeQuotePrice(value) {
+  const n = cleanNumber(value);
+  return n === '' || !Number.isFinite(n) || n <= 0 ? '' : n;
+}
+
+function bestQuotePrice(quote) {
+  if (!quote) return '';
+
+  const direct = firstCleanNumber(quote.price, quote.market_price, quote.marketPrice, quote.last, quote.close);
+  if (direct !== '' && direct > 0) return direct;
+
+  const bid = normalizeQuotePrice(quote.bid);
+  const ask = normalizeQuotePrice(quote.ask);
+  if (bid !== '' && ask !== '' && bid > 0 && ask > 0) {
+    return Number(((bid + ask) / 2).toFixed(4));
+  }
+
+  return '';
+}
+
+function upsertLiveQuote(rawQuote, payloadTimestamp = '') {
+  if (!rawQuote || typeof rawQuote !== 'object') return false;
+
+  const symbol = normalizeSymbol(rawQuote.symbol || rawQuote.ticker);
+  if (!symbol) return false;
+
+  const price = bestQuotePrice(rawQuote);
+  if (price === '') return false;
+
+  const timestampMs = parseQuoteTimestampMs(rawQuote.timestamp_ms || rawQuote.timestamp || rawQuote.updated_at || payloadTimestamp);
+
+  LIVE_QUOTES.set(symbol, {
+    symbol,
+    price,
+    bid: normalizeQuotePrice(rawQuote.bid),
+    ask: normalizeQuotePrice(rawQuote.ask),
+    last: normalizeQuotePrice(rawQuote.last),
+    close: normalizeQuotePrice(rawQuote.close),
+    source: String(rawQuote.source || rawQuote.quote_source || 'TWS').trim() || 'TWS',
+    market_data_type: rawQuote.market_data_type ?? rawQuote.marketDataType ?? '',
+    timestamp_ms: timestampMs,
+    received_ms: Date.now(),
+  });
+
+  return true;
+}
+
+function liveQuoteForSymbol(symbol) {
+  const cleanSymbol = normalizeSymbol(symbol);
+  if (!cleanSymbol) return null;
+
+  const quote = LIVE_QUOTES.get(cleanSymbol);
+  if (!quote) return null;
+
+  const ageSeconds = (Date.now() - Number(quote.timestamp_ms || quote.received_ms || 0)) / 1000;
+  if (!Number.isFinite(ageSeconds) || ageSeconds > LIVE_QUOTE_STALE_SECONDS) {
+    return { ...quote, stale: true, age_seconds: Number(ageSeconds.toFixed(1)) };
+  }
+
+  return { ...quote, stale: false, age_seconds: Number(ageSeconds.toFixed(1)) };
+}
+
+function recalcOpenPositionFromLast(row, lastPrice, quote = null) {
+  const last = cleanNumber(lastPrice);
+  if (last === '' || last <= 0) return row;
+
+  const entry = cleanNumber(row.entry);
+  const size = cleanNumber(row.size);
+  const target = cleanNumber(row.target);
+  const stop = cleanNumber(row.stop);
+  const side = String(row.side || '').toUpperCase();
+
+  const enriched = {
+    ...row,
+    last: Number(last.toFixed(2)),
+    quote_source: quote ? (quote.stale ? `${quote.source || 'TWS'} stale` : quote.source || 'TWS') : row.quote_source || 'Sheets',
+    quote_time: quote ? formatNyTimeFromMs(quote.timestamp_ms) : row.quote_time || '',
+    quote_age_seconds: quote ? quote.age_seconds : row.quote_age_seconds ?? '',
+    quote_stale: quote ? Boolean(quote.stale) : Boolean(row.quote_stale),
+  };
+
+  if (entry !== '' && size !== '') {
+    if (side === 'LONG') {
+      enriched.open_pnl = Number(((last - entry) * size).toFixed(2));
+    } else if (side === 'SHORT') {
+      enriched.open_pnl = Number(((entry - last) * size).toFixed(2));
+    }
+  }
+
+  if (target !== '' && last !== 0) {
+    if (side === 'LONG') {
+      enriched.to_tp = Number((((target - last) / last) * 100).toFixed(2));
+    } else if (side === 'SHORT') {
+      enriched.to_tp = Number((((last - target) / last) * 100).toFixed(2));
+    }
+  }
+
+  if (stop !== '' && last !== 0) {
+    if (side === 'LONG') {
+      enriched.to_stop = Number((((last - stop) / last) * 100).toFixed(2));
+    } else if (side === 'SHORT') {
+      enriched.to_stop = Number((((stop - last) / last) * 100).toFixed(2));
+    }
+  }
+
+  return enriched;
+}
+
+function enrichOpenPositionsWithLiveQuotes(openPositions) {
+  return openPositions.map(row => {
+    const quote = liveQuoteForSymbol(row.symbol);
+    if (quote && !quote.stale) {
+      return recalcOpenPositionFromLast(row, quote.price, quote);
+    }
+
+    return {
+      ...row,
+      quote_source: quote ? `${quote.source || 'TWS'} stale` : (row.last !== '' ? 'GoogleFinance fallback' : ''),
+      quote_time: quote ? formatNyTimeFromMs(quote.timestamp_ms) : '',
+      quote_age_seconds: quote ? quote.age_seconds : '',
+      quote_stale: quote ? Boolean(quote.stale) : false,
+    };
+  });
+}
+
+function quoteStatusForOpenPositions(openPositions) {
+  const rows = openPositions || [];
+  const liveRows = rows.filter(row => String(row.quote_source || '').toUpperCase().includes('TWS') && !row.quote_stale);
+  const newestMs = liveRows.reduce((max, row) => {
+    const quote = liveQuoteForSymbol(row.symbol);
+    return quote && !quote.stale ? Math.max(max, Number(quote.timestamp_ms || 0)) : max;
+  }, 0);
+
+  if (liveRows.length > 0) {
+    return {
+      source: 'TWS live',
+      live_count: liveRows.length,
+      total_count: rows.length,
+      updated_time: formatNyTimeFromMs(newestMs),
+      stale_seconds: LIVE_QUOTE_STALE_SECONDS,
+    };
+  }
+
+  return {
+    source: rows.length ? 'GoogleFinance fallback' : 'No open positions',
+    live_count: 0,
+    total_count: rows.length,
+    updated_time: '',
+    stale_seconds: LIVE_QUOTE_STALE_SECONDS,
+  };
 }
 
 function normalizeRawMessage(reqBody) {
@@ -1572,6 +1760,10 @@ function parseOpenPositionRow(row) {
     to_stop: toStop,
     exposure,
     raw_open: rawOpen,
+    quote_source: last !== '' ? 'GoogleFinance fallback' : '',
+    quote_time: '',
+    quote_age_seconds: '',
+    quote_stale: false,
   };
 }
 
@@ -1698,10 +1890,12 @@ async function getDashboardData() {
     readSheet(sheets, CLOSED_TRADES_SHEET, 'A:L'),
   ]);
 
-  const openPositions = openValues
+  let openPositions = openValues
     .slice(1)
     .filter(row => row[0])
     .map(parseOpenPositionRow);
+
+  openPositions = enrichOpenPositionsWithLiveQuotes(openPositions);
 
   const pendingOrders = pendingValues
     .slice(1)
@@ -1733,6 +1927,7 @@ async function getDashboardData() {
 
   return {
     updated_at: nowNy(),
+    quote_status: quoteStatusForOpenPositions(openPositions),
     open_positions: openPositions,
     pending_orders: pendingOrders,
     working_orders: workingOrders,
@@ -4010,6 +4205,10 @@ function renderMoney(value) {
 
 function renderDashboardHtml(data) {
   const s = data.summary;
+  const q = data.quote_status || {};
+  const quoteLine = q.live_count > 0
+    ? ` · Quotes: ${escapeHtml(q.source)} ${escapeHtml(q.live_count)}/${escapeHtml(q.total_count)}${q.updated_time ? ` · ${escapeHtml(q.updated_time)} ET` : ''}`
+    : ` · Quotes: ${escapeHtml(q.source || 'fallback')}`;
 
   const openRows = data.open_positions.map(row => `
     <tr>
@@ -4017,7 +4216,7 @@ function renderDashboardHtml(data) {
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
-      <td>${num(row.last)}</td>
+      <td>${num(row.last)}${row.quote_source ? `<div class="cell-note ${row.quote_stale ? 'stale' : ''}">${escapeHtml(row.quote_source)}${row.quote_time ? ` · ${escapeHtml(row.quote_time)}` : ''}</div>` : ''}</td>
       <td>${num(row.target)}</td>
       <td>${num(row.stop)}</td>
       <td>${num(row.size, 0)}</td>
@@ -4368,6 +4567,17 @@ function renderDashboardHtml(data) {
       font-weight: 400;
     }
 
+    .cell-note {
+      margin-top: 3px;
+      color: var(--muted2);
+      font-size: 10px;
+      line-height: 1.2;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .cell-note.stale { color: #9b7c2f; }
+
     .footer {
       margin-top: 18px;
       color: #6f7a75;
@@ -4414,7 +4624,7 @@ function renderDashboardHtml(data) {
         <div class="brand">
           <h1>Vixale Live Strategy Dashboard</h1>
           <div class="subtitle">Private live forward-test / paper-trading tracker</div>
-          <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
+          <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds${quoteLine}</div>
         </div>
         <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
       </div>
@@ -5084,6 +5294,57 @@ app.post('/bot-request', async (req, res) => {
     return res.status(500).send('Bot request form error. Please try again or contact us on Telegram.');
   }
 });
+
+function handleBridgeQuoteUpdate(req, res) {
+  try {
+    let payload = req.body;
+
+    if (typeof payload === 'string') {
+      payload = JSON.parse(payload);
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ ok: false, error: 'bad_quote_payload' });
+    }
+
+    const payloadTimestamp = payload.timestamp_ms || payload.timestamp || payload.updated_at || '';
+    const quotes = Array.isArray(payload.quotes) ? payload.quotes : [];
+    let accepted = 0;
+
+    for (const quote of quotes) {
+      if (upsertLiveQuote(quote, payloadTimestamp)) accepted++;
+    }
+
+    return res.status(200).json({
+      ok: true,
+      accepted,
+      cache_size: LIVE_QUOTES.size,
+      stale_seconds: LIVE_QUOTE_STALE_SECONDS,
+    });
+  } catch (err) {
+    console.error('Quote update error:', err);
+    return res.status(500).json({ ok: false, error: 'quote_update_error' });
+  }
+}
+
+app.get('/bridge/quotes/status', (req, res) => {
+  const symbols = Array.from(LIVE_QUOTES.values()).map(q => ({
+    symbol: q.symbol,
+    price: q.price,
+    source: q.source,
+    updated: formatNyTimeFromMs(q.timestamp_ms),
+    age_seconds: Number(((Date.now() - Number(q.timestamp_ms || q.received_ms || 0)) / 1000).toFixed(1)),
+  }));
+
+  return res.status(200).json({
+    ok: true,
+    count: symbols.length,
+    stale_seconds: LIVE_QUOTE_STALE_SECONDS,
+    symbols,
+  });
+});
+
+app.post('/bridge/quotes', handleBridgeQuoteUpdate);
 
 app.post('/dashboard-login', (req, res) => {
   if (!DASHBOARD_KEY) {
