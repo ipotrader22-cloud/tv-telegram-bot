@@ -52,7 +52,7 @@ function envSymbolSet(name) {
 }
 
 // Hard safety controls for Render -> local bridge/TWS forwarding.
-// Defaults are intentionally conservative. Telegram + Google Sheets still work when forwarding is disabled.
+// Defaults are intentionally conservative. Execution-first strategies remain unpublished when forwarding is disabled.
 const BRIDGE_FORWARD_ENABLED = envFlag('BRIDGE_FORWARD_ENABLED', false);
 const BRIDGE_DRY_RUN = envFlag('BRIDGE_DRY_RUN', true);
 const BRIDGE_ALLOW_MANUAL_TESTS = envFlag('BRIDGE_ALLOW_MANUAL_TESTS', false);
@@ -931,6 +931,29 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'FILL') {
+    if (isOppositeFlipRow(row)) {
+      const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
+      return [
+        `${emoji} <b>Shrek opened ${row.side}</b>`,
+        '',
+        `<b>${row.symbol}</b>`,
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
+
+    if (isEmaPullbackRow(row)) {
+      return [
+        `🕺 <b>Elvis in the Building!</b>`,
+        '',
+        `<b>${titleBase}</b>`,
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
+
     return [
       `🎉 <b>${titleBase} FILLED</b>`,
       '',
@@ -1415,8 +1438,8 @@ async function processLedger(row) {
   if (row.event === 'SETUP') {
     if (!row.trade_id) return row;
 
-    // SuperTrend v51 and Opposite Flip send SETUP as the actual opened-position signal.
-    // It should appear as an open position immediately, not as an old pending setup.
+    // Execution-first raw SETUP events are intercepted before this function.
+    // This branch remains as a guarded fallback for already-confirmed/open callbacks.
     if (isOpenOnSetupRow(row)) {
       const openRow = { ...row, status: 'open' };
       await cleanupLegacyPositionIfExists(sheets, row.trade_id);
@@ -4749,6 +4772,56 @@ function bridgeLogPrefix(row) {
   return `${row?.event || ''} ${row?.raw_event || ''} ${row?.symbol || ''} ${row?.side || ''}`.trim();
 }
 
+function isBridgeExecutionCallback(reqBody) {
+  if (typeof reqBody !== 'object' || reqBody === null || Buffer.isBuffer(reqBody)) {
+    return false;
+  }
+
+  const event = String(reqBody.event || '').toUpperCase();
+  const hasRenderForwardMarker = Boolean(reqBody.render_forwarded_at || reqBody.render_safety);
+  const hasIbResultMarker = Boolean(
+    Object.prototype.hasOwnProperty.call(reqBody, 'ib_status') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'ib_result') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'ib_order_id') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'ib_entry_status') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'ib_close_status') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'ib_target_status') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'entry_filled') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'close_filled') ||
+    Object.prototype.hasOwnProperty.call(reqBody, 'position_after_close')
+  );
+
+  return (hasRenderForwardMarker && hasIbResultMarker) ||
+    ['ENTRY_FILL', 'RECONCILE_FLAT', 'IB_CONFIRMED_FLAT', 'FLAT_RECONCILE'].includes(event);
+}
+
+function requiresBridgeExecutionConfirmation(row) {
+  if (!row || !isOpenOnSetupRow(row)) return false;
+
+  const event = String(row.event || '').toUpperCase();
+  const rawEvent = String(row.raw_event || '').toUpperCase();
+
+  return event === 'SETUP' ||
+    (event === 'SL' && rawEvent === 'CLOSE_STOP') ||
+    (event === 'EOD' && ['EOD', 'EOD_CLOSE', 'NEW_DAY_EMERGENCY_CLOSE'].includes(rawEvent));
+}
+
+function hasConfirmedEntryExecution(reqBody, row) {
+  if (String(row?.event || '').toUpperCase() === 'FILL') return true;
+  if (typeof reqBody !== 'object' || reqBody === null || Buffer.isBuffer(reqBody)) return false;
+
+  return reqBody.entry_filled === true ||
+    String(reqBody.ib_entry_status || '').toUpperCase() === 'FILLED' ||
+    String(reqBody.event || '').toUpperCase() === 'ENTRY_FILL';
+}
+
+function hasConfirmedCloseExecution(reqBody) {
+  if (typeof reqBody !== 'object' || reqBody === null || Buffer.isBuffer(reqBody)) return false;
+
+  return reqBody.close_filled === true ||
+    String(reqBody.ib_close_status || '').toUpperCase() === 'FILLED';
+}
+
 function isManualOrTestPayload(reqBody, row) {
   const fields = [];
 
@@ -4767,6 +4840,10 @@ function isManualOrTestPayload(reqBody, row) {
 }
 
 function shouldForwardToBridge(reqBody, row) {
+  if (isBridgeExecutionCallback(reqBody)) {
+    return { ok: false, reason: 'bridge execution callback must not be forwarded back to bridge' };
+  }
+
   if (!BRIDGE_URL || !row) {
     return { ok: false, reason: 'BRIDGE_URL missing or parsed row missing' };
   }
@@ -5004,6 +5081,46 @@ function isRecognizedTradeWebhook(row) {
 }
 
 async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) {
+  const bridgeCallback = isBridgeExecutionCallback(reqBody);
+  const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
+
+  // Execution-first architecture for Shrek / Elvis / v51:
+  // TradingView SETUP/CLOSE alerts are forwarded to the local bridge only.
+  // Telegram, Sheets, and dashboard are updated only by the bridge callback
+  // after TWS confirms an actual fill.
+  if (executionConfirmationRequired && !bridgeCallback) {
+    const bridgeResult = await forwardToBridge(reqBody, parsedRow);
+    console.log(
+      'Execution-first deferred public ledger:',
+      bridgeLogPrefix(parsedRow),
+      'bridge_result:',
+      JSON.stringify(bridgeResult)
+    );
+    return;
+  }
+
+  // Never treat a bridge-returned SETUP as an execution. The only valid open
+  // callback for execution-first strategies is ENTRY_FILL -> parsed FILL.
+  if (bridgeCallback && isOpenOnSetupRow(parsedRow) && parsedRow.event === 'SETUP') {
+    console.log('Ignored bridge SETUP without confirmed fill:', bridgeLogPrefix(parsedRow));
+    return;
+  }
+
+  if (bridgeCallback && parsedRow.event === 'FILL' && !hasConfirmedEntryExecution(reqBody, parsedRow)) {
+    console.log('Ignored unconfirmed bridge FILL:', bridgeLogPrefix(parsedRow));
+    return;
+  }
+
+  if (
+    bridgeCallback &&
+    isOpenOnSetupRow(parsedRow) &&
+    (parsedRow.event === 'SL' || parsedRow.event === 'EOD') &&
+    !hasConfirmedCloseExecution(reqBody)
+  ) {
+    console.log('Ignored unconfirmed bridge close callback:', bridgeLogPrefix(parsedRow));
+    return;
+  }
+
   let finalRow = parsedRow;
 
   try {
@@ -5028,6 +5145,8 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
     console.error('Telegram send failed:', tgErr);
   }
 
+  // Callback events are blocked inside shouldForwardToBridge(), preventing
+  // Render -> bridge -> Render loops.
   await forwardToBridge(reqBody, finalRow);
 }
 
