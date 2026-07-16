@@ -83,7 +83,7 @@ const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
 
-const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT']);
+const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UPDATE']);
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LIVE QUOTE CACHE — updated by local TWS/IB bridge
@@ -758,6 +758,10 @@ function parseJsonTradingViewAlert(data) {
     RECONCILE_FLAT: 'RECONCILE_FLAT',
     IB_CONFIRMED_FLAT: 'RECONCILE_FLAT',
     FLAT_RECONCILE: 'RECONCILE_FLAT',
+
+    STOP_REF_UPDATE: 'STOP_REF_UPDATE',
+    STOP_REFERENCE_UPDATE: 'STOP_REF_UPDATE',
+    SUPER_TREND_STOP_REF_UPDATE: 'STOP_REF_UPDATE',
   };
 
   let event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
@@ -829,6 +833,7 @@ function parseJsonTradingViewAlert(data) {
     event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
     event === 'CANCEL' ? 'canceled' :
     event === 'RECONCILE_FLAT' ? 'reconciled' :
+    event === 'STOP_REF_UPDATE' ? 'updated' :
     'unknown';
 
   return {
@@ -1345,6 +1350,60 @@ async function upsertOpenPosition(sheets, row, pendingRow = null) {
   }
 }
 
+async function updateOpenPositionStopReference(sheets, row) {
+  if (!row?.trade_id) {
+    return { updated: false, reason: 'missing_trade_id' };
+  }
+
+  const stop = cleanNumber(row.stop);
+  if (stop === '' || stop <= 0) {
+    return { updated: false, reason: `invalid_stop_reference:${row.stop}` };
+  }
+
+  const values = await readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L');
+  const sheetRow = findRowIndexByTradeId(values, row.trade_id);
+
+  if (sheetRow < 0) {
+    console.log('Stop reference update ignored; no matching open position:', row.trade_id, stop);
+    return { updated: false, reason: 'no_matching_open_position' };
+  }
+
+  const existing = values[sheetRow - 1] || [];
+  const existingRaw = parseRawJsonSafe(existing[11] || '');
+  const updateRaw = parseRawJsonSafe(row.raw || '');
+
+  const mergedRawObject = {
+    ...updateRaw,
+    ...existingRaw,
+    event: 'STOP_REF_UPDATE',
+    stop,
+    stop_ref_updated_at: row.timestamp || nowNy(),
+    stop_ref_bar_time: updateRaw.bar_time ?? '',
+  };
+
+  const mergedRaw = JSON.stringify(mergedRawObject, null, 2);
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        {
+          range: `${OPEN_POSITIONS_SHEET}!I${sheetRow}`,
+          values: [[stop]],
+        },
+        {
+          range: `${OPEN_POSITIONS_SHEET}!L${sheetRow}`,
+          values: [[mergedRaw]],
+        },
+      ],
+    },
+  });
+
+  console.log('Open position stop reference updated:', row.trade_id, stop);
+  return { updated: true, sheet_row: sheetRow, stop };
+}
+
 async function removeOpenPosition(sheets, tradeId) {
   const removed = await removeRowByTradeId(sheets, OPEN_POSITIONS_SHEET, tradeId);
   if (!removed) return null;
@@ -1434,6 +1493,16 @@ async function processLedger(row) {
   if (!sheets) return row;
 
   if (!row || row.event === 'UNKNOWN') return row;
+
+  if (row.event === 'STOP_REF_UPDATE') {
+    const updateResult = await updateOpenPositionStopReference(sheets, row);
+    return {
+      ...row,
+      status: updateResult.updated ? 'stop_ref_updated' : 'stop_ref_ignored',
+      skip_telegram: true,
+      stop_ref_update_result: updateResult,
+    };
+  }
 
   if (row.event === 'SETUP') {
     if (!row.trade_id) return row;
@@ -1755,7 +1824,7 @@ function parseOpenPositionRow(row) {
   return {
     trade_id: row[0] || '',
     open_time: row[1] || '',
-    system: strategyFamilyLabelFromRaw(rawOpen),
+    system: strategyFamilyLabelForPosition(rawOpen, stop),
     symbol: row[2] || '',
     side,
     status: row[4] || '',
@@ -1785,7 +1854,7 @@ function parsePendingRow(row) {
   return {
     trade_id: row[0] || '',
     timestamp: row[1] || '',
-    system: strategyFamilyLabelFromRaw(raw),
+    system: strategyFamilyLabelForPosition(raw, cleanNumber(row[8])),
     symbol: row[2] || '',
     side,
     status: row[4] || '',
@@ -1837,6 +1906,23 @@ function strategyFamilyLabelFromRaw(...rawValues) {
     if (isEmaPullbackName(fields)) return 'Elvis';
     if (isV51IntradayName(fields)) return 'Vixale';
   }
+
+  return '';
+}
+
+function strategyFamilyLabelForPosition(rawValue, stopValue) {
+  const explicitLabel = strategyFamilyLabelFromRaw(rawValue);
+  if (explicitLabel) return explicitLabel;
+
+  // Execution-first rows created by older callbacks may have lost strategy
+  // metadata in the stored raw payload. Legacy Shrek rows used stop=0, while
+  // Elvis rows used a positive EMA-slow reference. New Shrek stop-reference
+  // updates also merge strategy metadata into the raw column, so explicit raw
+  // identification takes priority before this legacy-only fallback.
+  const stop = cleanNumber(stopValue);
+
+  if (stop !== '' && stop > 0) return 'Elvis';
+  if (stop === 0) return 'Shrek';
 
   return '';
 }
@@ -5080,6 +5166,10 @@ function isRecognizedTradeWebhook(row) {
 
   if (event === 'CANCEL' || event === 'RECONCILE_FLAT') {
     return Boolean(row.symbol || row.trade_id);
+  }
+
+  if (event === 'STOP_REF_UPDATE') {
+    return Boolean(row.symbol && row.side && cleanNumber(row.stop) > 0);
   }
 
   if (['SETUP', 'FILL', 'TP', 'SL', 'EOD'].includes(event)) {
