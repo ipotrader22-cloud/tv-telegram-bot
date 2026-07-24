@@ -155,6 +155,24 @@ function isV51IntradayRow(row) {
   return isV51IntradayName(row.strategy) || isV51IntradayName(row.profile) || isV51IntradayName(row.raw);
 }
 
+function isFionaLimitPullbackName(value) {
+  const text = String(value || '').toUpperCase();
+  return text.includes('FIONA_LIMIT_PULLBACK_ATR_TARGET') ||
+    text.includes('VX_FIONA_LIMIT_PULLBACK_LIVE') ||
+    text.includes('_FIONA_LIMIT') ||
+    text.includes('FIONA_LONG_LIMIT_PULLBACK') ||
+    text.includes('FIONA_SHORT_LIMIT_PULLBACK');
+}
+
+function isFionaLimitPullbackRow(row) {
+  if (!row) return false;
+  return isFionaLimitPullbackName(row.strategy) ||
+    isFionaLimitPullbackName(row.profile) ||
+    isFionaLimitPullbackName(row.variant) ||
+    isFionaLimitPullbackName(row.reason) ||
+    isFionaLimitPullbackName(row.raw);
+}
+
 function isOppositeFlipName(value) {
   const text = String(value || '').toUpperCase();
   return text.includes('VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
@@ -892,6 +910,18 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'SETUP') {
     const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
 
+    if (isFionaLimitPullbackRow(row)) {
+      return [
+        `🟣 <b>Fiona opened ${row.side}</b>`,
+        '',
+        `<b>${row.symbol}</b>`,
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
+
     if (isOppositeFlipRow(row)) {
       return [
         `${emoji} <b>Shrek opened ${row.side}</b>`,
@@ -899,6 +929,7 @@ function formatTelegramMessage(row, originalMessage) {
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -936,6 +967,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'FILL') {
+    if (isFionaLimitPullbackRow(row)) {
+      return [
+        `🟣 <b>Fiona opened ${row.side}</b>`,
+        '',
+        `<b>${row.symbol}</b>`,
+        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+      ].filter(Boolean).join('\n');
+    }
+
     if (isOppositeFlipRow(row)) {
       const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
       return [
@@ -944,6 +987,7 @@ function formatTelegramMessage(row, originalMessage) {
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
+        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -970,6 +1014,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'TP') {
+    if (isFionaLimitPullbackRow(row)) {
+      return [
+        `🎯 <b>Fiona hit target</b>`,
+        '',
+        `<b>${titleBase}</b>`,
+        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
     if (isOppositeFlipRow(row)) {
       return [
         `🎯 <b>Shrek hit target</b>`,
@@ -1005,6 +1061,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'SL') {
+    if (isFionaLimitPullbackRow(row)) {
+      return [
+        `🔁 <b>Fiona closed ${row.side}</b>`,
+        '',
+        `<b>${row.symbol}</b>`,
+        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
     if (isOppositeFlipRow(row)) {
       return [
         `🔁 <b>Shrek closed ${row.side}</b>`,
@@ -1040,6 +1108,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'EOD') {
+    if (isFionaLimitPullbackRow(row)) {
+      return [
+        `⏰ <b>Fiona EOD close</b>`,
+        '',
+        `<b>${titleBase || row.symbol}</b>`,
+        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
     return [
       `⏰ <b>${titleBase || row.symbol} EOD CLOSE</b>`,
       '',
@@ -1886,6 +1966,9 @@ function parseRawJsonSafe(value) {
 function strategyFamilyLabelFromRaw(...rawValues) {
   const joined = rawValues.map(v => String(v || '')).join('\n');
 
+  // Fiona Limit shares the broad Opposite Flip routing identifier with Shrek,
+  // so its dedicated variant/profile markers must be checked first.
+  if (isFionaLimitPullbackName(joined)) return 'Fiona';
   if (isOppositeFlipName(joined)) return 'Shrek';
   if (isEmaPullbackName(joined)) return 'Elvis';
   if (isV51IntradayName(joined)) return 'Vixale';
@@ -1902,6 +1985,7 @@ function strategyFamilyLabelFromRaw(...rawValues) {
       parsed.reason,
     ].join(' ');
 
+    if (isFionaLimitPullbackName(fields)) return 'Fiona';
     if (isOppositeFlipName(fields)) return 'Shrek';
     if (isEmaPullbackName(fields)) return 'Elvis';
     if (isV51IntradayName(fields)) return 'Vixale';
