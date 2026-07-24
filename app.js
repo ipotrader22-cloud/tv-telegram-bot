@@ -2462,7 +2462,7 @@ function renderLandingHtml() {
       padding: 13px 16px;
       border-radius: 14px;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 480;
       letter-spacing: -0.1px;
       border: 1px solid var(--line-2);
       background: rgba(255,255,255,0.72);
@@ -3269,6 +3269,7 @@ function renderLandingHtml() {
       <div class="nav-links">
         <a href="#live-system">Live System</a>
         <a href="/trading-systems">Trading Systems</a>
+        <a href="/risk-management">Risk Management</a>
         <a href="#systems">Start Here</a>
         <a href="#why-it-makes-sense">Why It Makes Sense</a>
         <a href="#partners">Creators</a>
@@ -4424,25 +4425,25 @@ function renderTradingSystemsHtml() {
     h1 {
       margin: 0;
       max-width: 760px;
-      font-size: clamp(36px, 5vw, 62px);
-      line-height: 1.02;
-      letter-spacing: -2.1px;
-      font-weight: 500;
+      font-size: clamp(34px, 4.45vw, 54px);
+      line-height: 1.04;
+      letter-spacing: -1.75px;
+      font-weight: 440;
     }
 
     h2 {
       margin: 0 0 10px;
-      font-size: clamp(25px, 2.65vw, 36px);
-      line-height: 1.08;
-      letter-spacing: -1px;
-      font-weight: 500;
+      font-size: clamp(24px, 2.45vw, 32px);
+      line-height: 1.1;
+      letter-spacing: -0.85px;
+      font-weight: 450;
     }
 
     h3 {
       margin: 0 0 10px;
-      font-size: 22px;
-      letter-spacing: -0.55px;
-      font-weight: 500;
+      font-size: 21px;
+      letter-spacing: -0.45px;
+      font-weight: 450;
     }
 
     .accent {
@@ -4589,10 +4590,10 @@ function renderTradingSystemsHtml() {
     }
 
     .system-name {
-      font-size: 34px;
+      font-size: 31px;
       line-height: 1;
-      letter-spacing: -1.1px;
-      font-weight: 500;
+      letter-spacing: -0.9px;
+      font-weight: 450;
     }
 
     .system-pill {
@@ -4821,8 +4822,8 @@ function renderTradingSystemsHtml() {
       }
 
       h1 {
-        font-size: 40px;
-        letter-spacing: -2px;
+        font-size: 38px;
+        letter-spacing: -1.7px;
       }
 
       .difference-row {
@@ -4848,6 +4849,7 @@ function renderTradingSystemsHtml() {
       <div class="nav-links">
         <a href="/">Home</a>
         <a href="/trading-systems">Trading Systems</a>
+        <a href="/risk-management">Risk Management</a>
         <a href="/#password-access">Get Password</a>
         <a href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Telegram</a>
         <a class="nav-cta" href="/login">Live Dashboard</a>
@@ -4896,11 +4898,11 @@ function renderTradingSystemsHtml() {
             <div class="system-pill">Confirmed trend entry</div>
           </div>
           <p>
-            Shrek is the conservative Vixale trend-confirmation system. It waits for a confirmed trend-change signal and opens the position with a market order.
+            Shrek is the conservative Vixale trend-confirmation system. It reads the same market through several timeframes, uses higher-timeframe direction as context, and waits for a confirmed trend-change signal before opening with a market order.
           </p>
           <div class="system-list">
             <div><strong>Execution:</strong> market order after signal confirmation.</div>
-            <div><strong>Logic:</strong> multi-timeframe structure with higher-timeframe bias.</div>
+            <div><strong>Timeframes:</strong> multi-timeframe structure with higher-timeframe bias.</div>
             <div><strong>Context:</strong> adaptive parameters and dynamic support / resistance references.</div>
             <div><strong>Trade-off:</strong> it may enter later because it waits for confirmation.</div>
           </div>
@@ -5027,6 +5029,753 @@ function renderTradingSystemsHtml() {
 
   <footer class="wrap footer">
     <strong>Important Risk Disclosure:</strong> Vixale is not a registered investment adviser, broker-dealer, commodity trading adviser, fiduciary, law firm, accounting firm, or tax adviser. All website content, Telegram messages, alerts, dashboards, spreadsheets, trade examples, strategy references, performance figures, and related materials are provided strictly for educational, research, and informational purposes only. Nothing presented by Vixale is personalized financial, investment, trading, legal, tax, or accounting advice, and nothing should be interpreted as an offer, solicitation, recommendation, endorsement, instruction, or invitation to buy, sell, short, hold, or trade any security, option, futures contract, cryptocurrency, derivative, or other financial instrument. Results may be backtested, hypothetical, simulated, paper-traded, forward-tested, delayed, incomplete, based on assumptions, affected by data errors, and materially different from live brokerage execution. Past performance, win rate, P&L, examples, charts, alerts, or strategy history are not guarantees, promises, projections, or reliable indicators of future results. Trading and investing involve substantial risk, including the possible loss of some or all capital. You alone are responsible for all trading decisions, position sizing, risk controls, broker selection, order execution, taxes, and compliance with applicable laws and regulations. Consult properly licensed professionals before making any financial decisions. By using this website, dashboard, Telegram channel, spreadsheets, or related materials, you agree that Vixale and its operators are not liable for any losses, damages, missed profits, execution differences, delays, outages, data inaccuracies, or reliance on any information provided.
+  </footer>
+</body>
+</html>`;
+}
+
+
+
+function renderRiskManagementHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vixale | Risk Management</title>
+  <meta name="description" content="Learn how Vixale explains position allocation, share quantity, Stop Ref, candle-close stop signals, and the trade-offs of the live dashboard risk model." />
+  <style>
+    :root {
+      --bg: #fbfcfb;
+      --paper: #ffffff;
+      --paper-soft: #f4f7f4;
+      --ink: #101413;
+      --muted: #68736f;
+      --muted-2: #8b9691;
+      --line: #e3e9e5;
+      --line-2: #d7e1db;
+      --green: #0bcf74;
+      --green-dark: #078f51;
+      --green-soft: #e9fff4;
+      --amber-soft: #fff8e7;
+      --amber-line: #f1dfb8;
+      --amber-ink: #8b6515;
+      --red: #d8424f;
+      --shadow: 0 24px 70px rgba(16, 20, 19, 0.08);
+      --shadow-soft: 0 14px 40px rgba(16, 20, 19, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    b, strong { font-weight: 500; }
+    button, a, input, td, th, div, p, span, h1, h2, h3 {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(11, 207, 116, 0.14), transparent 30%),
+        radial-gradient(circle at 86% 8%, rgba(11, 207, 116, 0.10), transparent 28%),
+        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 58%, #ffffff 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: rgba(251, 252, 251, 0.78);
+      backdrop-filter: blur(22px);
+      border-bottom: 1px solid rgba(227, 233, 229, 0.74);
+    }
+
+    .nav-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 17px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .brand-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: #101413;
+      box-shadow: 0 10px 26px rgba(16, 20, 19, 0.10);
+      overflow: hidden;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      bottom: 8px;
+      width: 7px;
+      height: 20px;
+      background: #fff;
+      border-radius: 99px;
+      transform-origin: bottom center;
+    }
+
+    .brand-mark::before { left: 10px; transform: rotate(-24deg); }
+    .brand-mark::after { right: 10px; transform: rotate(24deg); background: var(--green); }
+
+    .brand-word { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
+    .brand-name { font-size: 18px; font-weight: 500; letter-spacing: 0.16em; }
+    .brand-tagline { color: var(--muted-2); font-size: 11px; font-weight: 420; letter-spacing: 0.02em; }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 480;
+    }
+
+    .nav-links a:hover { color: var(--ink); }
+
+    .nav-cta {
+      padding: 10px 15px;
+      border: 1px solid var(--line-2);
+      border-radius: 999px;
+      color: var(--ink) !important;
+      background: rgba(255,255,255,0.72);
+      box-shadow: 0 8px 24px rgba(16, 20, 19, 0.04);
+    }
+
+    .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+
+    .page-hero { padding: 50px 0 24px; }
+
+    .page-hero-inner {
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      padding: 34px;
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 1.02fr .98fr;
+      gap: 28px;
+      align-items: center;
+      backdrop-filter: blur(18px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 15px;
+      border: 1px solid rgba(184, 216, 198, 0.9);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.82);
+      color: #26302c;
+      font-size: 13px;
+      font-weight: 480;
+      box-shadow: 0 16px 42px rgba(16, 20, 19, 0.06);
+      margin-bottom: 16px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 7px rgba(11, 207, 116, 0.13);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(34px, 4.45vw, 54px);
+      line-height: 1.04;
+      letter-spacing: -1.75px;
+      font-weight: 440;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: clamp(24px, 2.45vw, 32px);
+      line-height: 1.1;
+      letter-spacing: -0.85px;
+      font-weight: 450;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 21px;
+      letter-spacing: -0.45px;
+      font-weight: 450;
+    }
+
+    .accent { color: var(--green-dark); }
+
+    .lead {
+      margin: 16px 0 0;
+      color: #2f3b37;
+      font-size: 18px;
+      line-height: 1.65;
+      font-weight: 420;
+    }
+
+    .small-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 470px;
+      margin-top: 22px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 480;
+      letter-spacing: -0.1px;
+      border: 1px solid var(--line-2);
+      background: rgba(255,255,255,0.72);
+      color: var(--ink);
+      box-shadow: 0 10px 30px rgba(16, 20, 19, 0.04);
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover { transform: translateY(-1px); border-color: #c7d4cc; box-shadow: 0 16px 40px rgba(16, 20, 19, 0.07); background: #fff; }
+    .btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .btn-primary:hover { background: #000; border-color: #000; }
+    .btn-green { background: var(--green-soft); border-color: #bfead5; color: #075f39; }
+
+    .hero-panel {
+      background: linear-gradient(135deg, rgba(233,255,244,0.90), rgba(255,255,255,0.96));
+      border: 1px solid #cfe9dc;
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 18px 50px rgba(16,20,19,0.06);
+    }
+
+    .allocation-visual {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .money-line {
+      display: grid;
+      grid-template-columns: 110px 1fr 86px;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .money-line span:first-child,
+    .money-line span:last-child { color: var(--ink); font-weight: 500; }
+
+    .bar {
+      height: 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.78);
+      overflow: hidden;
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      width: 5%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--green-dark), var(--green));
+    }
+
+    .bar.ten i { width: 10%; }
+
+    .section { padding: 24px 0; }
+    .section-head { max-width: 760px; margin-bottom: 16px; }
+    .section-head .lead { color: var(--muted); font-size: 15.5px; line-height: 1.58; margin-top: 0; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.76);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: var(--shadow-soft);
+      min-height: 100%;
+    }
+
+    .card-label {
+      color: var(--green-dark);
+      font-size: 12px;
+      line-height: 1.2;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.62;
+    }
+
+    .formula-grid {
+      display: grid;
+      grid-template-columns: .96fr 1.04fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .formula-card {
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow-soft);
+      padding: 26px;
+    }
+
+    .formula-box {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .formula-row {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fbfdfb;
+      padding: 14px 15px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .formula-row strong { color: var(--ink); font-weight: 500; }
+
+    .example {
+      background: linear-gradient(135deg, rgba(233,255,244,0.92), rgba(255,255,255,0.96));
+      border-color: #cfe9dc;
+    }
+
+    .example-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .example-cell {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.78);
+      padding: 13px;
+    }
+
+    .example-cell .k { color: var(--muted-2); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+    .example-cell .v { margin-top: 8px; font-size: 22px; letter-spacing: -.6px; font-weight: 450; color: var(--ink); }
+
+    .diagram {
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: rgba(255,255,255,0.74);
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    .candle-svg {
+      width: 100%;
+      height: 210px;
+      display: block;
+    }
+
+    .stop-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .stop-card {
+      background: rgba(255,255,255,0.76);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      padding: 26px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .stop-card.warning {
+      background: linear-gradient(135deg, rgba(255,248,231,0.92), rgba(255,255,255,0.96));
+      border-color: var(--amber-line);
+    }
+
+    .soft-list { display: grid; gap: 10px; margin-top: 18px; }
+
+    .soft-list div {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdfb;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      padding: 12px 13px;
+    }
+
+    .soft-list strong { color: var(--ink); font-weight: 500; }
+
+    .comparison {
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      background: rgba(255,255,255,0.84);
+    }
+
+    th, td {
+      padding: 16px 18px;
+      border-bottom: 1px solid #eef4f1;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    th {
+      color: var(--muted-2);
+      font-size: 11px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      background: #fbfefd;
+      font-weight: 500;
+    }
+
+    td { color: var(--muted); font-weight: 400; }
+    td:first-child { color: var(--ink); font-weight: 500; width: 22%; }
+    tr:last-child td { border-bottom: 0; }
+
+    .access {
+      background: linear-gradient(135deg, rgba(233, 255, 244, 0.92), rgba(255, 255, 255, 0.96));
+      color: var(--ink);
+      border: 1px solid #cfe9dc;
+      border-radius: 34px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 24px;
+      align-items: center;
+      box-shadow: 0 28px 80px rgba(16,20,19,.08);
+    }
+
+    .access p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.56;
+      max-width: 690px;
+    }
+
+    .access-actions { display: grid; gap: 12px; }
+
+    .footer {
+      padding: 30px 0 38px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 11.5px;
+      line-height: 1.65;
+    }
+
+    .footer strong { color: var(--ink); font-weight: 500; }
+
+    @media (max-width: 980px) {
+      .page-hero-inner,
+      .formula-grid,
+      .stop-grid,
+      .access { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+      .nav-links a:not(.nav-cta) { display: none; }
+      .actions { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      .wrap, .nav-inner { padding-left: 16px; padding-right: 16px; }
+      .page-hero { padding-top: 34px; }
+      .page-hero-inner,
+      .card,
+      .formula-card,
+      .stop-card,
+      .access { padding: 22px; border-radius: 26px; }
+      h1 { font-size: 38px; letter-spacing: -1.7px; }
+      .money-line { grid-template-columns: 1fr; }
+      .example-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="brand-lockup" aria-label="Vixale home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-word">
+          <span class="brand-name">VIXALE</span>
+          <span class="brand-tagline">live trading system</span>
+        </span>
+      </a>
+      <div class="nav-links">
+        <a href="/">Home</a>
+        <a href="/trading-systems">Trading Systems</a>
+        <a href="/risk-management">Risk Management</a>
+        <a href="/#password-access">Get Password</a>
+        <a href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Telegram</a>
+        <a class="nav-cta" href="/login">Live Dashboard</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="wrap page-hero">
+      <div class="page-hero-inner">
+        <div>
+          <div class="badge"><span class="dot"></span><span>Risk framework</span></div>
+          <h1>Position size first. <span class="accent">Signals second.</span></h1>
+          <p class="lead">
+            Vixale separates signal quality from position risk. A signal can look good, but the position size still has to fit the account, the instrument, and the execution model.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="/login">Open Dashboard</a>
+            <a class="btn btn-green" href="/trading-systems">Trading Systems</a>
+          </div>
+        </div>
+
+        <div class="hero-panel">
+          <h3>Capital allocation range</h3>
+          <p class="small-note" style="margin-top:0;">Current equity-style systems are designed around using 5–10% of total account capital to create a position. Options workflows may require a separate input and risk model.</p>
+          <div class="allocation-visual">
+            <div class="money-line"><span>5%</span><div class="bar"><i></i></div><span>Base</span></div>
+            <div class="money-line"><span>10%</span><div class="bar ten"><i></i></div><span>Upper cap</span></div>
+          </div>
+          <div class="small-note">The dashboard is for tracking and transparency. Trading involves risk and results are not guaranteed.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <h2>Core rules</h2>
+        <p class="lead">The goal is not to make every signal large. The goal is to keep every position understandable before it is opened.</p>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <div class="card-label">01 / Allocation</div>
+          <h3>Use a fixed slice of capital.</h3>
+          <p>For current stock-style systems, position value is generally based on 5–10% of total account capital, not the full account.</p>
+        </div>
+        <div class="card">
+          <div class="card-label">02 / Quantity</div>
+          <h3>Convert dollars into shares.</h3>
+          <p>After the allocation is known, the system converts that dollar value into a share quantity using the signal price.</p>
+        </div>
+        <div class="card">
+          <div class="card-label">03 / Stop Ref</div>
+          <h3>Track the exit reference.</h3>
+          <p>Stop Ref is the system reference level for a potential exit decision. It is not a promise that the final fill will happen exactly at that price.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <h2>Position size formula</h2>
+        <p class="lead">The formula is intentionally simple: calculate position value first, then divide by the signal price.</p>
+      </div>
+
+      <div class="formula-grid">
+        <div class="formula-card">
+          <h3>Formula</h3>
+          <div class="formula-box">
+            <div class="formula-row"><strong>Position Value</strong> = Account Capital × Allocation %</div>
+            <div class="formula-row"><strong>Share Quantity</strong> = Position Value ÷ Signal Price</div>
+          </div>
+          <p class="small-note">This controls how much capital is used to create the position. It does not remove market risk, slippage, gaps, or execution differences.</p>
+        </div>
+
+        <div class="formula-card example">
+          <h3>Example: NVDA signal</h3>
+          <p class="small-note" style="margin-top:0;">Account capital is $1,000,000. Allocation is 5%. Signal says Buy NVDA at $100.</p>
+          <div class="example-grid">
+            <div class="example-cell"><div class="k">Account capital</div><div class="v">$1,000,000</div></div>
+            <div class="example-cell"><div class="k">Allocation</div><div class="v">5%</div></div>
+            <div class="example-cell"><div class="k">Position value</div><div class="v">$50,000</div></div>
+            <div class="example-cell"><div class="k">Max quantity</div><div class="v">500 shares</div></div>
+          </div>
+          <div class="formula-box">
+            <div class="formula-row"><strong>$1,000,000 × 5%</strong> = $50,000</div>
+            <div class="formula-row"><strong>$50,000 ÷ $100</strong> = 500 shares</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <h2>How Stop Ref works</h2>
+        <p class="lead">The most important detail: the stop signal is evaluated on candle close, not on every intrabar wick.</p>
+      </div>
+
+      <div class="stop-grid">
+        <div class="stop-card">
+          <h3>Why candle close?</h3>
+          <p class="small-note" style="margin-top:0;">Markets often move through a level briefly and then recover before the candle closes. Vixale uses candle-close confirmation to reduce premature stop-outs caused by temporary wicks, liquidity grabs, and short-lived spikes.</p>
+          <div class="diagram" style="margin-top:18px;">
+            <svg class="candle-svg" viewBox="0 0 620 250" role="img" aria-label="Illustration of wick below Stop Ref and close back above it">
+              <rect x="0" y="0" width="620" height="250" rx="24" fill="#fbfdfb" />
+              <line x1="40" y1="150" x2="580" y2="150" stroke="#d8424f" stroke-width="2" stroke-dasharray="8 8" />
+              <text x="44" y="139" fill="#d8424f" font-size="14" font-family="Arial">Stop Ref</text>
+              <line x1="130" y1="74" x2="130" y2="188" stroke="#078f51" stroke-width="6" stroke-linecap="round" />
+              <rect x="105" y="92" width="50" height="64" rx="9" fill="#e9fff4" stroke="#078f51" stroke-width="3" />
+              <line x1="265" y1="66" x2="265" y2="204" stroke="#078f51" stroke-width="6" stroke-linecap="round" />
+              <rect x="240" y="88" width="50" height="74" rx="9" fill="#e9fff4" stroke="#078f51" stroke-width="3" />
+              <line x1="400" y1="52" x2="400" y2="196" stroke="#078f51" stroke-width="6" stroke-linecap="round" />
+              <rect x="375" y="78" width="50" height="84" rx="9" fill="#e9fff4" stroke="#078f51" stroke-width="3" />
+              <line x1="510" y1="102" x2="510" y2="212" stroke="#8b9691" stroke-width="6" stroke-linecap="round" />
+              <rect x="485" y="122" width="50" height="50" rx="9" fill="#ffffff" stroke="#8b9691" stroke-width="3" />
+              <text x="402" y="226" fill="#68736f" font-size="13" font-family="Arial">wick touches lower area</text>
+              <text x="402" y="242" fill="#68736f" font-size="13" font-family="Arial">but close can still matter</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="stop-card warning">
+          <h3>The trade-off</h3>
+          <p class="small-note" style="margin-top:0;">Candle-close logic can reduce false exits, but it can also make the final exit different from the Stop Ref. Fast markets, gaps, slippage, and execution delays can increase the realized loss.</p>
+          <div class="soft-list">
+            <div><strong>Stop Ref:</strong> reference level used by the system to evaluate a potential exit.</div>
+            <div><strong>Not a guaranteed fill:</strong> the actual exit can happen above or below the reference level.</div>
+            <div><strong>Candle-close signal:</strong> the system waits for confirmation from the trading timeframe candle.</div>
+            <div><strong>Risk remains:</strong> no tracking system can remove market, liquidity, or execution risk.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <h2>Risk terms</h2>
+        <p class="lead">These are the main words users should understand before reading dashboard signals.</p>
+      </div>
+      <div class="comparison">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Term</th>
+                <th>What it means</th>
+                <th>Why it matters</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Account capital</td>
+                <td>Total capital used as the sizing base.</td>
+                <td>Position size starts from the account size, not from emotion or signal excitement.</td>
+              </tr>
+              <tr>
+                <td>Allocation</td>
+                <td>The percentage of capital used to create a position.</td>
+                <td>Current equity-style systems generally use a 5–10% allocation range.</td>
+              </tr>
+              <tr>
+                <td>Signal price</td>
+                <td>The entry price used in the sizing calculation.</td>
+                <td>Higher-priced symbols create fewer shares for the same dollar allocation.</td>
+              </tr>
+              <tr>
+                <td>Stop Ref</td>
+                <td>A reference level for the system's potential stop decision.</td>
+                <td>It helps users understand where the system may consider the trade invalidated.</td>
+              </tr>
+              <tr>
+                <td>Candle close</td>
+                <td>The final close of the trading timeframe candle.</td>
+                <td>It helps avoid reacting to every temporary wick or liquidity grab.</td>
+              </tr>
+              <tr>
+                <td>Actual exit</td>
+                <td>The price where the trade is finally closed.</td>
+                <td>It can differ from Stop Ref because markets move and execution is not guaranteed.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="access">
+        <div>
+          <h2>Different systems may need different risk inputs.</h2>
+          <p>
+            Shrek and Fiona can share the same stock-style allocation framework. Future options or pair-trading workflows may need separate inputs, because contract risk, spreads, margin, and payoff structure can be very different from simple share quantity.
+          </p>
+          <div class="small-note">Risk management is part of the product design, not an afterthought.</div>
+        </div>
+        <div class="access-actions">
+          <a class="btn btn-primary" href="/login">Dashboard Login</a>
+          <a class="btn btn-green" href="/trading-systems">Trading Systems</a>
+          <a class="btn" href="/">Back to Home</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <strong>Important Risk Disclosure:</strong> Vixale is not a registered investment adviser, broker-dealer, commodity trading adviser, fiduciary, law firm, accounting firm, or tax adviser. All website content, Telegram messages, alerts, dashboards, spreadsheets, trade examples, strategy references, performance figures, risk examples, formulas, and related materials are provided strictly for educational, research, and informational purposes only. Nothing presented by Vixale is personalized financial, investment, trading, legal, tax, or accounting advice, and nothing should be interpreted as an offer, solicitation, recommendation, endorsement, instruction, or invitation to buy, sell, short, hold, or trade any security, option, futures contract, cryptocurrency, derivative, or other financial instrument. Position sizing examples are simplified and do not account for commissions, fees, slippage, margin, liquidity, gaps, borrowing costs, taxes, execution delays, or broker restrictions. Results may be backtested, hypothetical, simulated, paper-traded, forward-tested, delayed, incomplete, based on assumptions, affected by data errors, and materially different from live brokerage execution. Past performance, win rate, P&L, examples, charts, alerts, or strategy history are not guarantees, promises, projections, or reliable indicators of future results. Trading and investing involve substantial risk, including the possible loss of some or all capital. You alone are responsible for all trading decisions, position sizing, risk controls, broker selection, order execution, taxes, and compliance with applicable laws and regulations. Consult properly licensed professionals before making any financial decisions. By using this website, dashboard, Telegram channel, spreadsheets, or related materials, you agree that Vixale and its operators are not liable for any losses, damages, missed profits, execution differences, delays, outages, data inaccuracies, or reliance on any information provided.
   </footer>
 </body>
 </html>`;
@@ -5619,6 +6368,7 @@ function renderDashboardHtml(data) {
       <div class="left-links">
         <a class="home-link" href="/">← Back to Home</a>
         <a class="home-link" href="/trading-systems">Trading Systems</a>
+        <a class="home-link" href="/risk-management">Risk Management</a>
       </div>
 
       <div class="dashboard-links">
@@ -6211,6 +6961,10 @@ app.get('/', (req, res) => {
 
 app.get('/trading-systems', (req, res) => {
   res.status(200).send(renderTradingSystemsHtml());
+});
+
+app.get('/risk-management', (req, res) => {
+  res.status(200).send(renderRiskManagementHtml());
 });
 
 app.get('/login', (req, res) => {
