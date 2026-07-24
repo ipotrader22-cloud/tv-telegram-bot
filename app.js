@@ -3268,6 +3268,7 @@ function renderLandingHtml() {
       </a>
       <div class="nav-links">
         <a href="#live-system">Live System</a>
+        <a href="/trading-systems">Trading Systems</a>
         <a href="#systems">Start Here</a>
         <a href="#why-it-makes-sense">Why It Makes Sense</a>
         <a href="#partners">Creators</a>
@@ -3762,6 +3763,7 @@ function renderLandingHtmlRu() {
     ['Watch a live trading system, get Telegram signals, connect Interactive Brokers / TWS, or build your own trading bot with Vixale.', 'Смотрите живую торговую систему Vixale, получайте сигналы в Telegram, подключайте Interactive Brokers / TWS или заказывайте собственного торгового робота.'],
 
     ['Live System', 'Живая система'],
+    ['Trading Systems', 'Торговые системы'],
     ['Start Here', 'Начать'],
     ['Why It Makes Sense', 'Как это устроено'],
     ['Creators', 'Для авторов'],
@@ -4208,6 +4210,830 @@ function renderSimpleReceivedHtml(kind = 'Request received', name = '') {
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TRADING SYSTEMS PUBLIC PAGE HTML
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function renderTradingSystemsHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vixale | Trading Systems</title>
+  <meta name="description" content="Learn how Vixale tracks Shrek and Fiona trading systems, including their execution style, order type, trade-offs, and validation process." />
+  <style>
+    :root {
+      --bg: #fbfcfb;
+      --paper: #ffffff;
+      --paper-soft: #f4f7f4;
+      --ink: #101413;
+      --muted: #68736f;
+      --muted-2: #8b9691;
+      --line: #e3e9e5;
+      --line-2: #d7e1db;
+      --green: #0bcf74;
+      --green-dark: #078f51;
+      --green-soft: #e9fff4;
+      --purple-soft: #f2ecff;
+      --purple-line: #ded0ff;
+      --purple-ink: #6b3fc7;
+      --shadow: 0 24px 70px rgba(16, 20, 19, 0.08);
+      --shadow-soft: 0 14px 40px rgba(16, 20, 19, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    b, strong { font-weight: 500; }
+    button, a, input, td, th, div, p, span, h1, h2, h3 {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(11, 207, 116, 0.14), transparent 30%),
+        radial-gradient(circle at 86% 8%, rgba(11, 207, 116, 0.10), transparent 28%),
+        linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 58%, #ffffff 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: rgba(251, 252, 251, 0.78);
+      backdrop-filter: blur(22px);
+      border-bottom: 1px solid rgba(227, 233, 229, 0.74);
+    }
+
+    .nav-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 17px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .brand-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: #101413;
+      box-shadow: 0 10px 26px rgba(16, 20, 19, 0.10);
+      overflow: hidden;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      bottom: 8px;
+      width: 7px;
+      height: 20px;
+      background: #fff;
+      border-radius: 99px;
+      transform-origin: bottom center;
+    }
+
+    .brand-mark::before {
+      left: 10px;
+      transform: rotate(-24deg);
+    }
+
+    .brand-mark::after {
+      right: 10px;
+      transform: rotate(24deg);
+      background: var(--green);
+    }
+
+    .brand-word {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      line-height: 1;
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+    }
+
+    .brand-tagline {
+      color: var(--muted-2);
+      font-size: 11px;
+      font-weight: 420;
+      letter-spacing: 0.02em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 480;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .nav-cta {
+      padding: 10px 15px;
+      border: 1px solid var(--line-2);
+      border-radius: 999px;
+      color: var(--ink) !important;
+      background: rgba(255,255,255,0.72);
+      box-shadow: 0 8px 24px rgba(16, 20, 19, 0.04);
+    }
+
+    .wrap {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .page-hero {
+      padding: 54px 0 24px;
+    }
+
+    .page-hero-inner {
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      padding: 34px;
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 28px;
+      align-items: center;
+      backdrop-filter: blur(18px);
+    }
+
+    .badge {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 15px;
+      border: 1px solid rgba(184, 216, 198, 0.9);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.82);
+      color: #26302c;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 16px 42px rgba(16, 20, 19, 0.06);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 7px rgba(11, 207, 116, 0.13);
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(36px, 5vw, 62px);
+      line-height: 1.02;
+      letter-spacing: -2.1px;
+      font-weight: 500;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: clamp(25px, 2.65vw, 36px);
+      line-height: 1.08;
+      letter-spacing: -1px;
+      font-weight: 500;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      letter-spacing: -0.55px;
+      font-weight: 500;
+    }
+
+    .accent {
+      color: var(--green-dark);
+    }
+
+    .lead {
+      margin: 16px 0 0;
+      color: #2f3b37;
+      font-size: 18px;
+      line-height: 1.65;
+      font-weight: 420;
+    }
+
+    .small-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 470px;
+      margin-top: 22px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 13px 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: -0.1px;
+      border: 1px solid var(--line-2);
+      background: rgba(255,255,255,0.72);
+      color: var(--ink);
+      box-shadow: 0 10px 30px rgba(16, 20, 19, 0.04);
+      transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: #c7d4cc;
+      box-shadow: 0 16px 40px rgba(16, 20, 19, 0.07);
+      background: #fff;
+    }
+
+    .btn-primary {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #000;
+      border-color: #000;
+    }
+
+    .btn-green {
+      background: var(--green-soft);
+      border-color: #bfead5;
+      color: #075f39;
+    }
+
+    .hero-panel {
+      background: linear-gradient(135deg, rgba(233,255,244,0.90), rgba(255,255,255,0.96));
+      border: 1px solid #cfe9dc;
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 18px 50px rgba(16,20,19,0.06);
+    }
+
+    .difference {
+      display: grid;
+      gap: 12px;
+    }
+
+    .difference-row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.72);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .difference-row span {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .section {
+      padding: 24px 0;
+    }
+
+    .section-head {
+      max-width: 720px;
+      margin-bottom: 16px;
+    }
+
+    .section-head .lead {
+      color: var(--muted);
+      font-size: 15.5px;
+      line-height: 1.58;
+      margin-top: 0;
+    }
+
+    .system-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .system-card {
+      background: rgba(255,255,255,0.76);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      padding: 26px;
+      box-shadow: var(--shadow-soft);
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .system-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+
+    .system-name {
+      font-size: 34px;
+      line-height: 1;
+      letter-spacing: -1.1px;
+      font-weight: 500;
+    }
+
+    .system-pill {
+      border-radius: 999px;
+      padding: 8px 11px;
+      border: 1px solid #bfead5;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .system-card.fiona .system-pill {
+      border-color: var(--purple-line);
+      background: var(--purple-soft);
+      color: var(--purple-ink);
+    }
+
+    .system-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .system-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .system-list div {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdfb;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      padding: 12px 13px;
+    }
+
+    .system-list strong {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .comparison {
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      background: rgba(255,255,255,0.84);
+    }
+
+    th, td {
+      padding: 16px 18px;
+      border-bottom: 1px solid #eef4f1;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    th {
+      color: var(--muted-2);
+      font-size: 11px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      background: #fbfefd;
+      font-weight: 500;
+    }
+
+    td {
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    td:first-child {
+      color: var(--ink);
+      font-weight: 500;
+      width: 22%;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .validation-box {
+      background: linear-gradient(135deg, rgba(255,255,255,0.86), rgba(233,255,244,0.72));
+      border: 1px solid #cfe9dc;
+      border-radius: 34px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: .92fr 1.08fr;
+      gap: 26px;
+      align-items: start;
+      box-shadow: 0 24px 80px rgba(16,20,19,0.08);
+    }
+
+    .validation-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .validation-item {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.74);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .validation-item span {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .validation-item strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+      font-weight: 500;
+    }
+
+    .access {
+      background: linear-gradient(135deg, rgba(233, 255, 244, 0.92), rgba(255, 255, 255, 0.96));
+      color: var(--ink);
+      border: 1px solid #cfe9dc;
+      border-radius: 34px;
+      padding: 30px;
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 24px;
+      align-items: center;
+      box-shadow: 0 28px 80px rgba(16,20,19,.08);
+    }
+
+    .access p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.56;
+      max-width: 690px;
+    }
+
+    .access-actions {
+      display: grid;
+      gap: 12px;
+    }
+
+    .footer {
+      padding: 30px 0 38px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 11.5px;
+      line-height: 1.65;
+    }
+
+    .footer strong {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    @media (max-width: 980px) {
+      .page-hero-inner,
+      .system-grid,
+      .validation-box,
+      .access {
+        grid-template-columns: 1fr;
+      }
+
+      .nav-links a:not(.nav-cta) {
+        display: none;
+      }
+
+      .actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap,
+      .nav-inner {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .page-hero {
+        padding-top: 34px;
+      }
+
+      .page-hero-inner,
+      .system-card,
+      .validation-box,
+      .access {
+        padding: 22px;
+        border-radius: 26px;
+      }
+
+      h1 {
+        font-size: 40px;
+        letter-spacing: -2px;
+      }
+
+      .difference-row {
+        grid-template-columns: 1fr;
+      }
+
+      .system-top {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="brand-lockup" aria-label="Vixale home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-word">
+          <span class="brand-name">VIXALE</span>
+          <span class="brand-tagline">live trading system</span>
+        </span>
+      </a>
+      <div class="nav-links">
+        <a href="/">Home</a>
+        <a href="/trading-systems">Trading Systems</a>
+        <a href="/#password-access">Get Password</a>
+        <a href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Telegram</a>
+        <a class="nav-cta" href="/login">Live Dashboard</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="wrap page-hero">
+      <div class="page-hero-inner">
+        <div>
+          <div class="badge"><span class="dot"></span><span>Vixale systems</span></div>
+          <h1>Two execution styles. <span class="accent">One live dashboard.</span></h1>
+          <p class="lead">
+            Vixale currently tracks two system styles: Shrek and Fiona. Both are designed to identify structured market opportunities, send alerts, and track results inside the live dashboard.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="/login">Open Dashboard</a>
+            <a class="btn btn-green" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Get Telegram Signals</a>
+          </div>
+        </div>
+
+        <div class="hero-panel">
+          <h3>Main difference</h3>
+          <div class="difference">
+            <div class="difference-row"><span>Shrek</span><div>Prioritizes confirmation. It waits for a confirmed trend-change signal and opens with a market order.</div></div>
+            <div class="difference-row"><span>Fiona</span><div>Prioritizes entry price. It waits for a selected pullback and attempts to open with a limit order.</div></div>
+          </div>
+          <div class="small-note">Both systems are tracked as live forward-test / paper-trading systems. Trading involves risk and results are not guaranteed.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <h2>Shrek and Fiona</h2>
+        <p class="lead">
+          The systems are intentionally different. Shrek is built around confirmation. Fiona is built around pullback execution.
+        </p>
+      </div>
+
+      <div class="system-grid">
+        <div class="system-card">
+          <div class="system-top">
+            <div class="system-name">Shrek</div>
+            <div class="system-pill">Confirmed trend entry</div>
+          </div>
+          <p>
+            Shrek is the conservative Vixale trend-confirmation system. It waits for a confirmed trend-change signal and opens the position with a market order.
+          </p>
+          <div class="system-list">
+            <div><strong>Execution:</strong> market order after signal confirmation.</div>
+            <div><strong>Logic:</strong> multi-timeframe structure with higher-timeframe bias.</div>
+            <div><strong>Context:</strong> adaptive parameters and dynamic support / resistance references.</div>
+            <div><strong>Trade-off:</strong> it may enter later because it waits for confirmation.</div>
+          </div>
+        </div>
+
+        <div class="system-card fiona">
+          <div class="system-top">
+            <div class="system-name">Fiona</div>
+            <div class="system-pill">Limit pullback entry</div>
+          </div>
+          <p>
+            Fiona is the more aggressive pullback system. Instead of entering immediately at market, Fiona waits for a specific limit-order pullback in the direction of the trend.
+          </p>
+          <div class="system-list">
+            <div><strong>Execution:</strong> limit order at a selected pullback price.</div>
+            <div><strong>Logic:</strong> trend-following context with more aggressive entry timing.</div>
+            <div><strong>Goal:</strong> improve entry quality when the market gives a pullback.</div>
+            <div><strong>Trade-off:</strong> some signals may not fill, or may fill during faster market movement.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <h2>System comparison</h2>
+        <p class="lead">
+          Same dashboard, different execution behavior. This is why Shrek and Fiona can show different open orders, fills, and trade timing.
+        </p>
+      </div>
+
+      <div class="comparison">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>Shrek</th>
+                <th>Fiona</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Order type</td>
+                <td>Market order</td>
+                <td>Limit order</td>
+              </tr>
+              <tr>
+                <td>Entry style</td>
+                <td>Trend confirmation</td>
+                <td>Trend pullback</td>
+              </tr>
+              <tr>
+                <td>Timing</td>
+                <td>After the trend-change signal is confirmed</td>
+                <td>When price reaches the selected pullback level</td>
+              </tr>
+              <tr>
+                <td>Main goal</td>
+                <td>Confirm that the trend change is active</td>
+                <td>Attempt to improve the entry price</td>
+              </tr>
+              <tr>
+                <td>Personality</td>
+                <td>More conservative</td>
+                <td>More aggressive</td>
+              </tr>
+              <tr>
+                <td>Trade-off</td>
+                <td>Can enter later than the first move</td>
+                <td>Can miss trades if the pullback does not fill</td>
+              </tr>
+              <tr>
+                <td>Dashboard behavior</td>
+                <td>Usually appears as an opened position after confirmation</td>
+                <td>Can appear as a pending / working order before fill</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="validation-box">
+        <div>
+          <div class="badge"><span class="dot"></span><span>Research process</span></div>
+          <h2>Selected for stability, not curve-fit perfection.</h2>
+          <p class="lead">
+            Before a system appears on the Vixale dashboard, it goes through tuning, optimization, walk-forward testing, out-of-sample testing, and live forward tracking.
+          </p>
+          <p class="small-note">
+            The goal is not to fit the past perfectly. The goal is to select setups that remain more stable across different market periods.
+          </p>
+        </div>
+
+        <div class="validation-list">
+          <div class="validation-item"><span>1</span><div><strong>Tuning</strong>Clean up the system behavior and remove obvious noise.</div></div>
+          <div class="validation-item"><span>2</span><div><strong>Optimization</strong>Test practical parameter variations without relying on one perfect setting.</div></div>
+          <div class="validation-item"><span>3</span><div><strong>Walk-forward testing</strong>Check whether the logic remains usable across time segments.</div></div>
+          <div class="validation-item"><span>4</span><div><strong>Out-of-sample testing</strong>Review behavior on data that was not used for selection.</div></div>
+          <div class="validation-item"><span>5</span><div><strong>Live forward tracking</strong>Track current behavior inside the dashboard as signals, orders, and results appear.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="access">
+        <div>
+          <h2>Watch the systems live.</h2>
+          <p>
+            The live dashboard shows open positions, working orders, closed trades, and recorded results. Start by watching before making any decision.
+          </p>
+          <div class="small-note">Trading involves risk. The dashboard is for transparency, tracking, research, and education.</div>
+        </div>
+        <div class="access-actions">
+          <a class="btn btn-primary" href="/login">Dashboard Login</a>
+          <a class="btn btn-green" href="/#password-access">Get Password by Email</a>
+          <a class="btn" href="/">Back to Home</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <strong>Important Risk Disclosure:</strong> Vixale is not a registered investment adviser, broker-dealer, commodity trading adviser, fiduciary, law firm, accounting firm, or tax adviser. All website content, Telegram messages, alerts, dashboards, spreadsheets, trade examples, strategy references, performance figures, and related materials are provided strictly for educational, research, and informational purposes only. Nothing presented by Vixale is personalized financial, investment, trading, legal, tax, or accounting advice, and nothing should be interpreted as an offer, solicitation, recommendation, endorsement, instruction, or invitation to buy, sell, short, hold, or trade any security, option, futures contract, cryptocurrency, derivative, or other financial instrument. Results may be backtested, hypothetical, simulated, paper-traded, forward-tested, delayed, incomplete, based on assumptions, affected by data errors, and materially different from live brokerage execution. Past performance, win rate, P&L, examples, charts, alerts, or strategy history are not guarantees, promises, projections, or reliable indicators of future results. Trading and investing involve substantial risk, including the possible loss of some or all capital. You alone are responsible for all trading decisions, position sizing, risk controls, broker selection, order execution, taxes, and compliance with applicable laws and regulations. Consult properly licensed professionals before making any financial decisions. By using this website, dashboard, Telegram channel, spreadsheets, or related materials, you agree that Vixale and its operators are not liable for any losses, damages, missed profits, execution differences, delays, outages, data inaccuracies, or reliance on any information provided.
+  </footer>
+</body>
+</html>`;
+}
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LOGIN HTML
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -4526,6 +5352,7 @@ function renderDashboardHtml(data) {
       background: #ffffff;
     }
 
+    .left-links,
     .dashboard-links {
       display: flex;
       gap: 10px;
@@ -4781,7 +5608,7 @@ function renderDashboardHtml(data) {
       .card { min-height: 90px; }
       .card .value { font-size: 21px; }
       .dash-btn, .home-link { width: 100%; }
-      .dashboard-links { width: 100%; }
+      .left-links, .dashboard-links { width: 100%; }
       th, td { font-size: 13px; padding: 12px 10px; }
     }
 </style>
@@ -4789,7 +5616,10 @@ function renderDashboardHtml(data) {
 <body>
   <div class="wrap">
     <div class="top-actions">
-      <a class="home-link" href="/">← Back to Home</a>
+      <div class="left-links">
+        <a class="home-link" href="/">← Back to Home</a>
+        <a class="home-link" href="/trading-systems">Trading Systems</a>
+      </div>
 
       <div class="dashboard-links">
         <a class="dash-btn primary" href="${FULL_HISTORY_URL}" target="_blank" rel="noopener noreferrer">Full Trade History</a>
@@ -5377,6 +6207,10 @@ async function handleTradingViewWebhook(req, res) {
 
 app.get('/', (req, res) => {
   res.status(200).send(isRussianRequest(req) ? renderLandingHtmlRu() : renderLandingHtml());
+});
+
+app.get('/trading-systems', (req, res) => {
+  res.status(200).send(renderTradingSystemsHtml());
 });
 
 app.get('/login', (req, res) => {
