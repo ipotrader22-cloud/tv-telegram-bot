@@ -4221,7 +4221,7 @@ function renderTradingSystemsHtml() {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vixale | Trading Systems</title>
-  <meta name="description" content="Learn how Vixale tracks Shrek and Fiona trading systems, including their execution style, order type, trade-offs, and validation process." />
+  <meta name="description" content="Explore Vixale Prime and Vixale Edge, compare their execution styles, and preview Vixale Ratio, Vixale Pairs, and Vixale Options Desk." />
   <style>
     :root {
       --bg: #fbfcfb;
@@ -4608,7 +4608,7 @@ function renderTradingSystemsHtml() {
       white-space: nowrap;
     }
 
-    .system-card.fiona .system-pill {
+    .system-card.edge .system-pill {
       border-color: var(--purple-line);
       background: var(--purple-soft);
       color: var(--purple-ink);
@@ -4648,6 +4648,144 @@ function renderTradingSystemsHtml() {
       border-radius: 30px;
       box-shadow: var(--shadow-soft);
       overflow: hidden;
+    }
+
+    .future-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .future-card {
+      position: relative;
+      overflow: hidden;
+      background: rgba(255,255,255,0.78);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: var(--shadow-soft);
+      min-height: 290px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .future-card::after {
+      content: "";
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      right: -64px;
+      top: -72px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(11,207,116,0.13), transparent 68%);
+      pointer-events: none;
+    }
+
+    .future-card.pairs::after {
+      background: radial-gradient(circle, rgba(55,115,255,0.12), transparent 68%);
+    }
+
+    .future-card.options::after {
+      background: radial-gradient(circle, rgba(107,63,199,0.12), transparent 68%);
+    }
+
+    .future-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 22px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .future-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green-soft);
+      border: 1px solid #bfead5;
+      color: var(--green-dark);
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+
+    .future-card.pairs .future-mark {
+      background: #eef4ff;
+      border-color: #d5e1ff;
+      color: #315fac;
+    }
+
+    .future-card.options .future-mark {
+      background: var(--purple-soft);
+      border-color: var(--purple-line);
+      color: var(--purple-ink);
+    }
+
+    .coming-pill {
+      border-radius: 999px;
+      padding: 7px 10px;
+      border: 1px solid var(--line-2);
+      background: rgba(255,255,255,0.82);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    .future-title {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1.08;
+      letter-spacing: -0.7px;
+      font-weight: 450;
+      position: relative;
+      z-index: 1;
+    }
+
+    .future-subtitle {
+      margin-top: 8px;
+      color: var(--green-dark);
+      font-size: 13px;
+      line-height: 1.4;
+      font-weight: 500;
+      position: relative;
+      z-index: 1;
+    }
+
+    .future-card.pairs .future-subtitle {
+      color: #315fac;
+    }
+
+    .future-card.options .future-subtitle {
+      color: var(--purple-ink);
+    }
+
+    .future-card p {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 14.5px;
+      line-height: 1.62;
+      position: relative;
+      z-index: 1;
+    }
+
+    .future-note {
+      margin-top: auto;
+      padding-top: 20px;
+      color: var(--muted-2);
+      font-size: 12px;
+      line-height: 1.4;
+      position: relative;
+      z-index: 1;
     }
 
     .table-wrap {
@@ -4788,6 +4926,7 @@ function renderTradingSystemsHtml() {
     @media (max-width: 980px) {
       .page-hero-inner,
       .system-grid,
+      .future-grid,
       .validation-box,
       .access {
         grid-template-columns: 1fr;
@@ -4864,7 +5003,7 @@ function renderTradingSystemsHtml() {
           <div class="badge"><span class="dot"></span><span>Vixale systems</span></div>
           <h1>Two execution styles. <span class="accent">One live dashboard.</span></h1>
           <p class="lead">
-            Vixale currently tracks two system styles: Shrek and Fiona. Both are designed to identify structured market opportunities, send alerts, and track results inside the live dashboard.
+            Vixale currently tracks two live system styles: Vixale Prime and Vixale Edge. Both are designed to identify structured market opportunities, send alerts, and track results inside the live dashboard.
           </p>
           <div class="actions">
             <a class="btn btn-primary" href="/login">Open Dashboard</a>
@@ -4875,8 +5014,8 @@ function renderTradingSystemsHtml() {
         <div class="hero-panel">
           <h3>Main difference</h3>
           <div class="difference">
-            <div class="difference-row"><span>Shrek</span><div>Prioritizes confirmation. It waits for a confirmed trend-change signal and opens with a market order.</div></div>
-            <div class="difference-row"><span>Fiona</span><div>Prioritizes entry price. It waits for a selected pullback and attempts to open with a limit order.</div></div>
+            <div class="difference-row"><span>Prime</span><div>Prioritizes confirmation. It waits for a confirmed trend-change signal and opens with a market order.</div></div>
+            <div class="difference-row"><span>Edge</span><div>Prioritizes entry price. It waits for a selected pullback and attempts to open with a limit order.</div></div>
           </div>
           <div class="small-note">Both systems are tracked as live forward-test / paper-trading systems. Trading involves risk and results are not guaranteed.</div>
         </div>
@@ -4885,20 +5024,20 @@ function renderTradingSystemsHtml() {
 
     <section class="wrap section">
       <div class="section-head">
-        <h2>Shrek and Fiona</h2>
+        <h2>Vixale Prime and Vixale Edge</h2>
         <p class="lead">
-          The systems are intentionally different. Shrek is built around confirmation. Fiona is built around pullback execution.
+          The systems are intentionally different. Vixale Prime is built around confirmation. Vixale Edge is built around pullback execution.
         </p>
       </div>
 
       <div class="system-grid">
         <div class="system-card">
           <div class="system-top">
-            <div class="system-name">Shrek</div>
+            <div class="system-name">Vixale Prime</div>
             <div class="system-pill">Confirmed trend entry</div>
           </div>
           <p>
-            Shrek is the conservative Vixale trend-confirmation system. It reads the same market through several timeframes, uses higher-timeframe direction as context, and waits for a confirmed trend-change signal before opening with a market order.
+            Vixale Prime is the conservative trend-confirmation system. It reads the same market through several timeframes, uses higher-timeframe direction as context, and waits for a confirmed trend-change signal before opening with a market order.
           </p>
           <div class="system-list">
             <div><strong>Execution:</strong> market order after signal confirmation.</div>
@@ -4908,13 +5047,13 @@ function renderTradingSystemsHtml() {
           </div>
         </div>
 
-        <div class="system-card fiona">
+        <div class="system-card edge">
           <div class="system-top">
-            <div class="system-name">Fiona</div>
+            <div class="system-name">Vixale Edge</div>
             <div class="system-pill">Limit pullback entry</div>
           </div>
           <p>
-            Fiona is the more aggressive pullback system. Instead of entering immediately at market, Fiona waits for a specific limit-order pullback in the direction of the trend.
+            Vixale Edge is the more aggressive pullback system. Instead of entering immediately at market, it waits for a specific limit-order pullback in the direction of the trend.
           </p>
           <div class="system-list">
             <div><strong>Execution:</strong> limit order at a selected pullback price.</div>
@@ -4930,7 +5069,7 @@ function renderTradingSystemsHtml() {
       <div class="section-head">
         <h2>System comparison</h2>
         <p class="lead">
-          Same dashboard, different execution behavior. This is why Shrek and Fiona can show different open orders, fills, and trade timing.
+          Same dashboard, different execution behavior. This is why Vixale Prime and Vixale Edge can show different open orders, fills, and trade timing.
         </p>
       </div>
 
@@ -4940,8 +5079,8 @@ function renderTradingSystemsHtml() {
             <thead>
               <tr>
                 <th>Feature</th>
-                <th>Shrek</th>
-                <th>Fiona</th>
+                <th>Vixale Prime</th>
+                <th>Vixale Edge</th>
               </tr>
             </thead>
             <tbody>
@@ -4983,6 +5122,57 @@ function renderTradingSystemsHtml() {
             </tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head">
+        <div class="badge"><span class="dot"></span><span>Coming soon</span></div>
+        <h2>The Vixale system lineup is expanding.</h2>
+        <p class="lead">
+          Three additional products are currently in development. Each one will use its own execution and input model instead of forcing every market into the same workflow.
+        </p>
+      </div>
+
+      <div class="future-grid">
+        <article class="future-card ratio">
+          <div class="future-top">
+            <div class="future-mark">R</div>
+            <div class="coming-pill">Coming Soon</div>
+          </div>
+          <h3 class="future-title">Vixale Ratio</h3>
+          <div class="future-subtitle">Fibonacci structure system</div>
+          <p>
+            A developing system built around Fibonacci market structure and selected retracement relationships, with its own rules for context, confirmation, and execution.
+          </p>
+          <div class="future-note">In development · Automated system</div>
+        </article>
+
+        <article class="future-card pairs">
+          <div class="future-top">
+            <div class="future-mark">P</div>
+            <div class="coming-pill">Coming Soon</div>
+          </div>
+          <h3 class="future-title">Vixale Pairs</h3>
+          <div class="future-subtitle">AI pair-trading / VECO system</div>
+          <p>
+            An automated VECO workflow designed for relative-value opportunities between two instruments, with coordinated monitoring, paired entries, and position tracking.
+          </p>
+          <div class="future-note">In development · Automated paired execution</div>
+        </article>
+
+        <article class="future-card options">
+          <div class="future-top">
+            <div class="future-mark">O</div>
+            <div class="coming-pill">Coming Soon</div>
+          </div>
+          <h3 class="future-title">Vixale Options Desk</h3>
+          <div class="future-subtitle">Options Signals · Swing and Intraday</div>
+          <p>
+            A human-input options signals service for structured swing and intraday ideas, with clear position details and lifecycle updates from entry through close.
+          </p>
+          <div class="future-note">In development · Human-input service</div>
+        </article>
       </div>
     </section>
 
@@ -5761,7 +5951,7 @@ function renderRiskManagementHtml() {
         <div>
           <h2>Different systems may need different risk inputs.</h2>
           <p>
-            Shrek and Fiona can share the same stock-style allocation framework. Future options or pair-trading workflows may need separate inputs, because contract risk, spreads, margin, and payoff structure can be very different from simple share quantity.
+            Vixale Prime and Vixale Edge can share the same stock-style allocation framework. Future options or pair-trading workflows may need separate inputs, because contract risk, spreads, margin, and payoff structure can be very different from simple share quantity.
           </p>
           <div class="small-note">Risk management is part of the product design, not an afterthought.</div>
         </div>
