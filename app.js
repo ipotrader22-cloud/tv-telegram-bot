@@ -19,6 +19,13 @@ const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || '';
 
+// Owner-only live dashboard. Must be different from the public DASHBOARD_KEY.
+const ADMIN_DASHBOARD_KEY = process.env.ADMIN_DASHBOARD_KEY || '';
+
+// Shared secret used only by the local TWS bridge when pushing quote snapshots.
+// The bridge may send it in X-Vixale-Quote-Key or as ?key=... in RENDER_QUOTE_URL.
+const QUOTE_BRIDGE_KEY = process.env.QUOTE_BRIDGE_KEY || '';
+
 // Local IB bridge / ngrok forwarding.
 // Set in Render Environment, for example:
 // BRIDGE_URL=https://your-ngrok-url.ngrok-free.dev
@@ -418,6 +425,101 @@ function quoteStatusForOpenPositions(openPositions) {
   };
 }
 
+
+function marketDataTypeLabel(value) {
+  const n = Number(value);
+  if (n === 1) return 'LIVE';
+  if (n === 2) return 'FROZEN';
+  if (n === 3) return 'DELAYED';
+  if (n === 4) return 'DELAYED FROZEN';
+  return 'UNKNOWN';
+}
+
+function ownerQuoteStatusLabel(quote) {
+  if (!quote) return 'NO TWS QUOTE';
+
+  const dataType = marketDataTypeLabel(quote.market_data_type);
+  return quote.stale ? `${dataType} · STALE` : dataType;
+}
+
+function enrichOpenPositionsForOwner(openPositions) {
+  return (openPositions || []).map(row => {
+    const quote = liveQuoteForSymbol(row.symbol);
+
+    if (!quote) {
+      return {
+        ...row,
+        bid: '',
+        ask: '',
+        quote_source: row.last !== '' ? 'GoogleFinance fallback' : '',
+        quote_time: '',
+        quote_age_seconds: '',
+        quote_stale: true,
+        quote_status: 'NO TWS QUOTE',
+        market_data_type: '',
+      };
+    }
+
+    const enriched = recalcOpenPositionFromLast(row, quote.price, quote);
+
+    return {
+      ...enriched,
+      bid: quote.bid,
+      ask: quote.ask,
+      quote_status: ownerQuoteStatusLabel(quote),
+      market_data_type: quote.market_data_type,
+    };
+  });
+}
+
+function ownerQuoteStatusForOpenPositions(openPositions) {
+  const rows = openPositions || [];
+  const withQuote = rows.filter(row => row.quote_status && row.quote_status !== 'NO TWS QUOTE');
+  const fresh = withQuote.filter(row => !row.quote_stale);
+  const latestMs = withQuote.reduce((latest, row) => {
+    const quote = LIVE_QUOTES.get(normalizeSymbol(row.symbol));
+    return Math.max(latest, Number(quote?.timestamp_ms || quote?.received_ms || 0));
+  }, 0);
+
+  return {
+    source: 'IBKR / TWS owner-only',
+    live_count: fresh.length,
+    total_count: rows.length,
+    updated_time: latestMs ? formatNyTimeFromMs(latestMs) : '',
+    stale_seconds: LIVE_QUOTE_STALE_SECONDS,
+  };
+}
+
+function ownerQuoteCachePayload() {
+  const quotes = Array.from(LIVE_QUOTES.keys())
+    .map(symbol => liveQuoteForSymbol(symbol))
+    .filter(Boolean)
+    .map(quote => ({
+      symbol: quote.symbol,
+      price: quote.price,
+      bid: quote.bid,
+      ask: quote.ask,
+      last: quote.last,
+      close: quote.close,
+      source: quote.source,
+      market_data_type: quote.market_data_type,
+      market_data_label: marketDataTypeLabel(quote.market_data_type),
+      quote_status: ownerQuoteStatusLabel(quote),
+      timestamp_ms: quote.timestamp_ms,
+      quote_time: formatNyTimeFromMs(quote.timestamp_ms),
+      age_seconds: quote.age_seconds,
+      stale: quote.stale,
+    }));
+
+  return {
+    ok: true,
+    updated_at: nowNy(),
+    stale_seconds: LIVE_QUOTE_STALE_SECONDS,
+    count: quotes.length,
+    quotes,
+  };
+}
+
 function normalizeRawMessage(reqBody) {
   return typeof reqBody === 'string'
     ? reqBody
@@ -615,6 +717,35 @@ function isDashboardAuthorized(req) {
   const dashboardKey = String(DASHBOARD_KEY || '').trim();
 
   return Boolean(dashboardKey) && (keyFromQuery === dashboardKey || keyFromCookie === dashboardKey);
+}
+
+
+function isAdminAuthorized(req) {
+  const keyFromQuery = String(req.query.key || '').trim();
+  const cookies = parseCookies(req);
+  const keyFromCookie = String(cookies.vixale_admin_key || '').trim();
+  const adminKey = String(ADMIN_DASHBOARD_KEY || '').trim();
+
+  return Boolean(adminKey) && (keyFromQuery === adminKey || keyFromCookie === adminKey);
+}
+
+function isQuoteBridgeAuthorized(req) {
+  const configuredKey = String(QUOTE_BRIDGE_KEY || '').trim();
+  if (!configuredKey) return false;
+
+  const headerKey = String(req.headers['x-vixale-quote-key'] || '').trim();
+  const queryKey = String(req.query.key || '').trim();
+
+  return headerKey === configuredKey || queryKey === configuredKey;
+}
+
+function setPrivateNoStoreHeaders(res) {
+  res.set({
+    'Cache-Control': 'private, no-store, no-cache, must-revalidate, max-age=0',
+    Pragma: 'no-cache',
+    Expires: '0',
+    'X-Robots-Tag': 'noindex, nofollow, noarchive',
+  });
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2119,6 +2250,23 @@ async function getDashboardData() {
       total_closed_pnl: Number(totalClosedPnl.toFixed(2)),
       win_rate: Number(winRate.toFixed(2)),
       exposure: Number(exposure.toFixed(2)),
+    },
+  };
+}
+
+
+async function getOwnerDashboardData() {
+  const data = await getDashboardData();
+  const openPositions = enrichOpenPositionsForOwner(data.open_positions || []);
+  const openPnl = openPositions.reduce((sum, row) => sum + (cleanNumber(row.open_pnl) || 0), 0);
+
+  return {
+    ...data,
+    quote_status: ownerQuoteStatusForOpenPositions(openPositions),
+    open_positions: openPositions,
+    summary: {
+      ...data.summary,
+      open_pnl: Number(openPnl.toFixed(2)),
     },
   };
 }
@@ -6768,6 +6916,349 @@ function renderDashboardHtml(data) {
 
 
 
+
+function renderAdminLoginHtml(errorMessage = '') {
+  const error = errorMessage
+    ? `<div class="error">${escapeHtml(errorMessage)}</div>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <title>Vixale Owner Login</title>
+  <link rel="icon" type="image/png" href="${VIXALE_FAVICON_IMAGE}" />
+  <style>
+    :root { --ink:#101413; --muted:#68736f; --line:#dfe9e3; --green:#0bcf74; --red:#d8424f; }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+      background:radial-gradient(circle at 15% 0%,rgba(11,207,116,.14),transparent 32%),linear-gradient(180deg,#f8fcfa,#f1f8f4);
+      color:var(--ink); font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    }
+    .card { width:100%; max-width:460px; background:#fff; border:1px solid var(--line); border-radius:28px; padding:30px; box-shadow:0 26px 80px rgba(16,20,19,.10); }
+    .eyebrow { color:#078f51; font-size:12px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:12px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.08; font-weight:550; letter-spacing:-1px; }
+    p { color:var(--muted); line-height:1.55; margin:0 0 20px; }
+    label { display:block; font-size:12px; color:var(--muted); margin:0 0 8px; text-transform:uppercase; letter-spacing:.06em; }
+    input { width:100%; border:1px solid var(--line); border-radius:14px; padding:14px; font-size:16px; outline:none; }
+    input:focus { border-color:rgba(11,207,116,.65); box-shadow:0 0 0 4px rgba(11,207,116,.10); }
+    button { width:100%; margin-top:14px; min-height:50px; border:0; border-radius:14px; background:var(--ink); color:#fff; font-size:15px; cursor:pointer; }
+    .error { margin:0 0 16px; padding:12px 14px; border:1px solid rgba(216,66,79,.25); border-radius:12px; color:var(--red); background:rgba(216,66,79,.06); }
+    .note { margin-top:16px; color:#87938d; font-size:12px; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="eyebrow">Owner-only access</div>
+    <h1>Vixale Live Quotes</h1>
+    <p>This login is separate from the public dashboard password.</p>
+    ${error}
+    <form method="POST" action="/admin-login">
+      <label for="admin_password">Admin password</label>
+      <input id="admin_password" name="password" type="password" autocomplete="current-password" required autofocus />
+      <button type="submit">Open Owner Dashboard</button>
+    </form>
+    <div class="note">IBKR/TWS quotes are not included in the public dashboard response.</div>
+  </div>
+</body>
+</html>`;
+}
+
+
+function renderOwnerLiveDashboardHtml(data) {
+  const s = data.summary || {};
+  const q = data.quote_status || {};
+
+  const openRows = (data.open_positions || []).map(row => `
+    <tr class="quote-row"
+        data-symbol="${escapeHtml(normalizeSymbol(row.symbol))}"
+        data-side="${escapeHtml(row.side)}"
+        data-entry="${escapeHtml(row.entry)}"
+        data-qty="${escapeHtml(row.size)}"
+        data-target="${escapeHtml(row.target)}"
+        data-stop="${escapeHtml(row.stop)}">
+      <td>${escapeHtml(row.system)}</td>
+      <td class="ticker">${escapeHtml(row.symbol)}</td>
+      <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
+      <td>${num(row.entry)}</td>
+      <td class="js-bid">${num(row.bid)}</td>
+      <td class="js-ask">${num(row.ask)}</td>
+      <td class="js-last">${num(row.last)}</td>
+      <td>${num(row.target)}</td>
+      <td>${num(row.stop)}</td>
+      <td>${num(row.size, 0)}</td>
+      <td class="js-pnl ${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl)}</td>
+      <td class="js-to-target">${pct(row.to_tp)}</td>
+      <td class="js-to-stop">${pct(row.to_stop)}</td>
+      <td><span class="quote-pill js-status ${row.quote_stale ? 'stale' : ''}">${escapeHtml(row.quote_status || 'NO TWS QUOTE')}</span></td>
+      <td class="js-age">${row.quote_age_seconds !== '' ? `${escapeHtml(row.quote_age_seconds)}s` : '—'}</td>
+      <td class="js-source">${escapeHtml(row.quote_source || '')}${row.quote_time ? `<div class="cell-note">${escapeHtml(row.quote_time)} ET</div>` : ''}</td>
+    </tr>
+  `).join('');
+
+  const pendingRows = (data.working_orders || data.pending_orders || []).map(row => `
+    <tr>
+      <td>${escapeHtml(row.system)}</td>
+      <td class="ticker">${escapeHtml(row.symbol)}</td>
+      <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
+      <td>${escapeHtml(row.order_type || 'ORDER')}</td>
+      <td>${escapeHtml(row.action || '')}</td>
+      <td>${num(row.price)}</td>
+      <td>${num(row.qty, 0)}</td>
+      <td>${escapeHtml(row.status)}</td>
+    </tr>
+  `).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta http-equiv="refresh" content="30" />
+  <title>Vixale Owner Live Quotes</title>
+  <link rel="icon" type="image/png" href="${VIXALE_FAVICON_IMAGE}" />
+  <style>
+    :root {
+      --page:#f6fbf8; --card:#fff; --text:#121815; --muted:#68736f; --muted2:#87938d;
+      --line:#dfe9e3; --green:#008f4a; --green-soft:#e9fff3; --red:#d8424f; --amber:#a56900;
+      --shadow:0 18px 54px rgba(21,48,34,.08);
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--text); background:radial-gradient(circle at 10% 0%,rgba(0,143,74,.10),transparent 34%),linear-gradient(180deg,#f8fcfa,#fff); font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; }
+    .wrap { max-width:1600px; margin:0 auto; padding:22px; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+    .links { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn { display:inline-flex; align-items:center; min-height:40px; padding:10px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--text); text-decoration:none; font-size:13px; }
+    .btn.primary { background:var(--text); color:#fff; border-color:var(--text); }
+    .hero { padding:22px; border:1px solid var(--line); border-radius:24px; background:rgba(255,255,255,.9); box-shadow:var(--shadow); }
+    h1 { margin:0; font-size:30px; line-height:1.1; letter-spacing:-1px; font-weight:550; }
+    .subtitle { margin-top:7px; color:var(--muted); font-size:14px; }
+    .updated { margin-top:8px; color:var(--muted2); font-size:12px; }
+    .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:18px; }
+    .card { border:1px solid var(--line); border-radius:18px; padding:15px; background:#fbfefd; }
+    .label { color:var(--muted2); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+    .value { margin-top:7px; font-size:22px; font-variant-numeric:tabular-nums; }
+    .section { margin-top:18px; border:1px solid var(--line); border-radius:22px; background:#fff; overflow:hidden; box-shadow:0 10px 30px rgba(21,48,34,.05); }
+    .section-head { padding:15px 17px; display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--line); }
+    .section-head h2 { margin:0; font-size:16px; font-weight:550; }
+    .section-head span { color:var(--muted2); font-size:12px; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; min-width:1350px; }
+    th,td { padding:12px 11px; border-bottom:1px solid #eef4f1; text-align:right; white-space:nowrap; font-size:13px; font-variant-numeric:tabular-nums; }
+    th { color:var(--muted2); background:#fbfefd; font-size:10px; text-transform:uppercase; letter-spacing:.05em; font-weight:450; }
+    th:first-child,td:first-child,th:nth-child(2),td:nth-child(2) { text-align:left; }
+    .ticker { font-weight:600; }
+    .long,.positive { color:var(--green); }
+    .short,.negative { color:var(--red); }
+    .quote-pill { display:inline-flex; align-items:center; padding:5px 8px; border-radius:999px; border:1px solid rgba(0,143,74,.20); background:var(--green-soft); color:var(--green); font-size:10px; }
+    .quote-pill.stale { color:var(--amber); background:#fff7df; border-color:#ecd49b; }
+    .cell-note { color:var(--muted2); font-size:10px; margin-top:3px; }
+    .empty { padding:20px; color:var(--muted); }
+    .owner-note { margin-top:16px; padding:13px 15px; border:1px solid #ecd49b; border-radius:15px; color:#76500a; background:#fff9e8; font-size:12px; line-height:1.5; }
+    @media(max-width:900px){ .cards{grid-template-columns:repeat(2,1fr)} .wrap{padding:12px} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="links">
+        <a class="btn" href="/dashboard">Public Dashboard View</a>
+        <a class="btn" href="/">Home</a>
+      </div>
+      <div class="links">
+        <a class="btn primary" href="/admin/logout">Owner Logout</a>
+      </div>
+    </div>
+
+    <div class="hero">
+      <h1>Vixale Owner Live Quotes</h1>
+      <div class="subtitle">Owner-only IBKR/TWS quote layer. Public dashboard remains unchanged.</div>
+      <div class="updated">
+        Positions refresh from Sheets every 30 seconds. Quotes update in place every 2 seconds.
+        · TWS fresh: <span id="fresh-count">${escapeHtml(q.live_count || 0)}</span>/<span id="total-count">${escapeHtml(q.total_count || 0)}</span>
+        · stale after ${escapeHtml(q.stale_seconds || LIVE_QUOTE_STALE_SECONDS)}s
+        <span id="quote-updated">${q.updated_time ? ` · latest ${escapeHtml(q.updated_time)} ET` : ''}</span>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="label">Open Positions</div><div class="value">${escapeHtml(s.open_count || 0)}</div></div>
+        <div class="card"><div class="label">Working Orders</div><div class="value">${escapeHtml(s.pending_count || 0)}</div></div>
+        <div class="card"><div class="label">Owner Live Open P&L</div><div id="owner-open-pnl" class="value ${moneyClass(s.open_pnl)}">${renderMoney(s.open_pnl)}</div></div>
+        <div class="card"><div class="label">Exposure</div><div class="value">${renderMoney(s.exposure)}</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Open Positions — Owner Live View</h2>
+        <span>Bid / Ask / Last are not rendered on the public dashboard.</span>
+      </div>
+      <div class="table-wrap">
+        ${(data.open_positions || []).length ? `
+        <table>
+          <thead>
+            <tr>
+              <th>System</th><th>Symbol</th><th>Side</th><th>Entry</th>
+              <th>Bid</th><th>Ask</th><th>Last</th><th>Target</th><th>Stop Ref</th><th>Qty</th>
+              <th>Open P&L</th><th>To Target</th><th>To Stop</th><th>Data</th><th>Age</th><th>Source</th>
+            </tr>
+          </thead>
+          <tbody>${openRows}</tbody>
+        </table>` : `<div class="empty">No open positions.</div>`}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><h2>Working Orders</h2><span>Quote updates never place, modify, or cancel orders.</span></div>
+      <div class="table-wrap">
+        ${(data.working_orders || data.pending_orders || []).length ? `
+        <table style="min-width:850px">
+          <thead><tr><th>System</th><th>Symbol</th><th>Side</th><th>Order Type</th><th>Action</th><th>Price</th><th>Qty</th><th>Status</th></tr></thead>
+          <tbody>${pendingRows}</tbody>
+        </table>` : `<div class="empty">No pending / working orders.</div>`}
+      </div>
+    </div>
+
+    <div class="owner-note">
+      Owner-only display. Quote snapshots remain in Render memory, are not written to Google Sheets, and are not included in public dashboard HTML or public API responses.
+    </div>
+  </div>
+
+  <script>
+    function positiveNumber(value) {
+      const x = Number(value);
+      return Number.isFinite(x) && x > 0 ? x : null;
+    }
+
+    function money(value) {
+      const x = Number(value);
+      if (!Number.isFinite(x)) return '—';
+      const sign = x > 0 ? '+' : x < 0 ? '-' : '';
+      return sign + '$' + Math.abs(x).toFixed(2);
+    }
+
+    function percent(value) {
+      const x = Number(value);
+      return Number.isFinite(x) ? x.toFixed(2) + '%' : '—';
+    }
+
+    function setMoneyClass(el, value) {
+      el.classList.remove('positive', 'negative');
+      if (value > 0) el.classList.add('positive');
+      if (value < 0) el.classList.add('negative');
+    }
+
+    function updateRow(row, quote) {
+      const side = String(row.dataset.side || '').toUpperCase();
+      const entry = Number(row.dataset.entry);
+      const qty = Number(row.dataset.qty);
+      const target = Number(row.dataset.target);
+      const stop = Number(row.dataset.stop);
+      const last = positiveNumber(quote.price || quote.last);
+      const bid = positiveNumber(quote.bid);
+      const ask = positiveNumber(quote.ask);
+
+      row.querySelector('.js-bid').textContent = bid === null ? '—' : bid.toFixed(2);
+      row.querySelector('.js-ask').textContent = ask === null ? '—' : ask.toFixed(2);
+      row.querySelector('.js-last').textContent = last === null ? '—' : last.toFixed(2);
+      row.querySelector('.js-age').textContent = Number.isFinite(Number(quote.age_seconds)) ? Number(quote.age_seconds).toFixed(1) + 's' : '—';
+      row.querySelector('.js-source').innerHTML = String(quote.source || 'TWS') + (quote.quote_time ? '<div class="cell-note">' + String(quote.quote_time) + ' ET</div>' : '');
+
+      const status = row.querySelector('.js-status');
+      status.textContent = quote.quote_status || quote.market_data_label || 'UNKNOWN';
+      status.classList.toggle('stale', Boolean(quote.stale));
+
+      if (last !== null && Number.isFinite(entry) && Number.isFinite(qty)) {
+        const pnl = side === 'SHORT' ? (entry - last) * qty : (last - entry) * qty;
+        const pnlEl = row.querySelector('.js-pnl');
+        pnlEl.textContent = money(pnl);
+        setMoneyClass(pnlEl, pnl);
+      }
+
+      if (last !== null && target > 0) {
+        const distance = side === 'SHORT'
+          ? ((last - target) / last) * 100
+          : ((target - last) / last) * 100;
+        row.querySelector('.js-to-target').textContent = percent(distance);
+      }
+
+      if (last !== null && stop > 0) {
+        const distance = side === 'SHORT'
+          ? ((stop - last) / last) * 100
+          : ((last - stop) / last) * 100;
+        row.querySelector('.js-to-stop').textContent = percent(distance);
+      }
+    }
+
+    async function refreshQuotes() {
+      try {
+        const response = await fetch('/admin/live-quotes.json', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/admin/login';
+          return;
+        }
+
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        const bySymbol = new Map((payload.quotes || []).map(q => [String(q.symbol || '').toUpperCase(), q]));
+
+        let fresh = 0;
+        let totalPnl = 0;
+        let totalPnlKnown = false;
+
+        document.querySelectorAll('.quote-row').forEach(row => {
+          const symbol = String(row.dataset.symbol || '').toUpperCase();
+          const quote = bySymbol.get(symbol);
+
+          if (!quote) {
+            const status = row.querySelector('.js-status');
+            status.textContent = 'NO TWS QUOTE';
+            status.classList.add('stale');
+            return;
+          }
+
+          updateRow(row, quote);
+          if (!quote.stale) fresh += 1;
+
+          const pnlText = row.querySelector('.js-pnl').textContent.replace(/[$,+]/g, '');
+          const pnl = Number(pnlText);
+          if (Number.isFinite(pnl)) {
+            totalPnl += pnl;
+            totalPnlKnown = true;
+          }
+        });
+
+        document.getElementById('fresh-count').textContent = String(fresh);
+        document.getElementById('total-count').textContent = String(document.querySelectorAll('.quote-row').length);
+        document.getElementById('quote-updated').textContent = ' · checked ' + String(payload.updated_at || '') + ' ET';
+
+        if (totalPnlKnown) {
+          const totalEl = document.getElementById('owner-open-pnl');
+          totalEl.textContent = money(totalPnl);
+          setMoneyClass(totalEl, totalPnl);
+        }
+      } catch (err) {
+        console.warn('Owner quote refresh failed:', err);
+      }
+    }
+
+    refreshQuotes();
+    setInterval(refreshQuotes, 2000);
+  </script>
+</body>
+</html>`;
+}
+
+
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LOCAL BRIDGE / NGROK FORWARDING — HARD SAFETY LAYER
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -7422,6 +7913,10 @@ app.post('/bot-request', async (req, res) => {
 
 function handleBridgeQuoteUpdate(req, res) {
   try {
+    if (!isQuoteBridgeAuthorized(req)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized_quote_bridge' });
+    }
+
     let payload = req.body;
 
     if (typeof payload === 'string') {
@@ -7453,6 +7948,12 @@ function handleBridgeQuoteUpdate(req, res) {
 }
 
 app.get('/bridge/quotes/status', (req, res) => {
+  if (!isAdminAuthorized(req)) {
+    return res.status(401).json({ ok: false, error: 'admin_unauthorized' });
+  }
+
+  setPrivateNoStoreHeaders(res);
+
   const symbols = Array.from(LIVE_QUOTES.values()).map(q => ({
     symbol: q.symbol,
     price: q.price,
@@ -7470,6 +7971,101 @@ app.get('/bridge/quotes/status', (req, res) => {
 });
 
 app.post('/bridge/quotes', handleBridgeQuoteUpdate);
+
+app.get('/admin/login', (req, res) => {
+  setPrivateNoStoreHeaders(res);
+
+  if (!ADMIN_DASHBOARD_KEY) {
+    return res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.');
+  }
+
+  if (isAdminAuthorized(req)) {
+    return res.redirect('/admin/live');
+  }
+
+  return res.status(200).send(renderAdminLoginHtml());
+});
+
+app.post('/admin-login', (req, res) => {
+  setPrivateNoStoreHeaders(res);
+
+  if (!ADMIN_DASHBOARD_KEY) {
+    return res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.');
+  }
+
+  const password = String(req.body.password || '').trim();
+  const adminKey = String(ADMIN_DASHBOARD_KEY || '').trim();
+
+  if (password !== adminKey) {
+    return res.status(401).send(renderAdminLoginHtml('Incorrect owner password.'));
+  }
+
+  res.cookie('vixale_admin_key', adminKey, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    maxAge: 1000 * 60 * 60 * 8,
+  });
+
+  return res.redirect('/admin/live');
+});
+
+app.get('/admin/live', async (req, res) => {
+  try {
+    setPrivateNoStoreHeaders(res);
+
+    if (!ADMIN_DASHBOARD_KEY) {
+      return res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.');
+    }
+
+    const keyFromQuery = String(req.query.key || '').trim();
+    const adminKey = String(ADMIN_DASHBOARD_KEY || '').trim();
+
+    if (keyFromQuery === adminKey) {
+      res.cookie('vixale_admin_key', adminKey, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        maxAge: 1000 * 60 * 60 * 8,
+      });
+
+      return res.redirect('/admin/live');
+    }
+
+    if (!isAdminAuthorized(req)) {
+      return res.redirect('/admin/login');
+    }
+
+    const data = await getOwnerDashboardData();
+    return res.status(200).send(renderOwnerLiveDashboardHtml(data));
+  } catch (err) {
+    console.error('Owner live dashboard error:', err);
+    return res.status(500).send('Owner live dashboard error');
+  }
+});
+
+app.get('/admin/live-quotes.json', (req, res) => {
+  setPrivateNoStoreHeaders(res);
+
+  if (!isAdminAuthorized(req)) {
+    return res.status(401).json({ ok: false, error: 'admin_unauthorized' });
+  }
+
+  return res.status(200).json(ownerQuoteCachePayload());
+});
+
+app.get('/admin/logout', (req, res) => {
+  setPrivateNoStoreHeaders(res);
+
+  res.clearCookie('vixale_admin_key', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+  });
+
+  return res.redirect('/admin/login');
+});
+
 
 app.post('/dashboard-login', (req, res) => {
   if (!DASHBOARD_KEY) {
