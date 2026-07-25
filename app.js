@@ -2099,8 +2099,8 @@ function strategyFamilyLabelFromRaw(...rawValues) {
 
   // Fiona Limit shares the broad Opposite Flip routing identifier with Shrek,
   // so its dedicated variant/profile markers must be checked first.
-  if (isFionaLimitPullbackName(joined)) return 'Fiona';
-  if (isOppositeFlipName(joined)) return 'Shrek';
+  if (isFionaLimitPullbackName(joined)) return 'VIXALE EDGE';
+  if (isOppositeFlipName(joined)) return 'VIXALE PRIME';
   if (isEmaPullbackName(joined)) return 'Elvis';
   if (isV51IntradayName(joined)) return 'Vixale';
 
@@ -2116,8 +2116,8 @@ function strategyFamilyLabelFromRaw(...rawValues) {
       parsed.reason,
     ].join(' ');
 
-    if (isFionaLimitPullbackName(fields)) return 'Fiona';
-    if (isOppositeFlipName(fields)) return 'Shrek';
+    if (isFionaLimitPullbackName(fields)) return 'VIXALE EDGE';
+    if (isOppositeFlipName(fields)) return 'VIXALE PRIME';
     if (isEmaPullbackName(fields)) return 'Elvis';
     if (isV51IntradayName(fields)) return 'Vixale';
   }
@@ -2137,7 +2137,7 @@ function strategyFamilyLabelForPosition(rawValue, stopValue) {
   const stop = cleanNumber(stopValue);
 
   if (stop !== '' && stop > 0) return 'Elvis';
-  if (stop === 0) return 'Shrek';
+  if (stop === 0) return 'VIXALE PRIME';
 
   return '';
 }
@@ -2246,6 +2246,7 @@ async function getDashboardData() {
       open_count: openPositions.length,
       pending_count: workingOrders.length,
       open_pnl: Number(openPnl.toFixed(2)),
+      closed_count_today: closedToday.length,
       closed_pnl_today: Number(closedPnlToday.toFixed(2)),
       total_closed_pnl: Number(totalClosedPnl.toFixed(2)),
       win_rate: Number(winRate.toFixed(2)),
@@ -6360,26 +6361,23 @@ function renderMoney(value) {
 
 function renderDashboardHtml(data) {
   const s = data.summary;
-  const q = data.quote_status || {};
-  const quoteLine = q.live_count > 0
-    ? ` · Quotes: ${escapeHtml(q.source)} ${escapeHtml(q.live_count)}/${escapeHtml(q.total_count)}${q.updated_time ? ` · ${escapeHtml(q.updated_time)} ET` : ''}`
-    : ` · Quotes: ${escapeHtml(q.source || 'fallback')}`;
 
+  // Public open positions intentionally show only confirmed trade facts.
+  // No current quote, running P&L, quote source, or distance calculations are rendered here.
+  // The owner-only /admin/live page keeps the real-time IBKR/TWS view.
   const openRows = data.open_positions.map(row => `
     <tr>
       <td>${escapeHtml(row.system)}</td>
+      <td class="ticker">${escapeHtml(row.trade_id)}</td>
+      <td>${escapeHtml(safeDateText(row.open_time))}</td>
+      <td class="muted-dash">—</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
-      <td>${num(row.last)}${row.quote_source ? `<div class="cell-note ${row.quote_stale ? 'stale' : ''}">${escapeHtml(row.quote_source)}${row.quote_time ? ` · ${escapeHtml(row.quote_time)}` : ''}</div>` : ''}</td>
-      <td>${num(row.target)}</td>
-      <td>${num(row.stop)}</td>
+      <td class="muted-dash">—</td>
       <td>${num(row.size, 0)}</td>
-      <td class="${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl)}</td>
-      <td>${pct(row.to_tp)}</td>
-      <td>${pct(row.to_stop)}</td>
-      <td class="positive">${renderMoney(row.exposure)}</td>
-      <td>${escapeHtml(row.status)}</td>
+      <td class="muted-dash">—</td>
+      <td><span class="open-position-label">OPEN POSITION</span></td>
     </tr>
   `).join('');
 
@@ -6735,6 +6733,24 @@ function renderDashboardHtml(data) {
 
     .cell-note.stale { color: #9b7c2f; }
 
+    .muted-dash {
+      color: var(--muted2);
+    }
+
+    .open-position-label {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: var(--green-soft);
+      border: 1px solid #bfe9d2;
+      color: var(--green);
+      font-size: 11px;
+      line-height: 1.1;
+      letter-spacing: 0.035em;
+      white-space: nowrap;
+    }
+
     .footer {
       margin-top: 18px;
       color: #6f7a75;
@@ -6785,7 +6801,7 @@ function renderDashboardHtml(data) {
         <div class="brand">
           <h1>Vixale Live Strategy Dashboard</h1>
           <div class="subtitle">Private live forward-test / paper-trading tracker</div>
-          <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds${quoteLine}</div>
+          <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
         </div>
         <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
       </div>
@@ -6800,8 +6816,8 @@ function renderDashboardHtml(data) {
           <div class="value">${escapeHtml(s.pending_count)}</div>
         </div>
         <div class="card">
-          <div class="label">Open P&L</div>
-          <div class="value ${moneyClass(s.open_pnl)}">${renderMoney(s.open_pnl)}</div>
+          <div class="label">Closed Trades Today</div>
+          <div class="value">${escapeHtml(s.closed_count_today || 0)}</div>
         </div>
         <div class="card">
           <div class="label">Closed P&L Today</div>
@@ -6820,8 +6836,8 @@ function renderDashboardHtml(data) {
 
     <div class="section">
       <div class="section-header">
-        <h2>Live Open Positions</h2>
-        <span>Total exposure: ${renderMoney(s.exposure)}</span>
+        <h2>Open Positions</h2>
+        <span>Final exit and P&amp;L appear after the trade closes.</span>
       </div>
       <div class="table-wrap">
         ${data.open_positions.length ? `
@@ -6829,18 +6845,16 @@ function renderDashboardHtml(data) {
           <thead>
             <tr>
               <th>System</th>
+              <th>Trade ID</th>
+              <th>Open Time</th>
+              <th>Close Time</th>
               <th>Symbol</th>
               <th>Side</th>
               <th>Entry</th>
-              <th>Last</th>
-              <th>Target</th>
-              <th>Stop Ref</th>
+              <th>Exit</th>
               <th>Qty</th>
-              <th>Open P&L</th>
-              <th>To TP</th>
-              <th>To Stop Ref</th>
-              <th>Exposure</th>
-              <th>Status</th>
+              <th>P&amp;L</th>
+              <th>Event</th>
             </tr>
           </thead>
           <tbody>${openRows}</tbody>
