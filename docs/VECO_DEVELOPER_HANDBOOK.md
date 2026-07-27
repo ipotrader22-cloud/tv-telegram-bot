@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-07-26  
+**Last updated:** 2026-07-27
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -76,8 +76,9 @@ Current production execution is stock-only. Futures support is postponed until e
 ### 3.1 Shrek
 
 **Public VECO name:** Shrek  
-**TradingView strategy:** `VX_FIONA_PULLBACK_HTF_v1.3`  
-**Internal variant:** `FIONA_PULLBACK_HTF_ATR_TARGET`
+**TradingView strategy:** `Shrek 1.4`
+**Internal strategy ID:** `SHREK_1_4`
+**Variant field:** not used
 
 Logic:
 
@@ -106,6 +107,19 @@ Opening Telegram messages include:
 - Target
 - Stop Ref
 - Quantity
+
+### 3.1.1 Shrek 1.4 naming contract
+
+TradingView and VECO use one canonical strategy identity:
+
+```text
+Visible TradingView title: Shrek 1.4
+Payload strategy ID: SHREK_1_4
+```
+
+The Pine payload does not send a `variant` field. Render and the local bridge recognize
+`SHREK_1_4` directly. Legacy Shrek/Opposite-Flip identifiers remain accepted only so
+already-created old alerts can be retired safely.
 
 ### 3.2 Fiona
 
@@ -198,8 +212,10 @@ C:\ib_bridge\
 Shrek source snapshot:
 
 ```text
-VX_FIONA_PULLBACK_HTF_v1.3
-SHA-256: 9786ac1b0e54aecf61648d2b003e33e2f11837f4cdcac3dda9311e8247746779
+Shrek_1_4.pine
+Strategy title: Shrek 1.4
+Payload strategy ID: SHREK_1_4
+Variant field: not used
 ```
 
 Fiona source snapshot:

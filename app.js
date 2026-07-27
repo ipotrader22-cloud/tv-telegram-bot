@@ -187,7 +187,8 @@ function isFionaLimitPullbackRow(row) {
 
 function isOppositeFlipName(value) {
   const text = String(value || '').toUpperCase();
-  return text.includes('VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
+  return text.includes('SHREK_1_4') ||
+    text.includes('VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
     text.includes('OPPOSITE_FLIP_ALWAYS_IN_MARKET') ||
     text.includes('NONE_OPPOSITE_FLIP');
 }

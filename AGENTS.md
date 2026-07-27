@@ -123,8 +123,9 @@ Current production systems:
 
 ```text
 Shrek
-TradingView: VX_FIONA_PULLBACK_HTF_v1.3
-Variant: FIONA_PULLBACK_HTF_ATR_TARGET
+TradingView: Shrek 1.4
+Strategy ID: SHREK_1_4
+Variant field: not used
 
 Fiona
 TradingView: VX_FIONA_LIMIT_PULLBACK_LIVE_v1.0
@@ -138,7 +139,7 @@ Classification precedence is architecture-sensitive:
 3. Elvis / EMA Pullback.
 4. Older Vixale families.
 
-Fiona and Shrek share a generic strategy identifier. Never move generic Shrek classification ahead of the specific Fiona classifier.
+Shrek 1.4 uses the dedicated `SHREK_1_4` strategy ID. Legacy Shrek/Opposite-Flip identifiers remain recognized for old alerts. Never move generic legacy Shrek classification ahead of the specific Fiona classifier.
 
 ---
 
