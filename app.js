@@ -6839,6 +6839,7 @@ function renderDashboardHtml(data) {
         <a class="home-link" href="/">← Back to Home</a>
         <a class="home-link" href="/trading-systems">Trading Systems</a>
         <a class="home-link" href="/risk-management">Risk Management</a>
+        <a class="home-link" href="#option-journal">Option Journal</a>
       </div>
 
       <div class="dashboard-links">
@@ -6972,7 +6973,7 @@ function renderDashboardHtml(data) {
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" id="option-journal">
       <div class="section-header">
         <h2>Option Journal</h2>
         <span>Latest 20 option trades</span>
