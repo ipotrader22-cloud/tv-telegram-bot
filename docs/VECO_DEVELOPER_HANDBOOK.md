@@ -270,6 +270,7 @@ Known production layout:
 
 ```text
 tv-telegram-bot/
+├── AGENTS.md               # Persistent Codex operating and safety instructions
 ├── app.js                  # Express server, routes, Telegram, Sheets, dashboard, website
 ├── package.json            # Node dependencies and start command
 ├── docs/                   # Living project documentation
@@ -855,7 +856,45 @@ Emergency direct-to-`main` changes are allowed only with explicit owner approval
 
 When a manual artifact is required, deliver the complete `app.js` as `app.js.txt`, but the committed Git version becomes canonical after merge.
 
-### 14.2 Local bridge deployment
+### 14.2 Codex default operating workflow
+
+Repository-root instructions live in:
+
+```text
+/AGENTS.md
+```
+
+Codex must read both `AGENTS.md` and `/docs/VECO_DEVELOPER_HANDBOOK.md` before production work.
+
+Default normal-task behavior:
+
+```text
+sync clean main
+→ create feature branch
+→ make surgical change
+→ update handbook when required
+→ run checks
+→ review diff
+→ commit
+→ push feature branch
+→ create Pull Request
+→ stop before merge
+```
+
+To reduce unnecessary user steps, Codex may commit, push the feature branch, and create the Pull Request in the same task after successful checks. GitHub/OS permission dialogs may still require **Allow once**.
+
+Codex must not:
+
+- push directly to `main`;
+- merge into `main`;
+- trigger production deployment;
+- use a Render Deploy Hook;
+
+unless the user explicitly approves that exact action.
+
+A merge into `main` remains the production approval gate because it may trigger Render Auto-Deploy.
+
+### 14.3 Local bridge deployment
 
 1. Back up current `ib_bridge.py`.
 2. Replace the complete file.
@@ -870,7 +909,7 @@ When a manual artifact is required, deliver the complete `app.js` as `app.js.txt
 6. Check managed positions and open orders.
 7. Test only after TWS and ngrok are confirmed online.
 
-### 14.3 TradingView strategy deployment
+### 14.4 TradingView strategy deployment
 
 1. Confirm the exact Pine source version.
 2. Add/update the strategy on the intended symbol and timeframe.
@@ -1001,6 +1040,11 @@ Do not combine unrelated changes in one production patch.
 **Decision:** Normal production changes use a feature branch, diff review, explicit approval, then merge to `main`.  
 **Reason:** A push to the production branch may trigger Render deployment and therefore must not happen implicitly.
 
+### ADR-010 — Repository-root Codex instructions
+
+**Decision:** `/AGENTS.md` is the persistent operating policy for Codex in this repository. Codex may create a feature branch, edit, test, commit, push the feature branch, and create a Pull Request in one task, but it must stop before merge.  
+**Reason:** This preserves a safe production gate while removing repetitive manual file downloads and Git steps.
+
 ---
 
 ## 18. Open Documentation Items
@@ -1023,7 +1067,7 @@ The following should be added when next inspected:
 
 When a future change is made:
 
-1. Read `/docs/VECO_DEVELOPER_HANDBOOK.md` before editing code.
+1. Read `/AGENTS.md` and `/docs/VECO_DEVELOPER_HANDBOOK.md` before editing code.
 2. Confirm the latest production source files, branch, Git status, and relevant hashes.
 3. State `Handbook update required: YES / NO`.
 4. Make the smallest safe patch on a feature branch unless an explicitly approved emergency requires otherwise.
