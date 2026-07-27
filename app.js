@@ -89,6 +89,11 @@ const PENDING_SHEET = 'Pending';
 const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
+const OPTION_JOURNAL_SHEET = 'Option Journal';
+const OPTION_JOURNAL_HEADERS = ['ID', 'Trade Date', 'Entry Time', 'Symbol', 'Strategy', 'Legs', 'Expiration', 'Contracts', 'Multiplier', 'Trade Type', 'Entry Price', 'Exit Date', 'Exit Time', 'Exit Price', 'Fees', 'Status', 'Notes', 'Created At', 'Updated At'];
+const OPTION_STRATEGIES = ['Straddle', 'Strangle', 'Vertical Spread', 'Iron Condor', 'Butterfly', 'Calendar', 'Single Call', 'Single Put', 'Custom'];
+const OPTION_TRADE_TYPES = ['Credit', 'Debit'];
+const OPTION_STATUSES = ['Open', 'Closed', 'Cancelled'];
 
 const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UPDATE']);
 
@@ -7081,6 +7086,8 @@ function renderOwnerLiveDashboardHtml(data) {
     <div class="top">
       <div class="links">
         <a class="btn" href="/dashboard">Public Dashboard View</a>
+        <a class="btn" href="/admin/options">Option Journal</a>
+        <a class="btn" href="/admin/options/new">New Option Trade</a>
         <a class="btn" href="/">Home</a>
       </div>
       <div class="links">
@@ -7713,6 +7720,155 @@ async function handleTradingViewWebhook(req, res) {
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SITE ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Owner-only option recordkeeping. This path is intentionally isolated from VECO execution.
+function optionSameOrigin(req) {
+  try {
+    const expected = new URL(SITE_BASE_URL).origin;
+    if (req.headers.origin) return new URL(req.headers.origin).origin === expected;
+    return Boolean(req.headers.referer) && new URL(req.headers.referer).origin === expected;
+  } catch (_) { return false; }
+}
+
+function optionText(value, label, max, required = false) {
+  const text = String(value || '').trim();
+  if (required && !text) throw new Error(`${label} is required.`);
+  if (text.length > max) throw new Error(`${label} is too long.`);
+  if (/^[=+\-@]/.test(text)) throw new Error(`${label} cannot begin with a formula character.`);
+  return text;
+}
+
+function optionDate(value, label, required = false) {
+  const text = optionText(value, label, 10, required);
+  if (!text) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || new Date(`${text}T00:00:00Z`).toISOString().slice(0, 10) !== text) throw new Error(`${label} is invalid.`);
+  return text;
+}
+
+function optionTime(value, label) {
+  const text = optionText(value, label, 5);
+  if (text && !/^([01]\d|2[0-3]):[0-5]\d$/.test(text)) throw new Error(`${label} is invalid.`);
+  return text;
+}
+
+function optionNumber(value, label, required = false, integer = false, fallback = '') {
+  const raw = String(value ?? fallback).trim();
+  if (!raw && !required) return '';
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number < 0 || (integer && (!Number.isInteger(number) || number < 1))) throw new Error(`${label} is invalid.`);
+  return number;
+}
+
+function normalizeOptionTrade(body = {}) {
+  const strategy = optionText(body.strategy, 'Strategy', 40, true);
+  const tradeType = optionText(body.trade_type, 'Trade Type', 10, true);
+  const status = optionText(body.status, 'Status', 10, true);
+  if (!OPTION_STRATEGIES.includes(strategy) || !OPTION_TRADE_TYPES.includes(tradeType) || !OPTION_STATUSES.includes(status)) throw new Error('An option selection is invalid.');
+  const symbol = optionText(body.symbol, 'Symbol', 20, true).toUpperCase();
+  if (!/^[A-Z0-9.^-]+$/.test(symbol)) throw new Error('Symbol is invalid.');
+  return {
+    trade_date: optionDate(body.trade_date, 'Trade Date', true), entry_time: optionTime(body.entry_time, 'Entry Time'),
+    symbol, strategy, legs: optionText(body.legs, 'Legs', 500, true), expiration: optionDate(body.expiration, 'Expiration Date', true),
+    contracts: optionNumber(body.contracts, 'Contracts', true, true), multiplier: optionNumber(body.multiplier, 'Contract Multiplier', true, true, 100),
+    trade_type: tradeType, entry_price: optionNumber(body.entry_price, 'Entry Price', true), exit_date: optionDate(body.exit_date, 'Exit Date'),
+    exit_time: optionTime(body.exit_time, 'Exit Time'), exit_price: optionNumber(body.exit_price, 'Exit Price'), fees: optionNumber(body.fees, 'Fees', false, false, 0),
+    status, notes: optionText(body.notes, 'Notes', 2000),
+  };
+}
+
+function optionFromRow(r = []) {
+  return { id:String(r[0]||''),trade_date:String(r[1]||''),entry_time:String(r[2]||''),symbol:String(r[3]||''),strategy:String(r[4]||''),legs:String(r[5]||''),expiration:String(r[6]||''),contracts:Number(r[7]||0),multiplier:Number(r[8]||100),trade_type:String(r[9]||''),entry_price:Number(r[10]||0),exit_date:String(r[11]||''),exit_time:String(r[12]||''),exit_price:r[13]==null||r[13]===''?'':Number(r[13]),fees:Number(r[14]||0),status:String(r[15]||''),notes:String(r[16]||''),created_at:String(r[17]||''),updated_at:String(r[18]||'') };
+}
+
+function optionRow(t) {
+  return [t.id,t.trade_date,t.entry_time,t.symbol,t.strategy,t.legs,t.expiration,t.contracts,t.multiplier,t.trade_type,t.entry_price,t.exit_date,t.exit_time,t.exit_price,t.fees,t.status,t.notes,t.created_at,t.updated_at];
+}
+
+async function optionSheetData() {
+  const sheets = await getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets client is not configured.');
+  const metadata = await sheets.spreadsheets.get({ spreadsheetId: GOOGLE_SHEET_ID });
+  if (!metadata.data.sheets.some(s => s.properties.title === OPTION_JOURNAL_SHEET)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: GOOGLE_SHEET_ID, requestBody:{requests:[{addSheet:{properties:{title:OPTION_JOURNAL_SHEET}}}]} });
+    await sheets.spreadsheets.values.update({ spreadsheetId:GOOGLE_SHEET_ID,range:`'${OPTION_JOURNAL_SHEET}'!A1:S1`,valueInputOption:'RAW',requestBody:{values:[OPTION_JOURNAL_HEADERS]} });
+  }
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId:GOOGLE_SHEET_ID,range:`'${OPTION_JOURNAL_SHEET}'!A2:S` });
+  return { sheets, trades:(response.data.values||[]).map(optionFromRow) };
+}
+
+async function saveNewOptionTrade(values) {
+  const { sheets } = await optionSheetData();
+  const now = new Date().toISOString();
+  const trade = {...values,id:require('crypto').randomUUID(),created_at:now,updated_at:now};
+  await sheets.spreadsheets.values.append({spreadsheetId:GOOGLE_SHEET_ID,range:`'${OPTION_JOURNAL_SHEET}'!A:S`,valueInputOption:'RAW',insertDataOption:'INSERT_ROWS',requestBody:{values:[optionRow(trade)]}});
+}
+
+async function locateOptionTrade(id) {
+  const data = await optionSheetData();
+  const index = data.trades.findIndex(t => t.id === id);
+  return {...data,index,trade:index < 0 ? null : data.trades[index]};
+}
+
+async function replaceOptionTrade(id, values) {
+  const found = await locateOptionTrade(id);
+  if (!found.trade) return false;
+  const trade = {...found.trade,...values,id,created_at:found.trade.created_at,updated_at:new Date().toISOString()};
+  await found.sheets.spreadsheets.values.update({spreadsheetId:GOOGLE_SHEET_ID,range:`'${OPTION_JOURNAL_SHEET}'!A${found.index+2}:S${found.index+2}`,valueInputOption:'RAW',requestBody:{values:[optionRow(trade)]}});
+  return true;
+}
+
+async function removeOptionTrade(id) {
+  const found = await locateOptionTrade(id);
+  if (!found.trade) return false;
+  const sheetId = await getSheetIdByName(found.sheets, OPTION_JOURNAL_SHEET);
+  await found.sheets.spreadsheets.batchUpdate({spreadsheetId:GOOGLE_SHEET_ID,requestBody:{requests:[{deleteDimension:{range:{sheetId,dimension:'ROWS',startIndex:found.index+1,endIndex:found.index+2}}}]}});
+  return true;
+}
+
+function optionPnl(t) {
+  if (t.status !== 'Closed' || t.exit_price === '') return null;
+  const difference = t.trade_type === 'Credit' ? t.entry_price-t.exit_price : t.exit_price-t.entry_price;
+  return difference*t.contracts*t.multiplier-t.fees;
+}
+
+function optionShell(title, body) {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} | Vixale</title><style>
+  :root{--bg:#f3faf6;--card:#fff;--ink:#121815;--muted:#63716a;--line:#dfe9e3;--green:#008f4a;--red:#d8424f}*{box-sizing:border-box}body,input,select,textarea,button{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{margin:0;background:linear-gradient(#f8fcfa,var(--bg),#fff);color:var(--ink)}b,strong,h1{font-weight:500}.wrap{max-width:1440px;margin:auto;padding:24px}.nav,.actions{display:flex;gap:10px;flex-wrap:wrap}.nav{margin-bottom:16px}.btn,button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}.primary{background:#101613;color:#fff}.card{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:0 18px 54px rgba(21,48,34,.08);margin-bottom:16px}h1{margin:0 0 8px}p{color:var(--muted)}.notice{background:#e9fff3;border:1px solid #bfe9d2;border-radius:16px;padding:14px;color:#087743}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.full{grid-column:1/-1}label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}textarea{min-height:90px}.actions{margin-top:18px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1180px}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}th{color:var(--muted);font-weight:500}.positive{color:var(--green)}.negative{color:var(--red)}.empty{text-align:center;padding:40px;color:var(--muted)}@media(max-width:760px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}}</style></head><body><main class="wrap"><nav class="nav"><a class="btn" href="/admin/live">Live Dashboard</a><a class="btn" href="/admin/options">Option Journal</a><a class="btn primary" href="/admin/options/new">New Option Trade</a><a class="btn" href="/admin/logout">Log Out</a></nav>${body}</main></body></html>`;
+}
+
+function optionSelect(name, values, selected) {
+  return `<select name="${name}" required>${values.map(v=>`<option${v===selected?' selected':''}>${escapeHtml(v)}</option>`).join('')}</select>`;
+}
+
+function renderOptionForm(trade={}, error='') {
+  const editing=Boolean(trade.id), v=k=>escapeHtml(trade[k]??'');
+  return optionShell(editing?'Edit Option Trade':'Option Trading',`<section class="card"><h1>${editing?'Edit Option Trade':'Option Trading'}</h1><p class="notice">Recordkeeping only — this page does not place broker orders.</p>${error?`<p class="negative">${escapeHtml(error)}</p>`:''}<form method="post" action="${editing?`/admin/options/${encodeURIComponent(trade.id)}`:'/admin/options'}"><div class="grid">
+  <div><label>Trade Date *</label><input type="date" name="trade_date" value="${v('trade_date')}" required></div><div><label>Entry Time</label><input type="time" name="entry_time" value="${v('entry_time')}"></div><div><label>Symbol *</label><input name="symbol" maxlength="20" value="${v('symbol')}" required></div>
+  <div><label>Strategy *</label>${optionSelect('strategy',OPTION_STRATEGIES,trade.strategy||'Straddle')}</div><div class="full"><label>Legs *</label><textarea name="legs" maxlength="500" required>${v('legs')}</textarea></div><div><label>Expiration Date *</label><input type="date" name="expiration" value="${v('expiration')}" required></div>
+  <div><label>Contracts *</label><input type="number" min="1" step="1" name="contracts" value="${v('contracts')||1}" required></div><div><label>Contract Multiplier *</label><input type="number" min="1" step="1" name="multiplier" value="${v('multiplier')||100}" required></div><div><label>Trade Type *</label>${optionSelect('trade_type',OPTION_TRADE_TYPES,trade.trade_type||'Credit')}</div>
+  <div><label>Entry Price *</label><input type="number" min="0" step="0.01" name="entry_price" value="${v('entry_price')}" required></div><div><label>Exit Date</label><input type="date" name="exit_date" value="${v('exit_date')}"></div><div><label>Exit Time</label><input type="time" name="exit_time" value="${v('exit_time')}"></div>
+  <div><label>Exit Price</label><input type="number" min="0" step="0.01" name="exit_price" value="${v('exit_price')}"></div><div><label>Fees</label><input type="number" min="0" step="0.01" name="fees" value="${v('fees')||0}"></div><div><label>Status *</label>${optionSelect('status',OPTION_STATUSES,trade.status||'Open')}</div>
+  <div class="full"><label>Notes</label><textarea name="notes" maxlength="2000">${v('notes')}</textarea></div></div><div class="actions"><button class="primary">Save Trade</button><a class="btn" href="/admin/options">Cancel</a></div></form></section>`);
+}
+
+function renderOptionJournal(trades,f) {
+  const rows=trades.map(t=>{const pnl=optionPnl(t);return `<tr><td>${escapeHtml(t.trade_date)}</td><td>${escapeHtml(t.symbol)}</td><td>${escapeHtml(t.strategy)}</td><td>${escapeHtml(t.legs)}</td><td>${escapeHtml(t.expiration)}</td><td>${t.contracts}</td><td>${escapeHtml(t.trade_type)}</td><td>${num(t.entry_price)}</td><td>${t.exit_price===''?'—':num(t.exit_price)}</td><td>${num(t.fees)}</td><td>${escapeHtml(t.status)}</td><td>${pnl==null?'Open':`<span class="${pnl>=0?'positive':'negative'}">${formatMoney(pnl)}</span>`}</td><td>${escapeHtml(t.notes)}</td><td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td><td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button>Delete</button></form></td></tr>`}).join('');
+  return optionShell('Option Journal',`<section class="card"><h1>Option Journal</h1><form method="get"><div class="grid"><div><label>Date From</label><input type="date" name="date_from" value="${escapeHtml(f.date_from)}"></div><div><label>Date To</label><input type="date" name="date_to" value="${escapeHtml(f.date_to)}"></div><div><label>Symbol</label><input name="symbol" value="${escapeHtml(f.symbol)}"></div><div><label>Strategy</label><select name="strategy"><option value="">All</option>${OPTION_STRATEGIES.map(v=>`<option${v===f.strategy?' selected':''}>${v}</option>`).join('')}</select></div><div><label>Status</label><select name="status"><option value="">All</option>${OPTION_STATUSES.map(v=>`<option${v===f.status?' selected':''}>${v}</option>`).join('')}</select></div></div><div class="actions"><button class="primary">Apply Filters</button><a class="btn" href="/admin/options">Clear Filters</a><a class="btn" href="/admin/options/new">New Option Trade</a></div></form></section><section class="card table">${rows?`<table><thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Fees</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Edit</th><th>Delete</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No option trades match these filters.</div>'}</section>`);
+}
+
+function optionAdmin(req,res) {
+  setPrivateNoStoreHeaders(res);
+  if (!ADMIN_DASHBOARD_KEY) { res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.'); return false; }
+  if (!isAdminAuthorized(req)) { res.redirect('/admin/login'); return false; }
+  return true;
+}
+
+app.get('/admin/options/new',(req,res)=>{if(optionAdmin(req,res))res.send(renderOptionForm({trade_date:new Date().toISOString().slice(0,10)}));});
+app.get('/admin/options',async(req,res)=>{try{if(!optionAdmin(req,res))return;const f={date_from:String(req.query.date_from||''),date_to:String(req.query.date_to||''),symbol:String(req.query.symbol||'').trim().toUpperCase(),strategy:String(req.query.strategy||''),status:String(req.query.status||'')};let {trades}=await optionSheetData();trades=trades.filter(t=>(!f.date_from||t.trade_date>=f.date_from)&&(!f.date_to||t.trade_date<=f.date_to)&&(!f.symbol||t.symbol.includes(f.symbol))&&(!f.strategy||t.strategy===f.strategy)&&(!f.status||t.status===f.status)).sort((a,b)=>b.trade_date.localeCompare(a.trade_date));res.send(renderOptionJournal(trades,f));}catch(e){console.error('Option journal error:',e);res.status(500).send('Option journal error');}});
+app.post('/admin/options',async(req,res)=>{try{if(!optionAdmin(req,res))return;if(!optionSameOrigin(req))return res.status(403).send('Invalid request origin.');await saveNewOptionTrade(normalizeOptionTrade(req.body));res.redirect('/admin/options');}catch(e){res.status(400).send(renderOptionForm(req.body||{},e.message));}});
+app.get('/admin/options/:id/edit',async(req,res)=>{try{if(!optionAdmin(req,res))return;const found=await locateOptionTrade(req.params.id);if(!found.trade)return res.status(404).send('Option trade not found.');res.send(renderOptionForm(found.trade));}catch(e){res.status(500).send('Option journal error');}});
+app.post('/admin/options/:id',async(req,res)=>{try{if(!optionAdmin(req,res))return;if(!optionSameOrigin(req))return res.status(403).send('Invalid request origin.');if(!/^[0-9a-f-]{36}$/i.test(req.params.id))return res.status(400).send('Invalid ID.');if(!await replaceOptionTrade(req.params.id,normalizeOptionTrade(req.body)))return res.status(404).send('Option trade not found.');res.redirect('/admin/options');}catch(e){res.status(400).send(renderOptionForm({...req.body,id:req.params.id},e.message));}});
+app.post('/admin/options/:id/delete',async(req,res)=>{try{if(!optionAdmin(req,res))return;if(!optionSameOrigin(req))return res.status(403).send('Invalid request origin.');if(!/^[0-9a-f-]{36}$/i.test(req.params.id))return res.status(400).send('Invalid ID.');if(!await removeOptionTrade(req.params.id))return res.status(404).send('Option trade not found.');res.redirect('/admin/options');}catch(e){res.status(500).send('Option journal error');}});
 
 app.get('/', (req, res) => {
   res.status(200).send(isRussianRequest(req) ? renderLandingHtmlRu() : renderLandingHtml());

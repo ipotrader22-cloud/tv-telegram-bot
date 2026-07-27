@@ -1063,7 +1063,51 @@ The following should be added when next inspected:
 
 ---
 
-## 19. Handbook Update Protocol
+## 19. Owner Option Trading Journal
+
+The website provides an owner-only manual option journal for personal
+recordkeeping. It uses `ADMIN_DASHBOARD_KEY`, private no-store headers, POST for
+all mutations, same-origin validation, and immutable UUID record identifiers.
+
+Routes:
+
+```text
+GET  /admin/options/new
+GET  /admin/options
+POST /admin/options
+GET  /admin/options/:id/edit
+POST /admin/options/:id
+POST /admin/options/:id/delete
+```
+
+The feature automatically creates an isolated `Option Journal` worksheet when
+absent and writes user values in `RAW` mode. Columns A:S are:
+
+```text
+ID, Trade Date, Entry Time, Symbol, Strategy, Legs, Expiration, Contracts,
+Multiplier, Trade Type, Entry Price, Exit Date, Exit Time, Exit Price, Fees,
+Status, Notes, Created At, Updated At
+```
+
+P&L is derived only for closed records and is never entered manually:
+
+```text
+Credit: (entry price - exit price) × contracts × multiplier - fees
+Debit:  (exit price - entry price) × contracts × multiplier - fees
+```
+
+This feature is recordkeeping only. It does not call the IB bridge, TradingView
+handlers, Telegram helpers, VECO lifecycle code, or broker execution. It does
+not read from or write to `Trades`, `Pending`, `Open Positions`,
+`Closed Trades`, or legacy `Positions`.
+
+Rollback: revert the option-journal `app.js` and handbook patch and redeploy the
+prior confirmed commit. The isolated worksheet may remain as inert historical
+data; deleting it requires separate explicit approval.
+
+---
+
+## 20. Handbook Update Protocol
 
 When a future change is made:
 
