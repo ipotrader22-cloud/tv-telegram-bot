@@ -1080,6 +1080,18 @@ POST /admin/options/:id
 POST /admin/options/:id/delete
 ```
 
+The owner-only `GET /admin/live` page includes an Option Journal preview below
+the existing Live Dashboard sections. It shows the latest 20 option records,
+newest first, without filters, and links to the existing create, full-journal,
+edit, and POST delete routes. Full filtering remains available only on
+`GET /admin/options`.
+
+Legs are formatted for display only. Stored values remain unchanged. The
+journal tables split display text on line breaks, `/`, semicolons, commas, and
+repeated `Long` or `Short` markers; each resulting leg is HTML-escaped and
+rendered on its own compact line. The entry form recommends entering one leg
+per line for the clearest display.
+
 The feature automatically creates an isolated `Option Journal` worksheet when
 absent and writes user values in `RAW` mode. Columns A:S are:
 
@@ -1101,9 +1113,18 @@ handlers, Telegram helpers, VECO lifecycle code, or broker execution. It does
 not read from or write to `Trades`, `Pending`, `Open Positions`,
 `Closed Trades`, or legacy `Positions`.
 
-Rollback: revert the option-journal `app.js` and handbook patch and redeploy the
-prior confirmed commit. The isolated worksheet may remain as inert historical
-data; deleting it requires separate explicit approval.
+Option Journal data remains owner-only behind `ADMIN_DASHBOARD_KEY`; it is not
+rendered on `/dashboard`, public pages, public APIs, Telegram, or VECO
+execution-backed Sheets. Failure to load the isolated worksheet is caught and
+logged server-side without exposing internal details. The rest of
+`GET /admin/live` continues rendering and shows only a restrained warning in
+the journal section.
+
+Rollback: revert the live-dashboard journal and multiline-leg display commit,
+then redeploy the prior confirmed commit. This removes the embedded preview and
+restores the prior journal presentation without changing saved records or the
+worksheet schema. The isolated worksheet may remain as inert historical data;
+deleting it requires separate explicit approval.
 
 ---
 
