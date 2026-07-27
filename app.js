@@ -6366,6 +6366,7 @@ function renderMoney(value) {
 
 function renderDashboardHtml(data) {
   const s = data.summary;
+  const optionJournal = data.option_journal || {};
 
   // Public open positions intentionally show only confirmed trade facts.
   // No current quote, running P&L, quote source, or distance calculations are rendered here.
@@ -6416,6 +6417,23 @@ function renderDashboardHtml(data) {
       <td>${escapeHtml(row.event)}</td>
     </tr>
   `).join('');
+
+  const optionRows = (optionJournal.trades || []).map(t => {
+    const pnl = optionPnl(t);
+    return `<tr>
+      <td>${escapeHtml(t.trade_date)}</td>
+      <td class="ticker">${escapeHtml(t.symbol)}</td>
+      <td>${escapeHtml(t.strategy)}</td>
+      <td class="option-legs-cell">${renderOptionLegs(t.legs)}</td>
+      <td>${escapeHtml(t.expiration)}</td>
+      <td>${num(t.contracts, 0)}</td>
+      <td>${escapeHtml(t.trade_type)}</td>
+      <td>${num(t.entry_price)}</td>
+      <td>${t.exit_price === '' ? '—' : num(t.exit_price)}</td>
+      <td>${escapeHtml(t.status)}</td>
+      <td>${pnl == null ? 'Open' : `<span class="${pnl >= 0 ? 'positive' : 'negative'}">${formatMoney(pnl)}</span>`}</td>
+    </tr>`;
+  }).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -6727,6 +6745,35 @@ function renderDashboardHtml(data) {
       font-weight: 400;
     }
 
+    .option-legs {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 150px;
+    }
+
+    .option-leg {
+      line-height: 1.25;
+      white-space: normal;
+    }
+
+    .option-legs-cell {
+      text-align: left;
+      white-space: normal;
+      max-width: 260px;
+    }
+
+    .journal-warning {
+      margin: 14px 18px;
+      padding: 12px 14px;
+      border: 1px solid #ecd49b;
+      border-radius: 14px;
+      color: #76500a;
+      background: #fff9e8;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
     .cell-note {
       margin-top: 3px;
       color: var(--muted2);
@@ -6923,6 +6970,28 @@ function renderDashboardHtml(data) {
         </table>
         ` : `<div class="empty">No closed trades yet.</div>`}
       </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Option Journal</h2>
+        <span>Latest 20 option trades</span>
+      </div>
+      ${optionJournal.error
+        ? `<div class="journal-warning">Option Journal is temporarily unavailable</div>`
+        : `<div class="table-wrap">
+          ${optionRows ? `
+          <table style="min-width:1120px">
+            <thead>
+              <tr>
+                <th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th>
+                <th>Expiration</th><th>Contracts</th><th>Credit/Debit</th>
+                <th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody>${optionRows}</tbody>
+          </table>` : `<div class="empty">No option trades yet.</div>`}
+        </div>`}
     </div>
 
     <div class="footer">
@@ -8368,6 +8437,16 @@ app.get('/dashboard', async (req, res) => {
     }
 
     const data = await getDashboardData();
+    data.option_journal = { trades: [], error: false };
+
+    try {
+      const journal = await optionSheetData();
+      data.option_journal.trades = newestOptionTrades(journal.trades, 20);
+    } catch (journalErr) {
+      console.error('Public dashboard option journal error:', journalErr);
+      data.option_journal.error = true;
+    }
+
     res.status(200).send(renderDashboardHtml(data));
   } catch (err) {
     console.error('Dashboard error:', err);
