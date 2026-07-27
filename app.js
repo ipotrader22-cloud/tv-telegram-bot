@@ -6990,6 +6990,7 @@ function renderAdminLoginHtml(errorMessage = '') {
 function renderOwnerLiveDashboardHtml(data) {
   const s = data.summary || {};
   const q = data.quote_status || {};
+  const optionJournal = data.option_journal || {};
 
   const openRows = (data.open_positions || []).map(row => `
     <tr class="quote-row"
@@ -7030,6 +7031,26 @@ function renderOwnerLiveDashboardHtml(data) {
       <td>${escapeHtml(row.status)}</td>
     </tr>
   `).join('');
+
+  const optionRows = (optionJournal.trades || []).map(t => {
+    const pnl = optionPnl(t);
+    return `<tr>
+      <td>${escapeHtml(t.trade_date)}</td>
+      <td class="ticker">${escapeHtml(t.symbol)}</td>
+      <td>${escapeHtml(t.strategy)}</td>
+      <td class="legs-cell">${renderOptionLegs(t.legs)}</td>
+      <td>${escapeHtml(t.expiration)}</td>
+      <td>${num(t.contracts, 0)}</td>
+      <td>${escapeHtml(t.trade_type)}</td>
+      <td>${num(t.entry_price)}</td>
+      <td>${t.exit_price === '' ? '—' : num(t.exit_price)}</td>
+      <td>${escapeHtml(t.status)}</td>
+      <td>${pnl == null ? 'Open' : `<span class="${pnl >= 0 ? 'positive' : 'negative'}">${formatMoney(pnl)}</span>`}</td>
+      <td class="notes-cell">${escapeHtml(t.notes)}</td>
+      <td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td>
+      <td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button class="table-action" type="submit">Delete</button></form></td>
+    </tr>`;
+  }).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -7077,6 +7098,12 @@ function renderOwnerLiveDashboardHtml(data) {
     .quote-pill.stale { color:var(--amber); background:#fff7df; border-color:#ecd49b; }
     .cell-note { color:var(--muted2); font-size:10px; margin-top:3px; }
     .empty { padding:20px; color:var(--muted); }
+    .section-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .option-legs { display:flex; flex-direction:column; gap:4px; min-width:150px; }
+    .option-leg { line-height:1.25; white-space:normal; }
+    .legs-cell,.notes-cell { text-align:left; white-space:normal; max-width:260px; }
+    .table-action { padding:5px 9px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); cursor:pointer; }
+    .journal-warning { margin:14px 17px; padding:12px 14px; border:1px solid #ecd49b; border-radius:14px; color:#76500a; background:#fff9e8; font-size:12px; }
     .owner-note { margin-top:16px; padding:13px 15px; border:1px solid #ecd49b; border-radius:15px; color:#76500a; background:#fff9e8; font-size:12px; line-height:1.5; }
     @media(max-width:900px){ .cards{grid-template-columns:repeat(2,1fr)} .wrap{padding:12px} }
   </style>
@@ -7085,13 +7112,14 @@ function renderOwnerLiveDashboardHtml(data) {
   <div class="wrap">
     <div class="top">
       <div class="links">
+        <a class="btn primary" href="/admin/live">Live Dashboard</a>
         <a class="btn" href="/dashboard">Public Dashboard View</a>
         <a class="btn" href="/admin/options">Option Journal</a>
         <a class="btn" href="/admin/options/new">New Option Trade</a>
         <a class="btn" href="/">Home</a>
       </div>
       <div class="links">
-        <a class="btn primary" href="/admin/logout">Owner Logout</a>
+        <a class="btn" href="/admin/logout">Owner Logout</a>
       </div>
     </div>
 
@@ -7141,6 +7169,25 @@ function renderOwnerLiveDashboardHtml(data) {
           <tbody>${pendingRows}</tbody>
         </table>` : `<div class="empty">No pending / working orders.</div>`}
       </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Option Journal</h2>
+        <div class="section-actions">
+          <a class="btn primary" href="/admin/options/new">New Option Trade</a>
+          <a class="btn" href="/admin/options">View Full Journal</a>
+        </div>
+      </div>
+      ${optionJournal.error
+        ? `<div class="journal-warning">Option Journal is temporarily unavailable. Existing Live Dashboard data is unaffected.</div>`
+        : `<div class="table-wrap">
+          ${optionRows ? `
+          <table style="min-width:1450px">
+            <thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Edit</th><th>Delete</th></tr></thead>
+            <tbody>${optionRows}</tbody>
+          </table>` : `<div class="empty">No option trades yet.</div>`}
+        </div>`}
     </div>
 
     <div class="owner-note">
@@ -7831,9 +7878,36 @@ function optionPnl(t) {
   return difference*t.contracts*t.multiplier-t.fees;
 }
 
-function optionShell(title, body) {
+function optionLegItems(value) {
+  return String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\/;,]+/g, '\n')
+    .replace(/\s+(?=(?:Long|Short)\b)/gi, '\n')
+    .split('\n')
+    .map(leg => leg.trim())
+    .filter(Boolean);
+}
+
+function renderOptionLegs(value) {
+  const legs = optionLegItems(value);
+  if (!legs.length) return '<span class="option-leg">—</span>';
+  return `<div class="option-legs">${legs.map(leg => `<div class="option-leg">${escapeHtml(leg)}</div>`).join('')}</div>`;
+}
+
+function newestOptionTrades(trades, limit = 20) {
+  return [...(trades || [])]
+    .sort((a, b) => {
+      const aKey = `${a.trade_date || ''}T${a.entry_time || '00:00'}|${a.created_at || ''}`;
+      const bKey = `${b.trade_date || ''}T${b.entry_time || '00:00'}|${b.created_at || ''}`;
+      return bKey.localeCompare(aKey);
+    })
+    .slice(0, limit);
+}
+
+function optionShell(title, body, activePage = 'journal') {
+  const activeClass = page => page === activePage ? ' primary' : '';
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} | Vixale</title><style>
-  :root{--bg:#f3faf6;--card:#fff;--ink:#121815;--muted:#63716a;--line:#dfe9e3;--green:#008f4a;--red:#d8424f}*{box-sizing:border-box}body,input,select,textarea,button{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{margin:0;background:linear-gradient(#f8fcfa,var(--bg),#fff);color:var(--ink)}b,strong,h1{font-weight:500}.wrap{max-width:1440px;margin:auto;padding:24px}.nav,.actions{display:flex;gap:10px;flex-wrap:wrap}.nav{margin-bottom:16px}.btn,button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}.primary{background:#101613;color:#fff}.card{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:0 18px 54px rgba(21,48,34,.08);margin-bottom:16px}h1{margin:0 0 8px}p{color:var(--muted)}.notice{background:#e9fff3;border:1px solid #bfe9d2;border-radius:16px;padding:14px;color:#087743}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.full{grid-column:1/-1}label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}textarea{min-height:90px}.actions{margin-top:18px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1180px}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}th{color:var(--muted);font-weight:500}.positive{color:var(--green)}.negative{color:var(--red)}.empty{text-align:center;padding:40px;color:var(--muted)}@media(max-width:760px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}}</style></head><body><main class="wrap"><nav class="nav"><a class="btn" href="/admin/live">Live Dashboard</a><a class="btn" href="/admin/options">Option Journal</a><a class="btn primary" href="/admin/options/new">New Option Trade</a><a class="btn" href="/admin/logout">Log Out</a></nav>${body}</main></body></html>`;
+  :root{--bg:#f3faf6;--card:#fff;--ink:#121815;--muted:#63716a;--line:#dfe9e3;--green:#008f4a;--red:#d8424f}*{box-sizing:border-box}body,input,select,textarea,button{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{margin:0;background:linear-gradient(#f8fcfa,var(--bg),#fff);color:var(--ink)}b,strong,h1{font-weight:500}.wrap{max-width:1440px;margin:auto;padding:24px}.nav,.actions{display:flex;gap:10px;flex-wrap:wrap}.nav{margin-bottom:16px}.btn,button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}.primary{background:#101613;color:#fff}.card{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:0 18px 54px rgba(21,48,34,.08);margin-bottom:16px}h1{margin:0 0 8px}p{color:var(--muted)}.notice{background:#e9fff3;border:1px solid #bfe9d2;border-radius:16px;padding:14px;color:#087743}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.full{grid-column:1/-1}label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.helper-text{margin:6px 0 0;color:var(--muted);font-size:12px}input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}textarea{min-height:90px}.actions{margin-top:18px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1180px}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}th{color:var(--muted);font-weight:500}.positive{color:var(--green)}.negative{color:var(--red)}.option-legs{display:flex;flex-direction:column;gap:4px;min-width:150px}.option-leg{line-height:1.25}.empty{text-align:center;padding:40px;color:var(--muted)}@media(max-width:760px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}}</style></head><body><main class="wrap"><nav class="nav"><a class="btn${activeClass('live')}" href="/admin/live">Live Dashboard</a><a class="btn${activeClass('journal')}" href="/admin/options">Option Journal</a><a class="btn${activeClass('new')}" href="/admin/options/new">New Option Trade</a><a class="btn" href="/admin/logout">Log Out</a></nav>${body}</main></body></html>`;
 }
 
 function optionSelect(name, values, selected) {
@@ -7844,15 +7918,15 @@ function renderOptionForm(trade={}, error='') {
   const editing=Boolean(trade.id), v=k=>escapeHtml(trade[k]??'');
   return optionShell(editing?'Edit Option Trade':'Option Trading',`<section class="card"><h1>${editing?'Edit Option Trade':'Option Trading'}</h1><p class="notice">Recordkeeping only — this page does not place broker orders.</p>${error?`<p class="negative">${escapeHtml(error)}</p>`:''}<form method="post" action="${editing?`/admin/options/${encodeURIComponent(trade.id)}`:'/admin/options'}"><div class="grid">
   <div><label>Trade Date *</label><input type="date" name="trade_date" value="${v('trade_date')}" required></div><div><label>Entry Time</label><input type="time" name="entry_time" value="${v('entry_time')}"></div><div><label>Symbol *</label><input name="symbol" maxlength="20" value="${v('symbol')}" required></div>
-  <div><label>Strategy *</label>${optionSelect('strategy',OPTION_STRATEGIES,trade.strategy||'Straddle')}</div><div class="full"><label>Legs *</label><textarea name="legs" maxlength="500" required>${v('legs')}</textarea></div><div><label>Expiration Date *</label><input type="date" name="expiration" value="${v('expiration')}" required></div>
+  <div><label>Strategy *</label>${optionSelect('strategy',OPTION_STRATEGIES,trade.strategy||'Straddle')}</div><div class="full"><label>Legs *</label><textarea name="legs" maxlength="500" required>${v('legs')}</textarea><p class="helper-text">Enter one leg per line for the clearest journal display.</p></div><div><label>Expiration Date *</label><input type="date" name="expiration" value="${v('expiration')}" required></div>
   <div><label>Contracts *</label><input type="number" min="1" step="1" name="contracts" value="${v('contracts')||1}" required></div><div><label>Contract Multiplier *</label><input type="number" min="1" step="1" name="multiplier" value="${v('multiplier')||100}" required></div><div><label>Trade Type *</label>${optionSelect('trade_type',OPTION_TRADE_TYPES,trade.trade_type||'Credit')}</div>
   <div><label>Entry Price *</label><input type="number" min="0" step="0.01" name="entry_price" value="${v('entry_price')}" required></div><div><label>Exit Date</label><input type="date" name="exit_date" value="${v('exit_date')}"></div><div><label>Exit Time</label><input type="time" name="exit_time" value="${v('exit_time')}"></div>
   <div><label>Exit Price</label><input type="number" min="0" step="0.01" name="exit_price" value="${v('exit_price')}"></div><div><label>Fees</label><input type="number" min="0" step="0.01" name="fees" value="${v('fees')||0}"></div><div><label>Status *</label>${optionSelect('status',OPTION_STATUSES,trade.status||'Open')}</div>
-  <div class="full"><label>Notes</label><textarea name="notes" maxlength="2000">${v('notes')}</textarea></div></div><div class="actions"><button class="primary">Save Trade</button><a class="btn" href="/admin/options">Cancel</a></div></form></section>`);
+  <div class="full"><label>Notes</label><textarea name="notes" maxlength="2000">${v('notes')}</textarea></div></div><div class="actions"><button class="primary">Save Trade</button><a class="btn" href="/admin/options">Cancel</a></div></form></section>`, editing ? 'journal' : 'new');
 }
 
 function renderOptionJournal(trades,f) {
-  const rows=trades.map(t=>{const pnl=optionPnl(t);return `<tr><td>${escapeHtml(t.trade_date)}</td><td>${escapeHtml(t.symbol)}</td><td>${escapeHtml(t.strategy)}</td><td>${escapeHtml(t.legs)}</td><td>${escapeHtml(t.expiration)}</td><td>${t.contracts}</td><td>${escapeHtml(t.trade_type)}</td><td>${num(t.entry_price)}</td><td>${t.exit_price===''?'—':num(t.exit_price)}</td><td>${num(t.fees)}</td><td>${escapeHtml(t.status)}</td><td>${pnl==null?'Open':`<span class="${pnl>=0?'positive':'negative'}">${formatMoney(pnl)}</span>`}</td><td>${escapeHtml(t.notes)}</td><td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td><td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button>Delete</button></form></td></tr>`}).join('');
+  const rows=trades.map(t=>{const pnl=optionPnl(t);return `<tr><td>${escapeHtml(t.trade_date)}</td><td>${escapeHtml(t.symbol)}</td><td>${escapeHtml(t.strategy)}</td><td>${renderOptionLegs(t.legs)}</td><td>${escapeHtml(t.expiration)}</td><td>${t.contracts}</td><td>${escapeHtml(t.trade_type)}</td><td>${num(t.entry_price)}</td><td>${t.exit_price===''?'—':num(t.exit_price)}</td><td>${num(t.fees)}</td><td>${escapeHtml(t.status)}</td><td>${pnl==null?'Open':`<span class="${pnl>=0?'positive':'negative'}">${formatMoney(pnl)}</span>`}</td><td>${escapeHtml(t.notes)}</td><td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td><td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button>Delete</button></form></td></tr>`}).join('');
   return optionShell('Option Journal',`<section class="card"><h1>Option Journal</h1><form method="get"><div class="grid"><div><label>Date From</label><input type="date" name="date_from" value="${escapeHtml(f.date_from)}"></div><div><label>Date To</label><input type="date" name="date_to" value="${escapeHtml(f.date_to)}"></div><div><label>Symbol</label><input name="symbol" value="${escapeHtml(f.symbol)}"></div><div><label>Strategy</label><select name="strategy"><option value="">All</option>${OPTION_STRATEGIES.map(v=>`<option${v===f.strategy?' selected':''}>${v}</option>`).join('')}</select></div><div><label>Status</label><select name="status"><option value="">All</option>${OPTION_STATUSES.map(v=>`<option${v===f.status?' selected':''}>${v}</option>`).join('')}</select></div></div><div class="actions"><button class="primary">Apply Filters</button><a class="btn" href="/admin/options">Clear Filters</a><a class="btn" href="/admin/options/new">New Option Trade</a></div></form></section><section class="card table">${rows?`<table><thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Fees</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Edit</th><th>Delete</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No option trades match these filters.</div>'}</section>`);
 }
 
@@ -8207,6 +8281,16 @@ app.get('/admin/live', async (req, res) => {
     }
 
     const data = await getOwnerDashboardData();
+    data.option_journal = { trades: [], error: false };
+
+    try {
+      const journal = await optionSheetData();
+      data.option_journal.trades = newestOptionTrades(journal.trades, 20);
+    } catch (journalErr) {
+      console.error('Owner live option journal error:', journalErr);
+      data.option_journal.error = true;
+    }
+
     return res.status(200).send(renderOwnerLiveDashboardHtml(data));
   } catch (err) {
     console.error('Owner live dashboard error:', err);
