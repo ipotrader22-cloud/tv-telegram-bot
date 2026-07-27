@@ -606,6 +606,10 @@ Authorization uses:
 
 The dashboard reads from Google Sheets. TWS is the execution source of truth; Sheets is the displayed operational ledger.
 
+The authorized public dashboard also includes a read-only Option Journal table
+showing the latest 20 option records, newest first. Journal loading is isolated
+so a worksheet error does not prevent the existing dashboard from rendering.
+
 ### 10.2 Operational admin surfaces
 
 VECO does not currently have one unified admin panel. Operational administration is split across:
@@ -1113,18 +1117,26 @@ handlers, Telegram helpers, VECO lifecycle code, or broker execution. It does
 not read from or write to `Trades`, `Pending`, `Open Positions`,
 `Closed Trades`, or legacy `Positions`.
 
-Option Journal data remains owner-only behind `ADMIN_DASHBOARD_KEY`; it is not
-rendered on `/dashboard`, public pages, public APIs, Telegram, or VECO
-execution-backed Sheets. Failure to load the isolated worksheet is caught and
-logged server-side without exposing internal details. The rest of
-`GET /admin/live` continues rendering and shows only a restrained warning in
-the journal section.
+The authorized public `GET /dashboard` view displays only Trade Date, Symbol,
+Strategy, Legs, Expiration, Contracts, Credit/Debit, Entry Price, Exit Price,
+Status, and derived P&L. It shows the latest 20 records, newest first, without
+filters. It never renders Notes, edit/delete controls, create buttons, internal
+IDs, Created At, Updated At, owner-authentication details, worksheet
+credentials, or internal errors.
 
-Rollback: revert the live-dashboard journal and multiline-leg display commit,
-then redeploy the prior confirmed commit. This removes the embedded preview and
-restores the prior journal presentation without changing saved records or the
-worksheet schema. The isolated worksheet may remain as inert historical data;
-deleting it requires separate explicit approval.
+Owner mutation surfaces remain protected by `ADMIN_DASHBOARD_KEY`. Option
+Journal records are not published through public APIs, Telegram, or VECO
+execution-backed Sheets. Journal read failures on either dashboard are caught
+and logged server-side without exposing internal details; existing dashboard
+content continues rendering with a restrained warning only in the journal
+section.
+
+Rollback: revert the applicable dashboard journal commit and redeploy the prior
+confirmed commit. Reverting the public-dashboard patch removes only the public
+read-only table; owner journal pages and the owner Live Dashboard preview remain
+available. Rollback does not change saved records or the worksheet schema. The
+isolated worksheet may remain as inert historical data; deleting it requires
+separate explicit approval.
 
 ---
 
