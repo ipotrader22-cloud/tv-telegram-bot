@@ -7733,10 +7733,19 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
   const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
   const brokerEodWatchdog = Boolean(reqBody && reqBody.broker_eod_watchdog);
   const brokerEodKey = String(reqBody?.eod_idempotency_key || '').trim();
+  const callbackStrategy = String(reqBody?.strategy || parsedRow?.strategy || '').toUpperCase();
+
+  if (
+    !bridgeCallback &&
+    parsedRow?.event === 'EOD' &&
+    ['SHREK', 'SHREK_1_4'].includes(callbackStrategy)
+  ) {
+    console.log('Ignored Shrek Pine EOD alert; local 15:59 bridge watchdog is execution authority:', bridgeLogPrefix(parsedRow));
+    return;
+  }
 
   if (brokerEodWatchdog) {
     const rawEvent = String(parsedRow?.raw_event || '').toUpperCase();
-    const strategy = String(reqBody?.strategy || parsedRow?.strategy || '').toUpperCase();
     const validKey = /^\d{4}-\d{2}-\d{2}:[A-Z0-9.^-]+:(SHREK|SHREK_1_4)$/.test(brokerEodKey);
 
     if (
@@ -7744,7 +7753,7 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
       parsedRow?.event !== 'EOD' ||
       rawEvent !== 'EOD_CLOSE' ||
       !hasConfirmedCloseExecution(reqBody) ||
-      !['SHREK', 'SHREK_1_4'].includes(strategy) ||
+      !['SHREK', 'SHREK_1_4'].includes(callbackStrategy) ||
       !validKey
     ) {
       console.log('Ignored invalid broker EOD watchdog callback:', bridgeLogPrefix(parsedRow));
