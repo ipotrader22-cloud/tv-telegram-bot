@@ -59,6 +59,7 @@ function createMockSheets() {
   };
   const ids = Object.fromEntries(Object.keys(rows).map((name, index) => [name, index + 1]));
   const namesById = Object.fromEntries(Object.entries(ids).map(([name, id]) => [id, name]));
+  const controls = { fail_trades_append: 0 };
 
   function parseRange(range) {
     const [sheetName, cells = 'A:Z'] = range.split('!');
@@ -95,6 +96,10 @@ function createMockSheets() {
       },
       async append({ range, requestBody }) {
         const { sheetName } = parseRange(range);
+        if (sheetName === 'Trades' && controls.fail_trades_append > 0) {
+          controls.fail_trades_append--;
+          throw new Error('mock Trades append failure');
+        }
         for (const row of requestBody.values) rows[sheetName].push([...row]);
         const rowNumber = rows[sheetName].length;
         return { data: { updates: { updatedRange: `${sheetName}!A${rowNumber}:Z${rowNumber}` } } };
@@ -108,13 +113,20 @@ function createMockSheets() {
         });
         return { data: {} };
       },
-      async batchUpdate() {
+      async batchUpdate({ requestBody }) {
+        for (const update of requestBody.data || []) {
+          const { sheetName, startColumn, rowNumber } = parseRange(update.range);
+          const target = rows[sheetName][rowNumber - 1];
+          update.values[0].forEach((value, index) => {
+            target[startColumn + index] = value;
+          });
+        }
         return { data: {} };
       },
     },
   };
 
-  return { spreadsheets, rows };
+  return { spreadsheets, rows, controls };
 }
 
 function edgePayload(event, setupId, overrides = {}) {
@@ -142,23 +154,35 @@ function edgePayload(event, setupId, overrides = {}) {
   };
 }
 
+function countRowsBySetupId(rows, rawColumn, setupId) {
+  return rows
+    .slice(1)
+    .filter(row => JSON.parse(row[rawColumn] || '{}').setup_id === setupId)
+    .length;
+}
+
 async function run() {
   const sheets = createMockSheets();
   const telegram = [];
   const bridgeNetwork = [];
-  const createLifecycleContext = () => {
+  const createLifecycleContext = ({
+    sheetStore = sheets,
+    telegramStore = telegram,
+    bridgeStore = bridgeNetwork,
+    telegramSender,
+  } = {}) => {
     const dependencies = {
-      sheets,
-      sendTelegram: async message => {
-        telegram.push(message);
+      sheets: sheetStore,
+      sendTelegram: telegramSender || (async message => {
+        telegramStore.push(message);
         return { ok: true };
-      },
+      }),
       forwardToBridge: async (body, row) => {
         const decision = shouldForwardToBridge(body, row);
         if (!decision.ok) {
           return { forwarded: false, skipped: true, reason: decision.reason };
         }
-        bridgeNetwork.push(row.event);
+        bridgeStore.push(row.event);
         return { forwarded: true };
       },
     };
@@ -214,7 +238,7 @@ async function run() {
     'duplicate ENTRY_FILL sends no additional Telegram OPEN'
   );
   assert.strictEqual(duplicateFill.finalRow.status, 'ignored_duplicate_entry_fill');
-  assert.strictEqual(duplicateFill.finalRow.duplicate_source, 'Open Positions');
+  assert.strictEqual(duplicateFill.finalRow.entry_fill_publication_state.publication_complete, true);
   assert.strictEqual(
     bridgeNetwork.filter(event => event === 'FILL').length,
     0,
@@ -228,7 +252,7 @@ async function run() {
     'ignored_duplicate_entry_fill',
     'persistent Sheets state rejects duplicate after lifecycle context recreation'
   );
-  assert.strictEqual(restartDuplicate.finalRow.duplicate_source, 'Open Positions');
+  assert.strictEqual(restartDuplicate.finalRow.entry_fill_publication_state.publication_complete, true);
   assert.strictEqual(sheets.rows.Pending.length, 1, 'restart duplicate leaves Pending removed');
   assert.strictEqual(sheets.rows['Open Positions'].length, 2, 'restart duplicate preserves one Open row');
   assert.strictEqual(sheets.rows.Trades.length, 2, 'restart duplicate preserves one Trades FILL');
@@ -264,6 +288,198 @@ async function run() {
   assert.strictEqual(parsedCancel.timeframe, '60');
   assert.strictEqual(parsedCancel.flip_bar_time, 1785261600000);
   assert.strictEqual(parsedCancel.setup_id, canceledId);
+
+  // A. Telegram failure recovery.
+  const telegramFailureSheets = createMockSheets();
+  const telegramFailureMessages = [];
+  const telegramFailureBridge = [];
+  let failNextOpenTelegram = true;
+  const telegramFailureLifecycle = createLifecycleContext({
+    sheetStore: telegramFailureSheets,
+    telegramStore: telegramFailureMessages,
+    bridgeStore: telegramFailureBridge,
+    telegramSender: async message => {
+      if (message.includes('Vixale Edge opened') && failNextOpenTelegram) {
+        failNextOpenTelegram = false;
+        return { ok: false, description: 'mock Telegram failure' };
+      }
+      telegramFailureMessages.push(message);
+      return { ok: true };
+    },
+  });
+  const telegramFailureId = 'VIXALE_EDGE:MSFT:60:LONG:1785270000000';
+  const telegramFailurePending = edgePayload('PENDING_SETUP', telegramFailureId, {
+    symbol: 'MSFT',
+    flip_bar_time: 1785270000000,
+  });
+  const telegramFailureFill = edgePayload('ENTRY_FILL', telegramFailureId, {
+    symbol: 'MSFT',
+    flip_bar_time: 1785270000000,
+    render_forwarded_at: '2026-07-28T11:00:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  });
+  await telegramFailureLifecycle(telegramFailurePending);
+  await assert.rejects(
+    telegramFailureLifecycle(telegramFailureFill),
+    error => error.retryable === true
+  );
+  assert.strictEqual(
+    countRowsBySetupId(telegramFailureSheets.rows['Open Positions'], 11, telegramFailureId),
+    1,
+    'Telegram failure keeps the one successful Open row'
+  );
+  assert.strictEqual(
+    countRowsBySetupId(telegramFailureSheets.rows.Trades, 10, telegramFailureId),
+    1,
+    'Telegram failure keeps the one successful Trades FILL'
+  );
+  const telegramRecovery = await telegramFailureLifecycle(telegramFailureFill);
+  assert.strictEqual(telegramRecovery.finalRow.status, 'entry_fill_publication_complete');
+  assert.strictEqual(
+    countRowsBySetupId(telegramFailureSheets.rows['Open Positions'], 11, telegramFailureId),
+    1,
+    'Telegram retry does not duplicate Open'
+  );
+  assert.strictEqual(
+    countRowsBySetupId(telegramFailureSheets.rows.Trades, 10, telegramFailureId),
+    1,
+    'Telegram retry does not duplicate Trades'
+  );
+  assert.strictEqual(
+    telegramFailureMessages.filter(message => message.includes('Vixale Edge opened')).length,
+    1,
+    'Telegram retry publishes one successful OPEN'
+  );
+  assert.strictEqual(
+    JSON.parse(telegramFailureSheets.rows['Open Positions'][1][11]).publication_complete,
+    true
+  );
+
+  // B. Partial ledger recovery.
+  const partialSheets = createMockSheets();
+  const partialTelegram = [];
+  const partialBridge = [];
+  const partialLifecycle = createLifecycleContext({
+    sheetStore: partialSheets,
+    telegramStore: partialTelegram,
+    bridgeStore: partialBridge,
+  });
+  const partialId = 'VIXALE_EDGE:NVDA:60:LONG:1785273600000';
+  const partialPending = edgePayload('PENDING_SETUP', partialId, {
+    symbol: 'NVDA',
+    flip_bar_time: 1785273600000,
+  });
+  const partialFill = edgePayload('ENTRY_FILL', partialId, {
+    symbol: 'NVDA',
+    flip_bar_time: 1785273600000,
+    render_forwarded_at: '2026-07-28T12:00:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  });
+  await partialLifecycle(partialPending);
+  partialSheets.controls.fail_trades_append = 1;
+  await assert.rejects(partialLifecycle(partialFill), /mock Trades append failure/);
+  assert.strictEqual(countRowsBySetupId(partialSheets.rows['Open Positions'], 11, partialId), 1);
+  assert.strictEqual(countRowsBySetupId(partialSheets.rows.Trades, 10, partialId), 0);
+  assert.strictEqual(
+    partialTelegram.filter(message => message.includes('Vixale Edge opened')).length,
+    0
+  );
+  const partialRecovery = await partialLifecycle(partialFill);
+  assert.strictEqual(partialRecovery.finalRow.status, 'entry_fill_publication_complete');
+  assert.strictEqual(countRowsBySetupId(partialSheets.rows['Open Positions'], 11, partialId), 1);
+  assert.strictEqual(countRowsBySetupId(partialSheets.rows.Trades, 10, partialId), 1);
+  assert.strictEqual(
+    partialTelegram.filter(message => message.includes('Vixale Edge opened')).length,
+    1
+  );
+
+  // C. Completed duplicate remains ignored after lifecycle-context recreation.
+  const partialActivity = {
+    open: partialSheets.rows['Open Positions'].length,
+    trades: partialSheets.rows.Trades.length,
+    telegram: partialTelegram.length,
+    bridge: partialBridge.length,
+  };
+  const restartedPartialLifecycle = createLifecycleContext({
+    sheetStore: partialSheets,
+    telegramStore: partialTelegram,
+    bridgeStore: partialBridge,
+  });
+  const completedDuplicate = await restartedPartialLifecycle(partialFill);
+  assert.strictEqual(completedDuplicate.finalRow.status, 'ignored_duplicate_entry_fill');
+  assert.deepStrictEqual({
+    open: partialSheets.rows['Open Positions'].length,
+    trades: partialSheets.rows.Trades.length,
+    telegram: partialTelegram.length,
+    bridge: partialBridge.length,
+  }, partialActivity, 'completed duplicate creates no publication activity');
+
+  // D. Concurrent callbacks share the same full publication promise.
+  const concurrentSheets = createMockSheets();
+  const concurrentTelegram = [];
+  const concurrentBridge = [];
+  let releaseTelegram;
+  let signalTelegramStarted;
+  const telegramStarted = new Promise(resolve => {
+    signalTelegramStarted = resolve;
+  });
+  const telegramGate = new Promise(resolve => {
+    releaseTelegram = resolve;
+  });
+  const concurrentLifecycle = createLifecycleContext({
+    sheetStore: concurrentSheets,
+    telegramStore: concurrentTelegram,
+    bridgeStore: concurrentBridge,
+    telegramSender: async message => {
+      if (message.includes('Vixale Edge opened')) {
+        signalTelegramStarted();
+        await telegramGate;
+      }
+      concurrentTelegram.push(message);
+      return { ok: true };
+    },
+  });
+  const concurrentId = 'VIXALE_EDGE:AMD:60:LONG:1785277200000';
+  const concurrentPending = edgePayload('PENDING_SETUP', concurrentId, {
+    symbol: 'AMD',
+    flip_bar_time: 1785277200000,
+  });
+  const concurrentFill = edgePayload('ENTRY_FILL', concurrentId, {
+    symbol: 'AMD',
+    flip_bar_time: 1785277200000,
+    render_forwarded_at: '2026-07-28T13:00:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  });
+  await concurrentLifecycle(concurrentPending);
+  const firstConcurrent = concurrentLifecycle(concurrentFill);
+  await telegramStarted;
+  let secondSettled = false;
+  const secondConcurrent = concurrentLifecycle(concurrentFill).then(result => {
+    secondSettled = true;
+    return result;
+  });
+  await Promise.resolve();
+  assert.strictEqual(secondSettled, false, 'concurrent duplicate waits for active publication');
+  assert.strictEqual(countRowsBySetupId(concurrentSheets.rows['Open Positions'], 11, concurrentId), 1);
+  assert.strictEqual(countRowsBySetupId(concurrentSheets.rows.Trades, 10, concurrentId), 1);
+  releaseTelegram();
+  const [firstConcurrentResult, secondConcurrentResult] = await Promise.all([
+    firstConcurrent,
+    secondConcurrent,
+  ]);
+  assert.strictEqual(firstConcurrentResult.finalRow.status, 'entry_fill_publication_complete');
+  assert.strictEqual(secondConcurrentResult.finalRow.status, 'entry_fill_publication_complete');
+  assert.strictEqual(
+    concurrentTelegram.filter(message => message.includes('Vixale Edge opened')).length,
+    1
+  );
+  assert.strictEqual(
+    concurrentBridge.filter(event => event === 'FILL').length,
+    0
+  );
 
   console.log('Vixale Edge app lifecycle integration: mocked Sheets, Telegram, and bridge checks passed');
 }

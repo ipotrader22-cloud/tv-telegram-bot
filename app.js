@@ -108,7 +108,7 @@ const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UP
 const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_STALE_SECONDS', 90)));
 const LIVE_QUOTES = new Map();
 const BROKER_EOD_CALLBACKS = createBrokerEodCallbackRegistry();
-const EDGE_ENTRY_FILL_IN_FLIGHT = new Set();
+const EDGE_ENTRY_FILL_IN_FLIGHT = new Map();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1813,24 +1813,95 @@ function rawSetupId(raw) {
   return String(parseRawJsonSafe(raw)?.setup_id || '').trim();
 }
 
-async function findPersistedEdgeEntryFill(sheets, setupId) {
+function findRawSetupRow(rows, rawColumn, setupId) {
+  for (let index = 1; index < rows.length; index++) {
+    if (rawSetupId(rows[index][rawColumn]) === setupId) {
+      return {
+        row: rows[index],
+        row_number: index + 1,
+        raw: parseRawJsonSafe(rows[index][rawColumn]),
+      };
+    }
+  }
+  return null;
+}
+
+async function getEdgeEntryFillPublicationState(sheets, setupId) {
   const wanted = String(setupId || '').trim();
-  if (!wanted) return null;
+  if (!wanted) {
+    return {
+      open_exists: false,
+      trade_fill_exists: false,
+      telegram_open_published: false,
+      publication_complete: false,
+    };
+  }
 
   const [openRows, tradeRows] = await Promise.all([
     readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
     readSheet(sheets, TRADES_SHEET, 'A:K'),
   ]);
 
-  const openMatch = openRows
-    .slice(1)
-    .find(row => rawSetupId(row[11]) === wanted);
-  if (openMatch) return { source: OPEN_POSITIONS_SHEET, row: openMatch };
+  const open = findRawSetupRow(openRows, 11, wanted);
+  const trade = findRawSetupRow(tradeRows, 10, wanted);
+  const telegramPublished = Boolean(
+    open?.raw?.telegram_open_published ||
+    trade?.raw?.telegram_open_published
+  );
 
-  const tradeMatch = tradeRows
-    .slice(1)
-    .find(row => rawSetupId(row[10]) === wanted);
-  return tradeMatch ? { source: TRADES_SHEET, row: tradeMatch } : null;
+  return {
+    open_exists: Boolean(open),
+    trade_fill_exists: Boolean(trade),
+    telegram_open_published: telegramPublished,
+    publication_complete: Boolean(open && trade && telegramPublished),
+    open,
+    trade,
+  };
+}
+
+async function markEdgeEntryFillPublicationComplete(sheets, setupId) {
+  const state = await getEdgeEntryFillPublicationState(sheets, setupId);
+  if (!state.open_exists || !state.trade_fill_exists) {
+    throw new Error(`Cannot complete Edge ENTRY_FILL publication with missing ledger component: ${setupId}`);
+  }
+
+  const publishedAt = nowNy();
+  const openRaw = JSON.stringify({
+    ...state.open.raw,
+    telegram_open_published: true,
+    publication_complete: true,
+    publication_completed_at: publishedAt,
+  }, null, 2);
+  const tradeRaw = JSON.stringify({
+    ...state.trade.raw,
+    telegram_open_published: true,
+    publication_complete: true,
+    publication_completed_at: publishedAt,
+  }, null, 2);
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        {
+          range: `${OPEN_POSITIONS_SHEET}!L${state.open.row_number}`,
+          values: [[openRaw]],
+        },
+        {
+          range: `${TRADES_SHEET}!K${state.trade.row_number}`,
+          values: [[tradeRaw]],
+        },
+      ],
+    },
+  });
+
+  return {
+    open_exists: true,
+    trade_fill_exists: true,
+    telegram_open_published: true,
+    publication_complete: true,
+  };
 }
 
 async function processLedger(row, dependencies = {}) {
@@ -1890,32 +1961,55 @@ async function processLedger(row, dependencies = {}) {
 
     const edgeSetupId = isVixaleEdgeV2SetupRow(row) ? row.setup_id : '';
     if (edgeSetupId) {
-      const persisted = await findPersistedEdgeEntryFill(sheets, edgeSetupId);
-      if (persisted || EDGE_ENTRY_FILL_IN_FLIGHT.has(edgeSetupId)) {
+      const publicationState = await getEdgeEntryFillPublicationState(sheets, edgeSetupId);
+      if (publicationState.publication_complete) {
         return {
           ...row,
           status: 'ignored_duplicate_entry_fill',
           skip_telegram: true,
           duplicate_entry_fill: true,
-          duplicate_source: persisted?.source || 'in_flight',
+          entry_fill_publication_state: publicationState,
         };
       }
-      EDGE_ENTRY_FILL_IN_FLIGHT.add(edgeSetupId);
-    }
 
-    try {
       const pendingRow = await removeRowByTradeId(
         sheets,
         PENDING_SHEET,
         row.setup_id || row.trade_id
       );
-      await cleanupLegacyPositionIfExists(sheets, row.trade_id);
-      await upsertOpenPosition(sheets, row, pendingRow);
-      await appendToTradesSheet(sheets, row);
-      return row;
-    } finally {
-      if (edgeSetupId) EDGE_ENTRY_FILL_IN_FLIGHT.delete(edgeSetupId);
+
+      if (!publicationState.open_exists) {
+        await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+        await upsertOpenPosition(sheets, row, pendingRow);
+      }
+      if (!publicationState.trade_fill_exists) {
+        await appendToTradesSheet(sheets, row);
+      }
+
+      return {
+        ...row,
+        status: publicationState.telegram_open_published
+          ? 'entry_fill_ledger_repaired'
+          : 'entry_fill_publication_pending',
+        skip_telegram: publicationState.telegram_open_published,
+        entry_fill_publication_state: {
+          open_exists: true,
+          trade_fill_exists: true,
+          telegram_open_published: publicationState.telegram_open_published,
+          publication_complete: publicationState.telegram_open_published,
+        },
+      };
     }
+
+    const pendingRow = await removeRowByTradeId(
+      sheets,
+      PENDING_SHEET,
+      row.setup_id || row.trade_id
+    );
+    await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+    await upsertOpenPosition(sheets, row, pendingRow);
+    await appendToTradesSheet(sheets, row);
+    return row;
   }
 
   if (row.event === 'CANCEL') {
@@ -7982,10 +8076,63 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
     return callbackResult;
   }
 
-  return processRecognizedTradingViewWebhookLifecycle(reqBody, parsedRow, message, false);
+  const edgeEntryFillCallback =
+    isBridgeExecutionCallback(reqBody) &&
+    parsedRow?.event === 'FILL' &&
+    isVixaleEdgeV2SetupRow(parsedRow);
+
+  return processRecognizedTradingViewWebhookLifecycle(
+    reqBody,
+    parsedRow,
+    message,
+    edgeEntryFillCallback
+  );
 }
 
 async function processRecognizedTradingViewWebhookLifecycle(
+  reqBody,
+  parsedRow,
+  message,
+  failOnPublicationError,
+  dependencies = {}
+) {
+  const edgeSetupId =
+    parsedRow?.event === 'FILL' && isVixaleEdgeV2SetupRow(parsedRow)
+      ? parsedRow.setup_id
+      : '';
+
+  if (!edgeSetupId) {
+    return processRecognizedTradingViewWebhookLifecycleCore(
+      reqBody,
+      parsedRow,
+      message,
+      failOnPublicationError,
+      dependencies
+    );
+  }
+
+  const existing = EDGE_ENTRY_FILL_IN_FLIGHT.get(edgeSetupId);
+  if (existing) return existing;
+
+  const inFlight = processRecognizedTradingViewWebhookLifecycleCore(
+    reqBody,
+    parsedRow,
+    message,
+    failOnPublicationError,
+    dependencies
+  );
+  EDGE_ENTRY_FILL_IN_FLIGHT.set(edgeSetupId, inFlight);
+
+  try {
+    return await inFlight;
+  } finally {
+    if (EDGE_ENTRY_FILL_IN_FLIGHT.get(edgeSetupId) === inFlight) {
+      EDGE_ENTRY_FILL_IN_FLIGHT.delete(edgeSetupId);
+    }
+  }
+}
+
+async function processRecognizedTradingViewWebhookLifecycleCore(
   reqBody,
   parsedRow,
   message,
@@ -8048,6 +8195,8 @@ async function processRecognizedTradingViewWebhookLifecycle(
 
   finalRow = ensureClosePnlFallback(finalRow);
 
+  let telegramPublishedNow = false;
+
   try {
     if (finalRow.skip_telegram) {
       console.log('Telegram skipped for row:', finalRow.event, finalRow.raw_event || '', finalRow.status || '');
@@ -8060,19 +8209,54 @@ async function processRecognizedTradingViewWebhookLifecycle(
     ) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
       const telegramResult = await telegramSender(telegramMessage);
-      if (failOnPublicationError && telegramResult && telegramResult.ok === false) {
+      if (
+        failOnPublicationError &&
+        telegramResult &&
+        (telegramResult.ok === false || telegramResult.skipped)
+      ) {
         const error = new Error(
           telegramResult.description || 'Telegram returned a retryable publication failure'
         );
         error.retryable = true;
         throw error;
       }
+      telegramPublishedNow = Boolean(
+        telegramResult &&
+        telegramResult.ok !== false &&
+        !telegramResult.skipped
+      );
     } else {
       console.log('Telegram skipped for silent event:', finalRow.event, finalRow.raw_event || '');
     }
   } catch (tgErr) {
     console.error('Telegram send failed:', tgErr);
     if (failOnPublicationError) throw tgErr;
+  }
+
+  if (
+    parsedRow.event === 'FILL' &&
+    isVixaleEdgeV2SetupRow(parsedRow) &&
+    finalRow.status !== 'ignored_duplicate_entry_fill' &&
+    (
+      telegramPublishedNow ||
+      finalRow.entry_fill_publication_state?.telegram_open_published
+    )
+  ) {
+    const sheets = dependencies.sheets ||
+      await (dependencies.getSheetsClient || getSheetsClient)();
+    if (!sheets) {
+      const error = new Error('Sheets unavailable while completing Edge ENTRY_FILL publication');
+      error.retryable = true;
+      throw error;
+    }
+    finalRow = {
+      ...finalRow,
+      status: 'entry_fill_publication_complete',
+      entry_fill_publication_state: await markEdgeEntryFillPublicationComplete(
+        sheets,
+        parsedRow.setup_id
+      ),
+    };
   }
 
   // Callback events are blocked inside shouldForwardToBridge(), preventing
@@ -8101,12 +8285,17 @@ async function handleTradingViewWebhook(req, res) {
       return res.status(200).send('IGNORED');
     }
 
-    if (reqBody && reqBody.broker_eod_watchdog) {
+    const edgeEntryFillCallback =
+      isBridgeExecutionCallback(reqBody) &&
+      parsedRow.event === 'FILL' &&
+      isVixaleEdgeV2SetupRow(parsedRow);
+
+    if ((reqBody && reqBody.broker_eod_watchdog) || edgeEntryFillCallback) {
       try {
         await processRecognizedTradingViewWebhook(reqBody, parsedRow, message);
         return res.status(200).send('OK');
       } catch (err) {
-        console.error('Broker EOD callback publication failed; bridge may retry:', err);
+        console.error('Broker callback publication failed; bridge may retry:', err);
         return res.status(503).send('RETRY');
       }
     }
