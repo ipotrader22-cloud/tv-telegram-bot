@@ -1,5 +1,9 @@
 const express = require('express');
 const { google } = require('googleapis');
+const {
+  createBrokerEodCallbackRegistry,
+  runBrokerEodCallback,
+} = require('./lib/broker-eod-callbacks');
 
 const app = express();
 
@@ -103,6 +107,7 @@ const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UP
 
 const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_STALE_SECONDS', 90)));
 const LIVE_QUOTES = new Map();
+const BROKER_EOD_CALLBACKS = createBrokerEodCallbackRegistry();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1852,7 +1857,7 @@ async function sendTelegram(message, chatId = CHAT_ID) {
 
   if (!TOKEN || !targetChatId) {
     console.log('Telegram env vars missing or target chat is empty. Skipping Telegram.');
-    return;
+    return { ok: true, skipped: true };
   }
 
   const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
@@ -1891,6 +1896,8 @@ async function sendTelegram(message, chatId = CHAT_ID) {
     data = await response.json();
     console.log('Telegram fallback response:', JSON.stringify(data));
   }
+
+  return data;
 }
 
 async function sendAdminTelegram(message) {
@@ -7730,6 +7737,65 @@ function isRecognizedTradeWebhook(row) {
 async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) {
   const bridgeCallback = isBridgeExecutionCallback(reqBody);
   const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
+  const brokerEodWatchdog = Boolean(reqBody && reqBody.broker_eod_watchdog);
+  const brokerEodKey = String(reqBody?.eod_idempotency_key || '').trim();
+  const callbackStrategy = String(reqBody?.strategy || parsedRow?.strategy || '').toUpperCase();
+
+  if (
+    !bridgeCallback &&
+    parsedRow?.event === 'EOD' &&
+    ['SHREK', 'SHREK_1_4'].includes(callbackStrategy)
+  ) {
+    console.log('Ignored Shrek Pine EOD alert; local 15:59 bridge watchdog is execution authority:', bridgeLogPrefix(parsedRow));
+    return;
+  }
+
+  if (brokerEodWatchdog) {
+    const rawEvent = String(parsedRow?.raw_event || '').toUpperCase();
+    const validKey = /^\d{4}-\d{2}-\d{2}:[A-Z0-9.^-]+:(SHREK|SHREK_1_4)$/.test(brokerEodKey);
+
+    if (
+      !bridgeCallback ||
+      parsedRow?.event !== 'EOD' ||
+      rawEvent !== 'EOD_CLOSE' ||
+      !hasConfirmedCloseExecution(reqBody) ||
+      !['SHREK', 'SHREK_1_4'].includes(callbackStrategy) ||
+      !validKey
+    ) {
+      console.log('Ignored invalid broker EOD watchdog callback:', bridgeLogPrefix(parsedRow));
+      return;
+    }
+
+    // The local bridge is the sole EOD execution authority. app.js has no
+    // independent EOD order timer; it only publishes this confirmed callback.
+    const callbackResult = await runBrokerEodCallback(
+      BROKER_EOD_CALLBACKS,
+      brokerEodKey,
+      () => processRecognizedTradingViewWebhookLifecycle(reqBody, parsedRow, message, true)
+    );
+
+    if (!callbackResult.processed) {
+      console.log(
+        'Ignored duplicate broker EOD watchdog callback:',
+        brokerEodKey,
+        callbackResult.reason
+      );
+    }
+
+    return callbackResult;
+  }
+
+  return processRecognizedTradingViewWebhookLifecycle(reqBody, parsedRow, message, false);
+}
+
+async function processRecognizedTradingViewWebhookLifecycle(
+  reqBody,
+  parsedRow,
+  message,
+  failOnPublicationError
+) {
+  const bridgeCallback = isBridgeExecutionCallback(reqBody);
+  const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
 
   // Execution-first architecture for Shrek / Elvis / v51:
   // TradingView SETUP/CLOSE alerts are forwarded to the local bridge only.
@@ -7774,6 +7840,7 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
     finalRow = (await processLedger(parsedRow)) || parsedRow;
   } catch (sheetErr) {
     console.error('Google Sheets / ledger failed:', sheetErr);
+    if (failOnPublicationError) throw sheetErr;
     finalRow = parsedRow;
   }
 
@@ -7784,17 +7851,27 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
       console.log('Telegram skipped for row:', finalRow.event, finalRow.raw_event || '', finalRow.status || '');
     } else if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
-      await sendTelegram(telegramMessage);
+      const telegramResult = await sendTelegram(telegramMessage);
+      if (failOnPublicationError && telegramResult && telegramResult.ok === false) {
+        const error = new Error(
+          telegramResult.description || 'Telegram returned a retryable publication failure'
+        );
+        error.retryable = true;
+        throw error;
+      }
     } else {
       console.log('Telegram skipped for silent event:', finalRow.event, finalRow.raw_event || '');
     }
   } catch (tgErr) {
     console.error('Telegram send failed:', tgErr);
+    if (failOnPublicationError) throw tgErr;
   }
 
   // Callback events are blocked inside shouldForwardToBridge(), preventing
   // Render -> bridge -> Render loops.
   await forwardToBridge(reqBody, finalRow);
+
+  return { ok: true, finalRow };
 }
 
 async function handleTradingViewWebhook(req, res) {
@@ -7816,8 +7893,18 @@ async function handleTradingViewWebhook(req, res) {
       return res.status(200).send('IGNORED');
     }
 
-    // TradingView has a short webhook timeout. Acknowledge immediately, then do
-    // Sheets / Telegram / bridge forwarding in the background.
+    if (reqBody && reqBody.broker_eod_watchdog) {
+      try {
+        await processRecognizedTradingViewWebhook(reqBody, parsedRow, message);
+        return res.status(200).send('OK');
+      } catch (err) {
+        console.error('Broker EOD callback publication failed; bridge may retry:', err);
+        return res.status(503).send('RETRY');
+      }
+    }
+
+    // TradingView has a short webhook timeout. Acknowledge ordinary alerts
+    // immediately, then do Sheets / Telegram / bridge forwarding in the background.
     res.status(200).send('OK');
 
     setImmediate(async () => {

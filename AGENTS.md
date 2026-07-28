@@ -24,6 +24,30 @@ The handbook is the canonical project memory. The repository and deployed produc
 
 ---
 
+## ChatGPT/Codex Session Bootstrap
+
+At the start of every VECO production session:
+
+1. Read `/AGENTS.md` and `/docs/VECO_DEVELOPER_HANDBOOK.md` completely.
+2. State `Handbook update required: YES / NO`.
+3. Confirm the canonical repository, current branch, `git status`, and synchronization with `origin/main`.
+4. Verify the deployed source relevant to the task. For bridge work, compare
+   `/bridge/ib_bridge.py` with `C:\ib_bridge\ib_bridge.py` without reading or
+   copying `.env` values into the repository.
+5. Identify the execution boundary before editing:
+
+```text
+TradingView -> Render/app.js -> local IB bridge -> TWS confirmation
+            -> Render callback -> Telegram / Sheets / dashboard
+```
+
+6. Never expose secrets or infer that a submitted order is a fill.
+7. Use a narrow feature branch, run the relevant checks, review the complete
+   diff, push the feature branch, open a Pull Request, and stop before merge
+   unless the owner explicitly authorizes the next production step.
+
+---
+
 ## Default Operating Mode
 
 For a normal requested change, Codex should complete the following workflow in one task unless the user explicitly asks for a read-only audit or a different stopping point:
