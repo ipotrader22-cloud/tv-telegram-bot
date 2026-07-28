@@ -125,29 +125,45 @@ remain unchanged; only public rendering uses `Vixale Prime`.
 ### 3.2 Vixale Edge (internal Fiona)
 
 **Public VECO name:** Vixale Edge
-**TradingView strategy:** `VX_FIONA_LIMIT_PULLBACK_LIVE_v1.0`  
+**Canonical Pine source:** `/pine/Vixale_Edge_Limit_Pullback_v1_1.pine`
+**TradingView title:** `Vixale Edge 1.1`
+**Internal strategy:** `VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1`
 **Internal variant:** `FIONA_LIMIT_PULLBACK_ATR_TARGET`
 
 Logic:
 
 ```text
 SuperTrend flip
+→ only a confirmed RTH bar before the closing bar may create a setup
 → freeze Flip Close or Broken STL anchor
 → freeze ATR(14)
+→ publish PENDING_SETUP with a stable setup_id
 → place resting TradingView limit order
 → on TradingView historical/live limit fill, send SETUP
 → bridge executes TWS MARKET entry
+→ broker-confirmed ENTRY_FILL moves Pending to Open
 → attach frozen ATR target
-→ close on target, internal opposite SuperTrend flip, or EOD
+→ close on target or internal confirmed-RTH opposite SuperTrend flip
 ```
+
+An unfilled setup expires at the New York RTH closing bar. Pine cancels its
+virtual entry and unfilled target, publishes one `PENDING_ONLY` `CANCEL` with
+reason `UNFILLED_BY_MARKET_CLOSE`, and clears it permanently. Pending setups may
+survive temporary intraday HTF misalignment but never survive overnight.
+
+An already-open Edge position is not closed at EOD. Its attached ATR target uses
+`GTC`, remains active overnight, and the payload declares
+`eod_policy=NO_EOD_CLOSE`. There is no Edge Pine EOD-close option or next-day
+position reset.
 
 Telegram lifecycle:
 
 ```text
+🟣 Vixale Edge setup LONG / SHORT
 🟣 Vixale Edge opened LONG / SHORT
 🎯 Vixale Edge hit target
 🛑 Vixale Edge hit Stop Loss
-⏰ Vixale Edge EOD close
+⚪ Vixale Edge setup canceled — Unfilled by market close
 ```
 
 The purple circle identifies Vixale Edge. Direction is written explicitly. The
@@ -226,11 +242,13 @@ Payload strategy ID: SHREK_1_4
 Variant field: not used
 ```
 
-Fiona source snapshot:
+Vixale Edge canonical source:
 
 ```text
-VX_FIONA_LIMIT_PULLBACK_LIVE_v1.0
-SHA-256: 8a3f04a73aff56d12acf59ccc302f7c13cd38e42a2eea94fd9d28b4d38c93a32
+pine/Vixale_Edge_Limit_Pullback_v1_1.pine
+Strategy title: Vixale Edge 1.1
+Internal strategy: VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1
+Internal variant: FIONA_LIMIT_PULLBACK_ATR_TARGET
 ```
 
 ---
@@ -498,6 +516,7 @@ Core payload fields:
 
 ```text
 SETUP / ENTRY      → SETUP
+PENDING_SETUP      → PENDING_SETUP (Vixale Edge publication only)
 ENTRY_FILL / FILL  → FILL
 TP / TARGET        → TP
 CLOSE_STOP / STOP  → SL internally
@@ -506,6 +525,20 @@ CANCEL              → CANCEL
 RECONCILE_FLAT      → silent reconciliation
 STOP_REF_UPDATE     → silent stop-reference update
 ```
+
+Vixale Edge payload version 2 uses `system_id=VIXALE_EDGE` and a deterministic
+`setup_id`:
+
+```text
+VIXALE_EDGE:<symbol>:<timeframe>:<LONG|SHORT>:<flip_bar_time>
+```
+
+The same ID is retained across `PENDING_SETUP`, submitted `SETUP`, confirmed
+`ENTRY_FILL`, EOD `CANCEL`, and replacement cleanup. `PENDING_SETUP` and
+`cancel_scope=PENDING_ONLY` are publication-only and are never forwarded to the
+IB bridge. An identified `SETUP` preserves the exact Pending row until the
+broker returns `ENTRY_FILL`; the fill removes that row by `setup_id` and creates
+Open once. Legacy Edge alerts without `setup_id` remain supported.
 
 For internal Shrek/Fiona processing, `CLOSE_STOP` still means the broker-confirmed
 opposite SuperTrend flip close. The raw event and stored Sheets event
@@ -1114,6 +1147,22 @@ behavior remain unchanged. Historical records are mapped when rendered rather
 than rewritten.
 **Reason:** Present consistent customer-facing product names and exit terminology
 without changing the backward-compatible VECO execution contract.
+
+### ADR-012 — Vixale Edge session-bound pending and overnight-open policy
+
+**Decision:** Vixale Edge v1.1 creates pending setups only from confirmed RTH
+flips before the closing bar. A pending setup has a stable `setup_id`, may pause
+for intraday HTF misalignment, and expires visibly at the RTH close through a
+publication-only `PENDING_ONLY` cancellation. Filled Edge positions are never
+closed at EOD; their ATR targets remain GTC overnight. `app.js` publishes
+Pending state before execution and Open state only after broker-confirmed
+`ENTRY_FILL`.
+**Reason:** Keep unfilled intent session-bounded while preserving the strategy's
+overnight-position design and execution-first public ledger.
+
+**Deployment dependency:** This Part 2 source and server support must not be
+activated in TradingView until the unfinished Part 3 migration is completed and
+approved. This branch does not deploy or activate alerts.
 
 ---
 
