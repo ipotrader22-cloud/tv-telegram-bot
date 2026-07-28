@@ -3,6 +3,7 @@ import json
 import asyncio
 import logging
 import math
+import hashlib
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional, Tuple, List
@@ -291,6 +292,7 @@ _execution_monitor_tasks = set()
 # the managed-position file remains available for a later retry/restart.
 _target_report_claims = set()
 _target_report_claim_lock = asyncio.Lock()
+_edge_stop_close_lock = asyncio.Lock()
 logger = logging.getLogger("vixale.ib_bridge")
 
 
@@ -556,35 +558,224 @@ def clear_edge_submission_if_unfilled(symbol: str, setup_id: str) -> None:
         save_managed_positions(managed)
 
 
-def mark_managed_bridge_close(data: Dict[str, Any], ib_result: Dict[str, Any]) -> None:
+def mark_managed_bridge_close(
+    data: Dict[str, Any],
+    ib_result: Dict[str, Any],
+) -> bool:
     if not is_vixale_edge_payload(data):
-        return
+        return True
 
     symbol = str(data.get("symbol") or "").upper().strip()
     managed = load_managed_positions()
     row = dict(managed.get(symbol) or {})
     if not row:
-        return
+        return False
+
+    setup_id = str(data.get("setup_id") or "").strip()
+    managed_setup_id = str(row.get("setup_id") or "").strip()
+    if is_edge_v2_stop_close(data) and setup_id != managed_setup_id:
+        return False
 
     now_iso = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
     existing_close = row.get("bridge_close_order") if isinstance(row.get("bridge_close_order"), dict) else {}
     row["bridge_close_order"] = {
-        "order_id": ib_result.get("order_id", ""),
-        "perm_id": ib_result.get("order_perm_id", ""),
-        "order_ref": ib_result.get("order_ref", ""),
-        "bridge_status": ib_result.get("status", ""),
-        "latest_status": ib_result.get("close_status", ""),
-        "filled_qty": to_float(ib_result.get("close_filled_qty")),
-        "fill_price": to_float(ib_result.get("close_fill_price")),
-        "exec_ids": list(ib_result.get("close_exec_ids") or []),
-        "broker_confirmed_flat": bool(ib_result.get("broker_confirmed_flat")),
-        "position_after_close": ib_result.get("position_after_close", ""),
+        "order_id": ib_result.get("order_id") or existing_close.get("order_id", ""),
+        "perm_id": ib_result.get("order_perm_id") or existing_close.get("perm_id", ""),
+        "order_ref": ib_result.get("order_ref") or existing_close.get("order_ref", ""),
+        "bridge_status": ib_result.get("status") or existing_close.get("bridge_status", ""),
+        "latest_status": ib_result.get("close_status") or existing_close.get("latest_status", ""),
+        "filled_qty": (
+            to_float(ib_result.get("close_filled_qty"))
+            or to_float(existing_close.get("filled_qty"))
+        ),
+        "fill_price": (
+            to_float(ib_result.get("close_fill_price"))
+            or to_float(existing_close.get("fill_price"))
+        ),
+        "exec_ids": list(
+            ib_result.get("close_exec_ids")
+            or existing_close.get("exec_ids")
+            or []
+        ),
+        "broker_confirmed_flat": bool(
+            ib_result.get("broker_confirmed_flat")
+            or existing_close.get("broker_confirmed_flat")
+        ),
+        "position_after_close": (
+            ib_result.get("position_after_close")
+            if ib_result.get("position_after_close") not in (None, "")
+            else existing_close.get("position_after_close", "")
+        ),
         "submitted_at": existing_close.get("submitted_at") or now_iso,
-        "filled_at": now_iso if ib_result.get("close_filled") else "",
+        "filled_at": (
+            now_iso
+            if ib_result.get("close_filled")
+            else existing_close.get("filled_at", "")
+        ),
     }
+
+    reservation = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    if reservation:
+        if ib_result.get("broker_confirmed_flat"):
+            reservation_state = "CALLBACK_PENDING"
+        elif ib_result.get("close_filled"):
+            reservation_state = "FILLED_POSITION_NOT_FLAT"
+        elif ib_result.get("order_id") or ib_result.get("order_ref"):
+            reservation_state = "CLOSE_SUBMITTED"
+        else:
+            reservation_state = reservation.get("state") or "RESERVED"
+        reservation.update({
+            "state": reservation_state,
+            "order_id": row["bridge_close_order"]["order_id"],
+            "perm_id": row["bridge_close_order"]["perm_id"],
+            "order_ref": row["bridge_close_order"]["order_ref"],
+            "latest_status": row["bridge_close_order"]["latest_status"],
+            "filled_qty": row["bridge_close_order"]["filled_qty"],
+            "fill_price": row["bridge_close_order"]["fill_price"],
+            "exec_ids": row["bridge_close_order"]["exec_ids"],
+            "broker_confirmed_flat": row["bridge_close_order"]["broker_confirmed_flat"],
+            "position_after_close": row["bridge_close_order"]["position_after_close"],
+            "updated_at": now_iso,
+        })
+        row["close_reservation"] = reservation
+
     row["updated_at"] = now_iso
     managed[symbol] = row
-    save_managed_positions(managed)
+    return save_managed_positions(managed)
+
+
+def is_edge_v2_stop_close(data: Dict[str, Any]) -> bool:
+    return (
+        is_edge_stop_close(data)
+        and str(data.get("payload_version") or "").strip() == "2"
+        and bool(str(data.get("setup_id") or "").strip())
+    )
+
+
+def edge_stop_close_reservation_id(setup_id: str) -> str:
+    return f"{str(setup_id or '').strip()}:CLOSE_STOP"
+
+
+def edge_stop_close_order_ref(symbol: str, setup_id: str) -> str:
+    digest = hashlib.sha256(
+        str(setup_id or "").strip().encode("utf-8")
+    ).hexdigest()[:10].upper()
+    return f"TVFVG_CLOSE_{str(symbol or '').upper().strip()}_{digest}"
+
+
+def reserve_edge_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    managed = load_managed_positions()
+    row = dict(managed.get(symbol) or {})
+    managed_setup_id = str(row.get("setup_id") or "").strip()
+
+    if (
+        not row
+        or not is_vixale_edge_managed_position(row)
+        or setup_id != managed_setup_id
+    ):
+        return {
+            "ok": False,
+            "status": "EDGE_STOP_SETUP_MISMATCH",
+            "symbol": symbol,
+            "setup_id": setup_id,
+            "managed_setup_id": managed_setup_id,
+        }
+
+    reservation_id = edge_stop_close_reservation_id(setup_id)
+    existing = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    if existing:
+        if str(existing.get("reservation_id") or "") != reservation_id:
+            return {
+                "ok": False,
+                "status": "EDGE_STOP_SETUP_MISMATCH",
+                "symbol": symbol,
+                "setup_id": setup_id,
+                "managed_setup_id": managed_setup_id,
+            }
+        return {
+            "ok": True,
+            "status": "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+            "symbol": symbol,
+            "setup_id": setup_id,
+            "row": row,
+            "reservation": existing,
+            "existing": True,
+        }
+
+    now_iso = now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat()
+    reservation = {
+        "reservation_id": reservation_id,
+        "setup_id": setup_id,
+        "event": "CLOSE_STOP",
+        "state": "RESERVED",
+        "order_ref": edge_stop_close_order_ref(symbol, setup_id),
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    row["close_reservation"] = reservation
+    row["updated_at"] = now_iso
+    managed[symbol] = row
+    if not save_managed_positions(managed):
+        return {
+            "ok": False,
+            "status": "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            "symbol": symbol,
+            "setup_id": setup_id,
+        }
+
+    return {
+        "ok": True,
+        "status": "RESERVED",
+        "symbol": symbol,
+        "setup_id": setup_id,
+        "row": row,
+        "reservation": reservation,
+        "existing": False,
+    }
+
+
+def update_edge_stop_close_reservation(
+    data: Dict[str, Any],
+    state: str,
+    **updates: Any,
+) -> bool:
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    managed = load_managed_positions()
+    row = dict(managed.get(symbol) or {})
+    if str(row.get("setup_id") or "").strip() != setup_id:
+        return False
+
+    reservation = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    if (
+        str(reservation.get("reservation_id") or "")
+        != edge_stop_close_reservation_id(setup_id)
+    ):
+        return False
+
+    reservation.update(updates)
+    reservation["state"] = state
+    reservation["updated_at"] = now_in_tz(
+        FORCE_EOD_FLATTEN_TIMEZONE
+    ).isoformat()
+    row["close_reservation"] = reservation
+    row["updated_at"] = reservation["updated_at"]
+    managed[symbol] = row
+    return save_managed_positions(managed)
 
 
 def clear_managed_position(symbol: str) -> None:
@@ -1735,10 +1926,19 @@ async def monitor_target_fill(
                             order_id=trade_order_id(target_trade),
                             order_ref_value=trade_order_ref_value(target_trade),
                         )
+                        if not identity:
+                            print(
+                                f"[TP MONITOR RETRY ARMED] symbol={symbol} "
+                                "target execution identity is unavailable; Render callback withheld"
+                            )
+                            return
                         setup_id = str(original_data.get("setup_id") or "").strip()
+                        payload["source"] = "IB_BRIDGE"
+                        payload["system_id"] = "VIXALE_EDGE"
                         payload["exit_execution_id"] = identity
                         payload["reconciliation_id"] = f"{setup_id or symbol}:{identity}"
                         payload["broker_confirmed_flat"] = True
+                        payload["position_after_close"] = position_after
                         managed = load_managed_positions()
                         managed_row = dict(managed.get(symbol) or {})
                         managed_row["reconciliation_claim"] = {
@@ -2241,6 +2441,124 @@ async def place_entry_limit(data: Dict[str, Any]) -> Dict[str, Any]:
     return await place_entry_order(data)
 
 
+def all_known_ib_trades() -> List[Any]:
+    trades: List[Any] = []
+    seen = set()
+    for collection in (current_ib_trades(), list(ib.openTrades() or [])):
+        for trade in collection:
+            marker = id(trade)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            trades.append(trade)
+    return trades
+
+
+def find_trade_by_expected_identity(
+    row: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> Optional[Any]:
+    symbol = str(row.get("symbol") or "").upper().strip()
+    exit_action = expected_exit_action(row)
+    matches = []
+    for trade in all_known_ib_trades():
+        if trade_contract_symbol(trade) != symbol:
+            continue
+        if trade_action(trade) != exit_action:
+            continue
+        if identity_matches(
+            trade_order_id(trade),
+            trade_perm_id(trade),
+            trade_order_ref_value(trade),
+            expected,
+        ):
+            matches.append(trade)
+
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def find_exact_managed_target_trade(row: Dict[str, Any]) -> Optional[Any]:
+    return find_trade_by_expected_identity(
+        row,
+        managed_order_identity(row, "target"),
+    )
+
+
+async def cancel_and_verify_edge_target(
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    target_trade = find_exact_managed_target_trade(row)
+    if target_trade is None:
+        return {
+            "ok": False,
+            "status": "EDGE_STOP_TARGET_CANCEL_UNCONFIRMED",
+            "canceled_targets": 0,
+            "reason": "exact_managed_target_not_found_or_ambiguous",
+        }
+
+    expected_qty = (
+        to_float(managed_order_identity(row, "target").get("expected_qty"))
+        or to_float(row.get("qty"))
+    )
+    status = trade_status(target_trade).lower()
+    if trade_is_filled(target_trade, expected_qty):
+        return {
+            "ok": True,
+            "status": "target_filled",
+            "canceled_targets": 0,
+            "target_trade": target_trade,
+            "target_filled_qty": trade_filled_qty(target_trade),
+            "target_fill_price": trade_fill_price(target_trade),
+        }
+    if status in ORDER_BAD_STATUSES:
+        return {
+            "ok": True,
+            "status": "target_cancelled",
+            "canceled_targets": 0,
+            "target_trade": target_trade,
+            "target_filled_qty": trade_filled_qty(target_trade),
+            "target_fill_price": trade_fill_price(target_trade),
+        }
+
+    ib.cancelOrder(target_trade.order)
+    poll = max(FORCE_EOD_VERIFY_POLL_SECONDS, 0.10)
+    waited = 0.0
+    while waited <= max(FORCE_EOD_CANCEL_VERIFY_SECONDS, poll):
+        status = trade_status(target_trade).lower()
+        if trade_is_filled(target_trade, expected_qty):
+            return {
+                "ok": True,
+                "status": "target_filled",
+                "canceled_targets": 1,
+                "target_trade": target_trade,
+                "target_filled_qty": trade_filled_qty(target_trade),
+                "target_fill_price": trade_fill_price(target_trade),
+            }
+        if status in ORDER_BAD_STATUSES:
+            return {
+                "ok": True,
+                "status": "target_cancelled",
+                "canceled_targets": 1,
+                "target_trade": target_trade,
+                "target_filled_qty": trade_filled_qty(target_trade),
+                "target_fill_price": trade_fill_price(target_trade),
+            }
+        await asyncio.sleep(poll)
+        waited += poll
+
+    return {
+        "ok": False,
+        "status": "EDGE_STOP_TARGET_CANCEL_UNCONFIRMED",
+        "canceled_targets": 1,
+        "target_trade": target_trade,
+        "target_status": trade_status(target_trade),
+        "target_filled_qty": trade_filled_qty(target_trade),
+        "reason": "target_still_working_or_cancellation_ambiguous",
+    }
+
+
 def is_edge_stop_close(data: Dict[str, Any]) -> bool:
     return (
         is_vixale_edge_payload(data)
@@ -2268,8 +2586,335 @@ async def apply_edge_stop_close_flat_gate(
     return result
 
 
+def edge_stop_close_result(
+    data: Dict[str, Any],
+    status: str,
+    **values: Any,
+) -> Dict[str, Any]:
+    return {
+        "dry_run": DRY_RUN,
+        "status": status,
+        "event": "CLOSE_STOP",
+        "symbol": str(data.get("symbol") or "").upper().strip(),
+        "side": str(data.get("side") or "").upper().strip(),
+        "setup_id": str(data.get("setup_id") or "").strip(),
+        **values,
+    }
+
+
+async def recover_reserved_edge_stop_close(
+    data: Dict[str, Any],
+    reserved: Dict[str, Any],
+) -> Dict[str, Any]:
+    row = dict(reserved.get("row") or {})
+    reservation = dict(reserved.get("reservation") or {})
+    expected = {
+        "perm_id": reservation.get("perm_id"),
+        "order_id": reservation.get("order_id"),
+        "order_ref": reservation.get("order_ref"),
+        "expected_qty": reservation.get("remaining_qty") or row.get("qty"),
+    }
+    close_trade = find_trade_by_expected_identity(row, expected)
+    if close_trade is None:
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+            reservation_state=reservation.get("state", ""),
+            order_ref=reservation.get("order_ref", ""),
+            managed_state_persisted=True,
+        )
+
+    expected_qty = (
+        to_int_qty(reservation.get("remaining_qty"))
+        or to_int_qty(row.get("qty"))
+    )
+    close_filled = trade_is_filled(close_trade, expected_qty)
+    result = edge_stop_close_result(
+        data,
+        "submitted" if close_filled else "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+        action=trade_action(close_trade),
+        qty=expected_qty,
+        position_before_close=reservation.get("position_before_close", ""),
+        canceled_open_orders=reservation.get("canceled_targets", 0),
+        order_ref=trade_order_ref_value(close_trade),
+        order_id=trade_order_id(close_trade),
+        order_perm_id=trade_perm_id(close_trade),
+        close_status=trade_status(close_trade),
+        close_filled=close_filled,
+        close_fill_price=trade_fill_price(close_trade),
+        close_filled_qty=trade_filled_qty(close_trade),
+        close_exec_ids=trade_execution_ids(close_trade),
+    )
+    if close_filled:
+        result = await apply_edge_stop_close_flat_gate(
+            data,
+            result,
+            result["symbol"],
+        )
+    persisted = mark_managed_bridge_close(data, result)
+    result["managed_state_persisted"] = persisted
+    if not persisted:
+        result["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+        result["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+    return result
+
+
+async def execute_edge_v2_stop_close(
+    data: Dict[str, Any],
+    reserved: Dict[str, Any],
+) -> Dict[str, Any]:
+    symbol = str(data.get("symbol") or "").upper().strip()
+    side = str(data.get("side") or "").upper().strip()
+    row = dict(reserved.get("row") or {})
+    reservation = dict(reserved.get("reservation") or {})
+    order_ref_value = str(reservation.get("order_ref") or "")
+
+    # Qualify before canceling the target so a qualification failure never
+    # leaves the position unprotected.
+    contract = await qualify_contract(data)
+
+    if DRY_RUN:
+        return edge_stop_close_result(
+            data,
+            "dry_run_close_order",
+            order_ref=order_ref_value,
+            canceled_open_orders=0,
+            managed_state_persisted=True,
+        )
+
+    if not update_edge_stop_close_reservation(
+        data,
+        "TARGET_CANCEL_PENDING",
+        target_identity=managed_order_identity(row, "target"),
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+
+    target_resolution = await cancel_and_verify_edge_target(row)
+    target_trade = target_resolution.pop("target_trade", None)
+    if not target_resolution.get("ok"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "TARGET_CANCEL_UNCONFIRMED",
+            **target_resolution,
+        )
+        if not persisted:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                canceled_open_orders=target_resolution.get("canceled_targets", 0),
+                managed_state_persisted=False,
+            )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_TARGET_CANCEL_UNCONFIRMED",
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            target_status=target_resolution.get("target_status", ""),
+            target_filled_qty=target_resolution.get("target_filled_qty", 0),
+            managed_state_persisted=True,
+        )
+
+    if not update_edge_stop_close_reservation(
+        data,
+        "TARGET_RESOLVED",
+        target_resolution=target_resolution.get("status"),
+        canceled_targets=target_resolution.get("canceled_targets", 0),
+        target_filled_qty=target_resolution.get("target_filled_qty", 0),
+        target_fill_price=target_resolution.get("target_fill_price", 0),
+        target_order_id=trade_order_id(target_trade) if target_trade else "",
+        target_perm_id=trade_perm_id(target_trade) if target_trade else "",
+        target_order_ref=trade_order_ref_value(target_trade) if target_trade else "",
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            managed_state_persisted=False,
+        )
+
+    # This is deliberately the first position quantity used for order sizing:
+    # the target cancellation/fill race has already reached a proven outcome.
+    position_size = await get_position_size(symbol)
+    target_filled = target_resolution.get("status") == "target_filled"
+
+    if target_filled:
+        reservation_state = (
+            "TARGET_FILLED_POSITION_FLAT"
+            if abs(position_size) <= 0.000001
+            else "TARGET_FILLED_POSITION_NOT_FLAT"
+        )
+        persisted = update_edge_stop_close_reservation(
+            data,
+            reservation_state,
+            position_after_target_resolution=position_size,
+        )
+        if not persisted:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_after_target_resolution=position_size,
+                canceled_open_orders=target_resolution.get("canceled_targets", 0),
+                managed_state_persisted=False,
+            )
+        return edge_stop_close_result(
+            data,
+            reservation_state,
+            position_after_target_resolution=position_size,
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            target_filled_qty=target_resolution.get("target_filled_qty", 0),
+            target_fill_price=target_resolution.get("target_fill_price", 0),
+            managed_state_persisted=True,
+        )
+
+    if abs(position_size) <= 0.000001:
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "POSITION_FLAT_AFTER_TARGET_RESOLUTION",
+            position_after_target_resolution=position_size,
+        )
+        if not persisted:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_after_target_resolution=position_size,
+                canceled_open_orders=target_resolution.get("canceled_targets", 0),
+                managed_state_persisted=False,
+            )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_POSITION_FLAT_AFTER_TARGET_RESOLUTION",
+            position_after_target_resolution=position_size,
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            managed_state_persisted=True,
+        )
+
+    if (side == "LONG" and position_size <= 0) or (
+        side == "SHORT" and position_size >= 0
+    ):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "NO_MATCHING_POSITION_AFTER_TARGET_RESOLUTION",
+            position_after_target_resolution=position_size,
+        )
+        if not persisted:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_before_close=position_size,
+                canceled_open_orders=target_resolution.get("canceled_targets", 0),
+                managed_state_persisted=False,
+            )
+        return edge_stop_close_result(
+            data,
+            "no_matching_position",
+            position_before_close=position_size,
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            managed_state_persisted=True,
+        )
+
+    qty = abs(int(position_size))
+    action = "SELL" if position_size > 0 else "BUY"
+    if not update_edge_stop_close_reservation(
+        data,
+        "CLOSE_SUBMISSION_PENDING",
+        action=action,
+        remaining_qty=qty,
+        position_before_close=position_size,
+        canceled_targets=target_resolution.get("canceled_targets", 0),
+        order_ref=order_ref_value,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            managed_state_persisted=False,
+        )
+
+    order = MarketOrder(
+        action=action,
+        totalQuantity=qty,
+        tif="DAY",
+    )
+    order.orderRef = order_ref_value
+    trade = ib.placeOrder(contract, order)
+    rejection_reason = await wait_for_ib_confirmation(trade)
+    close_filled = trade_is_filled(trade, qty)
+    result = edge_stop_close_result(
+        data,
+        "submitted" if close_filled else "submitted_awaiting_close_fill",
+        action=action,
+        sec_type=normalize_sec_type(data),
+        qty=qty,
+        position_before_close=position_size,
+        canceled_open_orders=target_resolution.get("canceled_targets", 0),
+        order_ref=order.orderRef,
+        order_id=trade_order_id(trade),
+        order_perm_id=trade_perm_id(trade),
+        close_status=trade_status(trade),
+        close_filled=close_filled,
+        close_fill_price=trade_fill_price(
+            trade,
+            to_float(data.get("price")) or to_float(data.get("entry")),
+        ),
+        close_filled_qty=trade_filled_qty(trade),
+        close_exec_ids=trade_execution_ids(trade),
+    )
+    if rejection_reason and not close_filled:
+        result["status"] = "rejected"
+        result["error"] = rejection_reason
+    if close_filled:
+        result = await apply_edge_stop_close_flat_gate(data, result, symbol)
+
+    persisted = mark_managed_bridge_close(data, result)
+    result["managed_state_persisted"] = persisted
+    if not persisted:
+        result["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+        result["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+        return result
+
+    if (
+        close_filled
+        and result.get("broker_confirmed_flat")
+        and CANCEL_ORPHAN_TARGETS_AFTER_FLAT
+    ):
+        await asyncio.sleep(0.50)
+        result.update(await cleanup_orphan_targets_if_flat(symbol))
+
+    if (
+        not close_filled
+        and not rejection_reason
+        and ENABLE_EXECUTION_FILL_MONITOR
+    ):
+        spawn_execution_monitor(
+            monitor_close_fill_confirmation(
+                original_data=dict(data),
+                close_trade=trade,
+                base_result=dict(result),
+                symbol=symbol,
+                side=side,
+                expected_close_qty=qty,
+                fallback_price=(
+                    to_float(data.get("price"))
+                    or to_float(data.get("entry"))
+                ),
+            )
+        )
+    return result
+
+
 async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
-    await ensure_ib_connected()
+    if is_edge_v2_stop_close(data):
+        async with _edge_stop_close_lock:
+            return await _close_position_market(data)
+    return await _close_position_market(data)
+
+
+async def _close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
 
     symbol = str(data.get("symbol", "")).upper().strip()
     side = str(data.get("side", "")).upper().strip()
@@ -2277,6 +2922,54 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if not symbol:
         raise ValueError("Missing symbol")
+
+    reserved: Optional[Dict[str, Any]] = None
+    if is_edge_v2_stop_close(data):
+        reserved = reserve_edge_stop_close(data)
+        if not reserved.get("ok"):
+            return edge_stop_close_result(
+                data,
+                str(reserved.get("status") or "EDGE_STOP_STATE_PERSISTENCE_FAILED"),
+                managed_setup_id=reserved.get("managed_setup_id", ""),
+                canceled_open_orders=0,
+                managed_state_persisted=(
+                    reserved.get("status") != "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+                ),
+            )
+        if (
+            sec_type == "STK"
+            and BLOCK_MARKET_CLOSES_OUTSIDE_RTH
+            and not is_us_stock_rth_now()
+        ):
+            return edge_stop_close_result(
+                data,
+                "blocked_outside_rth",
+                position_before_close="",
+                canceled_open_orders=0,
+                order_ref=reserved.get("reservation", {}).get("order_ref", ""),
+                message=(
+                    f"Market close blocked outside regular stock hours "
+                    f"({RTH_START}-{RTH_END} {RTH_TIMEZONE}); "
+                    "the setup-scoped reservation remains durable and the "
+                    "managed target was NOT canceled."
+                ),
+                managed_state_persisted=True,
+            )
+        if reserved.get("existing"):
+            await ensure_ib_connected()
+            reservation_state = str(
+                reserved.get("reservation", {}).get("state") or ""
+            ).upper()
+            if reservation_state in {
+                "RESERVED",
+                "TARGET_CANCEL_PENDING",
+                "TARGET_CANCEL_UNCONFIRMED",
+                "TARGET_RESOLVED",
+            }:
+                return await execute_edge_v2_stop_close(data, reserved)
+            return await recover_reserved_edge_stop_close(data, reserved)
+
+    await ensure_ib_connected()
 
     # Hard safety: if we cannot send the market close now, do NOT cancel the
     # attached target first. The previous EOD bug was: cancel target -> market
@@ -2295,6 +2988,9 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
             "canceled_open_orders": 0,
             "message": f"Market close blocked outside regular stock hours ({RTH_START}-{RTH_END} {RTH_TIMEZONE}); target orders were NOT canceled.",
         }
+
+    if reserved is not None:
+        return await execute_edge_v2_stop_close(data, reserved)
 
     position_size = await get_position_size(symbol)
 
@@ -2427,7 +3123,13 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
         await asyncio.sleep(0.50)
         result_payload.update(await cleanup_orphan_targets_if_flat(symbol))
 
-    mark_managed_bridge_close(data, result_payload)
+    managed_state_persisted = mark_managed_bridge_close(data, result_payload)
+    if is_vixale_edge_payload(data):
+        result_payload["managed_state_persisted"] = managed_state_persisted
+        if not managed_state_persisted:
+            result_payload["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+            result_payload["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+            return result_payload
 
     if not close_filled and ENABLE_EXECUTION_FILL_MONITOR:
         spawn_execution_monitor(
@@ -2648,6 +3350,8 @@ def make_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
     payload["position_after_close"] = ib_result.get("position_after_close", "")
     payload["canceled_orphan_targets"] = ib_result.get("canceled_orphan_targets", 0)
     if is_edge_stop_close(data):
+        payload["source"] = "IB_BRIDGE"
+        payload["system_id"] = "VIXALE_EDGE"
         payload["broker_confirmed_flat"] = bool(ib_result.get("broker_confirmed_flat"))
     exit_identity = execution_identity_text(
         exec_ids=ib_result.get("close_exec_ids") or [],
@@ -2969,7 +3673,18 @@ async def monitor_close_fill_confirmation(
                     result,
                     symbol,
                 )
-                mark_managed_bridge_close(original_data, result)
+                managed_state_persisted = mark_managed_bridge_close(
+                    original_data,
+                    result,
+                )
+                result["managed_state_persisted"] = managed_state_persisted
+                if edge_close and not managed_state_persisted:
+                    print(
+                        f"[CLOSE FILL MONITOR CRITICAL] symbol={symbol} side={side} "
+                        "status=EDGE_STOP_STATE_PERSISTENCE_FAILED. "
+                        "Render callback withheld; managed state was not cleared"
+                    )
+                    return
 
                 if (
                     edge_stop_close
@@ -2991,6 +3706,16 @@ async def monitor_close_fill_confirmation(
                     clear_managed_position(symbol)
 
                 render_payload = make_close_fill_payload(original_data, result)
+                if (
+                    edge_stop_close
+                    and not str(render_payload.get("exit_execution_id") or "").strip()
+                ):
+                    print(
+                        f"[CLOSE FILL MONITOR CRITICAL] symbol={symbol} side={side} "
+                        "Edge Stop Loss execution identity is unavailable; "
+                        "Render callback withheld and managed state retained"
+                    )
+                    return
                 render_result = await forward_to_render(render_payload)
                 print(f"[CLOSE FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
                 if edge_close and render_delivery_succeeded(render_result):
@@ -3123,6 +3848,14 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
 
     # Execution-first architecture: successful fills must be echoed back to Render.
     # app.js publishes Telegram/Sheets/dashboard only from these bridge callbacks.
+    if edge_stop_close and ib_result.get("managed_state_persisted") is False:
+        print(
+            f"[RENDER SKIPPED CRITICAL] event={event} symbol={symbol} side={side} "
+            "status=EDGE_STOP_STATE_PERSISTENCE_FAILED. "
+            "Close identity/state must be durable before callback publication"
+        )
+        return
+
     if edge_stop_close and not ib_result.get("broker_confirmed_flat"):
         print(
             f"[RENDER SKIPPED CRITICAL] event={event} symbol={symbol} side={side} "
@@ -3151,6 +3884,16 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
         render_payload = make_close_fill_payload(data, ib_result)
     else:
         render_payload = data
+
+    if (
+        edge_stop_close
+        and not str(render_payload.get("exit_execution_id") or "").strip()
+    ):
+        print(
+            f"[RENDER SKIPPED CRITICAL] event={event} symbol={symbol} side={side} "
+            "Edge Stop Loss execution identity is unavailable"
+        )
+        return
 
     render_result = await forward_to_render(render_payload)
     print(f"[RENDER RESULT] {render_result}")
@@ -3432,11 +4175,32 @@ def managed_order_identity(row: Dict[str, Any], kind: str) -> Dict[str, Any]:
             "order_ref": nested.get("order_ref") or row.get("ib_target_order_ref"),
             "expected_qty": to_float(nested.get("expected_qty")) or to_float(row.get("qty")),
         }
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
     return {
-        "order_id": nested.get("order_id") or row.get("ib_close_order_id"),
-        "perm_id": nested.get("perm_id") or row.get("ib_close_perm_id"),
-        "order_ref": nested.get("order_ref") or row.get("ib_close_order_ref"),
-        "expected_qty": to_float(nested.get("filled_qty")) or to_float(row.get("qty")),
+        "order_id": (
+            nested.get("order_id")
+            or reservation.get("order_id")
+            or row.get("ib_close_order_id")
+        ),
+        "perm_id": (
+            nested.get("perm_id")
+            or reservation.get("perm_id")
+            or row.get("ib_close_perm_id")
+        ),
+        "order_ref": (
+            nested.get("order_ref")
+            or reservation.get("order_ref")
+            or row.get("ib_close_order_ref")
+        ),
+        "expected_qty": (
+            to_float(nested.get("filled_qty"))
+            or to_float(reservation.get("remaining_qty"))
+            or to_float(row.get("qty"))
+        ),
     }
 
 

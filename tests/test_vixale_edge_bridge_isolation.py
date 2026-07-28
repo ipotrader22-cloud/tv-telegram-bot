@@ -1,4 +1,5 @@
 import copy
+import asyncio
 import sys
 import types
 import unittest
@@ -260,8 +261,15 @@ class EdgeEntrySafetyTests(unittest.IsolatedAsyncioTestCase):
         ib_bridge.ENABLE_EXECUTION_FILL_MONITOR = False
         ib_bridge.ENABLE_TARGET_FILL_MONITOR = False
         ib_bridge.BLOCK_MARKET_ENTRIES_OUTSIDE_RTH = False
+        self.entry_timing_patcher = patch.object(
+            ib_bridge,
+            "validate_entry_timing",
+            return_value=None,
+        )
+        self.entry_timing_patcher.start()
 
     async def asyncTearDown(self):
+        self.entry_timing_patcher.stop()
         ib_bridge.DRY_RUN = self.original_dry_run
         ib_bridge.ENABLE_EXECUTION_FILL_MONITOR = self.original_monitor
         ib_bridge.ENABLE_TARGET_FILL_MONITOR = self.original_target_monitor
@@ -475,6 +483,15 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         payload = edge_payload(event="CLOSE_STOP")
         store = {"AAPL": managed_edge_row()}
         render_payloads = []
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
 
         def load_managed():
             return copy.deepcopy(store)
@@ -488,19 +505,30 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             render_payloads.append(copy.deepcopy(payload_to_render))
             return {"forwarded": True, "status_code": 200}
 
+        def cancel_order(_order):
+            target_trade.orderStatus.status = "Cancelled"
+
         with (
             patch.object(ib_bridge, "DRY_RUN", False),
             patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
             patch.object(ib_bridge, "CANCEL_ORPHAN_TARGETS_AFTER_FLAT", False),
             patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
             patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=10.0)),
-            patch.object(ib_bridge, "cancel_open_orders_for_symbol", AsyncMock(return_value=1)),
+            patch.object(ib_bridge, "cancel_open_orders_for_symbol", AsyncMock()) as broad_cancel,
             patch.object(
                 ib_bridge,
                 "qualify_contract",
                 AsyncMock(return_value=SimpleNamespace(symbol="AAPL")),
             ),
             patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
+            patch.object(ib_bridge.ib, "trades", return_value=[target_trade]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(
+                ib_bridge.ib,
+                "cancelOrder",
+                side_effect=cancel_order,
+                create=True,
+            ),
             patch.object(ib_bridge.ib, "placeOrder", return_value=self.close_trade()),
             patch.object(
                 ib_bridge,
@@ -519,10 +547,10 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await ib_bridge.process_signal_background(payload)
 
-        return result, store, render_payloads, verify_flat
+        return result, store, render_payloads, verify_flat, broad_cancel
 
     async def test_immediate_edge_stop_fill_flat_publishes_once(self):
-        result, store, render_payloads, verify_flat = (
+        result, store, render_payloads, verify_flat, broad_cancel = (
             await self.run_immediate_edge_close((True, 0.0))
         )
 
@@ -537,9 +565,10 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(render_payloads[0]["event"], "CLOSE_STOP")
         self.assertTrue(render_payloads[0]["broker_confirmed_flat"])
         self.assertNotIn("AAPL", store)
+        broad_cancel.assert_not_awaited()
 
     async def test_immediate_edge_stop_fill_nonflat_withholds_public_close(self):
-        result, store, render_payloads, _verify_flat = (
+        result, store, render_payloads, _verify_flat, broad_cancel = (
             await self.run_immediate_edge_close((False, 3.0))
         )
 
@@ -555,6 +584,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             "EDGE_STOP_CLOSE_POSITION_NOT_FLAT",
         )
         self.assertEqual(close_state["position_after_close"], 3.0)
+        broad_cancel.assert_not_awaited()
 
     async def run_monitored_edge_close(self, flat_result):
         payload = edge_payload(event="CLOSE_STOP")
@@ -686,6 +716,444 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         verify_flat.assert_not_awaited()
         self.assertEqual(len(render_payloads), 1)
         self.assertEqual(render_payloads[0]["event"], "CLOSE_STOP")
+
+    async def test_target_fill_during_cancel_submits_no_market_close_and_reconciles_tp(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        render_payloads = []
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        def fill_during_cancel(_order):
+            target_trade.orderStatus.status = "Filled"
+            target_trade.orderStatus.filled = 10
+            target_trade.orderStatus.avgFillPrice = 105.4
+            target_trade.fills = [
+                SimpleNamespace(
+                    execution=SimpleNamespace(
+                        execId="TARGET-RACE-1",
+                        time=datetime(2026, 7, 28, 19, 30, tzinfo=timezone.utc),
+                    )
+                )
+            ]
+
+        async def forward(payload_to_render):
+            render_payloads.append(copy.deepcopy(payload_to_render))
+            return {"forwarded": True, "status_code": 200}
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=0.0)),
+            patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge.ib, "trades", return_value=[target_trade]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(
+                ib_bridge.ib,
+                "cancelOrder",
+                side_effect=fill_during_cancel,
+                create=True,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+            patch.object(ib_bridge, "forward_to_render", side_effect=forward),
+            patch.object(ib_bridge, "cleanup_orphan_targets_if_flat", AsyncMock(return_value={})),
+        ):
+            close_result = await ib_bridge.close_position_market(payload)
+            reconcile_result = await ib_bridge.reconcile_managed_target_fills_once()
+
+        self.assertEqual(close_result["status"], "TARGET_FILLED_POSITION_FLAT")
+        place_order.assert_not_called()
+        self.assertEqual(reconcile_result["reported"], 1)
+        self.assertEqual(len(render_payloads), 1)
+        self.assertEqual(render_payloads[0]["event"], "TP")
+        self.assertEqual(render_payloads[0]["price"], 105.4)
+
+    async def test_target_cancel_unconfirmed_submits_no_market_close(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
+            patch.object(ib_bridge, "FORCE_EOD_CANCEL_VERIFY_SECONDS", 0.10),
+            patch.object(ib_bridge, "FORCE_EOD_VERIFY_POLL_SECONDS", 0.10),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
+            patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge, "cancel_open_orders_for_symbol", AsyncMock()) as broad_cancel,
+            patch.object(ib_bridge.ib, "trades", return_value=[target_trade]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(ib_bridge.ib, "cancelOrder", create=True),
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+            patch.object(ib_bridge.asyncio, "sleep", AsyncMock()),
+        ):
+            result = await ib_bridge.close_position_market(payload)
+
+        self.assertEqual(result["status"], "EDGE_STOP_TARGET_CANCEL_UNCONFIRMED")
+        place_order.assert_not_called()
+        broad_cancel.assert_not_awaited()
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "TARGET_CANCEL_UNCONFIRMED",
+        )
+
+    async def test_partial_target_fill_closes_only_remaining_broker_quantity(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        close_trade = fake_trade(
+            order_id=301,
+            perm_id=3301,
+            order_ref="TVFVG_CLOSE_AAPL_PARTIAL",
+            action="SELL",
+            status="Filled",
+            filled=6,
+            price=97.1,
+            exec_id="STOP-PARTIAL-1",
+        )
+        placed_orders = []
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        def partial_fill_then_cancel(_order):
+            target_trade.orderStatus.status = "Cancelled"
+            target_trade.orderStatus.filled = 4
+            target_trade.orderStatus.avgFillPrice = 105.2
+
+        def place_order(_contract, order):
+            placed_orders.append(order)
+            return close_trade
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
+            patch.object(ib_bridge, "CANCEL_ORPHAN_TARGETS_AFTER_FLAT", False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=6.0)),
+            patch.object(ib_bridge, "verify_position_flat", AsyncMock(return_value=(True, 0.0))),
+            patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
+            patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge.ib, "trades", return_value=[target_trade]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(
+                ib_bridge.ib,
+                "cancelOrder",
+                side_effect=partial_fill_then_cancel,
+                create=True,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder", side_effect=place_order),
+        ):
+            result = await ib_bridge.close_position_market(payload)
+
+        self.assertEqual(result["status"], "submitted")
+        self.assertEqual(result["qty"], 6)
+        self.assertEqual(result["position_before_close"], 6.0)
+        self.assertEqual(len(placed_orders), 1)
+        self.assertEqual(placed_orders[0].totalQuantity, 6)
+
+    async def test_stale_setup_id_mismatch_has_no_broker_activity(self):
+        payload = edge_payload(
+            setup_id="VIXALE_EDGE:AAPL:60:LONG:STALE",
+            event="CLOSE_STOP",
+        )
+        store = {"AAPL": managed_edge_row("VIXALE_EDGE:AAPL:60:LONG:ACTIVE")}
+        with (
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(store)),
+            patch.object(ib_bridge, "save_managed_positions") as save_managed,
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()) as ensure_connected,
+            patch.object(ib_bridge, "qualify_contract", AsyncMock()) as qualify,
+            patch.object(ib_bridge, "cancel_open_orders_for_symbol", AsyncMock()) as broad_cancel,
+            patch.object(ib_bridge.ib, "cancelOrder", create=True) as cancel_order,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            result = await ib_bridge.close_position_market(payload)
+
+        self.assertEqual(result["status"], "EDGE_STOP_SETUP_MISMATCH")
+        ensure_connected.assert_not_awaited()
+        qualify.assert_not_awaited()
+        save_managed.assert_not_called()
+        broad_cancel.assert_not_awaited()
+        cancel_order.assert_not_called()
+        place_order.assert_not_called()
+
+    async def test_concurrent_duplicate_close_submits_one_market_order(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        close_trade = fake_trade(
+            order_id=302,
+            perm_id=3302,
+            order_ref=ib_bridge.edge_stop_close_order_ref("AAPL", payload["setup_id"]),
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        placed_orders = []
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        def cancel_order(_order):
+            target_trade.orderStatus.status = "Cancelled"
+
+        def place_order(_contract, order):
+            placed_orders.append(order)
+            return close_trade
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
+            patch.object(ib_bridge, "ENABLE_EXECUTION_FILL_MONITOR", False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=10.0)),
+            patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
+            patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge.ib, "trades", side_effect=lambda: [target_trade, close_trade] if placed_orders else [target_trade]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(
+                ib_bridge.ib,
+                "cancelOrder",
+                side_effect=cancel_order,
+                create=True,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder", side_effect=place_order),
+        ):
+            first, second = await asyncio.gather(
+                ib_bridge.handle_ib_action(payload),
+                ib_bridge.handle_ib_action(payload),
+            )
+
+        self.assertEqual(len(placed_orders), 1)
+        self.assertIn(first["status"], {"submitted_awaiting_close_fill", "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS"})
+        self.assertIn(second["status"], {"submitted_awaiting_close_fill", "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS"})
+
+    async def test_duplicate_after_restart_recovers_close_without_second_order(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        close_trade = fake_trade(
+            order_id=303,
+            perm_id=3303,
+            order_ref=ib_bridge.edge_stop_close_order_ref("AAPL", payload["setup_id"]),
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        placed_orders = []
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        def cancel_order(_order):
+            target_trade.orderStatus.status = "Cancelled"
+
+        def place_order(_contract, order):
+            placed_orders.append(order)
+            return close_trade
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
+            patch.object(ib_bridge, "ENABLE_EXECUTION_FILL_MONITOR", False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=10.0)),
+            patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
+            patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge.ib, "trades", side_effect=lambda: [target_trade, close_trade] if placed_orders else [target_trade]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(
+                ib_bridge.ib,
+                "cancelOrder",
+                side_effect=cancel_order,
+                create=True,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder", side_effect=place_order),
+        ):
+            first = await ib_bridge.close_position_market(payload)
+            second = await ib_bridge.close_position_market(payload)
+
+        self.assertEqual(first["status"], "submitted_awaiting_close_fill")
+        self.assertEqual(second["status"], "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS")
+        self.assertEqual(len(placed_orders), 1)
+        self.assertEqual(second["order_id"], 303)
+
+    async def test_close_reservation_persistence_failure_has_no_broker_activity(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        with (
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(store)),
+            patch.object(ib_bridge, "save_managed_positions", return_value=False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()) as ensure_connected,
+            patch.object(ib_bridge, "qualify_contract", AsyncMock()) as qualify,
+            patch.object(ib_bridge.ib, "cancelOrder", create=True) as cancel_order,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            result = await ib_bridge.close_position_market(payload)
+
+        self.assertEqual(result["status"], "EDGE_STOP_STATE_PERSISTENCE_FAILED")
+        ensure_connected.assert_not_awaited()
+        qualify.assert_not_awaited()
+        cancel_order.assert_not_called()
+        place_order.assert_not_called()
+
+    async def test_close_identity_persistence_failure_withholds_render_callback(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        store = {"AAPL": managed_edge_row()}
+        target_trade = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        close_trade = self.close_trade()
+        save_calls = 0
+        render_payloads = []
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            nonlocal save_calls
+            save_calls += 1
+            if save_calls == 5:
+                return False
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        def cancel_order(_order):
+            target_trade.orderStatus.status = "Cancelled"
+
+        async def forward(payload_to_render):
+            render_payloads.append(copy.deepcopy(payload_to_render))
+            return {"forwarded": True, "status_code": 200}
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "BLOCK_MARKET_CLOSES_OUTSIDE_RTH", False),
+            patch.object(ib_bridge, "CANCEL_ORPHAN_TARGETS_AFTER_FLAT", False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=10.0)),
+            patch.object(ib_bridge, "verify_position_flat", AsyncMock(return_value=(True, 0.0))),
+            patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
+            patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge.ib, "trades", return_value=[target_trade]),
+            patch.object(ib_bridge.ib, "openTrades", return_value=[]),
+            patch.object(
+                ib_bridge.ib,
+                "cancelOrder",
+                side_effect=cancel_order,
+                create=True,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder", return_value=close_trade),
+            patch.object(ib_bridge, "forward_to_render", side_effect=forward),
+        ):
+            result = await ib_bridge.close_position_market(payload)
+            with patch.object(
+                ib_bridge,
+                "handle_ib_action",
+                AsyncMock(return_value=result),
+            ):
+                await ib_bridge.process_signal_background(payload)
+
+        self.assertEqual(result["status"], "EDGE_STOP_STATE_PERSISTENCE_FAILED")
+        self.assertFalse(result["managed_state_persisted"])
+        self.assertEqual(render_payloads, [])
+        self.assertIn("AAPL", store)
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "CLOSE_SUBMISSION_PENDING",
+        )
 
 
 class EdgeTargetMonitorTests(unittest.IsolatedAsyncioTestCase):

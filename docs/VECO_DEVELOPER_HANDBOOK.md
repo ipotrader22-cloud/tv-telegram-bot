@@ -626,6 +626,38 @@ Render. A Filled close with a non-flat position is persisted as
 `position_after_close`; managed state remains for recovery, and neither
 `CLOSE_STOP` nor `RECONCILE_FLAT` is published.
 
+Every payload-version-2 Edge `CLOSE_STOP` uses a setup-scoped persistent close
+reservation before broker activity. The incoming `setup_id` must exactly match
+the active managed Edge row; a stale setup returns
+`EDGE_STOP_SETUP_MISMATCH` without target cancellation or order submission. A
+reservation write failure returns `EDGE_STOP_STATE_PERSISTENCE_FAILED` before
+broker activity. The reservation identity is `setup_id + ":CLOSE_STOP"` and
+stores a deterministic short-hash close `orderRef`, lifecycle state, target
+identity, close identity, fill evidence, and position verification.
+
+The strict Edge close sequence is:
+
+1. Load the exact active setup and persist `RESERVED`.
+2. Identify the one managed target by exact `permId`, otherwise exact
+   `orderId`, otherwise unambiguous `orderRef`.
+3. Persist `TARGET_CANCEL_PENDING`, cancel only that target, and poll until the
+   target is proven Filled or proven Cancelled / ApiCancelled / Inactive.
+4. Re-read the actual IB position only after target resolution.
+5. If the target filled and the position is flat, submit no market close and
+   let exact target reconciliation publish TP.
+6. If the target partially filled and was then canceled, close only the
+   remaining broker quantity. If cancellation remains ambiguous or the target
+   is still working, submit no close and return
+   `EDGE_STOP_TARGET_CANCEL_UNCONFIRMED`.
+
+The pre-cancel position quantity is never reused for Edge close sizing, and the
+generic broad symbol-order cancellation path is not called. Before market
+submission, the bridge persists `CLOSE_SUBMISSION_PENDING` with the
+deterministic order reference and remaining quantity. Repeated or concurrent
+alerts observe the same reservation. After restart, stored `permId`, `orderId`,
+or `orderRef` is used to recover the existing close; a retry never creates a
+second order merely because in-memory monitoring was lost.
+
 When one matching external execution is available after a reliably timestamped
 managed entry, its actual price and quantity are published. External attribution
 requires `entry_filled_at` or `entry_order.filled_at`, a parseable execution
@@ -643,6 +675,23 @@ identity plus timestamps. Before Render delivery, reconciliation persists a
 claim keyed by `setup_id + exit execution identity`. Failed delivery retains
 the claim and managed row for an identical retry. The row is cleared only after
 Render returns success.
+
+`app.js` also treats broker-confirmed Edge `TP` and `CLOSE_STOP` as synchronous
+persistent callback lifecycles. Recognition requires
+`source=IB_BRIDGE`, `system_id=VIXALE_EDGE`, `setup_id`,
+`reconciliation_id`, `broker_confirmed_flat=true`, a zero
+`position_after_close`, and a valid broker execution identity. The HTTP route
+awaits exact Open removal, one Trades exit, one Closed Trade, Telegram
+publication, and raw-JSON completion markers. It returns HTTP 200 only after
+all components succeed and HTTP 503 `RETRY` after a retryable Sheets or
+Telegram failure.
+
+Retries repair only missing components. The in-flight key is
+`setup_id + reconciliation_id + exit event`; durable raw JSON markers make a
+completed duplicate harmless after Render restart. TP remains `Take Profit`,
+`CLOSE_STOP` remains publicly `Stop Loss`, actual execution price/quantity are
+preserved, and neither callback is forwarded back to the bridge. No Google
+Sheets columns are added.
 
 `app.js` processes `EXTERNAL_CLOSE` synchronously as a broker callback, never
 forwards it back to the bridge, removes the exact Edge Open row, stores
@@ -1139,9 +1188,12 @@ Dashboard system label is correct
 TWS target fills
 bridge verifies the broker position is zero
 Bridge detects or reconciles fill
+Render synchronously completes Open removal, Trades, Closed Trades, and Telegram
+retryable publication failure returns HTTP 503 RETRY
 Telegram target message is correct
 Open Positions row is removed
 Closed Trades row is added once
+completed duplicate remains ignored after Render restart
 No orphan target remains
 ```
 
@@ -1174,9 +1226,20 @@ New opposite target quantity is correct
 ### Vixale Edge Stop Loss
 
 ```text
+payload-version-2 setup_id exactly matches the managed setup
+close reservation is durable before target cancellation
+only the exact managed target is canceled and cancellation is verified
+target fill during cancellation submits no market close and later publishes TP
+partial target fill sizes the close from the re-read remaining IB position
+unconfirmed target cancellation returns EDGE_STOP_TARGET_CANCEL_UNCONFIRMED
+stale setup returns EDGE_STOP_SETUP_MISMATCH with no broker activity
+concurrent/restarted duplicate recovers the stored close and submits no second order
 Edge close execution is confirmed Filled
 bridge verifies the actual IB position is zero with a bounded wait
 only then Render receives CLOSE_STOP with broker_confirmed_flat=true
+Render awaits Trades, Closed Trades, Open removal, and Telegram publication
+retryable Sheets or Telegram failure returns HTTP 503 RETRY
+completed callback duplicates remain ignored after Render restart
 Filled but non-flat returns EDGE_STOP_CLOSE_POSITION_NOT_FLAT
 non-flat state retains managed execution identity and position_after_close
 no CLOSE_STOP or RECONCILE_FLAT is published while non-flat
@@ -1315,7 +1378,24 @@ execution evidence followed by a bounded confirmed-zero position check, and
 otherwise `EXTERNAL_CLOSE` / `Manual Close`. A Filled Edge Stop Loss that is
 still non-flat persists `EDGE_STOP_CLOSE_POSITION_NOT_FLAT` and its execution
 identity for recovery, and publishes neither `CLOSE_STOP` nor
-`RECONCILE_FLAT`. Broker evidence prefers exact `permId`, then exact `orderId`;
+`RECONCILE_FLAT`.
+
+Payload-version-2 Stop Loss handling requires an exact active `setup_id` and a
+durable setup-scoped close reservation before broker activity. It cancels and
+verifies only the exact managed target, re-reads the broker position after the
+target reaches a proven terminal state, and sizes any market close from that
+current quantity. A target fill during cancellation produces no Stop Loss
+order; an ambiguous cancellation returns
+`EDGE_STOP_TARGET_CANCEL_UNCONFIRMED`; a stale setup returns
+`EDGE_STOP_SETUP_MISMATCH`. The deterministic setup-hash close `orderRef` and
+reservation state prevent concurrent and post-restart duplicate orders.
+
+Broker-confirmed Edge TP and `CLOSE_STOP` callbacks use synchronous persistent
+Render publication keyed by `setup_id + reconciliation_id + event`. HTTP 200
+means exact Open removal, one Trades row, one Closed Trades row, Telegram, and
+raw-JSON completion markers all succeeded; retryable failures return HTTP 503
+and repair only missing components. Broker evidence prefers exact `permId`,
+then exact `orderId`;
 legacy `orderRef` alone requires post-entry timestamped, quantity-complete,
 unambiguous evidence. External Manual Close price/quantity attribution also
 requires a reliable managed entry timestamp and a parseable, post-entry
@@ -1330,7 +1410,7 @@ fabricate a TP at the stored target without broker evidence. Explicit family
 isolation and durable execution identity keep TWS as the source of truth.
 
 **Schema impact:** None. Bridge identity remains in the managed-position JSON;
-Render publication markers remain in existing raw JSON cells.
+Render component and completion markers remain in existing raw JSON cells.
 
 **Activation dependency:** This is Part 3A only. The queued 16:00 Vixale Edge
 Stop Loss remains Part 3B and is not implemented here. Vixale Edge 1.1
