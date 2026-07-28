@@ -145,6 +145,7 @@ function normalizeSymbol(symbol) {
 function normalizeTradeId(tradeId) {
   const raw = String(tradeId || '').trim().toUpperCase();
   if (!raw) return '';
+  if (raw.startsWith('VIXALE_EDGE:')) return raw;
 
   const match = raw.match(/^(.*)_(LONG|SHORT)$/);
   if (!match) {
@@ -188,6 +189,18 @@ function isFionaLimitPullbackRow(row) {
     isFionaLimitPullbackName(row.variant) ||
     isFionaLimitPullbackName(row.reason) ||
     isFionaLimitPullbackName(row.raw);
+}
+
+function isVixaleEdgePendingLifecycleRow(row) {
+  if (!row) return false;
+  return String(row.system_id || '').toUpperCase() === 'VIXALE_EDGE' &&
+    isFionaLimitPullbackRow(row);
+}
+
+function isVixaleEdgePendingCancel(row) {
+  return isVixaleEdgePendingLifecycleRow(row) &&
+    String(row.cancel_scope || '').toUpperCase() === 'PENDING_ONLY' &&
+    Boolean(row.setup_id);
 }
 
 function isOppositeFlipName(value) {
@@ -921,6 +934,7 @@ function parseJsonTradingViewAlert(data) {
   const openOnSetup = isV51Intraday || isOppositeFlip || isEmaPullback;
 
   const eventMap = {
+    PENDING_SETUP: 'PENDING_SETUP',
     SETUP: 'SETUP',
     ENTRY: 'SETUP',
     ENTRY_FILL: 'FILL',
@@ -1021,6 +1035,7 @@ function parseJsonTradingViewAlert(data) {
   const trade_id = makeTradeId(symbol, side);
 
   const status =
+    event === 'PENDING_SETUP' ? 'pending' :
     event === 'SETUP' ? (openOnSetup ? 'open' : 'pending') :
     event === 'FILL' ? 'open' :
     event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
@@ -1069,6 +1084,14 @@ function parseJsonTradingViewAlert(data) {
     max_position_pct: data.max_position_pct ?? '',
     raw_event: eventRaw,
     reason: data.reason ?? '',
+    payload_version: data.payload_version ?? '',
+    system_id: data.system_id ?? '',
+    setup_id: String(data.setup_id || '').trim(),
+    alert_instance_id: data.alert_instance_id ?? '',
+    cancel_scope: data.cancel_scope ?? '',
+    timeframe: data.timeframe ?? '',
+    flip_bar_time: data.flip_bar_time ?? '',
+    planned_limit_entry: data.planned_limit_entry ?? '',
   };
 }
 
@@ -1081,6 +1104,17 @@ function formatTelegramMessage(row, originalMessage) {
 
   const titleBase = `${row.symbol || ''} ${row.side || ''}`.trim();
   const pnlLine = pnlTelegramLine(row);
+
+  if (row.event === 'PENDING_SETUP' && isVixaleEdgePendingLifecycleRow(row)) {
+    return [
+      `🟣 <b>Vixale Edge setup ${row.side}</b>`,
+      '',
+      `<b>${row.symbol}${row.timeframe ? ` · ${row.timeframe}` : ''}</b>`,
+      row.entry !== '' ? `Planned Entry: <b>${row.entry}</b>` : '',
+      row.target !== '' ? `Target: <b>${row.target}</b>` : '',
+      row.stop !== '' ? `Stop Loss Ref: <b>${row.stop}</b>` : '',
+    ].filter(Boolean).join('\n');
+  }
 
   if (row.event === 'SETUP') {
     const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
@@ -1318,6 +1352,18 @@ function formatTelegramMessage(row, originalMessage) {
   }
 
   if (row.event === 'CANCEL') {
+    if (
+      isVixaleEdgePendingCancel(row) &&
+      String(row.reason || '').toUpperCase() === 'UNFILLED_BY_MARKET_CLOSE'
+    ) {
+      return [
+        '⚪ <b>Vixale Edge setup canceled</b>',
+        '',
+        `<b>${row.symbol} ${row.side}${row.timeframe ? ` · ${row.timeframe}` : ''}</b>`,
+        'Reason: Unfilled by market close',
+      ].filter(Boolean).join('\n');
+    }
+
     const resetText = row.raw_event === 'EOD_RESET'
       ? 'EOD pending orders canceled'
       : row.raw_event === 'NEW_DAY_RESET'
@@ -1507,7 +1553,7 @@ async function appendToTradesSheet(sheets, row) {
 }
 
 async function upsertPending(sheets, row) {
-  if (!row.trade_id) return;
+  if (!row.trade_id) return { created: false };
 
   const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
   const sheetRow = findRowIndexByTradeId(values, row.trade_id);
@@ -1545,6 +1591,8 @@ async function upsertPending(sheets, row) {
 
     console.log('Pending appended:', row.trade_id);
   }
+
+  return { created: sheetRow < 0 };
 }
 
 async function upsertOpenPosition(sheets, row, pendingRow = null) {
@@ -1771,6 +1819,19 @@ async function processLedger(row) {
     };
   }
 
+  if (row.event === 'PENDING_SETUP') {
+    if (!isVixaleEdgePendingLifecycleRow(row) || !row.setup_id) return row;
+
+    const pendingRow = {
+      ...row,
+      trade_id: row.setup_id,
+      entry: row.planned_limit_entry || row.entry,
+      status: 'pending',
+    };
+    const result = await upsertPending(sheets, pendingRow);
+    return { ...pendingRow, skip_telegram: !result.created };
+  }
+
   if (row.event === 'SETUP') {
     if (!row.trade_id) return row;
 
@@ -1795,7 +1856,11 @@ async function processLedger(row) {
   if (row.event === 'FILL') {
     if (!row.trade_id) return row;
 
-    const pendingRow = await removeRowByTradeId(sheets, PENDING_SHEET, row.trade_id);
+    const pendingRow = await removeRowByTradeId(
+      sheets,
+      PENDING_SHEET,
+      row.setup_id || row.trade_id
+    );
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
     await upsertOpenPosition(sheets, row, pendingRow);
     await appendToTradesSheet(sheets, row);
@@ -1805,6 +1870,19 @@ async function processLedger(row) {
   if (row.event === 'CANCEL') {
     let removedPending = null;
     let removedCount = 0;
+
+    if (isVixaleEdgePendingCancel(row)) {
+      removedPending = await removeRowByTradeId(sheets, PENDING_SHEET, row.setup_id);
+      removedCount = removedPending ? 1 : 0;
+      console.log('Vixale Edge exact pending cleanup:', row.setup_id, 'removed:', removedCount);
+      return {
+        ...row,
+        trade_id: row.setup_id,
+        skip_telegram:
+          !removedPending ||
+          String(row.reason || '').toUpperCase() !== 'UNFILLED_BY_MARKET_CLOSE',
+      };
+    }
 
     // First try exact / normalized trade_id match.
     // Example: NASDAQ:NFLX_SHORT and NFLX_SHORT are treated as the same row.
@@ -7487,10 +7565,20 @@ function isBridgeExecutionCallback(reqBody) {
 }
 
 function requiresBridgeExecutionConfirmation(row) {
-  if (!row || !isOpenOnSetupRow(row)) return false;
+  if (!row) return false;
 
   const event = String(row.event || '').toUpperCase();
   const rawEvent = String(row.raw_event || '').toUpperCase();
+
+  if (
+    event === 'SETUP' &&
+    row.setup_id &&
+    isVixaleEdgePendingLifecycleRow(row)
+  ) {
+    return true;
+  }
+
+  if (!isOpenOnSetupRow(row)) return false;
 
   return event === 'SETUP' ||
     (event === 'SL' && rawEvent === 'CLOSE_STOP') ||
@@ -7547,6 +7635,10 @@ function shouldForwardToBridge(reqBody, row) {
   const side = String(row.side || '').toUpperCase();
   const event = String(row.event || '').toUpperCase();
   const rawEvent = String(row.raw_event || '').toUpperCase();
+
+  if (event === 'PENDING_SETUP' || isVixaleEdgePendingCancel(row)) {
+    return { ok: false, reason: 'Vixale Edge pending lifecycle is publication-only' };
+  }
 
   if (BRIDGE_ALLOWED_SYMBOLS.size > 0 && !BRIDGE_ALLOWED_SYMBOLS.has(symbol)) {
     return { ok: false, reason: `symbol ${symbol} is not in BRIDGE_ALLOWED_SYMBOLS` };
@@ -7764,6 +7856,15 @@ function isRecognizedTradeWebhook(row) {
 
   if (event === 'UNKNOWN') return false;
 
+  if (event === 'PENDING_SETUP') {
+    return Boolean(
+      row.symbol &&
+      row.side &&
+      row.setup_id &&
+      isVixaleEdgePendingLifecycleRow(row)
+    );
+  }
+
   if (event === 'CANCEL' || event === 'RECONCILE_FLAT') {
     return Boolean(row.symbol || row.trade_id);
   }
@@ -7894,7 +7995,13 @@ async function processRecognizedTradingViewWebhookLifecycle(
   try {
     if (finalRow.skip_telegram) {
       console.log('Telegram skipped for row:', finalRow.event, finalRow.raw_event || '', finalRow.status || '');
-    } else if (!SILENT_TELEGRAM_EVENTS.has(finalRow.event)) {
+    } else if (
+      !SILENT_TELEGRAM_EVENTS.has(finalRow.event) ||
+      (
+        isVixaleEdgePendingCancel(finalRow) &&
+        String(finalRow.reason || '').toUpperCase() === 'UNFILLED_BY_MARKET_CLOSE'
+      )
+    ) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
       const telegramResult = await sendTelegram(telegramMessage);
       if (failOnPublicationError && telegramResult && telegramResult.ok === false) {
