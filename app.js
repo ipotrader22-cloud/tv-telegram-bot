@@ -676,6 +676,14 @@ function calcResultPercent(openPosition, closeRow) {
 }
 
 function ensureClosePnlFallback(row, openPosition = null) {
+  if (row?.event === 'EXTERNAL_CLOSE') {
+    return {
+      ...row,
+      result: '',
+      result_pct: '',
+    };
+  }
+
   if (!row || !['TP', 'SL', 'EOD'].includes(row.event)) return row;
 
   const enriched = { ...row };
@@ -1050,13 +1058,15 @@ function parseJsonTradingViewAlert(data) {
   );
   if (event === 'EXTERNAL_CLOSE') result = '';
 
-  const resultPct = firstCleanNumber(
-    data.result_pct,
-    data.result_percent,
-    data.pnl_pct,
-    data.pnl_percent,
-    data.percent
-  );
+  const resultPct = event === 'EXTERNAL_CLOSE'
+    ? ''
+    : firstCleanNumber(
+      data.result_pct,
+      data.result_percent,
+      data.pnl_pct,
+      data.pnl_percent,
+      data.percent
+    );
 
   const trade_id = makeTradeId(symbol, side);
 
@@ -1069,6 +1079,23 @@ function parseJsonTradingViewAlert(data) {
     event === 'RECONCILE_FLAT' ? 'reconciled' :
     event === 'STOP_REF_UPDATE' ? 'updated' :
     'unknown';
+
+  const rawPayload = event === 'EXTERNAL_CLOSE'
+    ? {
+      ...data,
+      result: '',
+      result_usd: '',
+      pnl: '',
+      p_l: '',
+      realized_pnl: '',
+      realized_p_l: '',
+      result_pct: '',
+      result_percent: '',
+      pnl_pct: '',
+      pnl_percent: '',
+      percent: '',
+    }
+    : data;
 
   return {
     timestamp: nowNy(),
@@ -1084,7 +1111,7 @@ function parseJsonTradingViewAlert(data) {
     result,
     result_pct: resultPct,
     status,
-    raw: JSON.stringify(data, null, 2),
+    raw: JSON.stringify(rawPayload, null, 2),
     strategy: strategyName,
     profile: profileName,
     variant: variantName,

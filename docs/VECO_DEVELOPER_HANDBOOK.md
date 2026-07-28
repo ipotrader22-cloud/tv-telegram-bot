@@ -155,10 +155,16 @@ active managed Edge record for the symbol, and no prior submitted record for
 the same `setup_id`. Edge never uses Prime/Shrek reversal-delta math and never
 sweeps symbol orders through the generic Opposite Flip path.
 
+The frozen Edge target is mandatory before any broker action. It must be finite
+and positive, above entry for LONG, below entry for SHORT, and uses `GTC`.
+Missing, zero, non-finite, or directionally invalid targets create no parent or
+target order and cancel no existing protective order.
+
 Blocked Edge setups place no broker order and return a publication-only,
 `PENDING_ONLY` `CANCEL` with the original `setup_id`:
 
 ```text
+EDGE_TARGET_REQUIRED
 EDGE_ENTRY_BLOCKED_EXISTING_POSITION
 EDGE_DUPLICATE_ACTIVE_SETUP
 ```
@@ -594,11 +600,29 @@ positive execution evidence:
    reason `IB_POSITION_FLAT_EXTERNAL_EXECUTION`.
 
 A flat position, missing/non-working target, stored target price, or market
-touch is not TP evidence. Target evidence must match the managed target
-`orderId`, `permId`, or `orderRef`, closing side, and expected quantity. When a
-single matching external execution is available, its actual price and quantity
-are published. Otherwise the callback explicitly marks price and quantity
-unavailable; it never substitutes the target price or fabricates P&L.
+touch is not TP evidence. Broker identity uses strongest-ID precedence:
+
+1. If the managed record has `permId`, the execution must match that exact
+   `permId`; a matching `orderRef` cannot override a mismatch.
+2. Otherwise, if it has `orderId`, the execution must match that exact
+   `orderId`.
+3. Only legacy records without either strong ID may fall back to `orderRef`.
+   That fallback additionally requires exact symbol and closing action,
+   sufficient quantity, an execution timestamp at or after
+   `entry_filled_at`, and one unambiguous matching execution group.
+
+Even exact target execution evidence is not sufficient for immediate TP
+publication: the target monitor performs a bounded broker-position check and
+must confirm zero before setting `broker_confirmed_flat=true` or calling
+Render. A Filled target with a non-flat broker position sends no callback,
+retains managed state, and is retried by persistent reconciliation.
+
+When a single matching external execution is available, its actual price and
+quantity are published. Otherwise the callback explicitly marks price and
+quantity unavailable; it never substitutes the target price. `EXTERNAL_CLOSE`
+always blanks result and result percentage, ignores supplied P&L aliases, and
+never invokes normal close P&L fallback—even when actual execution price and
+quantity are available.
 
 The managed-position JSON persists entry, target, and bridge-close broker
 identity plus timestamps. Before Render delivery, reconciliation persists a
@@ -618,7 +642,9 @@ Manual Close — price unavailable
 The second line is used only when no actual IB execution price is available.
 Persistent publication markers live inside the existing raw JSON cells, so
 duplicate callbacks do not create another Trades row, Closed row, or Telegram
-message. No Google Sheets column or worksheet schema changes.
+message. A callback without confirmed broker-flat state or valid `IB_BRIDGE`
+identity cannot close the public ledger. No Google Sheets column or worksheet
+schema changes.
 
 ---
 
@@ -1083,6 +1109,8 @@ For every strategy lifecycle change, verify:
 TradingView alert delivered
 Render receives SETUP
 Bridge receives SETUP
+Edge target is finite, positive, directionally valid, and GTC
+invalid Edge target returns PENDING_ONLY / EDGE_TARGET_REQUIRED with no IB order
 TWS entry fills
 TWS target is attached and working
 Bridge callback reaches Render
@@ -1095,6 +1123,7 @@ Dashboard system label is correct
 
 ```text
 TWS target fills
+bridge verifies the broker position is zero
 Bridge detects or reconciles fill
 Telegram target message is correct
 Open Positions row is removed
@@ -1113,6 +1142,8 @@ Telegram says Vixale Edge closed manually once
 Open Positions exact setup is removed
 Closed Trades says Manual Close
 unknown price shows price unavailable and no P&L
+known execution price/quantity are preserved without P&L or percentage
+unconfirmed or non-bridge callback leaves the public ledger open
 ```
 
 ### Opposite flip close
@@ -1249,12 +1280,17 @@ approved. This branch does not deploy or activate alerts.
 
 **Decision:** Vixale Edge is classified before generic Opposite Flip execution.
 It may hold one managed position per symbol across timeframes, enters with an
-ordinary MARKET order plus frozen GTC target, and never performs broker
-reversal-delta or stacking. A later flat state is TP only with exact managed
-target execution evidence, Stop Loss only with exact bridge-close execution
-evidence, and otherwise `EXTERNAL_CLOSE` / `Manual Close`. The managed file
-persists order/execution identity and a stable reconciliation claim until
-Render confirms publication.
+ordinary MARKET order only when a finite, directionally valid frozen GTC target
+is present, and never performs broker reversal-delta or stacking. Invalid
+targets return `PENDING_ONLY / EDGE_TARGET_REQUIRED` before broker activity. A
+later flat state is TP only with exact managed target execution evidence plus a
+confirmed zero broker position, Stop Loss only with exact bridge-close
+execution evidence, and otherwise `EXTERNAL_CLOSE` / `Manual Close`. Broker
+evidence prefers exact `permId`, then exact `orderId`; legacy `orderRef` alone
+requires post-entry timestamped, quantity-complete, unambiguous evidence.
+Manual Close retains actual price/quantity when available but never calculates
+fallback P&L. The managed file persists order/execution identity and a stable
+reconciliation claim until Render confirms publication.
 
 **Reason:** The shared Fiona/Prime strategy text previously allowed Edge to
 enter Prime reversal handling, while flat-position reconciliation could

@@ -531,6 +531,37 @@ async function run() {
     exit_quantity_available: false,
     reason: 'IB_POSITION_FLAT_EXTERNAL_EXECUTION',
   });
+  await externalLifecycle({
+    ...externalClose,
+    broker_confirmed_flat: false,
+  });
+  await externalLifecycle({
+    ...externalClose,
+    source: 'TradingView',
+  });
+  assert.strictEqual(
+    countRowsBySetupId(externalSheets.rows['Open Positions'], 11, externalId),
+    1,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE cannot remove Open'
+  );
+  assert.strictEqual(
+    externalSheets.rows.Trades
+      .slice(1)
+      .filter(row => JSON.parse(row[10] || '{}').reconciliation_id === reconciliationId)
+      .length,
+    0,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE creates no Trades close'
+  );
+  assert.strictEqual(
+    externalSheets.rows['Closed Trades'].length,
+    1,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE creates no Closed row'
+  );
+  assert.strictEqual(
+    externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    0,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE sends no Telegram'
+  );
   await assert.rejects(
     externalLifecycle(externalClose),
     error => error.retryable === true
@@ -598,6 +629,99 @@ async function run() {
   assert.strictEqual(
     externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
     1
+  );
+
+  // Manual close with an actual IB execution preserves price/qty but never P&L.
+  const actualExternalSheets = createMockSheets();
+  const actualExternalTelegram = [];
+  const actualExternalBridge = [];
+  const actualExternalLifecycle = createLifecycleContext({
+    sheetStore: actualExternalSheets,
+    telegramStore: actualExternalTelegram,
+    bridgeStore: actualExternalBridge,
+  });
+  const actualExternalId = 'VIXALE_EDGE:META:60:LONG:1785284400000';
+  await actualExternalLifecycle(edgePayload('PENDING_SETUP', actualExternalId, {
+    symbol: 'META',
+    flip_bar_time: 1785284400000,
+  }));
+  await actualExternalLifecycle(edgePayload('ENTRY_FILL', actualExternalId, {
+    symbol: 'META',
+    flip_bar_time: 1785284400000,
+    render_forwarded_at: '2026-07-28T15:10:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const actualReconciliationId = `${actualExternalId}:EXEC:MANUAL-META-1`;
+  const actualExternalResult = await actualExternalLifecycle(
+    edgePayload('EXTERNAL_CLOSE', actualExternalId, {
+      source: 'IB_BRIDGE',
+      symbol: 'META',
+      flip_bar_time: 1785284400000,
+      price: 130.25,
+      qty: 7,
+      result: 999,
+      pnl: 999,
+      result_pct: 88,
+      pnl_pct: 88,
+      render_forwarded_at: '2026-07-28T15:20:00-04:00',
+      ib_status: 'position_flat_reconciled',
+      broker_confirmed_flat: true,
+      position_after_close: 0,
+      exit_execution_id: 'EXEC:MANUAL-META-1',
+      reconciliation_id: actualReconciliationId,
+      exit_price_available: true,
+      exit_quantity_available: true,
+      reason: 'IB_POSITION_FLAT_EXTERNAL_EXECUTION',
+    })
+  );
+  assert.strictEqual(actualExternalResult.finalRow.result, '');
+  assert.strictEqual(actualExternalResult.finalRow.result_pct, '');
+  assert.strictEqual(
+    actualExternalSheets.rows.Trades
+      .slice(1)
+      .filter(row => JSON.parse(row[10] || '{}').reconciliation_id === actualReconciliationId)
+      .length,
+    1,
+    'actual-price EXTERNAL_CLOSE creates one Trades close'
+  );
+  const actualTradesClose = actualExternalSheets.rows.Trades
+    .slice(1)
+    .find(row => JSON.parse(row[10] || '{}').reconciliation_id === actualReconciliationId);
+  assert.strictEqual(actualTradesClose[5], 7, 'actual exit quantity is preserved in Trades');
+  assert.strictEqual(actualTradesClose[6], 130.25, 'actual exit price is preserved in Trades');
+  assert.strictEqual(actualTradesClose[8], '', 'Trades stores no Manual Close P&L');
+  assert.strictEqual(
+    actualExternalSheets.rows['Closed Trades'].length,
+    2,
+    'actual-price EXTERNAL_CLOSE creates one Closed row'
+  );
+  const actualClosed = actualExternalSheets.rows['Closed Trades'][1];
+  assert.strictEqual(actualClosed[6], 130.25, 'actual exit price is preserved in Closed Trades');
+  assert.strictEqual(actualClosed[7], 7, 'actual exit quantity is preserved in Closed Trades');
+  assert.strictEqual(actualClosed[8], '', 'Closed Trades stores no Manual Close P&L');
+  const actualCloseRaw = JSON.parse(actualClosed[11] || '{}');
+  assert.strictEqual(actualCloseRaw.result, '');
+  assert.strictEqual(actualCloseRaw.result_pct, '');
+  assert.strictEqual(actualCloseRaw.pnl, '');
+  assert.strictEqual(actualCloseRaw.pnl_pct, '');
+  assert.strictEqual(
+    actualExternalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    1,
+    'actual-price EXTERNAL_CLOSE sends one Manual Close Telegram'
+  );
+  assert.ok(
+    actualExternalTelegram.some(message => message.includes('Manual Close: <b>130.25</b>')),
+    `actual execution price appears in Manual Close Telegram: ${JSON.stringify(actualExternalTelegram)}`
+  );
+  assert.ok(
+    actualExternalTelegram.every(message => !message.includes('999') && !message.includes('88')),
+    'supplied callback P&L is ignored'
+  );
+  assert.strictEqual(
+    actualExternalBridge.filter(event => event === 'EXTERNAL_CLOSE').length,
+    0,
+    'actual-price EXTERNAL_CLOSE never forwards to bridge'
   );
 
   console.log('Vixale Edge app lifecycle integration: mocked Sheets, Telegram, and bridge checks passed');

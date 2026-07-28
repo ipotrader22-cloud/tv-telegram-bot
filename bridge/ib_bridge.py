@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import logging
+import math
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional, Tuple, List
@@ -762,6 +763,39 @@ def validate_target_price(side: str, entry: float, target_price: float) -> None:
         raise ValueError(
             f"Invalid SHORT target price: target {target_price} must be below entry {entry}"
         )
+
+
+def valid_edge_target(side: str, entry: float, target_price: float) -> bool:
+    if not math.isfinite(target_price) or target_price <= 0:
+        return False
+    if side == "LONG":
+        return target_price > entry
+    if side == "SHORT":
+        return target_price < entry
+    return False
+
+
+def edge_target_required_result(
+    data: Dict[str, Any],
+    symbol: str,
+    side: str,
+    entry: float,
+    target_price: float,
+) -> Dict[str, Any]:
+    return {
+        "dry_run": DRY_RUN,
+        "status": "edge_target_required",
+        "symbol": symbol,
+        "side": side,
+        "setup_id": str(data.get("setup_id") or ""),
+        "entry_reference_price": entry,
+        "target_price": target_price if math.isfinite(target_price) else None,
+        "target_tif": "GTC",
+        "canceled_replaced_orders": 0,
+        "cancel_scope": "PENDING_ONLY",
+        "cancel_reason": "EDGE_TARGET_REQUIRED",
+        "message": "Vixale Edge requires a finite target on the profitable side of entry; no broker order submitted.",
+    }
 
 
 def get_entry_order_type(data: Dict[str, Any]) -> str:
@@ -1655,12 +1689,25 @@ async def monitor_target_fill(
                 try:
                     actual_qty = trade_filled_qty(target_trade) or qty
                     fill_price = trade_fill_price(target_trade)
-                    if is_vixale_edge_payload(original_data) and fill_price <= 0:
+                    edge_target = is_vixale_edge_payload(original_data)
+                    if edge_target and fill_price <= 0:
                         print(
                             f"[TP MONITOR RETRY ARMED] symbol={symbol} exact target is Filled "
                             "but actual execution price is unavailable; managed state retained"
                         )
                         return
+                    if edge_target:
+                        flat, position_after = await verify_position_flat(
+                            symbol,
+                            FORCE_EOD_POSITION_VERIFY_SECONDS,
+                        )
+                        if not flat:
+                            print(
+                                f"[TP MONITOR CRITICAL RETRY ARMED] symbol={symbol} "
+                                f"exact target is Filled but broker position remains {position_after}; "
+                                "TP callback withheld and managed state retained"
+                            )
+                            return
                     payload = dict(original_data)
                     payload["event"] = "TP"
                     payload["symbol"] = symbol
@@ -1671,14 +1718,14 @@ async def monitor_target_fill(
                     payload["qty"] = actual_qty
                     payload["reason"] = (
                         "IB_TARGET_EXECUTION_CONFIRMED"
-                        if is_vixale_edge_payload(original_data)
+                        if edge_target
                         else payload.get("reason") or "IB_TARGET_FILLED"
                     )
                     payload["ib_target_order_id"] = trade_order_id(target_trade)
                     payload["ib_target_perm_id"] = trade_perm_id(target_trade)
                     payload["ib_target_order_ref"] = trade_order_ref_value(target_trade)
                     payload["ib_target_status"] = trade_status(target_trade)
-                    if is_vixale_edge_payload(original_data):
+                    if edge_target:
                         identity = execution_identity_text(
                             exec_ids=trade_execution_ids(target_trade),
                             perm_id=trade_perm_id(target_trade),
@@ -1808,6 +1855,10 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
     if qty <= 0:
         raise ValueError(f"Invalid qty: {qty}")
 
+    target_price = extract_target_price(data, side, entry) if edge_mode else 0.0
+    if edge_mode and not valid_edge_target(side, entry, target_price):
+        return edge_target_required_result(data, symbol, side, entry, target_price)
+
     validate_pretrade_risk(symbol, side, entry, qty, sec_type)
     validate_entry_timing(entry_order_type, sec_type)
 
@@ -1818,11 +1869,12 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
     no_target_mode = is_no_target_payload(data)
     opposite_flip_mode = is_opposite_flip_payload(data)
 
-    if no_target_mode:
-        target_price = 0.0
-    else:
-        target_price = extract_target_price(data, side, entry)
-        validate_target_price(side, entry, target_price)
+    if not edge_mode:
+        if no_target_mode:
+            target_price = 0.0
+        else:
+            target_price = extract_target_price(data, side, entry)
+            validate_target_price(side, entry, target_price)
 
     canceled_replaced_orders = 0
 
@@ -2602,6 +2654,13 @@ async def monitor_entry_fill_confirmation(
             fully_filled = trade_is_filled(entry_trade, expected_entry_order_qty)
 
             if fully_filled:
+                if is_vixale_edge_payload(original_data) and target_trade is None:
+                    print(
+                        f"[ENTRY FILL MONITOR CRITICAL] symbol={symbol} side={side} "
+                        "Edge entry filled without its mandatory target; publication withheld"
+                    )
+                    return
+
                 result = dict(base_result)
                 result["status"] = (
                     "submitted_with_attached_target"
@@ -3317,17 +3376,58 @@ def identity_matches(
     actual_order_ref: Any,
     expected: Dict[str, Any],
 ) -> bool:
-    checks = []
-    if expected.get("order_id") not in (None, ""):
-        checks.append(str(actual_order_id or "") == str(expected.get("order_id")))
-    if expected.get("perm_id") not in (None, ""):
-        checks.append(str(actual_perm_id or "") == str(expected.get("perm_id")))
-    if str(expected.get("order_ref") or "").strip():
-        checks.append(
-            str(actual_order_ref or "").upper().strip()
-            == str(expected.get("order_ref") or "").upper().strip()
-        )
-    return any(checks)
+    expected_perm_id = expected.get("perm_id")
+    if expected_perm_id not in (None, "", 0, "0"):
+        return str(actual_perm_id or "") == str(expected_perm_id)
+
+    expected_order_id = expected.get("order_id")
+    if expected_order_id not in (None, "", 0, "0"):
+        return str(actual_order_id or "") == str(expected_order_id)
+
+    expected_order_ref = str(expected.get("order_ref") or "").upper().strip()
+    if expected_order_ref:
+        return str(actual_order_ref or "").upper().strip() == expected_order_ref
+
+    return False
+
+
+def uses_order_ref_identity_fallback(expected: Dict[str, Any]) -> bool:
+    return (
+        expected.get("perm_id") in (None, "", 0, "0")
+        and expected.get("order_id") in (None, "", 0, "0")
+        and bool(str(expected.get("order_ref") or "").strip())
+    )
+
+
+def parse_execution_time(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def entry_filled_time(row: Dict[str, Any]) -> Optional[datetime]:
+    entry_order = row.get("entry_order") if isinstance(row.get("entry_order"), dict) else {}
+    return parse_execution_time(row.get("entry_filled_at") or entry_order.get("filled_at"))
+
+
+def execution_at_or_after_entry(value: Any, row: Dict[str, Any]) -> bool:
+    execution_time = parse_execution_time(value)
+    entry_time = entry_filled_time(row)
+    if execution_time is None or entry_time is None:
+        return False
+
+    comparable_execution = execution_time
+    comparable_entry = entry_time
+    if comparable_execution.tzinfo is None and comparable_entry.tzinfo is not None:
+        comparable_execution = comparable_execution.replace(tzinfo=comparable_entry.tzinfo)
+    elif comparable_execution.tzinfo is not None and comparable_entry.tzinfo is None:
+        comparable_entry = comparable_entry.replace(tzinfo=comparable_execution.tzinfo)
+    return comparable_execution >= comparable_entry
 
 
 def normalized_execution_action(value: Any) -> str:
@@ -3354,6 +3454,18 @@ def trade_execution_ids(trade: Any) -> List[str]:
         if exec_id:
             values.append(exec_id)
     return sorted(set(values))
+
+
+def trade_execution_times(trade: Any) -> List[datetime]:
+    values = []
+    for fill in getattr(trade, "fills", []) or []:
+        execution_time = parse_execution_time(
+            getattr(getattr(fill, "execution", None), "time", None)
+            or getattr(fill, "time", None)
+        )
+        if execution_time is not None:
+            values.append(execution_time)
+    return values
 
 
 def execution_identity_text(
@@ -3391,6 +3503,14 @@ def trade_execution_evidence(
         return None
     if normalized_execution_action(trade_action(trade)) != expected_exit_action(row):
         return None
+
+    if uses_order_ref_identity_fallback(expected):
+        execution_times = trade_execution_times(trade)
+        if not execution_times or not all(
+            execution_at_or_after_entry(execution_time, row)
+            for execution_time in execution_times
+        ):
+            return None
 
     qty = trade_filled_qty(trade)
     expected_qty = to_float(expected.get("expected_qty"))
@@ -3438,7 +3558,7 @@ def fill_execution_details(fill: Any) -> Dict[str, Any]:
         "action": normalized_execution_action(getattr(execution, "side", "")),
         "qty": to_float(getattr(execution, "shares", 0)),
         "price": to_float(getattr(execution, "price", 0)),
-        "time": getattr(execution, "time", None),
+        "time": getattr(execution, "time", None) or getattr(fill, "time", None),
     }
 
 
@@ -3448,6 +3568,7 @@ def fill_execution_evidence(
     expected: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     symbol = str(row.get("symbol") or "").upper().strip()
+    order_ref_fallback = uses_order_ref_identity_fallback(expected)
     matches = []
     for fill in fills:
         details = fill_execution_details(fill)
@@ -3462,9 +3583,30 @@ def fill_execution_evidence(
             expected,
         ):
             continue
+        if order_ref_fallback and not execution_at_or_after_entry(details["time"], row):
+            continue
         if details["qty"] <= 0 or details["price"] <= 0:
             continue
         matches.append(details)
+
+    if order_ref_fallback:
+        groups: Dict[str, List[Dict[str, Any]]] = {}
+        for details in matches:
+            group_key = (
+                f"PERM:{details['perm_id']}"
+                if details["perm_id"] not in (None, "", 0, "0")
+                else f"ORDER:{details['order_id']}"
+                if details["order_id"] not in (None, "", 0, "0")
+                else f"EXEC:{details['exec_id']}"
+                if details["exec_id"]
+                else ""
+            )
+            if not group_key:
+                return None
+            groups.setdefault(group_key, []).append(details)
+        if len(groups) != 1:
+            return None
+        matches = next(iter(groups.values()))
 
     qty = sum(item["qty"] for item in matches)
     expected_qty = to_float(expected.get("expected_qty"))
@@ -3512,10 +3654,19 @@ def find_managed_execution_evidence(row: Dict[str, Any], kind: str) -> Optional[
     if not any(expected.get(key) not in (None, "") for key in ("order_id", "perm_id", "order_ref")):
         return None
 
+    trade_matches = []
     for trade in current_ib_trades():
         evidence = trade_execution_evidence(trade, row, expected)
         if evidence:
-            return evidence
+            trade_matches.append(evidence)
+
+    if uses_order_ref_identity_fallback(expected):
+        if len(trade_matches) == 1:
+            return trade_matches[0]
+        if len(trade_matches) > 1:
+            return None
+    elif trade_matches:
+        return trade_matches[0]
 
     return fill_execution_evidence(current_ib_fills(), row, expected)
 

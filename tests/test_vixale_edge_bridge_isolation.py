@@ -2,6 +2,7 @@ import copy
 import sys
 import types
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -147,10 +148,14 @@ def fake_trade(
     price,
     symbol="AAPL",
     exec_id="",
+    execution_time=None,
 ):
     fills = []
     if exec_id:
-        fills.append(SimpleNamespace(execution=SimpleNamespace(execId=exec_id)))
+        fills.append(SimpleNamespace(execution=SimpleNamespace(
+            execId=exec_id,
+            time=execution_time,
+        )))
     return SimpleNamespace(
         contract=SimpleNamespace(symbol=symbol),
         order=SimpleNamespace(
@@ -181,6 +186,7 @@ def fake_fill(
     price,
     order_ref="",
     symbol="AAPL",
+    execution_time=None,
 ):
     return SimpleNamespace(
         contract=SimpleNamespace(symbol=symbol),
@@ -192,6 +198,7 @@ def fake_fill(
             shares=shares,
             price=price,
             orderRef=order_ref,
+            time=execution_time,
         ),
     )
 
@@ -318,6 +325,41 @@ class EdgeEntrySafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store["AAPL"]["setup_id"], edge_payload()["setup_id"])
         self.assertEqual(store["AAPL"]["target_order"]["order_id"], 200)
 
+    async def test_invalid_edge_target_returns_exact_pending_cancel_without_broker_action(self):
+        invalid_payloads = (
+            edge_payload(target=None),
+            edge_payload(target=0),
+            edge_payload(target=float("inf")),
+            edge_payload(target=float("nan")),
+            edge_payload(target=99),
+            edge_payload(side="SHORT", target=101),
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(side=payload["side"], target=payload["target"]):
+                with (
+                    patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+                    patch.object(ib_bridge, "get_position_size", AsyncMock()) as get_position,
+                    patch.object(ib_bridge, "qualify_contract", AsyncMock()) as qualify,
+                    patch.object(ib_bridge, "cancel_open_orders_for_symbol", AsyncMock()) as cancel_orders,
+                    patch.object(ib_bridge.ib, "placeOrder") as place_order,
+                ):
+                    result = await ib_bridge.place_entry_order(payload)
+
+                self.assertEqual(result["cancel_reason"], "EDGE_TARGET_REQUIRED")
+                self.assertEqual(result["cancel_scope"], "PENDING_ONLY")
+                self.assertEqual(result["setup_id"], payload["setup_id"])
+                self.assertEqual(result["canceled_replaced_orders"], 0)
+                cancel_payload = ib_bridge.make_cancel_payload(payload, result)
+                self.assertEqual(cancel_payload["event"], "CANCEL")
+                self.assertEqual(cancel_payload["reason"], "EDGE_TARGET_REQUIRED")
+                self.assertEqual(cancel_payload["cancel_scope"], "PENDING_ONLY")
+                self.assertEqual(cancel_payload["setup_id"], payload["setup_id"])
+                get_position.assert_not_awaited()
+                qualify.assert_not_awaited()
+                cancel_orders.assert_not_awaited()
+                place_order.assert_not_called()
+
     async def test_existing_position_blocks_without_order_or_target_cancel(self):
         store = {"AAPL": managed_edge_row("VIXALE_EDGE:AAPL:45:LONG:OLD")}
         with (
@@ -416,6 +458,117 @@ class EdgeEntrySafetyTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class EdgeTargetMonitorTests(unittest.IsolatedAsyncioTestCase):
+    def filled_target(self):
+        return fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.37,
+            exec_id="TARGET-MONITOR-1",
+        )
+
+    async def test_filled_target_with_nonflat_broker_position_sends_no_callback(self):
+        store = {"AAPL": managed_edge_row()}
+        with (
+            patch.object(ib_bridge, "ENABLE_TARGET_FILL_MONITOR", True),
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "claim_target_report", AsyncMock(return_value=True)),
+            patch.object(ib_bridge, "release_target_report_claim", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "verify_position_flat",
+                AsyncMock(return_value=(False, 10.0)),
+            ) as verify_flat,
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(store)),
+            patch.object(ib_bridge, "save_managed_positions") as save_managed,
+            patch.object(ib_bridge, "forward_to_render", AsyncMock()) as forward,
+            patch.object(ib_bridge, "clear_managed_position") as clear_managed,
+        ):
+            await ib_bridge.monitor_target_fill(
+                edge_payload(),
+                self.filled_target(),
+                "AAPL",
+                "LONG",
+                10,
+                100.25,
+                105,
+            )
+
+        verify_flat.assert_awaited_once_with(
+            "AAPL",
+            ib_bridge.FORCE_EOD_POSITION_VERIFY_SECONDS,
+        )
+        forward.assert_not_awaited()
+        save_managed.assert_not_called()
+        clear_managed.assert_not_called()
+        self.assertIn("AAPL", store)
+
+    async def test_filled_target_with_confirmed_flat_publishes_actual_tp(self):
+        store = {"AAPL": managed_edge_row()}
+        render_payloads = []
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        async def forward(payload):
+            render_payloads.append(copy.deepcopy(payload))
+            return {"forwarded": True, "status_code": 200}
+
+        def clear_managed(symbol):
+            store.pop(symbol, None)
+
+        with (
+            patch.object(ib_bridge, "ENABLE_TARGET_FILL_MONITOR", True),
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "claim_target_report", AsyncMock(return_value=True)),
+            patch.object(ib_bridge, "release_target_report_claim", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "verify_position_flat",
+                AsyncMock(return_value=(True, 0.0)),
+            ),
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=lambda: copy.deepcopy(store),
+            ),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+            patch.object(ib_bridge, "forward_to_render", side_effect=forward),
+            patch.object(ib_bridge, "clear_managed_position", side_effect=clear_managed),
+            patch.object(
+                ib_bridge,
+                "cleanup_orphan_targets_if_flat",
+                AsyncMock(return_value={}),
+            ),
+        ):
+            await ib_bridge.monitor_target_fill(
+                edge_payload(),
+                self.filled_target(),
+                "AAPL",
+                "LONG",
+                10,
+                100.25,
+                105,
+            )
+
+        self.assertEqual(len(render_payloads), 1)
+        self.assertEqual(render_payloads[0]["event"], "TP")
+        self.assertEqual(render_payloads[0]["price"], 105.37)
+        self.assertEqual(render_payloads[0]["qty"], 10)
+        self.assertTrue(render_payloads[0]["broker_confirmed_flat"])
+        self.assertEqual(
+            render_payloads[0]["reason"],
+            "IB_TARGET_EXECUTION_CONFIRMED",
+        )
+        self.assertNotIn("AAPL", store)
+
+
 class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
     async def classify_once(
         self,
@@ -473,6 +626,114 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[0]["reason"], "IB_TARGET_EXECUTION_CONFIRMED")
         self.assertEqual(store, {})
         self.assertEqual(result["reported"], 1)
+
+    async def test_exact_perm_id_target_execution_remains_tp(self):
+        target = fake_trade(
+            order_id=999,
+            perm_id=2200,
+            order_ref="DIFFERENT_REF",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.41,
+            exec_id="TARGET-PERM-1",
+        )
+        _result, _store, payloads = await self.classify_once(
+            managed_edge_row(),
+            trades=[target],
+        )
+        self.assertEqual(payloads[0]["event"], "TP")
+        self.assertEqual(payloads[0]["price"], 105.41)
+
+    async def test_mismatched_strong_ids_reject_same_historical_order_ref(self):
+        historical = fake_trade(
+            order_id=999,
+            perm_id=9999,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.22,
+            exec_id="HISTORICAL-TARGET-1",
+        )
+        _result, _store, payloads = await self.classify_once(
+            managed_edge_row(),
+            trades=[historical],
+        )
+        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
+        self.assertNotEqual(payloads[0]["event"], "TP")
+
+    async def test_legacy_order_ref_only_requires_post_entry_execution_time(self):
+        row = managed_edge_row()
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
+        row["target_order"]["order_id"] = ""
+        row["target_order"]["perm_id"] = ""
+        row["ib_target_order_id"] = ""
+        row["ib_target_perm_id"] = ""
+
+        before_entry = fake_trade(
+            order_id=801,
+            perm_id=8801,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=104.9,
+            exec_id="LEGACY-BEFORE-1",
+            execution_time=datetime(2026, 7, 28, 13, 59, tzinfo=timezone.utc),
+        )
+        _result, _store, before_payloads = await self.classify_once(
+            row,
+            trades=[before_entry],
+        )
+        self.assertEqual(before_payloads[0]["event"], "EXTERNAL_CLOSE")
+
+        after_entry = fake_trade(
+            order_id=802,
+            perm_id=8802,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.18,
+            exec_id="LEGACY-AFTER-1",
+            execution_time=datetime(2026, 7, 28, 14, 1, tzinfo=timezone.utc),
+        )
+        _result, _store, after_payloads = await self.classify_once(
+            row,
+            trades=[after_entry],
+        )
+        self.assertEqual(after_payloads[0]["event"], "TP")
+        self.assertEqual(after_payloads[0]["price"], 105.18)
+
+    async def test_legacy_order_ref_only_ambiguous_executions_are_not_tp(self):
+        row = managed_edge_row()
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
+        row["target_order"]["order_id"] = ""
+        row["target_order"]["perm_id"] = ""
+        row["ib_target_order_id"] = ""
+        row["ib_target_perm_id"] = ""
+        execution_time = datetime(2026, 7, 28, 14, 1, tzinfo=timezone.utc)
+        matches = [
+            fake_trade(
+                order_id=810 + index,
+                perm_id=8810 + index,
+                order_ref="TVFVG_AAPL_LONG_TP",
+                action="SELL",
+                status="Filled",
+                filled=10,
+                price=105.1 + index,
+                exec_id=f"LEGACY-AMBIGUOUS-{index}",
+                execution_time=execution_time,
+            )
+            for index in range(2)
+        ]
+
+        _result, _store, payloads = await self.classify_once(
+            row,
+            trades=matches,
+        )
+        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
 
     async def test_submitted_but_unfilled_edge_entry_is_not_reconciled_as_close(self):
         row = managed_edge_row()
