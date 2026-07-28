@@ -146,31 +146,35 @@ async function run() {
   const sheets = createMockSheets();
   const telegram = [];
   const bridgeNetwork = [];
-  const dependencies = {
-    sheets,
-    sendTelegram: async message => {
-      telegram.push(message);
-      return { ok: true };
-    },
-    forwardToBridge: async (body, row) => {
-      const decision = shouldForwardToBridge(body, row);
-      if (!decision.ok) {
-        return { forwarded: false, skipped: true, reason: decision.reason };
-      }
-      bridgeNetwork.push(row.event);
-      return { forwarded: true };
-    },
+  const createLifecycleContext = () => {
+    const dependencies = {
+      sheets,
+      sendTelegram: async message => {
+        telegram.push(message);
+        return { ok: true };
+      },
+      forwardToBridge: async (body, row) => {
+        const decision = shouldForwardToBridge(body, row);
+        if (!decision.ok) {
+          return { forwarded: false, skipped: true, reason: decision.reason };
+        }
+        bridgeNetwork.push(row.event);
+        return { forwarded: true };
+      },
+    };
+
+    return async payload => {
+      const row = parseJsonTradingViewAlert(payload);
+      return processRecognizedTradingViewWebhookLifecycle(
+        payload,
+        row,
+        JSON.stringify(payload),
+        true,
+        dependencies
+      );
+    };
   };
-  const lifecycle = async payload => {
-    const row = parseJsonTradingViewAlert(payload);
-    return processRecognizedTradingViewWebhookLifecycle(
-      payload,
-      row,
-      JSON.stringify(payload),
-      true,
-      dependencies
-    );
-  };
+  let lifecycle = createLifecycleContext();
 
   const filledId = 'VIXALE_EDGE:AAPL:60:LONG:1785254400000';
   const pending = edgePayload('PENDING_SETUP', filledId);
@@ -186,14 +190,53 @@ async function run() {
   assert.strictEqual(sheets.rows.Pending.length, 2, 'SETUP preserves Pending before broker fill');
   assert.deepStrictEqual(bridgeNetwork, ['SETUP'], 'SETUP remains execution-first');
 
-  await lifecycle(edgePayload('ENTRY_FILL', filledId, {
+  const entryFill = edgePayload('ENTRY_FILL', filledId, {
     render_forwarded_at: '2026-07-28T10:00:00-04:00',
     ib_status: 'FILLED',
     entry_filled: true,
-  }));
+  });
+  await lifecycle(entryFill);
+  const duplicateFill = await lifecycle(entryFill);
   assert.strictEqual(sheets.rows.Pending.length, 1, 'ENTRY_FILL removes exact Pending');
-  assert.strictEqual(sheets.rows['Open Positions'].length, 2, 'ENTRY_FILL creates one Open row');
-  assert.strictEqual(sheets.rows['Open Positions'][1][0], 'AAPL_LONG');
+  assert.strictEqual(
+    sheets.rows['Open Positions'].filter(row => JSON.parse(row[11] || '{}').setup_id === filledId).length,
+    1,
+    'duplicate ENTRY_FILL creates no additional Open row'
+  );
+  assert.strictEqual(
+    sheets.rows.Trades.filter(row => JSON.parse(row[10] || '{}').setup_id === filledId).length,
+    1,
+    'duplicate ENTRY_FILL appends no additional Trades FILL'
+  );
+  assert.strictEqual(
+    telegram.filter(message => message.includes('Vixale Edge opened')).length,
+    1,
+    'duplicate ENTRY_FILL sends no additional Telegram OPEN'
+  );
+  assert.strictEqual(duplicateFill.finalRow.status, 'ignored_duplicate_entry_fill');
+  assert.strictEqual(duplicateFill.finalRow.duplicate_source, 'Open Positions');
+  assert.strictEqual(
+    bridgeNetwork.filter(event => event === 'FILL').length,
+    0,
+    'ENTRY_FILL callbacks never forward to bridge'
+  );
+
+  lifecycle = createLifecycleContext();
+  const restartDuplicate = await lifecycle(entryFill);
+  assert.strictEqual(
+    restartDuplicate.finalRow.status,
+    'ignored_duplicate_entry_fill',
+    'persistent Sheets state rejects duplicate after lifecycle context recreation'
+  );
+  assert.strictEqual(restartDuplicate.finalRow.duplicate_source, 'Open Positions');
+  assert.strictEqual(sheets.rows.Pending.length, 1, 'restart duplicate leaves Pending removed');
+  assert.strictEqual(sheets.rows['Open Positions'].length, 2, 'restart duplicate preserves one Open row');
+  assert.strictEqual(sheets.rows.Trades.length, 2, 'restart duplicate preserves one Trades FILL');
+  assert.strictEqual(
+    telegram.filter(message => message.includes('Vixale Edge opened')).length,
+    1,
+    'restart duplicate sends no Telegram OPEN'
+  );
 
   const canceledId = 'VIXALE_EDGE:AAPL:60:LONG:1785261600000';
   await lifecycle(edgePayload('PENDING_SETUP', canceledId, { flip_bar_time: 1785261600000 }));

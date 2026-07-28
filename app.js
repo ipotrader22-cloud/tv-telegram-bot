@@ -108,6 +108,7 @@ const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UP
 const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_STALE_SECONDS', 90)));
 const LIVE_QUOTES = new Map();
 const BROKER_EOD_CALLBACKS = createBrokerEodCallbackRegistry();
+const EDGE_ENTRY_FILL_IN_FLIGHT = new Set();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -200,6 +201,12 @@ function isVixaleEdgePendingLifecycleRow(row) {
 function isVixaleEdgePendingCancel(row) {
   return isVixaleEdgePendingLifecycleRow(row) &&
     String(row.cancel_scope || '').toUpperCase() === 'PENDING_ONLY' &&
+    Boolean(row.setup_id);
+}
+
+function isVixaleEdgeV2SetupRow(row) {
+  return isVixaleEdgePendingLifecycleRow(row) &&
+    String(row.payload_version || '') === '2' &&
     Boolean(row.setup_id);
 }
 
@@ -1802,6 +1809,30 @@ async function cleanupLegacyPositionIfExists(sheets, tradeId) {
   }
 }
 
+function rawSetupId(raw) {
+  return String(parseRawJsonSafe(raw)?.setup_id || '').trim();
+}
+
+async function findPersistedEdgeEntryFill(sheets, setupId) {
+  const wanted = String(setupId || '').trim();
+  if (!wanted) return null;
+
+  const [openRows, tradeRows] = await Promise.all([
+    readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
+    readSheet(sheets, TRADES_SHEET, 'A:K'),
+  ]);
+
+  const openMatch = openRows
+    .slice(1)
+    .find(row => rawSetupId(row[11]) === wanted);
+  if (openMatch) return { source: OPEN_POSITIONS_SHEET, row: openMatch };
+
+  const tradeMatch = tradeRows
+    .slice(1)
+    .find(row => rawSetupId(row[10]) === wanted);
+  return tradeMatch ? { source: TRADES_SHEET, row: tradeMatch } : null;
+}
+
 async function processLedger(row, dependencies = {}) {
   const sheets = dependencies.sheets ||
     await (dependencies.getSheetsClient || getSheetsClient)();
@@ -1857,15 +1888,34 @@ async function processLedger(row, dependencies = {}) {
   if (row.event === 'FILL') {
     if (!row.trade_id) return row;
 
-    const pendingRow = await removeRowByTradeId(
-      sheets,
-      PENDING_SHEET,
-      row.setup_id || row.trade_id
-    );
-    await cleanupLegacyPositionIfExists(sheets, row.trade_id);
-    await upsertOpenPosition(sheets, row, pendingRow);
-    await appendToTradesSheet(sheets, row);
-    return row;
+    const edgeSetupId = isVixaleEdgeV2SetupRow(row) ? row.setup_id : '';
+    if (edgeSetupId) {
+      const persisted = await findPersistedEdgeEntryFill(sheets, edgeSetupId);
+      if (persisted || EDGE_ENTRY_FILL_IN_FLIGHT.has(edgeSetupId)) {
+        return {
+          ...row,
+          status: 'ignored_duplicate_entry_fill',
+          skip_telegram: true,
+          duplicate_entry_fill: true,
+          duplicate_source: persisted?.source || 'in_flight',
+        };
+      }
+      EDGE_ENTRY_FILL_IN_FLIGHT.add(edgeSetupId);
+    }
+
+    try {
+      const pendingRow = await removeRowByTradeId(
+        sheets,
+        PENDING_SHEET,
+        row.setup_id || row.trade_id
+      );
+      await cleanupLegacyPositionIfExists(sheets, row.trade_id);
+      await upsertOpenPosition(sheets, row, pendingRow);
+      await appendToTradesSheet(sheets, row);
+      return row;
+    } finally {
+      if (edgeSetupId) EDGE_ENTRY_FILL_IN_FLIGHT.delete(edgeSetupId);
+    }
   }
 
   if (row.event === 'CANCEL') {
