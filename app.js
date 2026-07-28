@@ -103,6 +103,7 @@ const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UP
 
 const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_STALE_SECONDS', 90)));
 const LIVE_QUOTES = new Map();
+const BROKER_EOD_CALLBACK_KEYS = new Set();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -7730,6 +7731,35 @@ function isRecognizedTradeWebhook(row) {
 async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) {
   const bridgeCallback = isBridgeExecutionCallback(reqBody);
   const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
+  const brokerEodWatchdog = Boolean(reqBody && reqBody.broker_eod_watchdog);
+  const brokerEodKey = String(reqBody?.eod_idempotency_key || '').trim();
+
+  if (brokerEodWatchdog) {
+    const rawEvent = String(parsedRow?.raw_event || '').toUpperCase();
+    const strategy = String(reqBody?.strategy || parsedRow?.strategy || '').toUpperCase();
+    const validKey = /^\d{4}-\d{2}-\d{2}:[A-Z0-9.^-]+:(SHREK|SHREK_1_4)$/.test(brokerEodKey);
+
+    if (
+      !bridgeCallback ||
+      parsedRow?.event !== 'EOD' ||
+      rawEvent !== 'EOD_CLOSE' ||
+      !hasConfirmedCloseExecution(reqBody) ||
+      !['SHREK', 'SHREK_1_4'].includes(strategy) ||
+      !validKey
+    ) {
+      console.log('Ignored invalid broker EOD watchdog callback:', bridgeLogPrefix(parsedRow));
+      return;
+    }
+
+    if (BROKER_EOD_CALLBACK_KEYS.has(brokerEodKey)) {
+      console.log('Ignored duplicate broker EOD watchdog callback:', brokerEodKey);
+      return;
+    }
+
+    // The local bridge is the sole EOD execution authority. app.js has no
+    // independent EOD order timer; it only publishes this confirmed callback.
+    BROKER_EOD_CALLBACK_KEYS.add(brokerEodKey);
+  }
 
   // Execution-first architecture for Shrek / Elvis / v51:
   // TradingView SETUP/CLOSE alerts are forwarded to the local bridge only.

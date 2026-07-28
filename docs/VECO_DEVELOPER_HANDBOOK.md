@@ -89,7 +89,7 @@ SuperTrend flip
 → require reclaim on candle close
 → market entry
 → attached ATR target in TWS
-→ close on target, opposite SuperTrend flip, or EOD
+→ close on target, opposite SuperTrend flip, or bridge watchdog at 15:59 ET
 ```
 
 Telegram lifecycle:
@@ -200,6 +200,12 @@ ib_bridge.py
 Source snapshot: ib_bridge(6).py
 SHA-256 snapshot: bb8c7ca499312a1798c6c2b940680e07e55259e5fba7d99a28fe5a5a3cddac6a
 ```
+
+The sanitized, reviewable bridge source is versioned at
+`/bridge/ib_bridge.py`. Local deployment remains
+`C:\ib_bridge\ib_bridge.py`. Use `/scripts/deploy-ib-bridge.ps1` to compile,
+back up, copy, restart only an identifiable existing bridge process, and verify
+`/ib/status`.
 
 Known local deployment directory:
 
@@ -413,9 +419,9 @@ Forced EOD production configuration:
 
 ```text
 FORCE_EOD_FLATTEN_ENABLED=true
-FORCE_EOD_FLATTEN_TIME=15:55
+FORCE_EOD_FLATTEN_TIME=15:59
 FORCE_EOD_FLATTEN_TIMEZONE=America/New_York
-FORCE_EOD_BLOCK_NEW_STOCK_ENTRIES_AFTER=15:55
+FORCE_EOD_BLOCK_NEW_STOCK_ENTRIES_AFTER=15:59
 FORCE_EOD_WEEKDAYS_ONLY=true
 FORCE_EOD_SCHEDULER_POLL_SECONDS=5
 BLOCK_MARKET_CLOSES_OUTSIDE_RTH=false
@@ -797,7 +803,27 @@ Limit entry and target can both fall inside one higher-timeframe bar. Standard f
 
 ### 13.8 Forced EOD
 
-Pine EOD alerts are not the only safety layer. The bridge independently flattens managed positions at 15:55 ET.
+Shrek Pine no longer owns forced EOD execution. The local bridge is the sole
+execution authority and starts its Shrek-only watchdog at 15:59
+`America/New_York`.
+
+The watchdog:
+
+- selects only managed rows whose strategy is `SHREK` or `SHREK_1_4`;
+- never closes Fiona, Elvis, manual, or other positions;
+- cancels attached targets and verifies cancellation before flattening;
+- treats a target fill during cancellation as a race-safe flat result;
+- submits the opposite-side DAY market order for the remaining quantity;
+- persists one idempotency key per date, symbol, and strategy;
+- verifies the TWS fill and zero position before callback publication;
+- retries verification and failed callback delivery during the remaining
+  regular session without duplicating the close order;
+- logs a critical error if the broker position remains open.
+
+`app.js` has no independent EOD order timer. It publishes Telegram, Sheets, and
+dashboard state only from a broker-confirmed EOD callback. Duplicate callbacks
+are rejected in memory, and the ledger rejects a close with no matching open
+position.
 
 `Break at EOD` and `Exit on session close` are separate concepts:
 
@@ -982,7 +1008,7 @@ New opposite target quantity is correct
 ### EOD
 
 ```text
-Bridge forced EOD runs at 15:55 ET
+Bridge Shrek watchdog runs at 15:59 ET
 Targets are canceled safely
 Positions become flat
 Render receives confirmed close
@@ -1020,10 +1046,16 @@ Do not combine unrelated changes in one production patch.
 **Decision:** No public OPEN or CLOSED state without broker confirmation.  
 **Reason:** Prevent false positions and false results when orders are rejected, delayed, or unfilled.
 
-### ADR-002 — Bridge-managed forced EOD
+### ADR-002 — Broker-side Shrek 15:59 EOD flatten
 
-**Decision:** The local bridge independently flattens managed stock positions at 15:55 ET.  
-**Reason:** TradingView timeframe-dependent EOD alerts are not reliable enough as the only safety layer.
+**Decision:** The local IB bridge is the sole forced-EOD execution authority
+for managed `SHREK` / `SHREK_1_4` positions and begins flattening at 15:59
+`America/New_York`. It verifies target cancellation, broker fill, and a zero
+position before sending one idempotent callback to Render. `app.js` does not
+independently submit an EOD close.
+**Reason:** TradingView bar timing cannot guarantee a final-session close, while
+parallel Pine and server timers could submit duplicate broker orders. TWS
+remains the execution source of truth.
 
 ### ADR-003 — Fiona is a separate VECO system
 
