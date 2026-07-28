@@ -42,6 +42,8 @@ const {
   parseJsonTradingViewAlert,
   processRecognizedTradingViewWebhookLifecycle,
   shouldForwardToBridge,
+  publicExitLabel,
+  closedTradeExitDisplay,
 } = require('../app.js').__test;
 Module._load = originalLoad;
 
@@ -479,6 +481,123 @@ async function run() {
   assert.strictEqual(
     concurrentBridge.filter(event => event === 'FILL').length,
     0
+  );
+
+  // Broker-confirmed manual/external close is persistent and idempotent.
+  const externalSheets = createMockSheets();
+  const externalTelegram = [];
+  const externalBridge = [];
+  let failExternalTelegram = true;
+  let externalLifecycle = createLifecycleContext({
+    sheetStore: externalSheets,
+    telegramStore: externalTelegram,
+    bridgeStore: externalBridge,
+    telegramSender: async message => {
+      if (message.includes('Vixale Edge closed manually') && failExternalTelegram) {
+        failExternalTelegram = false;
+        return { ok: false, description: 'mock manual-close Telegram failure' };
+      }
+      externalTelegram.push(message);
+      return { ok: true };
+    },
+  });
+  const externalId = 'VIXALE_EDGE:TSLA:60:LONG:1785280800000';
+  await externalLifecycle(edgePayload('PENDING_SETUP', externalId, {
+    symbol: 'TSLA',
+    flip_bar_time: 1785280800000,
+  }));
+  await externalLifecycle(edgePayload('ENTRY_FILL', externalId, {
+    symbol: 'TSLA',
+    flip_bar_time: 1785280800000,
+    render_forwarded_at: '2026-07-28T14:00:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+
+  const reconciliationId = `${externalId}:FLAT_NO_EXECUTION_HISTORY`;
+  const externalClose = edgePayload('EXTERNAL_CLOSE', externalId, {
+    source: 'IB_BRIDGE',
+    symbol: 'TSLA',
+    flip_bar_time: 1785280800000,
+    price: '',
+    qty: '',
+    render_forwarded_at: '2026-07-28T15:00:00-04:00',
+    ib_status: 'position_flat_reconciled',
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: 'FLAT_NO_EXECUTION_HISTORY',
+    reconciliation_id: reconciliationId,
+    exit_price_available: false,
+    exit_quantity_available: false,
+    reason: 'IB_POSITION_FLAT_EXTERNAL_EXECUTION',
+  });
+  await assert.rejects(
+    externalLifecycle(externalClose),
+    error => error.retryable === true
+  );
+  const recoveredExternal = await externalLifecycle(externalClose);
+  const duplicateExternal = await externalLifecycle(externalClose);
+  assert.strictEqual(recoveredExternal.finalRow.status, 'external_close_publication_complete');
+  assert.strictEqual(duplicateExternal.finalRow.status, 'ignored_duplicate_external_close');
+  assert.strictEqual(
+    countRowsBySetupId(externalSheets.rows['Open Positions'], 11, externalId),
+    0,
+    'EXTERNAL_CLOSE removes the exact Edge Open row'
+  );
+  assert.strictEqual(
+    externalSheets.rows.Trades
+      .slice(1)
+      .filter(row => JSON.parse(row[10] || '{}').reconciliation_id === reconciliationId)
+      .length,
+    1,
+    'duplicate EXTERNAL_CLOSE creates one Trades close row'
+  );
+  assert.strictEqual(
+    externalSheets.rows['Closed Trades']
+      .slice(1)
+      .filter(row => JSON.parse(row[11] || '{}').reconciliation_id === reconciliationId)
+      .length,
+    1,
+    'duplicate EXTERNAL_CLOSE creates one Closed row'
+  );
+  const manualClosedRow = externalSheets.rows['Closed Trades'][1];
+  assert.strictEqual(manualClosedRow[6], '', 'price-unavailable manual close stores no exit price');
+  assert.strictEqual(manualClosedRow[8], '', 'manual close stores no invented P&L');
+  assert.strictEqual(manualClosedRow[9], 'Manual Close');
+  assert.strictEqual(publicExitLabel('EXTERNAL_CLOSE'), 'Manual Close');
+  assert.strictEqual(
+    closedTradeExitDisplay({ event: 'Manual Close', exit: '' }),
+    'Manual Close — price unavailable'
+  );
+  assert.strictEqual(
+    externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    1,
+    'duplicate EXTERNAL_CLOSE sends one manual-close Telegram'
+  );
+  assert.ok(
+    externalTelegram.some(message => message.includes('Manual Close — price unavailable')),
+    `price-unavailable manual close is explicit: ${JSON.stringify(externalTelegram)}`
+  );
+  assert.strictEqual(
+    externalBridge.filter(event => event === 'EXTERNAL_CLOSE').length,
+    0,
+    'EXTERNAL_CLOSE callback never forwards to bridge'
+  );
+
+  externalLifecycle = createLifecycleContext({
+    sheetStore: externalSheets,
+    telegramStore: externalTelegram,
+    bridgeStore: externalBridge,
+  });
+  const restartExternalDuplicate = await externalLifecycle(externalClose);
+  assert.strictEqual(
+    restartExternalDuplicate.finalRow.status,
+    'ignored_duplicate_external_close',
+    'persistent Sheets state rejects EXTERNAL_CLOSE after lifecycle recreation'
+  );
+  assert.strictEqual(
+    externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    1
   );
 
   console.log('Vixale Edge app lifecycle integration: mocked Sheets, Telegram, and bridge checks passed');

@@ -109,6 +109,7 @@ const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_S
 const LIVE_QUOTES = new Map();
 const BROKER_EOD_CALLBACKS = createBrokerEodCallbackRegistry();
 const EDGE_ENTRY_FILL_IN_FLIGHT = new Map();
+const EDGE_EXTERNAL_CLOSE_IN_FLIGHT = new Map();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -258,6 +259,10 @@ function publicExitLabel(value) {
     return 'Stop Loss';
   }
 
+  if (normalized === 'EXTERNAL CLOSE' || normalized === 'MANUAL CLOSE') {
+    return 'Manual Close';
+  }
+
   return text;
 }
 
@@ -307,6 +312,8 @@ function sheetEventLabel(row) {
   if (isOppositeFlipRow(row) && event === 'SL' && rawEvent === 'CLOSE_STOP') {
     return 'FLIP_CLOSE';
   }
+
+  if (event === 'EXTERNAL_CLOSE') return 'Manual Close';
 
   return event;
 }
@@ -705,17 +712,24 @@ function enrichCloseRowFromOpenPosition(closeRow, openPosition) {
     });
   }
 
+  const manualExternalClose = closeRow.event === 'EXTERNAL_CLOSE';
   const enriched = {
     ...closeRow,
     trade_id: closeRow.trade_id || openPosition.trade_id || makeTradeId(openPosition.symbol, openPosition.side),
     symbol: closeRow.symbol || openPosition.symbol || '',
     side: closeRow.side || openPosition.side || '',
     entry: closeRow.entry !== '' ? closeRow.entry : openPosition.entry || '',
-    size: closeRow.size !== '' ? closeRow.size : openPosition.size || '',
+    size: manualExternalClose
+      ? closeRow.size
+      : closeRow.size !== '' ? closeRow.size : openPosition.size || '',
     target: closeRow.target !== '' ? closeRow.target : openPosition.target || '',
     stop: closeRow.stop !== '' ? closeRow.stop : openPosition.stop || '',
     status: 'closed',
   };
+  if (manualExternalClose) {
+    enriched.result = '';
+    enriched.result_pct = '';
+  }
 
   return ensureClosePnlFallback(enriched, openPosition);
 }
@@ -957,6 +971,7 @@ function parseJsonTradingViewAlert(data) {
     EOD: 'EOD',
     EOD_CLOSE: 'EOD',
     NEW_DAY_EMERGENCY_CLOSE: 'EOD',
+    EXTERNAL_CLOSE: 'EXTERNAL_CLOSE',
 
     CANCEL: 'CANCEL',
     CANCELED: 'CANCEL',
@@ -998,27 +1013,30 @@ function parseJsonTradingViewAlert(data) {
     cleanNumber(data.entry_price) ||
     cleanNumber(data.price);
 
-  const size =
-    cleanNumber(data.qty) ||
-    cleanNumber(data.size) ||
-    cleanNumber(data.quantity) ||
-    BRIDGE_DEFAULT_QTY;
+  const suppliedSize = event === 'EXTERNAL_CLOSE' && data.exit_quantity_available === false
+    ? ''
+    : firstCleanNumber(data.qty, data.size, data.quantity);
+  const size = event === 'EXTERNAL_CLOSE'
+    ? suppliedSize
+    : suppliedSize || BRIDGE_DEFAULT_QTY;
 
   const target = cleanNumber(data.target);
   const stop = cleanNumber(data.stop);
-  const price = firstCleanNumber(
-    data.price,
-    data.exit,
-    data.exit_price,
-    data.avg_fill_price,
-    data.average_fill_price,
-    data.filled_price,
-    data.fill_price,
-    data.last_fill_price
-  );
+  const price = event === 'EXTERNAL_CLOSE' && data.exit_price_available === false
+    ? ''
+    : firstCleanNumber(
+      data.price,
+      data.exit,
+      data.exit_price,
+      data.avg_fill_price,
+      data.average_fill_price,
+      data.filled_price,
+      data.fill_price,
+      data.last_fill_price
+    );
 
   let exit = '';
-  if (event === 'TP' || event === 'SL' || event === 'EOD') {
+  if (event === 'TP' || event === 'SL' || event === 'EOD' || event === 'EXTERNAL_CLOSE') {
     exit = price;
   }
 
@@ -1030,6 +1048,7 @@ function parseJsonTradingViewAlert(data) {
     data.realized_pnl,
     data.realized_p_l
   );
+  if (event === 'EXTERNAL_CLOSE') result = '';
 
   const resultPct = firstCleanNumber(
     data.result_pct,
@@ -1045,7 +1064,7 @@ function parseJsonTradingViewAlert(data) {
     event === 'PENDING_SETUP' ? 'pending' :
     event === 'SETUP' ? (openOnSetup ? 'open' : 'pending') :
     event === 'FILL' ? 'open' :
-    event === 'TP' || event === 'SL' || event === 'EOD' ? 'closed' :
+    event === 'TP' || event === 'SL' || event === 'EOD' || event === 'EXTERNAL_CLOSE' ? 'closed' :
     event === 'CANCEL' ? 'canceled' :
     event === 'RECONCILE_FLAT' ? 'reconciled' :
     event === 'STOP_REF_UPDATE' ? 'updated' :
@@ -1099,6 +1118,11 @@ function parseJsonTradingViewAlert(data) {
     timeframe: data.timeframe ?? '',
     flip_bar_time: data.flip_bar_time ?? '',
     planned_limit_entry: data.planned_limit_entry ?? '',
+    exit_execution_id: data.exit_execution_id ?? '',
+    reconciliation_id: data.reconciliation_id ?? '',
+    broker_confirmed_flat: data.broker_confirmed_flat === true,
+    exit_price_available: data.exit_price_available !== false,
+    exit_quantity_available: data.exit_quantity_available !== false,
   };
 }
 
@@ -1226,6 +1250,18 @@ function formatTelegramMessage(row, originalMessage) {
       row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
       row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (row.event === 'EXTERNAL_CLOSE' && isFionaLimitPullbackRow(row)) {
+    return [
+      `⚪ <b>Vixale Edge closed manually</b>`,
+      '',
+      `<b>${titleBase || row.symbol}</b>`,
+      row.exit !== ''
+        ? `Manual Close: <b>${row.exit}</b>`
+        : 'Manual Close — price unavailable',
+      row.exit !== '' && row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
   }
 
@@ -1528,7 +1564,7 @@ async function removePendingRowsBySymbolAndSide(sheets, symbol, side) {
 }
 
 async function appendToTradesSheet(sheets, row) {
-  if (!['FILL', 'TP', 'SL', 'EOD'].includes(row.event)) {
+  if (!['FILL', 'TP', 'SL', 'EOD', 'EXTERNAL_CLOSE'].includes(row.event)) {
     console.log('Trades append skipped for non-executed event:', row.event);
     return;
   }
@@ -1547,7 +1583,7 @@ async function appendToTradesSheet(sheets, row) {
         eventForSheet,
         row.entry,
         row.size,
-        row.target || row.exit,
+        row.event === 'EXTERNAL_CLOSE' ? row.exit : row.target || row.exit,
         row.stop,
         row.result,
         row.status,
@@ -1904,6 +1940,139 @@ async function markEdgeEntryFillPublicationComplete(sheets, setupId) {
   };
 }
 
+function rawReconciliationId(raw) {
+  return String(parseRawJsonSafe(raw)?.reconciliation_id || '').trim();
+}
+
+function findRawReconciliationRow(rows, rawColumn, reconciliationId) {
+  for (let index = 1; index < rows.length; index++) {
+    if (rawReconciliationId(rows[index][rawColumn]) === reconciliationId) {
+      return {
+        row: rows[index],
+        row_number: index + 1,
+        raw: parseRawJsonSafe(rows[index][rawColumn]),
+      };
+    }
+  }
+  return null;
+}
+
+function openPositionFromSheetRow(row) {
+  if (!row) return null;
+  return {
+    trade_id: row[0] || '',
+    open_time: row[1] || '',
+    symbol: row[2] || '',
+    side: row[3] || '',
+    status: row[4] || '',
+    entry: row[5] || '',
+    size: row[6] || '',
+    target: row[7] || '',
+    stop: row[8] || '',
+    last_price: row[9] || '',
+    unrealized_p_l: row[10] || '',
+    raw_open: row[11] || '',
+  };
+}
+
+async function getEdgeExternalClosePublicationState(sheets, setupId, reconciliationId) {
+  const wantedSetup = String(setupId || '').trim();
+  const wantedReconciliation = String(reconciliationId || '').trim();
+  if (!wantedSetup || !wantedReconciliation) {
+    return {
+      open_exists: false,
+      trades_close_exists: false,
+      closed_trade_exists: false,
+      telegram_close_published: false,
+      publication_complete: false,
+    };
+  }
+
+  const [openRows, tradeRows, closedRows] = await Promise.all([
+    readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
+    readSheet(sheets, TRADES_SHEET, 'A:K'),
+    readSheet(sheets, CLOSED_TRADES_SHEET, 'A:L'),
+  ]);
+  const open = findRawSetupRow(openRows, 11, wantedSetup);
+  const trade = findRawReconciliationRow(tradeRows, 10, wantedReconciliation);
+  const closed = findRawReconciliationRow(closedRows, 11, wantedReconciliation);
+  const telegramPublished = Boolean(
+    trade?.raw?.telegram_manual_close_published ||
+    closed?.raw?.telegram_manual_close_published
+  );
+
+  return {
+    open_exists: Boolean(open),
+    trades_close_exists: Boolean(trade),
+    closed_trade_exists: Boolean(closed),
+    telegram_close_published: telegramPublished,
+    publication_complete: Boolean(
+      !open &&
+      trade &&
+      closed &&
+      telegramPublished &&
+      (trade.raw.external_close_publication_complete || closed.raw.external_close_publication_complete)
+    ),
+    open,
+    trade,
+    closed,
+  };
+}
+
+async function removeOpenPositionBySetupId(sheets, setupId) {
+  const values = await readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L');
+  const match = findRawSetupRow(values, 11, String(setupId || '').trim());
+  if (!match) return null;
+  await deleteSheetRow(sheets, OPEN_POSITIONS_SHEET, match.row_number);
+  return openPositionFromSheetRow(match.row);
+}
+
+async function markEdgeExternalClosePublicationComplete(sheets, setupId, reconciliationId) {
+  const state = await getEdgeExternalClosePublicationState(sheets, setupId, reconciliationId);
+  if (!state.trades_close_exists || !state.closed_trade_exists || state.open_exists) {
+    throw new Error(`Cannot complete Edge EXTERNAL_CLOSE publication: ${reconciliationId}`);
+  }
+
+  const publishedAt = nowNy();
+  const tradeRaw = JSON.stringify({
+    ...state.trade.raw,
+    telegram_manual_close_published: true,
+    external_close_publication_complete: true,
+    external_close_publication_completed_at: publishedAt,
+  }, null, 2);
+  const closedRaw = JSON.stringify({
+    ...state.closed.raw,
+    telegram_manual_close_published: true,
+    external_close_publication_complete: true,
+    external_close_publication_completed_at: publishedAt,
+  }, null, 2);
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        {
+          range: `${TRADES_SHEET}!K${state.trade.row_number}`,
+          values: [[tradeRaw]],
+        },
+        {
+          range: `${CLOSED_TRADES_SHEET}!L${state.closed.row_number}`,
+          values: [[closedRaw]],
+        },
+      ],
+    },
+  });
+
+  return {
+    open_exists: false,
+    trades_close_exists: true,
+    closed_trade_exists: true,
+    telegram_close_published: true,
+    publication_complete: true,
+  };
+}
+
 async function processLedger(row, dependencies = {}) {
   const sheets = dependencies.sheets ||
     await (dependencies.getSheetsClient || getSheetsClient)();
@@ -2083,6 +2252,77 @@ async function processLedger(row, dependencies = {}) {
 
     console.log('Flat reconcile finished:', row.symbol || '', row.side || '', 'pending removed:', removedPending, 'open removed:', removedOpen);
     return row;
+  }
+
+  if (row.event === 'EXTERNAL_CLOSE') {
+    if (
+      !isFionaLimitPullbackRow(row) ||
+      !row.setup_id ||
+      !row.reconciliation_id ||
+      !row.broker_confirmed_flat
+    ) {
+      return {
+        ...row,
+        status: 'ignored_invalid_external_close',
+        skip_telegram: true,
+      };
+    }
+
+    const state = await getEdgeExternalClosePublicationState(
+      sheets,
+      row.setup_id,
+      row.reconciliation_id
+    );
+    if (state.publication_complete) {
+      return {
+        ...row,
+        status: 'ignored_duplicate_external_close',
+        skip_telegram: true,
+        external_close_publication_state: state,
+      };
+    }
+
+    const openPosition = state.open ? openPositionFromSheetRow(state.open.row) : null;
+    if (!state.closed_trade_exists && !openPosition) {
+      const error = new Error(
+        `Edge EXTERNAL_CLOSE cannot create Closed row without matching Open state: ${row.setup_id}`
+      );
+      error.retryable = true;
+      throw error;
+    }
+
+    const enrichedCloseRow = enrichCloseRowFromOpenPosition({
+      ...row,
+      trade_id: openPosition?.trade_id || row.trade_id,
+      result: '',
+      result_pct: '',
+    }, openPosition);
+
+    if (!state.trades_close_exists) {
+      await appendToTradesSheet(sheets, enrichedCloseRow);
+    }
+    if (!state.closed_trade_exists) {
+      await appendClosedTrade(sheets, openPosition, enrichedCloseRow);
+    }
+    if (state.open_exists) {
+      await removeOpenPositionBySetupId(sheets, row.setup_id);
+    }
+    await cleanupLegacyPositionIfExists(sheets, enrichedCloseRow.trade_id);
+
+    return {
+      ...enrichedCloseRow,
+      status: state.telegram_close_published
+        ? 'external_close_ledger_repaired'
+        : 'external_close_publication_pending',
+      skip_telegram: state.telegram_close_published,
+      external_close_publication_state: {
+        open_exists: false,
+        trades_close_exists: true,
+        closed_trade_exists: true,
+        telegram_close_published: state.telegram_close_published,
+        publication_complete: state.telegram_close_published,
+      },
+    };
   }
 
   if (row.event === 'TP' || row.event === 'SL' || row.event === 'EOD') {
@@ -2450,6 +2690,8 @@ function buildWorkingExitOrders(openPositions) {
 function parseClosedTradeRow(row) {
   const rawOpen = row[10] || '';
   const rawClose = row[11] || '';
+  const event = row[9] || '';
+  const manualExternalClose = publicExitLabel(event) === 'Manual Close';
 
   return {
     trade_id: row[0] || '',
@@ -2459,13 +2701,24 @@ function parseClosedTradeRow(row) {
     symbol: row[3] || '',
     side: String(row[4] || '').toUpperCase(),
     entry: cleanNumber(row[5]),
-    exit: cleanNumber(row[6]),
-    size: cleanNumber(row[7]),
-    result: cleanNumber(row[8]),
-    event: row[9] || '',
+    exit: manualExternalClose && String(row[6] ?? '').trim() === '' ? '' : cleanNumber(row[6]),
+    size: manualExternalClose && String(row[7] ?? '').trim() === '' ? '' : cleanNumber(row[7]),
+    result: manualExternalClose && String(row[8] ?? '').trim() === '' ? '' : cleanNumber(row[8]),
+    event,
     raw_open: rawOpen,
     raw_close: rawClose,
   };
+}
+
+function isManualExternalClosedTrade(row) {
+  return publicExitLabel(row?.event) === 'Manual Close';
+}
+
+function closedTradeExitDisplay(row) {
+  if (isManualExternalClosedTrade(row) && String(row?.exit ?? '').trim() === '') {
+    return 'Manual Close — price unavailable';
+  }
+  return num(row?.exit);
 }
 
 async function getDashboardData() {
@@ -2500,7 +2753,10 @@ async function getDashboardData() {
     .slice(1)
     .filter(row => row[0])
     .map(parseClosedTradeRow)
-    .filter(row => row.result !== '' && row.entry !== '' && row.exit !== '' && row.size !== '');
+    .filter(row =>
+      isManualExternalClosedTrade(row) ||
+      (row.result !== '' && row.entry !== '' && row.exit !== '' && row.size !== '')
+    );
 
   closedTradesAll.sort((a, b) => String(b.close_time).localeCompare(String(a.close_time)));
 
@@ -2508,13 +2764,17 @@ async function getDashboardData() {
 
   const openPnl = openPositions.reduce((sum, row) => sum + (cleanNumber(row.open_pnl) || 0), 0);
   const exposure = openPositions.reduce((sum, row) => sum + (cleanNumber(row.exposure) || 0), 0);
-  const totalClosedPnl = closedTradesAll.reduce((sum, row) => sum + (cleanNumber(row.result) || 0), 0);
+  const pnlClosedTrades = closedTradesAll.filter(row =>
+    String(row.result ?? '').trim() !== '' &&
+    cleanNumber(row.result) !== ''
+  );
+  const totalClosedPnl = pnlClosedTrades.reduce((sum, row) => sum + cleanNumber(row.result), 0);
 
   const closedToday = closedTradesAll.filter(row => String(row.close_time || '').slice(0, 10) === today);
   const closedPnlToday = closedToday.reduce((sum, row) => sum + (cleanNumber(row.result) || 0), 0);
 
-  const winners = closedTradesAll.filter(row => cleanNumber(row.result) > 0).length;
-  const winRate = closedTradesAll.length > 0 ? (winners / closedTradesAll.length) * 100 : 0;
+  const winners = pnlClosedTrades.filter(row => cleanNumber(row.result) > 0).length;
+  const winRate = pnlClosedTrades.length > 0 ? (winners / pnlClosedTrades.length) * 100 : 0;
 
   return {
     updated_at: nowNy(),
@@ -6687,7 +6947,7 @@ function renderDashboardHtml(data) {
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
-      <td>${num(row.exit)}</td>
+      <td>${escapeHtml(closedTradeExitDisplay(row))}</td>
       <td>${num(row.size, 0)}</td>
       <td class="${moneyClass(row.result)}">${renderMoney(row.result)}</td>
       <td>${escapeHtml(publicExitLabel(row.event))}</td>
@@ -7706,7 +7966,7 @@ function isBridgeExecutionCallback(reqBody) {
   );
 
   return (hasRenderForwardMarker && hasIbResultMarker) ||
-    ['ENTRY_FILL', 'RECONCILE_FLAT', 'IB_CONFIRMED_FLAT', 'FLAT_RECONCILE'].includes(event);
+    ['ENTRY_FILL', 'EXTERNAL_CLOSE', 'RECONCILE_FLAT', 'IB_CONFIRMED_FLAT', 'FLAT_RECONCILE'].includes(event);
 }
 
 function requiresBridgeExecutionConfirmation(row) {
@@ -7744,6 +8004,14 @@ function hasConfirmedCloseExecution(reqBody) {
 
   return reqBody.close_filled === true ||
     String(reqBody.ib_close_status || '').toUpperCase() === 'FILLED';
+}
+
+function hasBrokerConfirmedFlat(reqBody) {
+  if (typeof reqBody !== 'object' || reqBody === null || Buffer.isBuffer(reqBody)) return false;
+  const positionAfter = cleanNumber(reqBody.position_after_close);
+  return reqBody.broker_confirmed_flat === true &&
+    positionAfter !== '' &&
+    Math.abs(positionAfter) < 0.000001;
 }
 
 function isManualOrTestPayload(reqBody, row) {
@@ -8018,7 +8286,7 @@ function isRecognizedTradeWebhook(row) {
     return Boolean(row.symbol && row.side && cleanNumber(row.stop) > 0);
   }
 
-  if (['SETUP', 'FILL', 'TP', 'SL', 'EOD'].includes(event)) {
+  if (['SETUP', 'FILL', 'TP', 'SL', 'EOD', 'EXTERNAL_CLOSE'].includes(event)) {
     return Boolean(row.symbol && row.side);
   }
 
@@ -8080,12 +8348,18 @@ async function processRecognizedTradingViewWebhook(reqBody, parsedRow, message) 
     isBridgeExecutionCallback(reqBody) &&
     parsedRow?.event === 'FILL' &&
     isVixaleEdgeV2SetupRow(parsedRow);
+  const edgeExternalCloseCallback =
+    isBridgeExecutionCallback(reqBody) &&
+    parsedRow?.event === 'EXTERNAL_CLOSE' &&
+    isFionaLimitPullbackRow(parsedRow) &&
+    Boolean(parsedRow.setup_id) &&
+    Boolean(parsedRow.reconciliation_id);
 
   return processRecognizedTradingViewWebhookLifecycle(
     reqBody,
     parsedRow,
     message,
-    edgeEntryFillCallback
+    edgeEntryFillCallback || edgeExternalCloseCallback
   );
 }
 
@@ -8100,8 +8374,15 @@ async function processRecognizedTradingViewWebhookLifecycle(
     parsedRow?.event === 'FILL' && isVixaleEdgeV2SetupRow(parsedRow)
       ? parsedRow.setup_id
       : '';
+  const edgeExternalCloseKey =
+    parsedRow?.event === 'EXTERNAL_CLOSE' &&
+    isFionaLimitPullbackRow(parsedRow) &&
+    parsedRow.setup_id &&
+    parsedRow.reconciliation_id
+      ? `${parsedRow.setup_id}:${parsedRow.reconciliation_id}`
+      : '';
 
-  if (!edgeSetupId) {
+  if (!edgeSetupId && !edgeExternalCloseKey) {
     return processRecognizedTradingViewWebhookLifecycleCore(
       reqBody,
       parsedRow,
@@ -8111,7 +8392,11 @@ async function processRecognizedTradingViewWebhookLifecycle(
     );
   }
 
-  const existing = EDGE_ENTRY_FILL_IN_FLIGHT.get(edgeSetupId);
+  const inFlightRegistry = edgeSetupId
+    ? EDGE_ENTRY_FILL_IN_FLIGHT
+    : EDGE_EXTERNAL_CLOSE_IN_FLIGHT;
+  const inFlightKey = edgeSetupId || edgeExternalCloseKey;
+  const existing = inFlightRegistry.get(inFlightKey);
   if (existing) return existing;
 
   const inFlight = processRecognizedTradingViewWebhookLifecycleCore(
@@ -8121,13 +8406,13 @@ async function processRecognizedTradingViewWebhookLifecycle(
     failOnPublicationError,
     dependencies
   );
-  EDGE_ENTRY_FILL_IN_FLIGHT.set(edgeSetupId, inFlight);
+  inFlightRegistry.set(inFlightKey, inFlight);
 
   try {
     return await inFlight;
   } finally {
-    if (EDGE_ENTRY_FILL_IN_FLIGHT.get(edgeSetupId) === inFlight) {
-      EDGE_ENTRY_FILL_IN_FLIGHT.delete(edgeSetupId);
+    if (inFlightRegistry.get(inFlightKey) === inFlight) {
+      inFlightRegistry.delete(inFlightKey);
     }
   }
 }
@@ -8180,6 +8465,21 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
     !hasConfirmedCloseExecution(reqBody)
   ) {
     console.log('Ignored unconfirmed bridge close callback:', bridgeLogPrefix(parsedRow));
+    return;
+  }
+
+  if (
+    parsedRow.event === 'EXTERNAL_CLOSE' &&
+    (
+      !bridgeCallback ||
+      String(reqBody?.source || '').toUpperCase() !== 'IB_BRIDGE' ||
+      !isFionaLimitPullbackRow(parsedRow) ||
+      !parsedRow.setup_id ||
+      !parsedRow.reconciliation_id ||
+      !hasBrokerConfirmedFlat(reqBody)
+    )
+  ) {
+    console.log('Ignored unconfirmed or incomplete Edge EXTERNAL_CLOSE callback:', bridgeLogPrefix(parsedRow));
     return;
   }
 
@@ -8259,6 +8559,32 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
     };
   }
 
+  if (
+    parsedRow.event === 'EXTERNAL_CLOSE' &&
+    finalRow.status !== 'ignored_duplicate_external_close' &&
+    (
+      telegramPublishedNow ||
+      finalRow.external_close_publication_state?.telegram_close_published
+    )
+  ) {
+    const sheets = dependencies.sheets ||
+      await (dependencies.getSheetsClient || getSheetsClient)();
+    if (!sheets) {
+      const error = new Error('Sheets unavailable while completing Edge EXTERNAL_CLOSE publication');
+      error.retryable = true;
+      throw error;
+    }
+    finalRow = {
+      ...finalRow,
+      status: 'external_close_publication_complete',
+      external_close_publication_state: await markEdgeExternalClosePublicationComplete(
+        sheets,
+        parsedRow.setup_id,
+        parsedRow.reconciliation_id
+      ),
+    };
+  }
+
   // Callback events are blocked inside shouldForwardToBridge(), preventing
   // Render -> bridge -> Render loops.
   await bridgeForwarder(reqBody, finalRow);
@@ -8289,8 +8615,12 @@ async function handleTradingViewWebhook(req, res) {
       isBridgeExecutionCallback(reqBody) &&
       parsedRow.event === 'FILL' &&
       isVixaleEdgeV2SetupRow(parsedRow);
+    const edgeExternalCloseCallback =
+      isBridgeExecutionCallback(reqBody) &&
+      parsedRow.event === 'EXTERNAL_CLOSE' &&
+      isFionaLimitPullbackRow(parsedRow);
 
-    if ((reqBody && reqBody.broker_eod_watchdog) || edgeEntryFillCallback) {
+    if ((reqBody && reqBody.broker_eod_watchdog) || edgeEntryFillCallback || edgeExternalCloseCallback) {
       try {
         await processRecognizedTradingViewWebhook(reqBody, parsedRow, message);
         return res.status(200).send('OK');
@@ -8971,4 +9301,6 @@ module.exports.__test = {
   processLedger,
   processRecognizedTradingViewWebhookLifecycle,
   shouldForwardToBridge,
+  publicExitLabel,
+  closedTradeExitDisplay,
 };

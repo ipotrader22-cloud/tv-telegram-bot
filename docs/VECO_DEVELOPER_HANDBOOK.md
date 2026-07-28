@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-07-27
+**Last updated:** 2026-07-28
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -144,6 +144,23 @@ SuperTrend flip
 → broker-confirmed ENTRY_FILL moves Pending to Open
 → attach frozen ATR target
 → close on target or internal confirmed-RTH opposite SuperTrend flip
+```
+
+Part 3A bridge isolation makes Vixale Edge an explicit execution family before
+generic Opposite Flip classification. An Edge `SETUP` represents a
+TradingView-virtual limit fill and may create only one ordinary broker MARKET
+position per symbol across all timeframes, with the frozen GTC ATR target.
+Before submission, the bridge requires the broker position to be flat, no
+active managed Edge record for the symbol, and no prior submitted record for
+the same `setup_id`. Edge never uses Prime/Shrek reversal-delta math and never
+sweeps symbol orders through the generic Opposite Flip path.
+
+Blocked Edge setups place no broker order and return a publication-only,
+`PENDING_ONLY` `CANCEL` with the original `setup_id`:
+
+```text
+EDGE_ENTRY_BLOCKED_EXISTING_POSITION
+EDGE_DUPLICATE_ACTIVE_SETUP
 ```
 
 An unfilled setup expires at the New York RTH closing bar. Pine cancels its
@@ -524,6 +541,7 @@ EOD_CLOSE          → EOD
 CANCEL              → CANCEL
 RECONCILE_FLAT      → silent reconciliation
 STOP_REF_UPDATE     → silent stop-reference update
+EXTERNAL_CLOSE      → broker-confirmed Vixale Edge Manual Close
 ```
 
 Vixale Edge payload version 2 uses `system_id=VIXALE_EDGE` and a deterministic
@@ -550,12 +568,57 @@ old raw JSON; no historical Sheets rows are rewritten.
 
 This ordering is critical:
 
-1. Detect Fiona Limit using the specific variant `FIONA_LIMIT_PULLBACK_ATR_TARGET`.
-2. Detect Shrek / generic Opposite Flip.
+1. Detect Vixale Edge using `system_id=VIXALE_EDGE`, variant
+   `FIONA_LIMIT_PULLBACK_ATR_TARGET`, strategy
+   `VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1`, or a supported legacy
+   Fiona Limit marker.
+2. Detect Vixale Prime / Shrek generic Opposite Flip.
 3. Detect Elvis / EMA Pullback.
-4. Detect older Vixale intraday families.
+4. Detect other or older Vixale families.
 
 **Gotcha:** Shrek and Fiona currently share a generic `strategy` identifier containing `VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET`. Fiona must be identified by its specific `variant` before the generic Shrek classifier runs.
+
+`is_opposite_flip_payload()` explicitly returns false for Edge. This is an
+execution boundary, not only a public-label distinction.
+
+### 8.3 Vixale Edge broker-flat callback contract
+
+The bridge classifies a managed Edge position that becomes broker-flat by
+positive execution evidence:
+
+1. Exact managed target order/execution Filled → `TP`, actual price/quantity,
+   reason `IB_TARGET_EXECUTION_CONFIRMED`.
+2. Exact bridge Stop Loss close execution Filled → `CLOSE_STOP`, actual
+   price/quantity, reason `IB_STOP_CLOSE_EXECUTION_CONFIRMED`.
+3. Neither execution is proven → `EXTERNAL_CLOSE`, public `Manual Close`,
+   reason `IB_POSITION_FLAT_EXTERNAL_EXECUTION`.
+
+A flat position, missing/non-working target, stored target price, or market
+touch is not TP evidence. Target evidence must match the managed target
+`orderId`, `permId`, or `orderRef`, closing side, and expected quantity. When a
+single matching external execution is available, its actual price and quantity
+are published. Otherwise the callback explicitly marks price and quantity
+unavailable; it never substitutes the target price or fabricates P&L.
+
+The managed-position JSON persists entry, target, and bridge-close broker
+identity plus timestamps. Before Render delivery, reconciliation persists a
+claim keyed by `setup_id + exit execution identity`. Failed delivery retains
+the claim and managed row for an identical retry. The row is cleared only after
+Render returns success.
+
+`app.js` processes `EXTERNAL_CLOSE` synchronously as a broker callback, never
+forwards it back to the bridge, removes the exact Edge Open row, stores
+`Manual Close` in the existing event column, and publishes:
+
+```text
+⚪ Vixale Edge closed manually
+Manual Close — price unavailable
+```
+
+The second line is used only when no actual IB execution price is available.
+Persistent publication markers live inside the existing raw JSON cells, so
+duplicate callbacks do not create another Trades row, Closed row, or Telegram
+message. No Google Sheets column or worksheet schema changes.
 
 ---
 
@@ -584,7 +647,7 @@ K Raw JSON
 Only executed events are appended:
 
 ```text
-FILL, TP, SL / FLIP_CLOSE, EOD
+FILL, TP, SL / FLIP_CLOSE, EOD, EXTERNAL_CLOSE / Manual Close
 ```
 
 ### 9.2 `Pending`
@@ -786,7 +849,7 @@ Important logical modules:
 - partial-fill target repair;
 - entry and close fill monitors;
 - managed position persistence;
-- target reconciliation and deduplication;
+- evidence-based Edge TP / Stop Loss / external-close reconciliation and deduplication;
 - orphan target cleanup;
 - forced EOD scheduler;
 - Render callbacks.
@@ -872,6 +935,11 @@ position.
 ### 13.9 Target fill deduplication
 
 The in-memory target monitor and persistent managed-position reconciliation can detect the same target fill. `_target_report_claims` prevents duplicate reporting.
+
+For Vixale Edge, `_target_report_claims` is only the concurrent guard. The
+durable source is the managed-position reconciliation claim containing the
+fixed callback payload and `setup_id + exit execution identity`. Render failure
+must retain that record for retry.
 
 ### 13.10 Orphan targets
 
@@ -1034,6 +1102,19 @@ Closed Trades row is added once
 No orphan target remains
 ```
 
+### Manual / external close
+
+```text
+IB position is confirmed flat
+managed target execution is not falsely inferred
+exact bridge Stop Loss execution is not falsely inferred
+Render receives EXTERNAL_CLOSE with reconciliation_id
+Telegram says Vixale Edge closed manually once
+Open Positions exact setup is removed
+Closed Trades says Manual Close
+unknown price shows price unavailable and no P&L
+```
+
 ### Opposite flip close
 
 ```text
@@ -1163,6 +1244,30 @@ overnight-position design and execution-first public ledger.
 **Deployment dependency:** This Part 2 source and server support must not be
 activated in TradingView until the unfinished Part 3 migration is completed and
 approved. This branch does not deploy or activate alerts.
+
+### ADR-013 — Vixale Edge bridge isolation and evidence-based flat reconciliation
+
+**Decision:** Vixale Edge is classified before generic Opposite Flip execution.
+It may hold one managed position per symbol across timeframes, enters with an
+ordinary MARKET order plus frozen GTC target, and never performs broker
+reversal-delta or stacking. A later flat state is TP only with exact managed
+target execution evidence, Stop Loss only with exact bridge-close execution
+evidence, and otherwise `EXTERNAL_CLOSE` / `Manual Close`. The managed file
+persists order/execution identity and a stable reconciliation claim until
+Render confirms publication.
+
+**Reason:** The shared Fiona/Prime strategy text previously allowed Edge to
+enter Prime reversal handling, while flat-position reconciliation could
+fabricate a TP at the stored target without broker evidence. Explicit family
+isolation and durable execution identity keep TWS as the source of truth.
+
+**Schema impact:** None. Bridge identity remains in the managed-position JSON;
+Render publication markers remain in existing raw JSON cells.
+
+**Activation dependency:** This is Part 3A only. The queued 16:00 Vixale Edge
+Stop Loss remains Part 3B and is not implemented here. Vixale Edge 1.1
+TradingView alerts must remain inactive until Part 3B is completed, reviewed,
+and explicitly approved. Existing Fiona alerts are not removed by Part 3A.
 
 ---
 

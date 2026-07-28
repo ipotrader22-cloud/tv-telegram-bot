@@ -38,13 +38,38 @@ def env_bool(name: str, default: bool) -> bool:
 def payload_text(data: Dict[str, Any]) -> str:
     try:
         return " ".join(str(data.get(k, "")) for k in [
-            "strategy", "profile", "variant", "target_type", "eod_policy", "reason"
+            "system_id", "strategy", "profile", "variant", "target_type", "eod_policy", "reason"
         ]).upper()
     except Exception:
         return ""
 
 
+def is_vixale_edge_payload(data: Dict[str, Any]) -> bool:
+    """Classify Edge before the shared generic Opposite Flip strategy name."""
+    if not isinstance(data, dict):
+        return False
+
+    system_id = str(data.get("system_id") or "").strip().upper()
+    variant = str(data.get("variant") or "").strip().upper()
+    strategy = str(data.get("strategy") or "").strip().upper()
+    text = payload_text(data)
+
+    return (
+        system_id == "VIXALE_EDGE"
+        or variant == "FIONA_LIMIT_PULLBACK_ATR_TARGET"
+        or strategy == "VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_V1"
+        or "FIONA_LIMIT_PULLBACK_ATR_TARGET" in text
+        or "VX_FIONA_LIMIT_PULLBACK_LIVE" in text
+        or "_FIONA_LIMIT" in text
+        or "FIONA_LONG_LIMIT_PULLBACK" in text
+        or "FIONA_SHORT_LIMIT_PULLBACK" in text
+    )
+
+
 def is_opposite_flip_payload(data: Dict[str, Any]) -> bool:
+    if is_vixale_edge_payload(data):
+        return False
+
     text = payload_text(data)
     return (
         "SHREK_1_4" in text
@@ -61,6 +86,17 @@ def is_ema_pullback_payload(data: Dict[str, Any]) -> bool:
         or "EMA_CROSS_PULLBACK_ATR_TARGET" in text
         or "EMA_CROSS_PULLBACK" in text
     )
+
+
+def classify_strategy_payload(data: Dict[str, Any]) -> str:
+    """Return the execution family using the architecture-sensitive precedence."""
+    if is_vixale_edge_payload(data):
+        return "VIXALE_EDGE"
+    if is_opposite_flip_payload(data):
+        return "VIXALE_PRIME_OPPOSITE_FLIP"
+    if is_ema_pullback_payload(data):
+        return "EMA_PULLBACK"
+    return "OTHER"
 
 
 def is_no_target_payload(data: Dict[str, Any]) -> bool:
@@ -292,7 +328,7 @@ def load_managed_positions() -> Dict[str, Any]:
         return {}
 
 
-def save_managed_positions(data: Dict[str, Any]) -> None:
+def save_managed_positions(data: Dict[str, Any]) -> bool:
     path = managed_positions_path()
     try:
         folder = os.path.dirname(path)
@@ -302,8 +338,10 @@ def save_managed_positions(data: Dict[str, Any]) -> None:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, sort_keys=True)
         os.replace(tmp_path, path)
+        return True
     except Exception as exc:
         print(f"[MANAGED SAVE ERROR] {exc}")
+        return False
 
 
 def force_eod_state_path() -> str:
@@ -341,6 +379,19 @@ def managed_strategy_id(row: Dict[str, Any]) -> str:
     return str(row.get("strategy") or payload.get("strategy") or "").strip().upper()
 
 
+def managed_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(row.get("last_payload") or {}) if isinstance(row, dict) else {}
+    if isinstance(row, dict):
+        for key in ("system_id", "strategy", "variant", "profile", "setup_id"):
+            if row.get(key) not in (None, ""):
+                payload[key] = row.get(key)
+    return payload
+
+
+def is_vixale_edge_managed_position(row: Dict[str, Any]) -> bool:
+    return is_vixale_edge_payload(managed_payload(row))
+
+
 def is_shrek_managed_position(row: Dict[str, Any]) -> bool:
     return managed_strategy_id(row) in SHREK_EOD_STRATEGY_IDS
 
@@ -355,6 +406,7 @@ def mark_managed_position(data: Dict[str, Any], ib_result: Dict[str, Any]) -> No
         return
 
     managed = load_managed_positions()
+    existing = dict(managed.get(symbol) or {})
     fill_price = to_float(ib_result.get("entry_fill_price")) or to_float(data.get("entry")) or to_float(data.get("price"))
     qty = (
         to_int_qty(ib_result.get("target_position_qty"))
@@ -364,7 +416,34 @@ def mark_managed_position(data: Dict[str, Any], ib_result: Dict[str, Any]) -> No
         or to_int_qty(ib_result.get("entry_filled_qty"))
     )
 
+    now_iso = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    target_qty = (
+        to_int_qty(ib_result.get("target_order_qty"))
+        or to_int_qty(ib_result.get("target_position_qty"))
+        or qty
+    )
+    entry_order = {
+        "order_id": ib_result.get("order_id", existing.get("ib_order_id", "")),
+        "perm_id": ib_result.get("order_perm_id", ""),
+        "order_ref": ib_result.get("order_ref", ""),
+        "filled_qty": to_float(ib_result.get("entry_filled_qty")),
+        "fill_price": round_price(fill_price) if fill_price > 0 else "",
+        "latest_status": ib_result.get("entry_status", ""),
+        "filled_at": now_iso,
+    }
+    target_order = {
+        "order_id": ib_result.get("target_order_id", existing.get("ib_target_order_id", "")),
+        "perm_id": ib_result.get("target_perm_id", ""),
+        "order_ref": ib_result.get("target_order_ref", target_order_ref(symbol, str(data.get("side", "")))),
+        "price": to_float(ib_result.get("target_price")) or to_float(data.get("target")),
+        "tif": str(ib_result.get("target_tif") or target_order_tif(data)),
+        "expected_qty": target_qty,
+        "latest_status": ib_result.get("target_status", ""),
+        "updated_at": now_iso,
+    }
+
     managed[symbol] = {
+        **existing,
         "symbol": symbol,
         "sec_type": normalize_sec_type(data),
         "side": str(data.get("side", "")).upper().strip(),
@@ -375,6 +454,9 @@ def mark_managed_position(data: Dict[str, Any], ib_result: Dict[str, Any]) -> No
         "profile": str(data.get("profile") or data.get("alert_profile") or ""),
         "timeframe": str(data.get("timeframe") or data.get("tf") or ""),
         "strategy": str(data.get("strategy") or ""),
+        "system_id": str(data.get("system_id") or ""),
+        "variant": str(data.get("variant") or ""),
+        "setup_id": str(data.get("setup_id") or ""),
         "exchange": contract_exchange_from_data(data),
         "currency": contract_currency_from_data(data),
         "contract_month": contract_month_from_data(data),
@@ -382,11 +464,123 @@ def mark_managed_position(data: Dict[str, Any], ib_result: Dict[str, Any]) -> No
         "last_payload": dict(data),
         "ib_order_id": ib_result.get("order_id", ""),
         "ib_target_order_id": ib_result.get("target_order_id", ""),
-        "updated_at": datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat(),
+        "entry_order": entry_order,
+        "target_order": target_order,
+        "entry_submission_state": "FILLED",
+        "created_at": existing.get("created_at") or now_iso,
+        "entry_filled_at": now_iso,
+        "updated_at": now_iso,
     }
 
     save_managed_positions(managed)
     print(f"[MANAGED MARK] symbol={symbol} side={managed[symbol].get('side')} qty={qty}")
+
+
+def mark_edge_entry_submission(data: Dict[str, Any], ib_result: Dict[str, Any]) -> bool:
+    """Persist an Edge order identity before awaiting broker publication."""
+    if not is_vixale_edge_payload(data):
+        return True
+
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    if not symbol or not setup_id:
+        return False
+
+    managed = load_managed_positions()
+    existing = dict(managed.get(symbol) or {})
+    now_iso = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    qty = to_int_qty(data.get("qty"))
+    target_qty = to_int_qty(ib_result.get("target_order_qty")) or qty
+    managed[symbol] = {
+        **existing,
+        "symbol": symbol,
+        "sec_type": normalize_sec_type(data),
+        "side": str(data.get("side") or "").upper().strip(),
+        "qty": qty,
+        "entry": to_float(data.get("entry")) or to_float(data.get("price")),
+        "target": to_float(data.get("target")),
+        "stop": to_float(data.get("stop")),
+        "profile": str(data.get("profile") or data.get("alert_profile") or ""),
+        "timeframe": str(data.get("timeframe") or data.get("tf") or ""),
+        "strategy": str(data.get("strategy") or ""),
+        "system_id": str(data.get("system_id") or ""),
+        "variant": str(data.get("variant") or ""),
+        "setup_id": setup_id,
+        "exchange": contract_exchange_from_data(data),
+        "currency": contract_currency_from_data(data),
+        "last_payload": dict(data),
+        "ib_order_id": ib_result.get("order_id", ""),
+        "ib_target_order_id": ib_result.get("target_order_id", ""),
+        "entry_order": {
+            "order_id": ib_result.get("order_id", ""),
+            "perm_id": ib_result.get("order_perm_id", ""),
+            "order_ref": ib_result.get("order_ref", ""),
+            "filled_qty": to_float(ib_result.get("entry_filled_qty")),
+            "fill_price": to_float(ib_result.get("entry_fill_price")),
+            "latest_status": ib_result.get("entry_status", ""),
+            "submitted_at": now_iso,
+        },
+        "target_order": {
+            "order_id": ib_result.get("target_order_id", ""),
+            "perm_id": ib_result.get("target_perm_id", ""),
+            "order_ref": ib_result.get("target_order_ref", target_order_ref(symbol, str(data.get("side", "")))),
+            "price": to_float(ib_result.get("target_price")) or to_float(data.get("target")),
+            "tif": str(ib_result.get("target_tif") or target_order_tif(data)),
+            "expected_qty": target_qty,
+            "latest_status": ib_result.get("target_status", ""),
+            "submitted_at": now_iso,
+        },
+        "entry_submission_state": (
+            "FILLED"
+            if ib_result.get("entry_filled")
+            else str(ib_result.get("entry_submission_state") or "SUBMITTED").upper()
+        ),
+        "created_at": existing.get("created_at") or now_iso,
+        "entry_submitted_at": existing.get("entry_submitted_at") or now_iso,
+        "updated_at": now_iso,
+    }
+    return save_managed_positions(managed)
+
+
+def clear_edge_submission_if_unfilled(symbol: str, setup_id: str) -> None:
+    managed = load_managed_positions()
+    row = dict(managed.get(str(symbol or "").upper().strip()) or {})
+    if (
+        row
+        and is_vixale_edge_managed_position(row)
+        and str(row.get("setup_id") or "") == str(setup_id or "")
+        and str(row.get("entry_submission_state") or "").upper() != "FILLED"
+    ):
+        managed.pop(str(symbol or "").upper().strip(), None)
+        save_managed_positions(managed)
+
+
+def mark_managed_bridge_close(data: Dict[str, Any], ib_result: Dict[str, Any]) -> None:
+    if not is_vixale_edge_payload(data):
+        return
+
+    symbol = str(data.get("symbol") or "").upper().strip()
+    managed = load_managed_positions()
+    row = dict(managed.get(symbol) or {})
+    if not row:
+        return
+
+    now_iso = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    existing_close = row.get("bridge_close_order") if isinstance(row.get("bridge_close_order"), dict) else {}
+    row["bridge_close_order"] = {
+        "order_id": ib_result.get("order_id", ""),
+        "perm_id": ib_result.get("order_perm_id", ""),
+        "order_ref": ib_result.get("order_ref", ""),
+        "latest_status": ib_result.get("close_status", ""),
+        "filled_qty": to_float(ib_result.get("close_filled_qty")),
+        "fill_price": to_float(ib_result.get("close_fill_price")),
+        "exec_ids": list(ib_result.get("close_exec_ids") or []),
+        "submitted_at": existing_close.get("submitted_at") or now_iso,
+        "filled_at": now_iso if ib_result.get("close_filled") else "",
+    }
+    row["updated_at"] = now_iso
+    managed[symbol] = row
+    save_managed_positions(managed)
 
 
 def clear_managed_position(symbol: str) -> None:
@@ -1049,6 +1243,22 @@ def trade_order_id(trade: Any) -> Any:
     return getattr(getattr(trade, "order", None), "orderId", None)
 
 
+def trade_perm_id(trade: Any) -> Any:
+    order = getattr(trade, "order", None)
+    return (
+        getattr(order, "permId", None)
+        or getattr(getattr(trade, "orderStatus", None), "permId", None)
+    )
+
+
+def trade_order_ref_value(trade: Any) -> str:
+    return str(getattr(getattr(trade, "order", None), "orderRef", "") or "")
+
+
+def trade_action(trade: Any) -> str:
+    return str(getattr(getattr(trade, "order", None), "action", "") or "").upper().strip()
+
+
 def trade_status(trade: Any) -> str:
     return str(getattr(getattr(trade, "orderStatus", None), "status", "") or "")
 
@@ -1187,6 +1397,9 @@ async def wait_for_ib_confirmation(*trades: Any) -> str:
 
 
 def target_order_tif(data: Dict[str, Any]) -> str:
+    if is_vixale_edge_payload(data):
+        return "GTC"
+
     explicit = str(data.get("target_tif") or data.get("target_time_in_force") or "").strip().upper()
     if explicit in ("DAY", "GTC"):
         return explicit
@@ -1326,8 +1539,10 @@ async def repair_entry_target_for_actual_position(
                 "dry_run": False,
                 "status": "submitted_with_repaired_target",
                 "order_id": trade_order_id(entry_trade),
+                "order_perm_id": trade_perm_id(entry_trade),
                 "original_target_order_id": trade_order_id(target_trade),
                 "target_order_id": trade_order_id(repaired_trade),
+                "target_perm_id": trade_perm_id(repaired_trade),
                 "target_parent_id": 0,
                 "entry_status": trade_status(entry_trade),
                 "target_status": trade_status(repaired_trade),
@@ -1377,7 +1592,9 @@ async def repair_entry_target_for_actual_position(
             "status": "rejected",
             "error": repaired_error or f"Repaired target is not working: status={trade_status(repaired_trade)}",
             "order_id": trade_order_id(entry_trade),
+            "order_perm_id": trade_perm_id(entry_trade),
             "target_order_id": trade_order_id(repaired_trade),
+            "target_perm_id": trade_perm_id(repaired_trade),
             "entry_filled": True,
             "entry_fill_price": entry_fill_price,
             "entry_filled_qty": actual_position_qty,
@@ -1398,7 +1615,9 @@ async def repair_entry_target_for_actual_position(
             f"position={position_after_fill}"
         ),
         "order_id": trade_order_id(entry_trade),
+        "order_perm_id": trade_perm_id(entry_trade),
         "target_order_id": trade_order_id(target_trade),
+        "target_perm_id": trade_perm_id(target_trade),
         "entry_filled": True,
         "entry_fill_price": entry_fill_price,
         "entry_filled_qty": entry_order_filled_qty,
@@ -1434,7 +1653,14 @@ async def monitor_target_fill(
                     return
 
                 try:
-                    fill_price = trade_fill_price(target_trade, target_price) or target_price
+                    actual_qty = trade_filled_qty(target_trade) or qty
+                    fill_price = trade_fill_price(target_trade)
+                    if is_vixale_edge_payload(original_data) and fill_price <= 0:
+                        print(
+                            f"[TP MONITOR RETRY ARMED] symbol={symbol} exact target is Filled "
+                            "but actual execution price is unavailable; managed state retained"
+                        )
+                        return
                     payload = dict(original_data)
                     payload["event"] = "TP"
                     payload["symbol"] = symbol
@@ -1442,10 +1668,43 @@ async def monitor_target_fill(
                     payload["entry"] = entry_fill_price or to_float(original_data.get("entry"))
                     payload["price"] = fill_price
                     payload["target"] = target_price
-                    payload["qty"] = qty
-                    payload["reason"] = payload.get("reason") or "IB_TARGET_FILLED"
+                    payload["qty"] = actual_qty
+                    payload["reason"] = (
+                        "IB_TARGET_EXECUTION_CONFIRMED"
+                        if is_vixale_edge_payload(original_data)
+                        else payload.get("reason") or "IB_TARGET_FILLED"
+                    )
                     payload["ib_target_order_id"] = trade_order_id(target_trade)
+                    payload["ib_target_perm_id"] = trade_perm_id(target_trade)
+                    payload["ib_target_order_ref"] = trade_order_ref_value(target_trade)
                     payload["ib_target_status"] = trade_status(target_trade)
+                    if is_vixale_edge_payload(original_data):
+                        identity = execution_identity_text(
+                            exec_ids=trade_execution_ids(target_trade),
+                            perm_id=trade_perm_id(target_trade),
+                            order_id=trade_order_id(target_trade),
+                            order_ref_value=trade_order_ref_value(target_trade),
+                        )
+                        setup_id = str(original_data.get("setup_id") or "").strip()
+                        payload["exit_execution_id"] = identity
+                        payload["reconciliation_id"] = f"{setup_id or symbol}:{identity}"
+                        payload["broker_confirmed_flat"] = True
+                        managed = load_managed_positions()
+                        managed_row = dict(managed.get(symbol) or {})
+                        managed_row["reconciliation_claim"] = {
+                            "reconciliation_id": payload["reconciliation_id"],
+                            "event": "TP",
+                            "exit_execution_id": identity,
+                            "render_payload": payload,
+                            "claimed_at": now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat(),
+                        }
+                        managed[symbol] = managed_row
+                        if not save_managed_positions(managed):
+                            print(
+                                f"[TP MONITOR RETRY ARMED] symbol={symbol} "
+                                "reconciliation claim persistence failed; Render callback withheld"
+                            )
+                            return
 
                     render_result = await forward_to_render(payload)
                     print(f"[TP MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
@@ -1480,6 +1739,51 @@ async def monitor_target_fill(
     print(f"[TP MONITOR TIMEOUT] symbol={symbol} side={side} target_order_id={trade_order_id(target_trade)}")
 
 
+async def edge_entry_guard(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Block Edge stacking/reversal without canceling an existing target."""
+    if not is_vixale_edge_payload(data):
+        return None
+
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    position = await get_position_size(symbol)
+    managed = load_managed_positions()
+    active = dict(managed.get(symbol) or {})
+    active_is_edge = bool(active) and is_vixale_edge_managed_position(active)
+    active_setup_id = str(active.get("setup_id") or "").strip()
+
+    if setup_id and active_is_edge and active_setup_id == setup_id:
+        return {
+            "dry_run": DRY_RUN,
+            "status": "edge_duplicate_active_setup",
+            "symbol": symbol,
+            "side": str(data.get("side") or "").upper().strip(),
+            "setup_id": setup_id,
+            "position_before_entry": position,
+            "canceled_replaced_orders": 0,
+            "cancel_scope": "PENDING_ONLY",
+            "cancel_reason": "EDGE_DUPLICATE_ACTIVE_SETUP",
+            "message": "Existing managed Vixale Edge setup_id is already active; no broker order submitted.",
+        }
+
+    if abs(position) > 0.000001 or active_is_edge:
+        return {
+            "dry_run": DRY_RUN,
+            "status": "edge_entry_blocked_existing_position",
+            "symbol": symbol,
+            "side": str(data.get("side") or "").upper().strip(),
+            "setup_id": setup_id,
+            "position_before_entry": position,
+            "active_setup_id": active_setup_id,
+            "canceled_replaced_orders": 0,
+            "cancel_scope": "PENDING_ONLY",
+            "cancel_reason": "EDGE_ENTRY_BLOCKED_EXISTING_POSITION",
+            "message": "Vixale Edge permits one active position per symbol across all timeframes; no broker order submitted.",
+        }
+
+    return None
+
+
 async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
     await ensure_ib_connected()
 
@@ -1489,7 +1793,8 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
 
     entry = round_price(to_float(data.get("entry")))
     qty = to_int_qty(data.get("qty")) or DEFAULT_STOCK_QTY
-    entry_order_type = get_entry_order_type(data)
+    edge_mode = is_vixale_edge_payload(data)
+    entry_order_type = "MARKET" if edge_mode else get_entry_order_type(data)
 
     if not symbol:
         raise ValueError("Missing symbol")
@@ -1505,6 +1810,10 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
 
     validate_pretrade_risk(symbol, side, entry, qty, sec_type)
     validate_entry_timing(entry_order_type, sec_type)
+
+    edge_block = await edge_entry_guard(data)
+    if edge_block is not None:
+        return edge_block
 
     no_target_mode = is_no_target_payload(data)
     opposite_flip_mode = is_opposite_flip_payload(data)
@@ -1581,6 +1890,10 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
     # an accidental entry after the reversal.
     if opposite_flip_mode:
         canceled_replaced_orders = await cancel_open_orders_for_symbol(symbol, None)
+    elif edge_mode:
+        # An Edge entry is allowed only after proving broker-flat/no active Edge
+        # state. Never sweep symbol orders or disturb an existing protective target.
+        canceled_replaced_orders = 0
     else:
         canceled_replaced_orders = await cancel_open_orders_for_symbol(symbol, side)
 
@@ -1624,6 +1937,8 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
         "entry_reference_price": entry,
         "limit_price": entry if entry_order_type == "LIMIT" else None,
         "order_ref": entry_order.orderRef,
+        "setup_id": str(data.get("setup_id") or ""),
+        "execution_family": classify_strategy_payload(data),
         "canceled_replaced_orders": canceled_replaced_orders,
         "no_target_mode": no_target_mode,
         **target_payload,
@@ -1655,8 +1970,49 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
         target_order.transmit = True
         target_order.orderRef = target_order_ref(symbol, side)
 
-        entry_trade = ib.placeOrder(contract, entry_order)
-        target_trade = ib.placeOrder(contract, target_order)
+        if edge_mode:
+            reservation = {
+                **base_payload,
+                "order_id": entry_order.orderId,
+                "target_order_id": target_order.orderId,
+                "entry_status": "PendingSubmit",
+                "target_status": "PendingSubmit",
+                "entry_filled": False,
+                "entry_submission_state": "RESERVED",
+            }
+            if not mark_edge_entry_submission(data, reservation):
+                return {
+                    "dry_run": False,
+                    "status": "edge_entry_state_persistence_failed",
+                    "symbol": symbol,
+                    "side": side,
+                    "setup_id": str(data.get("setup_id") or ""),
+                    "cancel_scope": "PENDING_ONLY",
+                    "cancel_reason": "EDGE_ENTRY_STATE_PERSISTENCE_FAILED",
+                    "message": "Managed Edge order identity could not be persisted; no broker order submitted.",
+                    **base_payload,
+                }
+
+        entry_trade = None
+        try:
+            entry_trade = ib.placeOrder(contract, entry_order)
+            target_trade = ib.placeOrder(contract, target_order)
+        except Exception:
+            if edge_mode:
+                if entry_trade is None:
+                    clear_edge_submission_if_unfilled(symbol, str(data.get("setup_id") or ""))
+                else:
+                    mark_edge_entry_submission(data, {
+                        **reservation,
+                        "order_id": trade_order_id(entry_trade) or entry_order.orderId,
+                        "order_perm_id": trade_perm_id(entry_trade),
+                        "entry_status": trade_status(entry_trade) or "Submitted",
+                        "entry_filled": trade_is_filled(entry_trade, order_qty),
+                        "entry_filled_qty": trade_filled_qty(entry_trade),
+                        "entry_fill_price": trade_fill_price(entry_trade),
+                        "entry_submission_state": "ENTRY_SUBMITTED_TARGET_PLACE_FAILED",
+                    })
+            raise
 
         rejection_reason = await wait_for_ib_confirmation(entry_trade, target_trade)
 
@@ -1674,6 +2030,20 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             target_working = trade_is_working_or_filled(target_trade)
 
         entry_fill_price = trade_fill_price(entry_trade, entry)
+        identity_payload = {
+            **base_payload,
+            "order_id": trade_order_id(entry_trade),
+            "order_perm_id": trade_perm_id(entry_trade),
+            "target_order_id": trade_order_id(target_trade),
+            "target_perm_id": trade_perm_id(target_trade),
+            "entry_status": trade_status(entry_trade),
+            "target_status": trade_status(target_trade),
+            "entry_filled": entry_filled,
+            "entry_fill_price": entry_fill_price,
+            "entry_filled_qty": entry_filled_qty,
+            "target_working": target_working,
+        }
+        mark_edge_entry_submission(data, identity_payload)
 
         # Any real fill must remain protected. Repair a partial parent, or a full
         # parent whose attached child is no longer working.
@@ -1698,12 +2068,15 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
 
         if rejection_reason:
             canceled_after_rejection = await cancel_open_orders_for_symbol(symbol, side)
+            clear_edge_submission_if_unfilled(symbol, str(data.get("setup_id") or ""))
             return {
                 "dry_run": False,
                 "status": "rejected",
                 "error": rejection_reason,
                 "order_id": trade_order_id(entry_trade),
+                "order_perm_id": trade_perm_id(entry_trade),
                 "target_order_id": trade_order_id(target_trade),
+                "target_perm_id": trade_perm_id(target_trade),
                 "entry_filled": False,
                 "entry_fill_price": entry_fill_price,
                 "target_working": target_working,
@@ -1715,7 +2088,9 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             "dry_run": False,
             "status": "submitted_with_attached_target" if entry_filled else "submitted_awaiting_entry_fill",
             "order_id": trade_order_id(entry_trade),
+            "order_perm_id": trade_perm_id(entry_trade),
             "target_order_id": trade_order_id(target_trade),
+            "target_perm_id": trade_perm_id(target_trade),
             "target_parent_id": getattr(target_order, "parentId", None),
             "entry_status": trade_status(entry_trade),
             "target_status": trade_status(target_trade),
@@ -1762,11 +2137,13 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if rejection_reason:
         canceled_after_rejection = await cancel_open_orders_for_symbol(symbol, side)
+        clear_edge_submission_if_unfilled(symbol, str(data.get("setup_id") or ""))
         return {
             "dry_run": False,
             "status": "rejected",
             "error": rejection_reason,
             "order_id": trade_order_id(entry_trade),
+            "order_perm_id": trade_perm_id(entry_trade),
             "canceled_after_rejection": canceled_after_rejection,
             **base_payload,
         }
@@ -1776,12 +2153,14 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
         "dry_run": False,
         "status": "submitted_without_target_missing_target_price" if entry_filled else "submitted_awaiting_entry_fill",
         "order_id": trade_order_id(entry_trade),
+        "order_perm_id": trade_perm_id(entry_trade),
         "entry_status": trade_status(entry_trade),
         "entry_filled": entry_filled,
         "entry_fill_price": trade_fill_price(entry_trade, entry),
         "entry_filled_qty": trade_filled_qty(entry_trade),
         **base_payload,
     }
+    mark_edge_entry_submission(data, result_payload)
 
     if not entry_filled and entry_order_type == "MARKET" and ENABLE_EXECUTION_FILL_MONITOR:
         spawn_execution_monitor(
@@ -1926,6 +2305,7 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
             "canceled_open_orders": canceled_open_orders,
             "order_ref": order.orderRef,
             "order_id": trade_order_id(trade),
+            "order_perm_id": trade_perm_id(trade),
             "close_filled": close_filled,
             "error": rejection_reason,
         }
@@ -1948,12 +2328,15 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
         "canceled_open_orders": canceled_open_orders,
         "order_ref": order.orderRef,
         "order_id": trade_order_id(trade),
+        "order_perm_id": trade_perm_id(trade),
         "close_status": trade_status(trade),
         "close_filled": close_filled,
         "close_fill_price": trade_fill_price(trade, to_float(data.get("price")) or to_float(data.get("entry"))),
         "close_filled_qty": trade_filled_qty(trade),
+        "close_exec_ids": trade_execution_ids(trade),
         **orphan_cleanup,
     }
+    mark_managed_bridge_close(data, result_payload)
 
     if not close_filled and ENABLE_EXECUTION_FILL_MONITOR:
         spawn_execution_monitor(
@@ -2056,14 +2439,18 @@ def make_cancel_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> Dict
     payload = dict(data)
     payload["event"] = "CANCEL"
 
+    edge_cancel_reason = str(ib_result.get("cancel_reason") or "").strip()
     reason = (
-        ib_result.get("error")
+        edge_cancel_reason
+        or ib_result.get("error")
         or ib_result.get("message")
         or ib_result.get("status")
         or "IB rejected or blocked setup"
     )
 
-    payload["reason"] = f"IB_REJECTED_OR_BLOCKED: {reason}"
+    payload["reason"] = reason if edge_cancel_reason else f"IB_REJECTED_OR_BLOCKED: {reason}"
+    if edge_cancel_reason:
+        payload["cancel_scope"] = "PENDING_ONLY"
     payload["ib_status"] = ib_result.get("status", "")
     payload["ib_result"] = ib_result
 
@@ -2092,7 +2479,11 @@ def make_entry_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
 
     payload["ib_status"] = ib_result.get("status", "")
     payload["ib_order_id"] = ib_result.get("order_id", "")
+    payload["ib_order_perm_id"] = ib_result.get("order_perm_id", "")
+    payload["ib_order_ref"] = ib_result.get("order_ref", "")
     payload["ib_target_order_id"] = ib_result.get("target_order_id", "")
+    payload["ib_target_perm_id"] = ib_result.get("target_perm_id", "")
+    payload["ib_target_order_ref"] = ib_result.get("target_order_ref", "")
     payload["ib_entry_status"] = ib_result.get("entry_status", "")
     payload["ib_target_status"] = ib_result.get("target_status", "")
     payload["reason"] = payload.get("reason") or "IB_ENTRY_FILLED"
@@ -2109,6 +2500,9 @@ def make_reversal_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, 
     old LONG and opens the new SHORT. Render needs two ordered callbacks:
     CLOSE_STOP LONG first, then ENTRY_FILL SHORT.
     """
+    if is_vixale_edge_payload(data):
+        return None
+
     try:
         position_before = float(ib_result.get("position_before_entry", 0) or 0)
     except Exception:
@@ -2156,11 +2550,26 @@ def make_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
 
     payload["ib_status"] = ib_result.get("status", "")
     payload["ib_order_id"] = ib_result.get("order_id", "")
+    payload["ib_order_perm_id"] = ib_result.get("order_perm_id", "")
+    payload["ib_order_ref"] = ib_result.get("order_ref", "")
     payload["ib_close_status"] = ib_result.get("close_status", "")
     payload["close_filled"] = bool(ib_result.get("close_filled"))
     payload["position_after_close"] = ib_result.get("position_after_close", "")
     payload["canceled_orphan_targets"] = ib_result.get("canceled_orphan_targets", 0)
-    payload["reason"] = payload.get("reason") or "IB_CLOSE_FILLED"
+    exit_identity = execution_identity_text(
+        exec_ids=ib_result.get("close_exec_ids") or [],
+        perm_id=ib_result.get("order_perm_id"),
+        order_id=ib_result.get("order_id"),
+        order_ref_value=ib_result.get("order_ref"),
+    )
+    if exit_identity:
+        payload["exit_execution_id"] = exit_identity
+        setup_id = str(data.get("setup_id") or "").strip()
+        payload["reconciliation_id"] = f"{setup_id or payload.get('symbol') or ''}:{exit_identity}"
+    if is_vixale_edge_payload(data) and str(data.get("event") or "").upper() == "CLOSE_STOP":
+        payload["reason"] = "IB_STOP_CLOSE_EXECUTION_CONFIRMED"
+    else:
+        payload["reason"] = payload.get("reason") or "IB_CLOSE_FILLED"
 
     return payload
 
@@ -2450,16 +2859,23 @@ async def monitor_close_fill_confirmation(
                 result["close_filled"] = True
                 result["close_fill_price"] = trade_fill_price(close_trade, fallback_price)
                 result["close_filled_qty"] = trade_filled_qty(close_trade)
+                result["order_perm_id"] = trade_perm_id(close_trade)
+                result["close_exec_ids"] = trade_execution_ids(close_trade)
 
                 if CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
                     await asyncio.sleep(0.50)
                     result.update(await cleanup_orphan_targets_if_flat(symbol))
 
-                clear_managed_position(symbol)
+                edge_close = is_vixale_edge_payload(original_data)
+                mark_managed_bridge_close(original_data, result)
+                if not edge_close:
+                    clear_managed_position(symbol)
 
                 render_payload = make_close_fill_payload(original_data, result)
                 render_result = await forward_to_render(render_payload)
                 print(f"[CLOSE FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
+                if edge_close and render_delivery_succeeded(render_result):
+                    clear_managed_position(symbol)
 
                 event = str(original_data.get("event", "")).upper()
                 if should_send_flat_reconcile(event, result):
@@ -2577,7 +2993,12 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
     if event == "SETUP" and ib_setup_accepted(ib_result) and ib_result.get("entry_filled"):
         mark_managed_position(data, ib_result)
 
-    if event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"] and ib_close_accepted(ib_result):
+    edge_close = is_vixale_edge_payload(data) and event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"]
+    if (
+        event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"]
+        and ib_close_accepted(ib_result)
+        and not edge_close
+    ):
         clear_managed_position(symbol)
 
     # Execution-first architecture: successful fills must be echoed back to Render.
@@ -2604,6 +3025,10 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
 
     render_result = await forward_to_render(render_payload)
     print(f"[RENDER RESULT] {render_result}")
+    if edge_close and ib_close_accepted(ib_result):
+        mark_managed_bridge_close(data, ib_result)
+        if render_delivery_succeeded(render_result):
+            clear_managed_position(symbol)
 
     if should_send_flat_reconcile(event, ib_result):
         reconcile_payload = make_reconcile_flat_payload(data, ib_result)
@@ -2868,6 +3293,368 @@ async def live_quote_push_loop() -> None:
         await asyncio.sleep(poll)
 
 
+def managed_order_identity(row: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    nested_key = "target_order" if kind == "target" else "bridge_close_order"
+    nested = row.get(nested_key) if isinstance(row.get(nested_key), dict) else {}
+    if kind == "target":
+        return {
+            "order_id": nested.get("order_id") or row.get("ib_target_order_id"),
+            "perm_id": nested.get("perm_id") or row.get("ib_target_perm_id"),
+            "order_ref": nested.get("order_ref") or row.get("ib_target_order_ref"),
+            "expected_qty": to_float(nested.get("expected_qty")) or to_float(row.get("qty")),
+        }
+    return {
+        "order_id": nested.get("order_id") or row.get("ib_close_order_id"),
+        "perm_id": nested.get("perm_id") or row.get("ib_close_perm_id"),
+        "order_ref": nested.get("order_ref") or row.get("ib_close_order_ref"),
+        "expected_qty": to_float(nested.get("filled_qty")) or to_float(row.get("qty")),
+    }
+
+
+def identity_matches(
+    actual_order_id: Any,
+    actual_perm_id: Any,
+    actual_order_ref: Any,
+    expected: Dict[str, Any],
+) -> bool:
+    checks = []
+    if expected.get("order_id") not in (None, ""):
+        checks.append(str(actual_order_id or "") == str(expected.get("order_id")))
+    if expected.get("perm_id") not in (None, ""):
+        checks.append(str(actual_perm_id or "") == str(expected.get("perm_id")))
+    if str(expected.get("order_ref") or "").strip():
+        checks.append(
+            str(actual_order_ref or "").upper().strip()
+            == str(expected.get("order_ref") or "").upper().strip()
+        )
+    return any(checks)
+
+
+def normalized_execution_action(value: Any) -> str:
+    action = str(value or "").upper().strip()
+    if action in ("BOT", "BUY"):
+        return "BUY"
+    if action in ("SLD", "SELL"):
+        return "SELL"
+    return action
+
+
+def expected_exit_action(row: Dict[str, Any]) -> str:
+    return "SELL" if str(row.get("side") or "").upper().strip() == "LONG" else "BUY"
+
+
+def trade_contract_symbol(trade: Any) -> str:
+    return str(getattr(getattr(trade, "contract", None), "symbol", "") or "").upper().strip()
+
+
+def trade_execution_ids(trade: Any) -> List[str]:
+    values = []
+    for fill in getattr(trade, "fills", []) or []:
+        exec_id = str(getattr(getattr(fill, "execution", None), "execId", "") or "").strip()
+        if exec_id:
+            values.append(exec_id)
+    return sorted(set(values))
+
+
+def execution_identity_text(
+    *,
+    exec_ids: Optional[List[str]] = None,
+    perm_id: Any = None,
+    order_id: Any = None,
+    order_ref_value: Any = None,
+) -> str:
+    if exec_ids:
+        return "EXEC:" + ",".join(sorted(set(str(value) for value in exec_ids if value)))
+    if perm_id not in (None, ""):
+        return f"PERM:{perm_id}"
+    if order_id not in (None, ""):
+        return f"ORDER:{order_id}"
+    if str(order_ref_value or "").strip():
+        return f"REF:{str(order_ref_value).upper().strip()}"
+    return ""
+
+
+def trade_execution_evidence(
+    trade: Any,
+    row: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    if not identity_matches(
+        trade_order_id(trade),
+        trade_perm_id(trade),
+        trade_order_ref_value(trade),
+        expected,
+    ):
+        return None
+
+    if trade_contract_symbol(trade) != str(row.get("symbol") or "").upper().strip():
+        return None
+    if normalized_execution_action(trade_action(trade)) != expected_exit_action(row):
+        return None
+
+    qty = trade_filled_qty(trade)
+    expected_qty = to_float(expected.get("expected_qty"))
+    if not trade_is_filled(trade, expected_qty) or qty <= 0:
+        return None
+    if expected_qty > 0 and qty + 0.000001 < expected_qty:
+        return None
+
+    price = trade_fill_price(trade)
+    if price <= 0:
+        return None
+
+    exec_ids = trade_execution_ids(trade)
+    identity = execution_identity_text(
+        exec_ids=exec_ids,
+        perm_id=trade_perm_id(trade),
+        order_id=trade_order_id(trade),
+        order_ref_value=trade_order_ref_value(trade),
+    )
+    if not identity:
+        return None
+    return {
+        "identity": identity,
+        "price": price,
+        "qty": qty,
+        "order_id": trade_order_id(trade),
+        "perm_id": trade_perm_id(trade),
+        "order_ref": trade_order_ref_value(trade),
+        "status": trade_status(trade),
+        "exec_ids": exec_ids,
+    }
+
+
+def fill_contract_symbol(fill: Any) -> str:
+    return str(getattr(getattr(fill, "contract", None), "symbol", "") or "").upper().strip()
+
+
+def fill_execution_details(fill: Any) -> Dict[str, Any]:
+    execution = getattr(fill, "execution", None)
+    return {
+        "order_id": getattr(execution, "orderId", None),
+        "perm_id": getattr(execution, "permId", None),
+        "order_ref": getattr(execution, "orderRef", ""),
+        "exec_id": str(getattr(execution, "execId", "") or "").strip(),
+        "action": normalized_execution_action(getattr(execution, "side", "")),
+        "qty": to_float(getattr(execution, "shares", 0)),
+        "price": to_float(getattr(execution, "price", 0)),
+        "time": getattr(execution, "time", None),
+    }
+
+
+def fill_execution_evidence(
+    fills: List[Any],
+    row: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    symbol = str(row.get("symbol") or "").upper().strip()
+    matches = []
+    for fill in fills:
+        details = fill_execution_details(fill)
+        if fill_contract_symbol(fill) != symbol:
+            continue
+        if details["action"] != expected_exit_action(row):
+            continue
+        if not identity_matches(
+            details["order_id"],
+            details["perm_id"],
+            details["order_ref"],
+            expected,
+        ):
+            continue
+        if details["qty"] <= 0 or details["price"] <= 0:
+            continue
+        matches.append(details)
+
+    qty = sum(item["qty"] for item in matches)
+    expected_qty = to_float(expected.get("expected_qty"))
+    if qty <= 0 or (expected_qty > 0 and qty + 0.000001 < expected_qty):
+        return None
+    price = sum(item["price"] * item["qty"] for item in matches) / qty
+    exec_ids = [item["exec_id"] for item in matches if item["exec_id"]]
+    first = matches[0]
+    identity = execution_identity_text(
+        exec_ids=exec_ids,
+        perm_id=first["perm_id"],
+        order_id=first["order_id"],
+        order_ref_value=first["order_ref"],
+    )
+    if not identity:
+        return None
+    return {
+        "identity": identity,
+        "price": round_price(price),
+        "qty": qty,
+        "order_id": first["order_id"],
+        "perm_id": first["perm_id"],
+        "order_ref": first["order_ref"],
+        "status": "Filled",
+        "exec_ids": exec_ids,
+    }
+
+
+def current_ib_trades() -> List[Any]:
+    try:
+        return list(ib.trades() or [])
+    except Exception:
+        return []
+
+
+def current_ib_fills() -> List[Any]:
+    try:
+        return list(ib.fills() or [])
+    except Exception:
+        return []
+
+
+def find_managed_execution_evidence(row: Dict[str, Any], kind: str) -> Optional[Dict[str, Any]]:
+    expected = managed_order_identity(row, kind)
+    if not any(expected.get(key) not in (None, "") for key in ("order_id", "perm_id", "order_ref")):
+        return None
+
+    for trade in current_ib_trades():
+        evidence = trade_execution_evidence(trade, row, expected)
+        if evidence:
+            return evidence
+
+    return fill_execution_evidence(current_ib_fills(), row, expected)
+
+
+def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Use a single unambiguous non-managed closing execution when available."""
+    symbol = str(row.get("symbol") or "").upper().strip()
+    target_identity = managed_order_identity(row, "target")
+    close_identity = managed_order_identity(row, "close")
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    entry_order = row.get("entry_order") if isinstance(row.get("entry_order"), dict) else {}
+    entry_time_raw = row.get("entry_filled_at") or entry_order.get("filled_at")
+    try:
+        entry_time = datetime.fromisoformat(str(entry_time_raw).replace("Z", "+00:00")) if entry_time_raw else None
+    except Exception:
+        entry_time = None
+
+    for fill in current_ib_fills():
+        details = fill_execution_details(fill)
+        if fill_contract_symbol(fill) != symbol:
+            continue
+        if details["action"] != expected_exit_action(row):
+            continue
+        if details["qty"] <= 0 or details["price"] <= 0:
+            continue
+        if entry_time is not None:
+            fill_time = details.get("time")
+            if not isinstance(fill_time, datetime):
+                continue
+            comparable_entry = entry_time
+            comparable_fill = fill_time
+            if comparable_entry.tzinfo is None and comparable_fill.tzinfo is not None:
+                comparable_entry = comparable_entry.replace(tzinfo=comparable_fill.tzinfo)
+            if comparable_entry.tzinfo is not None and comparable_fill.tzinfo is None:
+                comparable_fill = comparable_fill.replace(tzinfo=comparable_entry.tzinfo)
+            if comparable_fill < comparable_entry:
+                continue
+        if identity_matches(details["order_id"], details["perm_id"], details["order_ref"], target_identity):
+            continue
+        if identity_matches(details["order_id"], details["perm_id"], details["order_ref"], close_identity):
+            continue
+        identity = execution_identity_text(
+            exec_ids=[details["exec_id"]] if details["exec_id"] else [],
+            perm_id=details["perm_id"],
+            order_id=details["order_id"],
+            order_ref_value=details["order_ref"],
+        )
+        if not identity:
+            continue
+        group_key = (
+            f"PERM:{details['perm_id']}" if details["perm_id"] not in (None, "")
+            else f"ORDER:{details['order_id']}" if details["order_id"] not in (None, "")
+            else identity
+        )
+        groups.setdefault(group_key, []).append(details)
+
+    if len(groups) != 1:
+        return None
+
+    matches = next(iter(groups.values()))
+    qty = sum(item["qty"] for item in matches)
+    price = sum(item["price"] * item["qty"] for item in matches) / qty
+    exec_ids = [item["exec_id"] for item in matches if item["exec_id"]]
+    first = matches[0]
+    return {
+        "identity": execution_identity_text(
+            exec_ids=exec_ids,
+            perm_id=first["perm_id"],
+            order_id=first["order_id"],
+            order_ref_value=first["order_ref"],
+        ),
+        "price": round_price(price),
+        "qty": qty,
+        "order_id": first["order_id"],
+        "perm_id": first["perm_id"],
+        "order_ref": first["order_ref"],
+        "status": "Filled",
+        "exec_ids": exec_ids,
+    }
+
+
+def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    target_evidence = find_managed_execution_evidence(row, "target")
+    close_evidence = find_managed_execution_evidence(row, "close")
+    external_evidence = None if target_evidence or close_evidence else find_external_close_execution(row)
+    payload = dict(row.get("last_payload") or {})
+    setup_id = str(row.get("setup_id") or payload.get("setup_id") or "").strip()
+    symbol = str(row.get("symbol") or payload.get("symbol") or "").upper().strip()
+    side = str(row.get("side") or payload.get("side") or "").upper().strip()
+
+    evidence = target_evidence or close_evidence or external_evidence
+    execution_identity = str(evidence.get("identity")) if evidence else "FLAT_NO_EXECUTION_HISTORY"
+    reconciliation_id = f"{setup_id or symbol}:{execution_identity}"
+    event = "TP" if target_evidence else "CLOSE_STOP" if close_evidence else "EXTERNAL_CLOSE"
+    reason = (
+        "IB_TARGET_EXECUTION_CONFIRMED"
+        if target_evidence
+        else "IB_STOP_CLOSE_EXECUTION_CONFIRMED"
+        if close_evidence
+        else "IB_POSITION_FLAT_EXTERNAL_EXECUTION"
+    )
+
+    payload.update({
+        "source": "IB_BRIDGE",
+        "system_id": payload.get("system_id") or row.get("system_id") or "VIXALE_EDGE",
+        "strategy": payload.get("strategy") or row.get("strategy") or "",
+        "variant": payload.get("variant") or row.get("variant") or "FIONA_LIMIT_PULLBACK_ATR_TARGET",
+        "setup_id": setup_id,
+        "event": event,
+        "symbol": symbol,
+        "side": side,
+        "entry": row.get("entry") or payload.get("entry") or "",
+        "target": row.get("target") or payload.get("target") or "",
+        "stop": row.get("stop") or payload.get("stop") or "",
+        "reason": reason,
+        "broker_confirmed_flat": True,
+        "position_after_close": 0,
+        "ib_status": "position_flat_reconciled",
+        "exit_execution_id": execution_identity,
+        "reconciliation_id": reconciliation_id,
+    })
+
+    if evidence:
+        payload["price"] = evidence["price"]
+        payload["qty"] = evidence["qty"]
+        payload["exit_price_available"] = True
+        payload["exit_quantity_available"] = True
+        payload["ib_exit_order_id"] = evidence.get("order_id", "")
+        payload["ib_exit_perm_id"] = evidence.get("perm_id", "")
+        payload["ib_exit_order_ref"] = evidence.get("order_ref", "")
+    else:
+        payload["price"] = ""
+        payload["qty"] = ""
+        payload["exit_price_available"] = False
+        payload["exit_quantity_available"] = False
+
+    return payload, reconciliation_id
+
+
 async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
     await ensure_ib_connected()
 
@@ -2886,6 +3673,17 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
             continue
 
         checked += 1
+        if (
+            is_vixale_edge_managed_position(row)
+            and str(row.get("entry_submission_state") or "FILLED").upper() != "FILLED"
+        ):
+            details.append({
+                "symbol": symbol,
+                "status": "awaiting_edge_entry_fill",
+                "setup_id": row.get("setup_id", ""),
+            })
+            continue
+
         position_size = await get_position_size(symbol)
 
         if abs(position_size) > 0.000001:
@@ -2906,6 +3704,60 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
             continue
 
         try:
+            if is_vixale_edge_managed_position(row):
+                claim = row.get("reconciliation_claim") if isinstance(row.get("reconciliation_claim"), dict) else {}
+                payload = dict(claim.get("render_payload") or {})
+                reconciliation_id = str(claim.get("reconciliation_id") or "")
+
+                if not payload:
+                    payload, reconciliation_id = edge_reconciliation_payload(row)
+                    now_iso = now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat()
+                    row["reconciliation_claim"] = {
+                        "reconciliation_id": reconciliation_id,
+                        "event": payload.get("event"),
+                        "exit_execution_id": payload.get("exit_execution_id"),
+                        "render_payload": payload,
+                        "claimed_at": now_iso,
+                    }
+                    row["updated_at"] = now_iso
+                    managed[symbol] = row
+                    if not save_managed_positions(managed):
+                        details.append({
+                            "symbol": symbol,
+                            "status": "reconciliation_claim_persistence_failed",
+                            "event": payload.get("event"),
+                            "reason": payload.get("reason"),
+                            "reconciliation_id": reconciliation_id,
+                            "target": target_price,
+                        })
+                        continue
+
+                render_result = await forward_to_render(payload)
+                cleanup = {}
+                if render_delivery_succeeded(render_result):
+                    clear_managed_position(symbol)
+                    if CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
+                        try:
+                            cleanup = await cleanup_orphan_targets_if_flat(symbol)
+                        except Exception as cleanup_exc:
+                            cleanup = {"cleanup_error": str(cleanup_exc)}
+                    reported += 1
+                    status = f"reported_{str(payload.get('event') or '').lower()}_flat"
+                else:
+                    status = "render_delivery_failed_retry_retained"
+
+                details.append({
+                    "symbol": symbol,
+                    "status": status,
+                    "event": payload.get("event"),
+                    "reason": payload.get("reason"),
+                    "reconciliation_id": reconciliation_id,
+                    "target": target_price,
+                    "render_result": render_result,
+                    **cleanup,
+                })
+                continue
+
             payload = dict(row.get("last_payload") or {})
             side = str(row.get("side") or payload.get("side") or "").upper().strip()
             qty = to_int_qty(row.get("qty")) or to_int_qty(payload.get("qty"))
