@@ -276,6 +276,15 @@ FORCE_EOD_CANCEL_VERIFY_SECONDS = env_float("FORCE_EOD_CANCEL_VERIFY_SECONDS", 3
 FORCE_EOD_FILL_VERIFY_SECONDS = env_float("FORCE_EOD_FILL_VERIFY_SECONDS", 15.0)
 FORCE_EOD_POSITION_VERIFY_SECONDS = env_float("FORCE_EOD_POSITION_VERIFY_SECONDS", 10.0)
 FORCE_EOD_VERIFY_POLL_SECONDS = env_float("FORCE_EOD_VERIFY_POLL_SECONDS", 0.25)
+EDGE_STOP_RECOVERY_REFRESH_SECONDS = max(
+    1.0,
+    min(FORCE_EOD_POSITION_VERIFY_SECONDS, 5.0),
+)
+EDGE_STOP_POSITION_SYNC_SECONDS = max(
+    1.0,
+    min(FORCE_EOD_POSITION_VERIFY_SECONDS, 10.0),
+)
+EDGE_STOP_MAX_CLOSE_ATTEMPTS = 2
 SHREK_EOD_STRATEGY_IDS = {"SHREK", "SHREK_1_4"}
 
 _last_force_eod_date = None
@@ -620,7 +629,12 @@ def mark_managed_bridge_close(
         else {}
     )
     if reservation:
-        if ib_result.get("broker_confirmed_flat"):
+        result_status = str(ib_result.get("status") or "").upper().strip()
+        if result_status == "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE":
+            reservation_state = "MIXED_EXIT_EVIDENCE_INCOMPLETE"
+        elif result_status == "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN":
+            reservation_state = "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN"
+        elif ib_result.get("broker_confirmed_flat"):
             reservation_state = "CALLBACK_PENDING"
         elif ib_result.get("close_filled"):
             reservation_state = "FILLED_POSITION_NOT_FLAT"
@@ -641,6 +655,24 @@ def mark_managed_bridge_close(
             "position_after_close": row["bridge_close_order"]["position_after_close"],
             "updated_at": now_iso,
         })
+        for key in (
+            "attempt",
+            "original_position_qty",
+            "target_partial_filled_qty",
+            "target_partial_fill_price",
+            "target_partial_exec_ids",
+            "expected_remaining_qty",
+            "confirmed_remaining_qty",
+            "stop_close_filled_qty",
+            "stop_close_fill_price",
+            "stop_close_exec_ids",
+            "mixed_exit_weighted_price",
+            "mixed_exit_total_qty",
+            "mixed_exit_exec_ids",
+            "mixed_exit_evidence_complete",
+        ):
+            if key in ib_result:
+                reservation[key] = ib_result.get(key)
         row["close_reservation"] = reservation
 
     row["updated_at"] = now_iso
@@ -665,6 +697,16 @@ def edge_stop_close_order_ref(symbol: str, setup_id: str) -> str:
         str(setup_id or "").strip().encode("utf-8")
     ).hexdigest()[:10].upper()
     return f"TVFVG_CLOSE_{str(symbol or '').upper().strip()}_{digest}"
+
+
+def edge_stop_close_attempt_order_ref(
+    symbol: str,
+    setup_id: str,
+    attempt: int,
+) -> str:
+    base = edge_stop_close_order_ref(symbol, setup_id)
+    clean_attempt = max(1, int(attempt or 1))
+    return base if clean_attempt == 1 else f"{base}_{clean_attempt}"
 
 
 def reserve_edge_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -719,6 +761,7 @@ def reserve_edge_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
         "event": "CLOSE_STOP",
         "state": "RESERVED",
         "order_ref": edge_stop_close_order_ref(symbol, setup_id),
+        "attempt": 1,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
@@ -862,6 +905,7 @@ ORDER_BAD_STATUSES = {
     "canceled",
     "apicancelled",
     "inactive",
+    "rejected",
 }
 
 ORDER_REJECTION_WORDS = (
@@ -2444,7 +2488,11 @@ async def place_entry_limit(data: Dict[str, Any]) -> Dict[str, Any]:
 def all_known_ib_trades() -> List[Any]:
     trades: List[Any] = []
     seen = set()
-    for collection in (current_ib_trades(), list(ib.openTrades() or [])):
+    try:
+        open_trades = list(ib.openTrades() or [])
+    except Exception:
+        open_trades = []
+    for collection in (current_ib_trades(), open_trades):
         for trade in collection:
             marker = id(trade)
             if marker in seen:
@@ -2452,6 +2500,233 @@ def all_known_ib_trades() -> List[Any]:
             seen.add(marker)
             trades.append(trade)
     return trades
+
+
+def dedupe_ib_trades(trades: List[Any]) -> List[Any]:
+    deduped: Dict[str, Any] = {}
+    for trade in trades:
+        key = "|".join([
+            str(trade_perm_id(trade) or ""),
+            str(trade_order_id(trade) or ""),
+            trade_order_ref_value(trade).upper().strip(),
+            trade_contract_symbol(trade),
+            trade_action(trade),
+        ])
+        deduped[key or f"OBJECT:{id(trade)}"] = trade
+    return list(deduped.values())
+
+
+def dedupe_ib_fills(fills: List[Any]) -> List[Any]:
+    deduped: Dict[str, Any] = {}
+    for fill in fills:
+        details = fill_execution_details(fill)
+        key = str(details.get("exec_id") or "").strip()
+        if not key:
+            key = "|".join([
+                str(details.get("perm_id") or ""),
+                str(details.get("order_id") or ""),
+                str(details.get("order_ref") or "").upper().strip(),
+                str(details.get("qty") or ""),
+                str(details.get("price") or ""),
+            ])
+        deduped[key or f"OBJECT:{id(fill)}"] = fill
+    return list(deduped.values())
+
+
+async def bounded_ib_refresh_request(
+    method_name: str,
+    *args: Any,
+) -> Dict[str, Any]:
+    method = getattr(ib, method_name, None)
+    if not callable(method):
+        return {
+            "supported": False,
+            "ok": False,
+            "values": [],
+            "error": f"{method_name}_unsupported",
+        }
+    try:
+        pending = method(*args)
+        if hasattr(pending, "__await__"):
+            values = await asyncio.wait_for(
+                pending,
+                timeout=EDGE_STOP_RECOVERY_REFRESH_SECONDS,
+            )
+        else:
+            values = pending
+        return {
+            "supported": True,
+            "ok": True,
+            "values": list(values or []),
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "supported": True,
+            "ok": False,
+            "values": [],
+            "error": f"{method_name}:{exc}",
+        }
+
+
+def position_from_rows(rows: List[Any], symbol: str) -> float:
+    clean_symbol = str(symbol or "").upper().strip()
+    total = 0.0
+    for position in rows:
+        contract_symbol = str(
+            getattr(getattr(position, "contract", None), "symbol", "") or ""
+        ).upper().strip()
+        if contract_symbol == clean_symbol:
+            total += to_float(getattr(position, "position", 0))
+    return total
+
+
+def close_fill_evidence_for_expected(
+    fills: List[Any],
+    row: Dict[str, Any],
+    expected: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    matches: List[Dict[str, Any]] = []
+    groups = set()
+    for fill in fills:
+        details = fill_execution_details(fill)
+        if fill_contract_symbol(fill) != str(row.get("symbol") or "").upper().strip():
+            continue
+        if details["action"] != expected_exit_action(row):
+            continue
+        if not identity_matches(
+            details["order_id"],
+            details["perm_id"],
+            details["order_ref"],
+            expected,
+        ):
+            continue
+        if details["qty"] <= 0 or details["price"] <= 0:
+            continue
+        group = (
+            f"PERM:{details['perm_id']}"
+            if details["perm_id"] not in (None, "", 0, "0")
+            else f"ORDER:{details['order_id']}"
+            if details["order_id"] not in (None, "", 0, "0")
+            else f"REF:{str(details['order_ref'] or '').upper().strip()}"
+        )
+        groups.add(group)
+        matches.append(details)
+
+    if len(groups) > 1:
+        return None, True
+    if not matches:
+        return None, False
+
+    qty = sum(item["qty"] for item in matches)
+    price = sum(item["price"] * item["qty"] for item in matches) / qty
+    exec_ids = sorted({
+        item["exec_id"]
+        for item in matches
+        if item.get("exec_id")
+    })
+    first = matches[0]
+    return {
+        "identity": execution_identity_text(
+            exec_ids=exec_ids,
+            perm_id=first["perm_id"],
+            order_id=first["order_id"],
+            order_ref_value=first["order_ref"],
+        ),
+        "price": round_price(price),
+        "qty": qty,
+        "order_id": first["order_id"],
+        "perm_id": first["perm_id"],
+        "order_ref": first["order_ref"],
+        "status": "Filled",
+        "exec_ids": exec_ids,
+    }, False
+
+
+async def authoritative_edge_close_refresh(
+    row: Dict[str, Any],
+    reservation: Dict[str, Any],
+) -> Dict[str, Any]:
+    symbol = str(row.get("symbol") or "").upper().strip()
+    expected = {
+        "perm_id": reservation.get("perm_id"),
+        "order_id": reservation.get("order_id"),
+        "order_ref": reservation.get("order_ref"),
+        "expected_qty": reservation.get("remaining_qty") or row.get("qty"),
+    }
+
+    open_result = await bounded_ib_refresh_request("reqAllOpenOrdersAsync")
+    completed_result = await bounded_ib_refresh_request(
+        "reqCompletedOrdersAsync",
+        False,
+    )
+    executions_result = await bounded_ib_refresh_request("reqExecutionsAsync")
+    positions_result = await bounded_ib_refresh_request("reqPositionsAsync")
+
+    trades = dedupe_ib_trades([
+        *all_known_ib_trades(),
+        *open_result["values"],
+        *completed_result["values"],
+    ])
+    fills = dedupe_ib_fills([
+        *current_ib_fills(),
+        *executions_result["values"],
+    ])
+    trade_matches = [
+        trade
+        for trade in trades
+        if trade_contract_symbol(trade) == symbol
+        and trade_action(trade) == expected_exit_action(row)
+        and identity_matches(
+            trade_order_id(trade),
+            trade_perm_id(trade),
+            trade_order_ref_value(trade),
+            expected,
+        )
+    ]
+    fill_evidence, fill_ambiguous = close_fill_evidence_for_expected(
+        fills,
+        row,
+        expected,
+    )
+
+    position_authoritative = positions_result["ok"]
+    position = (
+        position_from_rows(positions_result["values"], symbol)
+        if position_authoritative
+        else await get_position_size(symbol)
+    )
+    optional_history_results = (completed_result, executions_result)
+    authoritative = (
+        open_result["ok"]
+        and positions_result["ok"]
+        and all(
+            result["ok"] or not result["supported"]
+            for result in optional_history_results
+        )
+    )
+    ambiguous = len(trade_matches) > 1 or fill_ambiguous
+    errors = [
+        result["error"]
+        for result in (
+            open_result,
+            completed_result,
+            executions_result,
+            positions_result,
+        )
+        if result["error"]
+    ]
+
+    return {
+        "authoritative": authoritative,
+        "ambiguous": ambiguous,
+        "trade": trade_matches[0] if len(trade_matches) == 1 else None,
+        "execution": fill_evidence,
+        "position": position,
+        "position_authoritative": position_authoritative,
+        "matching_trade_count": len(trade_matches),
+        "errors": errors,
+    }
 
 
 def find_trade_by_expected_identity(
@@ -2511,6 +2786,7 @@ async def cancel_and_verify_edge_target(
             "target_trade": target_trade,
             "target_filled_qty": trade_filled_qty(target_trade),
             "target_fill_price": trade_fill_price(target_trade),
+            "target_exec_ids": trade_execution_ids(target_trade),
         }
     if status in ORDER_BAD_STATUSES:
         return {
@@ -2520,6 +2796,7 @@ async def cancel_and_verify_edge_target(
             "target_trade": target_trade,
             "target_filled_qty": trade_filled_qty(target_trade),
             "target_fill_price": trade_fill_price(target_trade),
+            "target_exec_ids": trade_execution_ids(target_trade),
         }
 
     ib.cancelOrder(target_trade.order)
@@ -2535,6 +2812,7 @@ async def cancel_and_verify_edge_target(
                 "target_trade": target_trade,
                 "target_filled_qty": trade_filled_qty(target_trade),
                 "target_fill_price": trade_fill_price(target_trade),
+                "target_exec_ids": trade_execution_ids(target_trade),
             }
         if status in ORDER_BAD_STATUSES:
             return {
@@ -2544,6 +2822,7 @@ async def cancel_and_verify_edge_target(
                 "target_trade": target_trade,
                 "target_filled_qty": trade_filled_qty(target_trade),
                 "target_fill_price": trade_fill_price(target_trade),
+                "target_exec_ids": trade_execution_ids(target_trade),
             }
         await asyncio.sleep(poll)
         waited += poll
@@ -2555,6 +2834,8 @@ async def cancel_and_verify_edge_target(
         "target_trade": target_trade,
         "target_status": trade_status(target_trade),
         "target_filled_qty": trade_filled_qty(target_trade),
+        "target_fill_price": trade_fill_price(target_trade),
+        "target_exec_ids": trade_execution_ids(target_trade),
         "reason": "target_still_working_or_cancellation_ambiguous",
     }
 
@@ -2602,61 +2883,660 @@ def edge_stop_close_result(
     }
 
 
+def position_matches_managed_side(
+    side: str,
+    position: float,
+) -> bool:
+    clean_side = str(side or "").upper().strip()
+    return (
+        (clean_side == "LONG" and position > 0)
+        or (clean_side == "SHORT" and position < 0)
+    )
+
+
+async def wait_for_edge_partial_position_sync(
+    symbol: str,
+    side: str,
+    expected_remaining_qty: float,
+) -> Dict[str, Any]:
+    poll = max(FORCE_EOD_VERIFY_POLL_SECONDS, 0.10)
+    waited = 0.0
+    last_position = await get_position_size(symbol)
+    while waited <= max(EDGE_STOP_POSITION_SYNC_SECONDS, poll):
+        absolute_position = abs(last_position)
+        if absolute_position <= 0.000001:
+            return {
+                "confirmed": True,
+                "position": last_position,
+                "remaining_qty": 0.0,
+            }
+        if (
+            position_matches_managed_side(side, last_position)
+            and absolute_position <= expected_remaining_qty + 0.000001
+        ):
+            return {
+                "confirmed": True,
+                "position": last_position,
+                "remaining_qty": absolute_position,
+            }
+        await asyncio.sleep(poll)
+        waited += poll
+        last_position = await get_position_size(symbol)
+
+    return {
+        "confirmed": False,
+        "position": last_position,
+        "remaining_qty": abs(last_position),
+    }
+
+
+def edge_partial_target_context(
+    *,
+    original_qty: float,
+    target_filled_qty: float,
+    target_fill_price: float,
+    target_exec_ids: List[str],
+    expected_remaining_qty: float,
+    confirmed_remaining_qty: Any = "",
+) -> Dict[str, Any]:
+    partial_qty = max(0.0, to_float(target_filled_qty))
+    managed_qty = to_float(original_qty)
+    if (
+        partial_qty <= 0
+        or managed_qty <= 0
+        or partial_qty + 0.000001 >= managed_qty
+    ):
+        return {}
+    return {
+        "original_position_qty": managed_qty,
+        "target_partial_filled_qty": partial_qty,
+        "target_partial_fill_price": to_float(target_fill_price),
+        "target_partial_exec_ids": sorted({
+            str(value)
+            for value in target_exec_ids
+            if str(value or "").strip()
+        }),
+        "expected_remaining_qty": max(0.0, to_float(expected_remaining_qty)),
+        "confirmed_remaining_qty": confirmed_remaining_qty,
+    }
+
+
+def finalize_edge_mixed_exit_accounting(
+    data: Dict[str, Any],
+    result: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not is_edge_stop_close(data):
+        return result
+
+    target_qty = to_float(result.get("target_partial_filled_qty"))
+    if target_qty <= 0:
+        return result
+
+    original_qty = to_float(result.get("original_position_qty"))
+    target_price = to_float(result.get("target_partial_fill_price"))
+    target_exec_ids = [
+        str(value)
+        for value in result.get("target_partial_exec_ids") or []
+        if str(value or "").strip()
+    ]
+    stop_qty = to_float(result.get("close_filled_qty"))
+    stop_price = to_float(result.get("close_fill_price"))
+    stop_exec_ids = [
+        str(value)
+        for value in result.get("close_exec_ids") or []
+        if str(value or "").strip()
+    ]
+    total_qty = target_qty + stop_qty
+    complete = (
+        original_qty > 0
+        and target_price > 0
+        and stop_qty > 0
+        and stop_price > 0
+        and bool(target_exec_ids)
+        and bool(stop_exec_ids)
+        and abs(total_qty - original_qty) <= 0.000001
+    )
+
+    result["stop_close_filled_qty"] = stop_qty
+    result["stop_close_fill_price"] = stop_price
+    result["stop_close_exec_ids"] = sorted(set(stop_exec_ids))
+    result["mixed_exit_total_qty"] = total_qty
+    result["mixed_exit_exec_ids"] = sorted(
+        set(target_exec_ids + stop_exec_ids)
+    )
+    result["mixed_exit_evidence_complete"] = complete
+    if not complete:
+        result["status"] = "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE"
+        result["critical_reason"] = "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE"
+        return result
+
+    weighted_price = (
+        target_qty * target_price
+        + stop_qty * stop_price
+    ) / original_qty
+    result["mixed_exit_weighted_price"] = round_price(weighted_price)
+    result["public_close_qty"] = original_qty
+    result["public_close_price"] = result["mixed_exit_weighted_price"]
+    result["final_exit_exec_ids"] = result["mixed_exit_exec_ids"]
+    result["reason"] = (
+        "IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED"
+    )
+    return result
+
+
+async def submit_edge_stop_recovery_replacement(
+    data: Dict[str, Any],
+    row: Dict[str, Any],
+    reservation: Dict[str, Any],
+    position_size: float,
+) -> Dict[str, Any]:
+    symbol = str(data.get("symbol") or "").upper().strip()
+    side = str(data.get("side") or "").upper().strip()
+    current_attempt = max(1, int(reservation.get("attempt") or 1))
+    reservation_state = str(reservation.get("state") or "").upper().strip()
+    if (
+        current_attempt >= EDGE_STOP_MAX_CLOSE_ATTEMPTS
+        and reservation_state != "RECOVERY_REPLACEMENT_SUBMISSION_PENDING"
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN",
+            position_before_close=position_size,
+            attempt=current_attempt,
+            managed_state_persisted=True,
+        )
+
+    attempt = (
+        current_attempt
+        if reservation_state == "RECOVERY_REPLACEMENT_SUBMISSION_PENDING"
+        else current_attempt + 1
+    )
+    if attempt > EDGE_STOP_MAX_CLOSE_ATTEMPTS:
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN",
+            position_before_close=position_size,
+            attempt=current_attempt,
+            managed_state_persisted=True,
+        )
+
+    if not position_matches_managed_side(side, position_size):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            position_before_close=position_size,
+            attempt=current_attempt,
+            managed_state_persisted=True,
+        )
+
+    qty = abs(int(position_size))
+    action = "SELL" if position_size > 0 else "BUY"
+    order_ref_value = edge_stop_close_attempt_order_ref(
+        symbol,
+        str(data.get("setup_id") or ""),
+        attempt,
+    )
+    if not update_edge_stop_close_reservation(
+        data,
+        "RECOVERY_REPLACEMENT_SUBMISSION_PENDING",
+        attempt=attempt,
+        action=action,
+        remaining_qty=qty,
+        position_before_close=position_size,
+        prior_order_ref=reservation.get("order_ref", ""),
+        order_ref=order_ref_value,
+        order_id="",
+        perm_id="",
+        latest_status="",
+        recovery_authoritative_no_order=True,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            attempt=attempt,
+            managed_state_persisted=False,
+        )
+
+    position_refresh = await bounded_ib_refresh_request(
+        "reqPositionsAsync",
+    )
+    if not position_refresh.get("ok"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            attempt=attempt,
+            recovery_errors=[position_refresh.get("error")],
+        )
+        logger.critical(
+            "[EDGE STOP REPLACEMENT POSITION REFRESH FAILED] "
+            "symbol=%s setup_id=%s attempt=%s. No replacement submitted.",
+            symbol,
+            data.get("setup_id"),
+            attempt,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            attempt=attempt,
+            managed_state_persisted=persisted,
+        )
+
+    position_size = position_from_rows(
+        position_refresh.get("values") or [],
+        symbol,
+    )
+    if abs(position_size) <= 0.000001:
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+            attempt=attempt,
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_POSITION_FLAT_RECOVERY",
+            position_after_close=position_size,
+            attempt=attempt,
+            managed_state_persisted=persisted,
+        )
+    if not position_matches_managed_side(side, position_size):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            attempt=attempt,
+            position_after_recovery_refresh=position_size,
+        )
+        logger.critical(
+            "[EDGE STOP REPLACEMENT SIDE AMBIGUOUS] "
+            "symbol=%s setup_id=%s position=%s. No replacement submitted.",
+            symbol,
+            data.get("setup_id"),
+            position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            position_before_close=position_size,
+            attempt=attempt,
+            managed_state_persisted=persisted,
+        )
+
+    qty = abs(int(position_size))
+    action = "SELL" if position_size > 0 else "BUY"
+    if not update_edge_stop_close_reservation(
+        data,
+        "RECOVERY_REPLACEMENT_SUBMISSION_PENDING",
+        attempt=attempt,
+        action=action,
+        remaining_qty=qty,
+        position_before_close=position_size,
+        confirmed_remaining_qty=qty,
+        order_ref=order_ref_value,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            attempt=attempt,
+            managed_state_persisted=False,
+        )
+
+    try:
+        contract = await qualify_contract(data)
+        order = MarketOrder(action=action, totalQuantity=qty, tif="DAY")
+        order.orderRef = order_ref_value
+        trade = ib.placeOrder(contract, order)
+    except Exception as exc:
+        logger.critical(
+            "[EDGE STOP RECOVERY SUBMISSION FAILED] symbol=%s setup_id=%s "
+            "attempt=%s error=%s",
+            symbol,
+            data.get("setup_id"),
+            attempt,
+            exc,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_REPLACEMENT_SUBMISSION_FAILED",
+            position_before_close=position_size,
+            qty=qty,
+            order_ref=order_ref_value,
+            attempt=attempt,
+            error=str(exc),
+            managed_state_persisted=True,
+        )
+
+    rejection_reason = await wait_for_ib_confirmation(trade)
+    close_filled = trade_is_filled(trade, qty)
+    close_status = trade_status(trade)
+    result_status = (
+        "submitted"
+        if close_filled
+        else "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN"
+        if rejection_reason or close_status.lower() in ORDER_BAD_STATUSES
+        else "submitted_awaiting_close_fill"
+    )
+    result = edge_stop_close_result(
+        data,
+        result_status,
+        action=action,
+        sec_type=normalize_sec_type(data),
+        qty=qty,
+        position_before_close=position_size,
+        canceled_open_orders=reservation.get("canceled_targets", 0),
+        order_ref=trade_order_ref_value(trade) or order_ref_value,
+        order_id=trade_order_id(trade),
+        order_perm_id=trade_perm_id(trade),
+        close_status=close_status,
+        close_filled=close_filled,
+        close_fill_price=trade_fill_price(trade),
+        close_filled_qty=trade_filled_qty(trade),
+        close_exec_ids=trade_execution_ids(trade),
+        attempt=attempt,
+        original_position_qty=reservation.get("original_position_qty", ""),
+        target_partial_filled_qty=reservation.get(
+            "target_partial_filled_qty",
+            0,
+        ),
+        target_partial_fill_price=reservation.get(
+            "target_partial_fill_price",
+            0,
+        ),
+        target_partial_exec_ids=reservation.get(
+            "target_partial_exec_ids",
+            [],
+        ),
+        expected_remaining_qty=reservation.get("expected_remaining_qty", ""),
+        confirmed_remaining_qty=qty,
+    )
+    if rejection_reason:
+        result["error"] = rejection_reason
+    if close_filled:
+        result = await apply_edge_stop_close_flat_gate(data, result, symbol)
+        result = finalize_edge_mixed_exit_accounting(data, result)
+
+    persisted = mark_managed_bridge_close(data, result)
+    result["managed_state_persisted"] = persisted
+    if not persisted:
+        result["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+        result["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+        return result
+
+    if (
+        not close_filled
+        and not rejection_reason
+        and close_status.lower() not in ORDER_BAD_STATUSES
+        and ENABLE_EXECUTION_FILL_MONITOR
+    ):
+        spawn_execution_monitor(
+            monitor_close_fill_confirmation(
+                original_data=dict(data),
+                close_trade=trade,
+                base_result=dict(result),
+                symbol=symbol,
+                side=side,
+                expected_close_qty=qty,
+                fallback_price=0.0,
+            )
+        )
+    return result
+
+
 async def recover_reserved_edge_stop_close(
     data: Dict[str, Any],
     reserved: Dict[str, Any],
 ) -> Dict[str, Any]:
     row = dict(reserved.get("row") or {})
     reservation = dict(reserved.get("reservation") or {})
-    expected = {
-        "perm_id": reservation.get("perm_id"),
-        "order_id": reservation.get("order_id"),
-        "order_ref": reservation.get("order_ref"),
-        "expected_qty": reservation.get("remaining_qty") or row.get("qty"),
-    }
-    close_trade = find_trade_by_expected_identity(row, expected)
-    if close_trade is None:
+    refresh = await authoritative_edge_close_refresh(row, reservation)
+    position_size = to_float(refresh.get("position"))
+    attempt = max(1, int(reservation.get("attempt") or 1))
+
+    if refresh.get("ambiguous"):
+        update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            recovery_errors=refresh.get("errors") or [],
+            recovery_matching_trade_count=refresh.get(
+                "matching_trade_count",
+                0,
+            ),
+            position_after_recovery_refresh=position_size,
+        )
+        logger.critical(
+            "[EDGE STOP RECOVERY AMBIGUOUS] symbol=%s setup_id=%s "
+            "position=%s. Position may be unprotected; no replacement submitted.",
+            data.get("symbol"),
+            data.get("setup_id"),
+            position_size,
+        )
         return edge_stop_close_result(
             data,
-            "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
-            reservation_state=reservation.get("state", ""),
-            order_ref=reservation.get("order_ref", ""),
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            position_before_close=position_size,
+            attempt=attempt,
             managed_state_persisted=True,
         )
 
-    expected_qty = (
-        to_int_qty(reservation.get("remaining_qty"))
-        or to_int_qty(row.get("qty"))
-    )
-    close_filled = trade_is_filled(close_trade, expected_qty)
-    result = edge_stop_close_result(
-        data,
-        "submitted" if close_filled else "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
-        action=trade_action(close_trade),
-        qty=expected_qty,
-        position_before_close=reservation.get("position_before_close", ""),
-        canceled_open_orders=reservation.get("canceled_targets", 0),
-        order_ref=trade_order_ref_value(close_trade),
-        order_id=trade_order_id(close_trade),
-        order_perm_id=trade_perm_id(close_trade),
-        close_status=trade_status(close_trade),
-        close_filled=close_filled,
-        close_fill_price=trade_fill_price(close_trade),
-        close_filled_qty=trade_filled_qty(close_trade),
-        close_exec_ids=trade_execution_ids(close_trade),
-    )
-    if close_filled:
-        result = await apply_edge_stop_close_flat_gate(
-            data,
-            result,
-            result["symbol"],
+    close_trade = refresh.get("trade")
+    execution = refresh.get("execution")
+    if close_trade is not None:
+        expected_qty = (
+            to_int_qty(reservation.get("remaining_qty"))
+            or to_int_qty(row.get("qty"))
         )
-    persisted = mark_managed_bridge_close(data, result)
-    result["managed_state_persisted"] = persisted
-    if not persisted:
-        result["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
-        result["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
-    return result
+        close_status = trade_status(close_trade)
+        close_filled = trade_is_filled(close_trade, expected_qty)
+        result = edge_stop_close_result(
+            data,
+            "submitted"
+            if close_filled
+            else "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN"
+            if close_status.lower() in ORDER_BAD_STATUSES
+            else "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+            action=trade_action(close_trade),
+            qty=expected_qty,
+            position_before_close=reservation.get(
+                "position_before_close",
+                position_size,
+            ),
+            canceled_open_orders=reservation.get("canceled_targets", 0),
+            order_ref=trade_order_ref_value(close_trade),
+            order_id=trade_order_id(close_trade),
+            order_perm_id=trade_perm_id(close_trade),
+            close_status=close_status,
+            close_filled=close_filled,
+            close_fill_price=trade_fill_price(close_trade),
+            close_filled_qty=trade_filled_qty(close_trade),
+            close_exec_ids=trade_execution_ids(close_trade),
+            attempt=attempt,
+            original_position_qty=reservation.get("original_position_qty", ""),
+            target_partial_filled_qty=reservation.get(
+                "target_partial_filled_qty",
+                0,
+            ),
+            target_partial_fill_price=reservation.get(
+                "target_partial_fill_price",
+                0,
+            ),
+            target_partial_exec_ids=reservation.get(
+                "target_partial_exec_ids",
+                [],
+            ),
+            expected_remaining_qty=reservation.get(
+                "expected_remaining_qty",
+                "",
+            ),
+            confirmed_remaining_qty=reservation.get(
+                "confirmed_remaining_qty",
+                expected_qty,
+            ),
+        )
+        if close_filled:
+            result = await apply_edge_stop_close_flat_gate(
+                data,
+                result,
+                result["symbol"],
+            )
+            result = finalize_edge_mixed_exit_accounting(data, result)
+        persisted = mark_managed_bridge_close(data, result)
+        result["managed_state_persisted"] = persisted
+        if not persisted:
+            result["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+            result["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+            return result
+        if close_status.lower() in ORDER_BAD_STATUSES and abs(position_size) > 0.000001:
+            if not refresh.get("position_authoritative"):
+                persisted = update_edge_stop_close_reservation(
+                    data,
+                    "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+                    recovery_errors=refresh.get("errors") or [],
+                    position_after_recovery_refresh=position_size,
+                )
+                result["status"] = "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS"
+                result["critical_reason"] = (
+                    "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS"
+                )
+                result["managed_state_persisted"] = persisted
+                logger.critical(
+                    "[EDGE STOP REJECTED RECOVERY AMBIGUOUS] "
+                    "symbol=%s setup_id=%s. Position refresh was not "
+                    "authoritative; no replacement submitted.",
+                    data.get("symbol"),
+                    data.get("setup_id"),
+                )
+                return result
+            if attempt < EDGE_STOP_MAX_CLOSE_ATTEMPTS:
+                current = reserve_edge_stop_close(data)
+                return await submit_edge_stop_recovery_replacement(
+                    data,
+                    dict(current.get("row") or row),
+                    dict(current.get("reservation") or reservation),
+                    position_size,
+                )
+            return result
+        return result
+
+    if execution:
+        expected_qty = (
+            to_float(reservation.get("remaining_qty"))
+            or to_float(row.get("qty"))
+        )
+        result = edge_stop_close_result(
+            data,
+            "submitted"
+            if execution["qty"] + 0.000001 >= expected_qty
+            else "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+            action=expected_exit_action(row),
+            qty=expected_qty,
+            position_before_close=reservation.get(
+                "position_before_close",
+                position_size,
+            ),
+            canceled_open_orders=reservation.get("canceled_targets", 0),
+            order_ref=execution.get("order_ref", ""),
+            order_id=execution.get("order_id"),
+            order_perm_id=execution.get("perm_id"),
+            close_status=execution.get("status", "Filled"),
+            close_filled=execution["qty"] + 0.000001 >= expected_qty,
+            close_fill_price=execution.get("price", 0),
+            close_filled_qty=execution.get("qty", 0),
+            close_exec_ids=execution.get("exec_ids", []),
+            attempt=attempt,
+            original_position_qty=reservation.get("original_position_qty", ""),
+            target_partial_filled_qty=reservation.get(
+                "target_partial_filled_qty",
+                0,
+            ),
+            target_partial_fill_price=reservation.get(
+                "target_partial_fill_price",
+                0,
+            ),
+            target_partial_exec_ids=reservation.get(
+                "target_partial_exec_ids",
+                [],
+            ),
+            expected_remaining_qty=reservation.get(
+                "expected_remaining_qty",
+                "",
+            ),
+            confirmed_remaining_qty=reservation.get(
+                "confirmed_remaining_qty",
+                expected_qty,
+            ),
+        )
+        if result["close_filled"]:
+            result = await apply_edge_stop_close_flat_gate(
+                data,
+                result,
+                result["symbol"],
+            )
+            result = finalize_edge_mixed_exit_accounting(data, result)
+        persisted = mark_managed_bridge_close(data, result)
+        result["managed_state_persisted"] = persisted
+        if not persisted:
+            result["status"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+            result["critical_reason"] = "EDGE_STOP_STATE_PERSISTENCE_FAILED"
+        return result
+
+    if abs(position_size) <= 0.000001 and refresh.get("position_authoritative"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+            position_after_recovery_refresh=position_size,
+            recovery_errors=refresh.get("errors") or [],
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_POSITION_FLAT_RECOVERY",
+            position_after_close=position_size,
+            canceled_open_orders=reservation.get("canceled_targets", 0),
+            attempt=attempt,
+            managed_state_persisted=persisted,
+        )
+
+    reservation_state = str(reservation.get("state") or "").upper().strip()
+    retryable_no_order_state = reservation_state in {
+        "CLOSE_SUBMISSION_PENDING",
+        "RECOVERY_REPLACEMENT_SUBMISSION_PENDING",
+        "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN",
+    }
+    if (
+        refresh.get("authoritative")
+        and retryable_no_order_state
+        and position_matches_managed_side(data.get("side"), position_size)
+    ):
+        return await submit_edge_stop_recovery_replacement(
+            data,
+            row,
+            reservation,
+            position_size,
+        )
+
+    persisted = update_edge_stop_close_reservation(
+        data,
+        "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+        recovery_errors=refresh.get("errors") or [],
+        position_after_recovery_refresh=position_size,
+    )
+    logger.critical(
+        "[EDGE STOP RECOVERY AMBIGUOUS] symbol=%s setup_id=%s "
+        "position=%s authoritative=%s. Position may be unprotected; "
+        "no replacement submitted.",
+        data.get("symbol"),
+        data.get("setup_id"),
+        position_size,
+        refresh.get("authoritative"),
+    )
+    return edge_stop_close_result(
+        data,
+        "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+        position_before_close=position_size,
+        canceled_open_orders=reservation.get("canceled_targets", 0),
+        attempt=attempt,
+        managed_state_persisted=persisted,
+    )
 
 
 async def execute_edge_v2_stop_close(
@@ -2725,6 +3605,7 @@ async def execute_edge_v2_stop_close(
         canceled_targets=target_resolution.get("canceled_targets", 0),
         target_filled_qty=target_resolution.get("target_filled_qty", 0),
         target_fill_price=target_resolution.get("target_fill_price", 0),
+        target_exec_ids=target_resolution.get("target_exec_ids", []),
         target_order_id=trade_order_id(target_trade) if target_trade else "",
         target_perm_id=trade_perm_id(target_trade) if target_trade else "",
         target_order_ref=trade_order_ref_value(target_trade) if target_trade else "",
@@ -2736,9 +3617,75 @@ async def execute_edge_v2_stop_close(
             managed_state_persisted=False,
         )
 
-    # This is deliberately the first position quantity used for order sizing:
-    # the target cancellation/fill race has already reached a proven outcome.
-    position_size = await get_position_size(symbol)
+    original_qty = (
+        to_float(managed_order_identity(row, "target").get("expected_qty"))
+        or to_float(row.get("qty"))
+    )
+    target_filled_qty = to_float(
+        target_resolution.get("target_filled_qty")
+    )
+    expected_remaining_qty = max(0.0, original_qty - target_filled_qty)
+    partial_target_context = edge_partial_target_context(
+        original_qty=original_qty,
+        target_filled_qty=target_filled_qty,
+        target_fill_price=target_resolution.get("target_fill_price", 0),
+        target_exec_ids=target_resolution.get("target_exec_ids", []),
+        expected_remaining_qty=expected_remaining_qty,
+    )
+
+    # A partial target execution can reach the order status before the cached
+    # IB position updates. Never size a market close from that stale snapshot.
+    if (
+        target_resolution.get("status") == "target_cancelled"
+        and target_filled_qty > 0
+    ):
+        sync_result = await wait_for_edge_partial_position_sync(
+            symbol,
+            side,
+            expected_remaining_qty,
+        )
+        position_size = to_float(sync_result.get("position"))
+        partial_target_context["confirmed_remaining_qty"] = (
+            sync_result.get("remaining_qty", "")
+        )
+        if not sync_result.get("confirmed"):
+            persisted = update_edge_stop_close_reservation(
+                data,
+                "POSITION_SYNC_UNCONFIRMED",
+                **partial_target_context,
+                position_after_target_resolution=position_size,
+            )
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_POSITION_SYNC_UNCONFIRMED",
+                position_after_target_resolution=position_size,
+                canceled_open_orders=target_resolution.get(
+                    "canceled_targets",
+                    0,
+                ),
+                managed_state_persisted=persisted,
+                **partial_target_context,
+            )
+    else:
+        # This is deliberately the first position quantity used for order
+        # sizing after the target has reached a proven terminal state.
+        position_size = await get_position_size(symbol)
+
+    if not update_edge_stop_close_reservation(
+        data,
+        "TARGET_RESOLVED",
+        **partial_target_context,
+        position_after_target_resolution=position_size,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_after_target_resolution=position_size,
+            canceled_open_orders=target_resolution.get("canceled_targets", 0),
+            managed_state_persisted=False,
+            **partial_target_context,
+        )
+
     target_filled = target_resolution.get("status") == "target_filled"
 
     if target_filled:
@@ -2768,6 +3715,7 @@ async def execute_edge_v2_stop_close(
             target_filled_qty=target_resolution.get("target_filled_qty", 0),
             target_fill_price=target_resolution.get("target_fill_price", 0),
             managed_state_persisted=True,
+            **partial_target_context,
         )
 
     if abs(position_size) <= 0.000001:
@@ -2790,6 +3738,7 @@ async def execute_edge_v2_stop_close(
             position_after_target_resolution=position_size,
             canceled_open_orders=target_resolution.get("canceled_targets", 0),
             managed_state_persisted=True,
+            **partial_target_context,
         )
 
     if (side == "LONG" and position_size <= 0) or (
@@ -2814,6 +3763,7 @@ async def execute_edge_v2_stop_close(
             position_before_close=position_size,
             canceled_open_orders=target_resolution.get("canceled_targets", 0),
             managed_state_persisted=True,
+            **partial_target_context,
         )
 
     qty = abs(int(position_size))
@@ -2826,6 +3776,8 @@ async def execute_edge_v2_stop_close(
         position_before_close=position_size,
         canceled_targets=target_resolution.get("canceled_targets", 0),
         order_ref=order_ref_value,
+        attempt=max(1, int(reservation.get("attempt") or 1)),
+        **partial_target_context,
     ):
         return edge_stop_close_result(
             data,
@@ -2863,12 +3815,22 @@ async def execute_edge_v2_stop_close(
         ),
         close_filled_qty=trade_filled_qty(trade),
         close_exec_ids=trade_execution_ids(trade),
+        attempt=max(1, int(reservation.get("attempt") or 1)),
+        **partial_target_context,
     )
-    if rejection_reason and not close_filled:
-        result["status"] = "rejected"
-        result["error"] = rejection_reason
+    if (
+        not close_filled
+        and (
+            rejection_reason
+            or trade_status(trade).lower() in ORDER_BAD_STATUSES
+        )
+    ):
+        result["status"] = "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN"
+        if rejection_reason:
+            result["error"] = rejection_reason
     if close_filled:
         result = await apply_edge_stop_close_flat_gate(data, result, symbol)
+        result = finalize_edge_mixed_exit_accounting(data, result)
 
     persisted = mark_managed_bridge_close(data, result)
     result["managed_state_persisted"] = persisted
@@ -2888,6 +3850,7 @@ async def execute_edge_v2_stop_close(
     if (
         not close_filled
         and not rejection_reason
+        and trade_status(trade).lower() not in ORDER_BAD_STATUSES
         and ENABLE_EXECUTION_FILL_MONITOR
     ):
         spawn_execution_monitor(
@@ -3332,8 +4295,18 @@ def make_reversal_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, 
 def make_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(data)
 
-    close_price = to_float(ib_result.get("close_fill_price")) or to_float(data.get("price")) or to_float(data.get("entry"))
-    qty = to_int_qty(ib_result.get("close_filled_qty")) or to_int_qty(ib_result.get("qty")) or to_int_qty(data.get("qty"))
+    close_price = (
+        to_float(ib_result.get("public_close_price"))
+        or to_float(ib_result.get("close_fill_price"))
+        or to_float(data.get("price"))
+        or to_float(data.get("entry"))
+    )
+    qty = (
+        to_int_qty(ib_result.get("public_close_qty"))
+        or to_int_qty(ib_result.get("close_filled_qty"))
+        or to_int_qty(ib_result.get("qty"))
+        or to_int_qty(data.get("qty"))
+    )
 
     if close_price > 0:
         payload["price"] = round_price(close_price)
@@ -3353,8 +4326,29 @@ def make_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
         payload["source"] = "IB_BRIDGE"
         payload["system_id"] = "VIXALE_EDGE"
         payload["broker_confirmed_flat"] = bool(ib_result.get("broker_confirmed_flat"))
+        for key in (
+            "original_position_qty",
+            "target_partial_filled_qty",
+            "target_partial_fill_price",
+            "target_partial_exec_ids",
+            "expected_remaining_qty",
+            "confirmed_remaining_qty",
+            "stop_close_filled_qty",
+            "stop_close_fill_price",
+            "stop_close_exec_ids",
+            "mixed_exit_weighted_price",
+            "mixed_exit_total_qty",
+            "mixed_exit_exec_ids",
+            "mixed_exit_evidence_complete",
+        ):
+            if key in ib_result:
+                payload[key] = ib_result.get(key)
     exit_identity = execution_identity_text(
-        exec_ids=ib_result.get("close_exec_ids") or [],
+        exec_ids=(
+            ib_result.get("final_exit_exec_ids")
+            or ib_result.get("close_exec_ids")
+            or []
+        ),
         perm_id=ib_result.get("order_perm_id"),
         order_id=ib_result.get("order_id"),
         order_ref_value=ib_result.get("order_ref"),
@@ -3364,7 +4358,10 @@ def make_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
         setup_id = str(data.get("setup_id") or "").strip()
         payload["reconciliation_id"] = f"{setup_id or payload.get('symbol') or ''}:{exit_identity}"
     if is_vixale_edge_payload(data) and str(data.get("event") or "").upper() == "CLOSE_STOP":
-        payload["reason"] = "IB_STOP_CLOSE_EXECUTION_CONFIRMED"
+        payload["reason"] = (
+            ib_result.get("reason")
+            or "IB_STOP_CLOSE_EXECUTION_CONFIRMED"
+        )
     else:
         payload["reason"] = payload.get("reason") or "IB_CLOSE_FILLED"
 
@@ -3673,6 +4670,10 @@ async def monitor_close_fill_confirmation(
                     result,
                     symbol,
                 )
+                result = finalize_edge_mixed_exit_accounting(
+                    original_data,
+                    result,
+                )
                 managed_state_persisted = mark_managed_bridge_close(
                     original_data,
                     result,
@@ -3695,6 +4696,18 @@ async def monitor_close_fill_confirmation(
                         f"status=EDGE_STOP_CLOSE_POSITION_NOT_FLAT "
                         f"position_after_close={result.get('position_after_close')}. "
                         "CLOSE_STOP and RECONCILE_FLAT callbacks withheld; managed state retained"
+                    )
+                    return
+
+                if (
+                    edge_stop_close
+                    and to_float(result.get("target_partial_filled_qty")) > 0
+                    and not result.get("mixed_exit_evidence_complete")
+                ):
+                    print(
+                        f"[CLOSE FILL MONITOR CRITICAL] symbol={symbol} side={side} "
+                        "status=EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE. "
+                        "CLOSE_STOP callback withheld; managed state retained for reconciliation"
                     )
                     return
 
@@ -3862,6 +4875,18 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
             f"status={ib_result.get('status')} "
             f"position_after_close={ib_result.get('position_after_close')}. "
             "Broker-flat Edge Stop Loss confirmation is required"
+        )
+        return
+
+    if (
+        edge_stop_close
+        and to_float(ib_result.get("target_partial_filled_qty")) > 0
+        and not ib_result.get("mixed_exit_evidence_complete")
+    ):
+        print(
+            f"[RENDER SKIPPED CRITICAL] event={event} symbol={symbol} side={side} "
+            "status=EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE. "
+            "Mixed target/stop execution evidence must be complete before publication"
         )
         return
 
@@ -4568,22 +5593,130 @@ def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any
     }
 
 
+def edge_mixed_exit_reconciliation_evidence(
+    row: Dict[str, Any],
+    close_evidence: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    target_qty = to_float(reservation.get("target_partial_filled_qty"))
+    if target_qty <= 0:
+        return None
+
+    original_qty = (
+        to_float(reservation.get("original_position_qty"))
+        or to_float(row.get("qty"))
+    )
+    target_price = to_float(reservation.get("target_partial_fill_price"))
+    target_exec_ids = sorted({
+        str(value)
+        for value in reservation.get("target_partial_exec_ids") or []
+        if str(value or "").strip()
+    })
+    stop_qty = to_float((close_evidence or {}).get("qty"))
+    stop_price = to_float((close_evidence or {}).get("price"))
+    stop_exec_ids = sorted({
+        str(value)
+        for value in (close_evidence or {}).get("exec_ids") or []
+        if str(value or "").strip()
+    })
+    total_qty = target_qty + stop_qty
+    if not (
+        original_qty > 0
+        and target_price > 0
+        and stop_qty > 0
+        and stop_price > 0
+        and target_exec_ids
+        and stop_exec_ids
+        and abs(total_qty - original_qty) <= 0.000001
+    ):
+        return None
+
+    mixed_exec_ids = sorted(set(target_exec_ids + stop_exec_ids))
+    weighted_price = round_price(
+        (
+            target_qty * target_price
+            + stop_qty * stop_price
+        ) / original_qty
+    )
+    return {
+        "identity": execution_identity_text(exec_ids=mixed_exec_ids),
+        "price": weighted_price,
+        "qty": original_qty,
+        "order_id": (close_evidence or {}).get("order_id", ""),
+        "perm_id": (close_evidence or {}).get("perm_id", ""),
+        "order_ref": (close_evidence or {}).get("order_ref", ""),
+        "status": "Filled",
+        "exec_ids": mixed_exec_ids,
+        "original_position_qty": original_qty,
+        "target_partial_filled_qty": target_qty,
+        "target_partial_fill_price": target_price,
+        "target_partial_exec_ids": target_exec_ids,
+        "expected_remaining_qty": reservation.get(
+            "expected_remaining_qty",
+            stop_qty,
+        ),
+        "confirmed_remaining_qty": reservation.get(
+            "confirmed_remaining_qty",
+            stop_qty,
+        ),
+        "stop_close_filled_qty": stop_qty,
+        "stop_close_fill_price": stop_price,
+        "stop_close_exec_ids": stop_exec_ids,
+        "mixed_exit_weighted_price": weighted_price,
+        "mixed_exit_total_qty": total_qty,
+        "mixed_exit_exec_ids": mixed_exec_ids,
+        "mixed_exit_evidence_complete": True,
+    }
+
+
 def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
     target_evidence = find_managed_execution_evidence(row, "target")
     close_evidence = find_managed_execution_evidence(row, "close")
-    external_evidence = None if target_evidence or close_evidence else find_external_close_execution(row)
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    has_partial_target = (
+        to_float(reservation.get("target_partial_filled_qty")) > 0
+    )
+    mixed_evidence = (
+        edge_mixed_exit_reconciliation_evidence(row, close_evidence)
+        if has_partial_target and not target_evidence
+        else None
+    )
+    if has_partial_target and not target_evidence and not mixed_evidence:
+        return {}, "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE"
+
+    external_evidence = (
+        None
+        if target_evidence or close_evidence or mixed_evidence
+        else find_external_close_execution(row)
+    )
     payload = dict(row.get("last_payload") or {})
     setup_id = str(row.get("setup_id") or payload.get("setup_id") or "").strip()
     symbol = str(row.get("symbol") or payload.get("symbol") or "").upper().strip()
     side = str(row.get("side") or payload.get("side") or "").upper().strip()
 
-    evidence = target_evidence or close_evidence or external_evidence
+    evidence = target_evidence or mixed_evidence or close_evidence or external_evidence
     execution_identity = str(evidence.get("identity")) if evidence else "FLAT_NO_EXECUTION_HISTORY"
     reconciliation_id = f"{setup_id or symbol}:{execution_identity}"
-    event = "TP" if target_evidence else "CLOSE_STOP" if close_evidence else "EXTERNAL_CLOSE"
+    event = (
+        "TP"
+        if target_evidence
+        else "CLOSE_STOP"
+        if mixed_evidence or close_evidence
+        else "EXTERNAL_CLOSE"
+    )
     reason = (
         "IB_TARGET_EXECUTION_CONFIRMED"
         if target_evidence
+        else "IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED"
+        if mixed_evidence
         else "IB_STOP_CLOSE_EXECUTION_CONFIRMED"
         if close_evidence
         else "IB_POSITION_FLAT_EXTERNAL_EXECUTION"
@@ -4617,6 +5750,23 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
         payload["ib_exit_order_id"] = evidence.get("order_id", "")
         payload["ib_exit_perm_id"] = evidence.get("perm_id", "")
         payload["ib_exit_order_ref"] = evidence.get("order_ref", "")
+        if mixed_evidence:
+            for key in (
+                "original_position_qty",
+                "target_partial_filled_qty",
+                "target_partial_fill_price",
+                "target_partial_exec_ids",
+                "expected_remaining_qty",
+                "confirmed_remaining_qty",
+                "stop_close_filled_qty",
+                "stop_close_fill_price",
+                "stop_close_exec_ids",
+                "mixed_exit_weighted_price",
+                "mixed_exit_total_qty",
+                "mixed_exit_exec_ids",
+                "mixed_exit_evidence_complete",
+            ):
+                payload[key] = mixed_evidence.get(key)
     else:
         payload["price"] = ""
         payload["qty"] = ""
@@ -4682,6 +5832,40 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
 
                 if not payload:
                     payload, reconciliation_id = edge_reconciliation_payload(row)
+                    if not payload:
+                        now_iso = now_in_tz(
+                            FORCE_EOD_FLATTEN_TIMEZONE
+                        ).isoformat()
+                        reservation = (
+                            dict(row.get("close_reservation"))
+                            if isinstance(
+                                row.get("close_reservation"),
+                                dict,
+                            )
+                            else {}
+                        )
+                        if reservation:
+                            reservation["state"] = (
+                                "MIXED_EXIT_EVIDENCE_INCOMPLETE"
+                            )
+                            reservation["updated_at"] = now_iso
+                            row["close_reservation"] = reservation
+                            row["updated_at"] = now_iso
+                            managed[symbol] = row
+                            save_managed_positions(managed)
+                        details.append({
+                            "symbol": symbol,
+                            "status": reconciliation_id,
+                            "target": target_price,
+                        })
+                        logger.critical(
+                            "[EDGE MIXED EXIT RECONCILIATION INCOMPLETE] "
+                            "symbol=%s setup_id=%s. No Render callback sent; "
+                            "managed state retained.",
+                            symbol,
+                            row.get("setup_id", ""),
+                        )
+                        continue
                     now_iso = now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat()
                     row["reconciliation_claim"] = {
                         "reconciliation_id": reconciliation_id,

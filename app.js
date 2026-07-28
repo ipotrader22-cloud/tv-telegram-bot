@@ -1599,6 +1599,14 @@ async function appendToTradesSheet(sheets, row) {
   }
 
   const eventForSheet = sheetEventLabel(row);
+  const mixedEdgeStopExit =
+    row.event === 'SL' &&
+    row.reason ===
+      'IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED';
+  const exitForSheet =
+    row.event === 'EXTERNAL_CLOSE' || mixedEdgeStopExit
+      ? row.exit
+      : row.target || row.exit;
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: GOOGLE_SHEET_ID,
@@ -1612,7 +1620,7 @@ async function appendToTradesSheet(sheets, row) {
         eventForSheet,
         row.entry,
         row.size,
-        row.event === 'EXTERNAL_CLOSE' ? row.exit : row.target || row.exit,
+        exitForSheet,
         row.stop,
         row.result,
         row.status,

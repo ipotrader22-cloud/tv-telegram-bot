@@ -180,6 +180,18 @@ function countRowsByReconciliation(rows, rawColumn, reconciliationId, event) {
     .length;
 }
 
+function countRowsBySetupEvent(rows, rawColumn, setupId, event) {
+  const normalizedEvent = String(event || '').toUpperCase();
+  return rows
+    .slice(1)
+    .filter(row => {
+      const raw = JSON.parse(row[rawColumn] || '{}');
+      return raw.setup_id === setupId &&
+        String(raw.event || '').toUpperCase() === normalizedEvent;
+    })
+    .length;
+}
+
 function createMockResponse() {
   return {
     sent: false,
@@ -990,6 +1002,165 @@ async function run() {
     0,
     'CLOSE_STOP callback never forwards to bridge'
   );
+
+  // A partial target plus Stop Loss publishes one full-size weighted close.
+  const mixedSheets = createMockSheets();
+  const mixedTelegram = [];
+  const mixedBridge = [];
+  let mixedLifecycle = createLifecycleContext({
+    sheetStore: mixedSheets,
+    telegramStore: mixedTelegram,
+    bridgeStore: mixedBridge,
+  });
+  const mixedSetupId = 'VIXALE_EDGE:META:60:LONG:1785293400000';
+  await mixedLifecycle(edgePayload('PENDING_SETUP', mixedSetupId, {
+    symbol: 'META',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785293400000,
+  }));
+  await mixedLifecycle(edgePayload('ENTRY_FILL', mixedSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'META',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785293400000,
+    render_forwarded_at: '2026-07-28T15:38:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const mixedExecutionId = 'EXEC:STOP-META-7,TARGET-META-3';
+  const mixedReconciliationId = `${mixedSetupId}:${mixedExecutionId}`;
+  const mixedExit = edgePayload('CLOSE_STOP', mixedSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'META',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785293400000,
+    price: 100.1,
+    qty: 10,
+    ib_close_status: 'Filled',
+    close_filled: true,
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: mixedExecutionId,
+    reconciliation_id: mixedReconciliationId,
+    reason: 'IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED',
+    original_position_qty: 10,
+    target_partial_filled_qty: 3,
+    target_partial_fill_price: 105,
+    target_partial_exec_ids: ['TARGET-META-3'],
+    expected_remaining_qty: 7,
+    confirmed_remaining_qty: 7,
+    stop_close_filled_qty: 7,
+    stop_close_fill_price: 98,
+    stop_close_exec_ids: ['STOP-META-7'],
+    mixed_exit_weighted_price: 100.1,
+    mixed_exit_total_qty: 10,
+    mixed_exit_exec_ids: ['STOP-META-7', 'TARGET-META-3'],
+    mixed_exit_evidence_complete: true,
+  });
+  const mixedResult = await mixedLifecycle(mixedExit);
+  assert.strictEqual(
+    mixedResult.finalRow.status,
+    'edge_broker_exit_publication_complete'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      mixedSheets.rows.Trades,
+      10,
+      mixedReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'mixed exit writes one final Trades CLOSE_STOP'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      mixedSheets.rows['Closed Trades'],
+      11,
+      mixedReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'mixed exit writes one final Closed Trades CLOSE_STOP'
+  );
+  const mixedTradesClose = mixedSheets.rows.Trades
+    .slice(1)
+    .find(row => JSON.parse(row[10] || '{}').reconciliation_id === mixedReconciliationId);
+  const mixedClosed = mixedSheets.rows['Closed Trades']
+    .slice(1)
+    .find(row => JSON.parse(row[11] || '{}').reconciliation_id === mixedReconciliationId);
+  assert.strictEqual(mixedTradesClose[5], 10, 'mixed Trades close uses full original qty');
+  assert.strictEqual(mixedTradesClose[6], 100.1, 'mixed Trades close uses weighted exit');
+  assert.strictEqual(mixedClosed[7], 10, 'mixed Closed Trade uses full original qty');
+  assert.strictEqual(mixedClosed[6], 100.1, 'mixed Closed Trade uses weighted exit');
+  const mixedTradesRaw = JSON.parse(mixedTradesClose[10] || '{}');
+  const mixedClosedRaw = JSON.parse(mixedClosed[11] || '{}');
+  for (const raw of [mixedTradesRaw, mixedClosedRaw]) {
+    assert.deepStrictEqual(
+      raw.target_partial_exec_ids,
+      ['TARGET-META-3'],
+      'mixed raw JSON preserves target execution IDs'
+    );
+    assert.deepStrictEqual(
+      raw.stop_close_exec_ids,
+      ['STOP-META-7'],
+      'mixed raw JSON preserves Stop Loss execution IDs'
+    );
+    assert.deepStrictEqual(
+      raw.mixed_exit_exec_ids,
+      ['STOP-META-7', 'TARGET-META-3'],
+      'mixed raw JSON preserves all component execution IDs'
+    );
+    assert.strictEqual(raw.target_partial_filled_qty, 3);
+    assert.strictEqual(raw.target_partial_fill_price, 105);
+    assert.strictEqual(raw.stop_close_filled_qty, 7);
+    assert.strictEqual(raw.stop_close_fill_price, 98);
+  }
+  assert.strictEqual(
+    mixedTelegram.filter(message => message.includes('Vixale Edge hit Stop Loss')).length,
+    1,
+    'mixed exit sends one Stop Loss Telegram'
+  );
+  assert.strictEqual(
+    countRowsBySetupEvent(mixedSheets.rows.Trades, 10, mixedSetupId, 'TP'),
+    0,
+    'partial target creates no standalone TP row'
+  );
+  assert.strictEqual(
+    mixedBridge.filter(event => event === 'CLOSE_STOP').length,
+    0,
+    'broker-confirmed mixed close never forwards back to bridge'
+  );
+  const mixedActivity = {
+    trades: mixedSheets.rows.Trades.length,
+    closed: mixedSheets.rows['Closed Trades'].length,
+    telegram: mixedTelegram.length,
+    bridge: mixedBridge.length,
+  };
+  mixedLifecycle = createLifecycleContext({
+    sheetStore: mixedSheets,
+    telegramStore: mixedTelegram,
+    bridgeStore: mixedBridge,
+  });
+  const duplicateMixed = await mixedLifecycle(mixedExit);
+  assert.strictEqual(
+    duplicateMixed.finalRow.status,
+    'ignored_duplicate_edge_broker_exit'
+  );
+  assert.deepStrictEqual({
+    trades: mixedSheets.rows.Trades.length,
+    closed: mixedSheets.rows['Closed Trades'].length,
+    telegram: mixedTelegram.length,
+    bridge: mixedBridge.length,
+  }, mixedActivity, 'mixed close retry after restart creates no duplicates');
 
   // The HTTP route cannot send final 200 before Edge exit publication completes.
   const routeSheets = createMockSheets();

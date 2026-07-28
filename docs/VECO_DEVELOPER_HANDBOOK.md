@@ -642,21 +642,52 @@ The strict Edge close sequence is:
    `orderId`, otherwise unambiguous `orderRef`.
 3. Persist `TARGET_CANCEL_PENDING`, cancel only that target, and poll until the
    target is proven Filled or proven Cancelled / ApiCancelled / Inactive.
-4. Re-read the actual IB position only after target resolution.
+4. After a partial target execution, calculate the maximum remaining quantity
+   as managed target quantity minus confirmed target execution quantity, then
+   poll the IB position with a bounded wait until it is on the managed side and
+   no greater than that maximum.
 5. If the target filled and the position is flat, submit no market close and
    let exact target reconciliation publish TP.
 6. If the target partially filled and was then canceled, close only the
-   remaining broker quantity. If cancellation remains ambiguous or the target
-   is still working, submit no close and return
+   final synchronized broker quantity. If the position remains stale above the
+   expected maximum, submit no close, retain managed state, and return
+   `EDGE_STOP_POSITION_SYNC_UNCONFIRMED`. If cancellation remains ambiguous or
+   the target is still working, submit no close and return
    `EDGE_STOP_TARGET_CANCEL_UNCONFIRMED`.
 
 The pre-cancel position quantity is never reused for Edge close sizing, and the
 generic broad symbol-order cancellation path is not called. Before market
 submission, the bridge persists `CLOSE_SUBMISSION_PENDING` with the
-deterministic order reference and remaining quantity. Repeated or concurrent
-alerts observe the same reservation. After restart, stored `permId`, `orderId`,
-or `orderRef` is used to recover the existing close; a retry never creates a
-second order merely because in-memory monitoring was lost.
+deterministic order reference, attempt number, remaining quantity, partial
+target quantity, average price, and execution IDs. Repeated or concurrent
+alerts observe the same reservation.
+
+Crash-window recovery performs bounded IB refreshes for open orders/trades,
+completed orders and executions when the connected client supports them, and
+the current position. An exact recovered close order or execution has its
+actual `permId`, `orderId`, `orderRef`, status, and fills persisted and never
+causes a duplicate submission. If the broker is already flat, recovery submits
+no order and leaves publication to evidence-based reconciliation. If an
+authoritative refresh proves there is no matching order or execution while the
+managed-side position remains open, the bridge persists a retry attempt,
+refreshes the position again, and permits one controlled replacement. A
+Rejected, Cancelled, ApiCancelled, or Inactive close is
+`EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`, not permanently in progress, and may
+use that one replacement. A second replacement is prohibited across restart.
+Ambiguous or non-authoritative evidence returns
+`EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`, retains managed state, and submits no
+order because the position may be unprotected.
+
+When a partial target execution is followed by the Stop Loss remainder, the
+bridge publishes one final `CLOSE_STOP` for the full original managed
+quantity. Its exit price is the quantity-weighted average of confirmed target
+and Stop Loss executions, its raw JSON contains all component execution IDs,
+quantities, and prices, and its reason is
+`IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. The existing Sheets
+schema is unchanged. A partial target is not published as a separate TP. If
+any component price, quantity, or execution identity is missing, the bridge
+persists `EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE`, withholds the callback,
+and retains the managed row for reconciliation rather than fabricating P&L.
 
 When one matching external execution is available after a reliably timestamped
 managed entry, its actual price and quantity are published. External attribution
@@ -1231,12 +1262,23 @@ close reservation is durable before target cancellation
 only the exact managed target is canceled and cancellation is verified
 target fill during cancellation submits no market close and later publishes TP
 partial target fill sizes the close from the re-read remaining IB position
+partial target position polling rejects a stale quantity above expected remaining
+unconfirmed partial-fill position sync returns EDGE_STOP_POSITION_SYNC_UNCONFIRMED with no market order
+partial target execution quantity, price, IDs, expected remaining, and confirmed remaining are persisted
 unconfirmed target cancellation returns EDGE_STOP_TARGET_CANCEL_UNCONFIRMED
 stale setup returns EDGE_STOP_SETUP_MISMATCH with no broker activity
 concurrent/restarted duplicate recovers the stored close and submits no second order
+CLOSE_SUBMISSION_PENDING recovery refreshes open/completed orders, executions, and position
+authoritative no-order recovery permits only one persisted replacement attempt
+Rejected/Cancelled/ApiCancelled/Inactive close is retryable, not permanently in progress
+ambiguous recovery returns EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS with no new order
 Edge close execution is confirmed Filled
 bridge verifies the actual IB position is zero with a bounded wait
 only then Render receives CLOSE_STOP with broker_confirmed_flat=true
+partial target plus Stop Loss produces one full-quantity weighted CLOSE_STOP
+mixed raw JSON contains target and Stop Loss execution IDs, prices, and quantities
+incomplete mixed evidence withholds publication and retains managed state
+partial target creates no standalone TP row
 Render awaits Trades, Closed Trades, Open removal, and Telegram publication
 retryable Sheets or Telegram failure returns HTTP 503 RETRY
 completed callback duplicates remain ignored after Render restart
@@ -1384,11 +1426,29 @@ Payload-version-2 Stop Loss handling requires an exact active `setup_id` and a
 durable setup-scoped close reservation before broker activity. It cancels and
 verifies only the exact managed target, re-reads the broker position after the
 target reaches a proven terminal state, and sizes any market close from that
-current quantity. A target fill during cancellation produces no Stop Loss
-order; an ambiguous cancellation returns
+current quantity. A partial target requires bounded position synchronization
+at or below original quantity minus confirmed target executions; otherwise it
+returns `EDGE_STOP_POSITION_SYNC_UNCONFIRMED` without a close order. A target
+fill during cancellation produces no Stop Loss order; an ambiguous cancellation returns
 `EDGE_STOP_TARGET_CANCEL_UNCONFIRMED`; a stale setup returns
 `EDGE_STOP_SETUP_MISMATCH`. The deterministic setup-hash close `orderRef` and
 reservation state prevent concurrent and post-restart duplicate orders.
+
+An existing `CLOSE_SUBMISSION_PENDING` reservation is recovered through
+bounded authoritative refresh of open orders/trades, supported completed-order
+and execution history, and position. Exact order or execution evidence is
+adopted without resubmission. Authoritative proof of an open managed position
+and no matching close permits one persisted replacement attempt; a rejected or
+canceled close follows the same capped recovery. Ambiguity returns
+`EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS` with no order. Flat recovery submits
+nothing and defers to execution-evidence reconciliation.
+
+A partial target followed by Stop Loss is one public `CLOSE_STOP` for the full
+original quantity at the confirmed execution-weighted exit price, with both
+execution components retained in raw JSON and reason
+`IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. Incomplete component
+evidence is persisted and retried, never published as a remainder-only close
+or separate partial TP.
 
 Broker-confirmed Edge TP and `CLOSE_STOP` callbacks use synchronous persistent
 Render publication keyed by `setup_id + reconciliation_id + event`. HTTP 200
