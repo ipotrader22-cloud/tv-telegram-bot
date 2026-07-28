@@ -208,6 +208,39 @@ function isOppositeFlipRow(row) {
     isOppositeFlipName(row.raw);
 }
 
+function publicSystemLabelFromRaw(...rawValues) {
+  const joined = rawValues.map(value => String(value || '')).join('\n');
+
+  // Public naming must preserve the same precedence as internal classification:
+  // Fiona-specific markers are checked before generic Opposite Flip / Shrek markers.
+  if (isFionaLimitPullbackName(joined)) return 'Vixale Edge';
+  if (
+    isOppositeFlipName(joined) ||
+    joined.toUpperCase().includes('FIONA_PULLBACK_HTF_ATR_TARGET') ||
+    /\bSHREK\b/i.test(joined)
+  ) {
+    return 'Vixale Prime';
+  }
+  if (/\bFIONA\b/i.test(joined)) return 'Vixale Edge';
+
+  return '';
+}
+
+function publicExitLabel(value) {
+  const text = String(value || '').trim();
+  const normalized = text.toUpperCase().replace(/[_-]+/g, ' ');
+
+  if (
+    normalized === 'CLOSE STOP' ||
+    normalized === 'FLIP CLOSE' ||
+    (normalized.includes('OPPOSITE') && normalized.includes('FLIP'))
+  ) {
+    return 'Stop Loss';
+  }
+
+  return text;
+}
+
 function isEmaPullbackName(value) {
   const text = String(value || '').toUpperCase();
   return text.includes('VX_EMA_CROSS_PULLBACK_ATR_TARGET') ||
@@ -249,8 +282,8 @@ function sheetEventLabel(row) {
   const rawEvent = String(row?.raw_event || '').toUpperCase();
 
   // Opposite Flip uses CLOSE_STOP only as a normal reversal/flip exit.
-  // Keep internal event as SL for bridge-forward compatibility, but show it
-  // in Sheets / dashboard as FLIP_CLOSE instead of stop-loss.
+  // Keep internal event as SL for bridge-forward compatibility and store the
+  // backward-compatible Sheets label; public surfaces map it to Stop Loss.
   if (isOppositeFlipRow(row) && event === 'SL' && rawEvent === 'CLOSE_STOP') {
     return 'FLIP_CLOSE';
   }
@@ -1054,7 +1087,7 @@ function formatTelegramMessage(row, originalMessage) {
 
     if (isFionaLimitPullbackRow(row)) {
       return [
-        `🟣 <b>Fiona opened ${row.side}</b>`,
+        `🟣 <b>Vixale Edge opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
@@ -1066,7 +1099,7 @@ function formatTelegramMessage(row, originalMessage) {
 
     if (isOppositeFlipRow(row)) {
       return [
-        `${emoji} <b>Shrek opened ${row.side}</b>`,
+        `${emoji} <b>Vixale Prime opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
@@ -1111,7 +1144,7 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'FILL') {
     if (isFionaLimitPullbackRow(row)) {
       return [
-        `🟣 <b>Fiona opened ${row.side}</b>`,
+        `🟣 <b>Vixale Edge opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
@@ -1124,7 +1157,7 @@ function formatTelegramMessage(row, originalMessage) {
     if (isOppositeFlipRow(row)) {
       const emoji = row.side === 'SHORT' ? '🔴' : '🟢';
       return [
-        `${emoji} <b>Shrek opened ${row.side}</b>`,
+        `${emoji} <b>Vixale Prime opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
@@ -1158,7 +1191,7 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'TP') {
     if (isFionaLimitPullbackRow(row)) {
       return [
-        `🎯 <b>Fiona hit target</b>`,
+        `🎯 <b>Vixale Edge hit target</b>`,
         '',
         `<b>${titleBase}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
@@ -1170,7 +1203,7 @@ function formatTelegramMessage(row, originalMessage) {
 
     if (isOppositeFlipRow(row)) {
       return [
-        `🎯 <b>Shrek hit target</b>`,
+        `🎯 <b>Vixale Prime hit target</b>`,
         '',
         `<b>${titleBase}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
@@ -1205,7 +1238,7 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'SL') {
     if (isFionaLimitPullbackRow(row)) {
       return [
-        `🔁 <b>Fiona closed ${row.side}</b>`,
+        `🛑 <b>Vixale Edge hit Stop Loss</b>`,
         '',
         `<b>${row.symbol}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
@@ -1217,7 +1250,7 @@ function formatTelegramMessage(row, originalMessage) {
 
     if (isOppositeFlipRow(row)) {
       return [
-        `🔁 <b>Shrek closed ${row.side}</b>`,
+        `🛑 <b>Vixale Prime hit Stop Loss</b>`,
         '',
         `<b>${row.symbol}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
@@ -1252,7 +1285,19 @@ function formatTelegramMessage(row, originalMessage) {
   if (row.event === 'EOD') {
     if (isFionaLimitPullbackRow(row)) {
       return [
-        `⏰ <b>Fiona EOD close</b>`,
+        `⏰ <b>Vixale Edge EOD close</b>`,
+        '',
+        `<b>${titleBase || row.symbol}</b>`,
+        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
+        pnlLine,
+      ].filter(Boolean).join('\n');
+    }
+
+    if (isOppositeFlipRow(row)) {
+      return [
+        `⏰ <b>Vixale Prime EOD close</b>`,
         '',
         `<b>${titleBase || row.symbol}</b>`,
         row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
@@ -2112,8 +2157,8 @@ function strategyFamilyLabelFromRaw(...rawValues) {
 
   // Fiona Limit shares the broad Opposite Flip routing identifier with Shrek,
   // so its dedicated variant/profile markers must be checked first.
-  if (isFionaLimitPullbackName(joined)) return 'VIXALE EDGE';
-  if (isOppositeFlipName(joined)) return 'VIXALE PRIME';
+  const publicLabel = publicSystemLabelFromRaw(joined);
+  if (publicLabel) return publicLabel;
   if (isEmaPullbackName(joined)) return 'Elvis';
   if (isV51IntradayName(joined)) return 'Vixale';
 
@@ -2129,8 +2174,8 @@ function strategyFamilyLabelFromRaw(...rawValues) {
       parsed.reason,
     ].join(' ');
 
-    if (isFionaLimitPullbackName(fields)) return 'VIXALE EDGE';
-    if (isOppositeFlipName(fields)) return 'VIXALE PRIME';
+    const parsedPublicLabel = publicSystemLabelFromRaw(fields);
+    if (parsedPublicLabel) return parsedPublicLabel;
     if (isEmaPullbackName(fields)) return 'Elvis';
     if (isV51IntradayName(fields)) return 'Vixale';
   }
@@ -2150,7 +2195,7 @@ function strategyFamilyLabelForPosition(rawValue, stopValue) {
   const stop = cleanNumber(stopValue);
 
   if (stop !== '' && stop > 0) return 'Elvis';
-  if (stop === 0) return 'VIXALE PRIME';
+  if (stop === 0) return 'Vixale Prime';
 
   return '';
 }
@@ -6422,7 +6467,7 @@ function renderDashboardHtml(data) {
       <td>${num(row.exit)}</td>
       <td>${num(row.size, 0)}</td>
       <td class="${moneyClass(row.result)}">${renderMoney(row.result)}</td>
-      <td>${escapeHtml(row.event)}</td>
+      <td>${escapeHtml(publicExitLabel(row.event))}</td>
     </tr>
   `).join('');
 

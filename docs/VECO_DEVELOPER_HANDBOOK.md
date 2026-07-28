@@ -73,9 +73,9 @@ Current production execution is stock-only. Futures support is postponed until e
 
 ## 3. Current Production Systems
 
-### 3.1 Shrek
+### 3.1 Vixale Prime (internal Shrek)
 
-**Public VECO name:** Shrek  
+**Public VECO name:** Vixale Prime
 **TradingView strategy:** `Shrek 1.4`
 **Internal strategy ID:** `SHREK_1_4`
 **Variant field:** not used
@@ -89,16 +89,16 @@ SuperTrend flip
 → require reclaim on candle close
 → market entry
 → attached ATR target in TWS
-→ close on target, opposite SuperTrend flip, or bridge watchdog at 15:59 ET
+→ close on target, internal opposite SuperTrend flip, or bridge watchdog at 15:59 ET
 ```
 
 Telegram lifecycle:
 
 ```text
-🟢 / 🔴 Shrek opened LONG / SHORT
-🎯 Shrek hit target
-🔁 Shrek closed LONG / SHORT
-⏰ Shrek EOD close
+🟢 / 🔴 Vixale Prime opened LONG / SHORT
+🎯 Vixale Prime hit target
+🛑 Vixale Prime hit Stop Loss
+⏰ Vixale Prime EOD close
 ```
 
 Opening Telegram messages include:
@@ -108,7 +108,7 @@ Opening Telegram messages include:
 - Stop Ref
 - Quantity
 
-### 3.1.1 Shrek 1.4 naming contract
+### 3.1.1 Vixale Prime / Shrek 1.4 naming contract
 
 TradingView and VECO use one canonical strategy identity:
 
@@ -119,11 +119,12 @@ Payload strategy ID: SHREK_1_4
 
 The Pine payload does not send a `variant` field. Render and the local bridge recognize
 `SHREK_1_4` directly. Legacy Shrek/Opposite-Flip identifiers remain accepted only so
-already-created old alerts can be retired safely.
+already-created old alerts can be retired safely. These internal and TradingView identities
+remain unchanged; only public rendering uses `Vixale Prime`.
 
-### 3.2 Fiona
+### 3.2 Vixale Edge (internal Fiona)
 
-**Public VECO name:** Fiona  
+**Public VECO name:** Vixale Edge
 **TradingView strategy:** `VX_FIONA_LIMIT_PULLBACK_LIVE_v1.0`  
 **Internal variant:** `FIONA_LIMIT_PULLBACK_ATR_TARGET`
 
@@ -137,19 +138,20 @@ SuperTrend flip
 → on TradingView historical/live limit fill, send SETUP
 → bridge executes TWS MARKET entry
 → attach frozen ATR target
-→ close on target, opposite SuperTrend flip, or EOD
+→ close on target, internal opposite SuperTrend flip, or EOD
 ```
 
 Telegram lifecycle:
 
 ```text
-🟣 Fiona opened LONG / SHORT
-🎯 Fiona hit target
-🔁 Fiona closed LONG / SHORT
-⏰ Fiona EOD close
+🟣 Vixale Edge opened LONG / SHORT
+🎯 Vixale Edge hit target
+🛑 Vixale Edge hit Stop Loss
+⏰ Vixale Edge EOD close
 ```
 
-The purple circle identifies the Fiona system. Direction is written explicitly.
+The purple circle identifies Vixale Edge. Direction is written explicitly. The
+internal Fiona identifiers remain unchanged.
 
 ### 3.3 Elvis
 
@@ -180,10 +182,10 @@ Verified: 2026-07-26
 Verified features in this exact snapshot:
 
 - `FIONA_LIMIT_PULLBACK_ATR_TARGET` classification;
-- `🟣 Fiona opened LONG/SHORT`;
-- Fiona target, regular close, and EOD lifecycle messages;
-- `Stop Ref` in Fiona and Shrek opening messages;
-- separate Shrek opening messages preserved.
+- `🟣 Vixale Edge opened LONG/SHORT`;
+- Vixale Edge target, Stop Loss, and EOD lifecycle messages;
+- `Stop Ref` in Vixale Edge and Vixale Prime opening messages;
+- separate Vixale Prime opening messages preserved.
 
 Delivery convention when a direct file artifact is needed:
 
@@ -505,7 +507,11 @@ RECONCILE_FLAT      → silent reconciliation
 STOP_REF_UPDATE     → silent stop-reference update
 ```
 
-For Shrek/Fiona, `CLOSE_STOP` means an opposite SuperTrend flip close, not a conventional hard stop loss. Sheets/dashboard display this as `FLIP_CLOSE`.
+For internal Shrek/Fiona processing, `CLOSE_STOP` still means the broker-confirmed
+opposite SuperTrend flip close. The raw event and stored Sheets event
+`FLIP_CLOSE` remain unchanged for compatibility. Telegram, website, and dashboard
+render either value publicly as `Stop Loss`, including historical rows read from
+old raw JSON; no historical Sheets rows are rewritten.
 
 ### 8.2 Strategy classification precedence
 
@@ -999,8 +1005,9 @@ No orphan target remains
 
 ```text
 Close is broker-confirmed
-Telegram says closed, not conventional stop loss
-Sheets event is FLIP_CLOSE
+Telegram says Vixale Prime / Vixale Edge hit Stop Loss
+Sheets event remains FLIP_CLOSE
+Dashboard renders FLIP_CLOSE / CLOSE_STOP as Stop Loss
 Position is flat or correctly reversed
 New opposite target quantity is correct
 ```
@@ -1059,17 +1066,17 @@ remains the execution source of truth.
 
 ### ADR-003 — Fiona is a separate VECO system
 
-**Decision:** `FIONA_LIMIT_PULLBACK_ATR_TARGET` is publicly labeled Fiona across Telegram, dashboard, and Sheets-derived system labels.  
-**Reason:** It is a distinct trading model and basket from Shrek.
+**Decision:** `FIONA_LIMIT_PULLBACK_ATR_TARGET` is publicly labeled Vixale Edge across Telegram, website, dashboard, and Sheets-derived system labels. The internal Fiona identity remains unchanged.
+**Reason:** It is a distinct trading model and basket from the internal Shrek / Vixale Prime system.
 
 ### ADR-004 — Shrek remains the reclaim system
 
-**Decision:** `FIONA_PULLBACK_HTF_ATR_TARGET` continues to appear publicly as Shrek.  
-**Reason:** Existing live ecosystem continuity and established public naming.
+**Decision:** Shrek, `SHREK`, `SHREK_1_4`, `FIONA_PULLBACK_HTF_ATR_TARGET`, and supported legacy Opposite-Flip identifiers remain the reclaim system internally and render publicly as Vixale Prime.
+**Reason:** Preserve internal ecosystem compatibility while using the current public Vixale naming.
 
 ### ADR-005 — Variant-first classification
 
-**Decision:** Fiona Limit classification must run before generic Opposite Flip / Shrek classification.  
+**Decision:** Internal Fiona Limit classification must run before generic Opposite Flip / Shrek classification; public renaming does not alter that precedence.
 **Reason:** Both Pine scripts share a generic strategy identifier.
 
 ### ADR-006 — Paid Render instance, Hobby workspace
@@ -1096,6 +1103,17 @@ remains the execution source of truth.
 
 **Decision:** `/AGENTS.md` is the persistent operating policy for Codex in this repository. Codex may create a feature branch, edit, test, commit, push the feature branch, and create a Pull Request in one task, but it must stop before merge.  
 **Reason:** This preserves a safe production gate while removing repetitive manual file downloads and Git steps.
+
+### ADR-011 — Public Vixale system names and Stop Loss terminology
+
+**Decision:** Public surfaces render internal Shrek identities as `Vixale Prime`,
+internal Fiona identities as `Vixale Edge`, and `CLOSE_STOP`, `FLIP_CLOSE`, or
+equivalent opposite-flip descriptions as `Stop Loss`. Internal strategy IDs,
+classification, raw events, Sheets values, payload contracts, and execution
+behavior remain unchanged. Historical records are mapped when rendered rather
+than rewritten.
+**Reason:** Present consistent customer-facing product names and exit terminology
+without changing the backward-compatible VECO execution contract.
 
 ---
 
