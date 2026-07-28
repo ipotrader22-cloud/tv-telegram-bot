@@ -1802,8 +1802,9 @@ async function cleanupLegacyPositionIfExists(sheets, tradeId) {
   }
 }
 
-async function processLedger(row) {
-  const sheets = await getSheetsClient();
+async function processLedger(row, dependencies = {}) {
+  const sheets = dependencies.sheets ||
+    await (dependencies.getSheetsClient || getSheetsClient)();
 
   if (!sheets) return row;
 
@@ -7938,8 +7939,13 @@ async function processRecognizedTradingViewWebhookLifecycle(
   reqBody,
   parsedRow,
   message,
-  failOnPublicationError
+  failOnPublicationError,
+  dependencies = {}
 ) {
+  const ledgerProcessor = dependencies.processLedger ||
+    (row => processLedger(row, dependencies));
+  const telegramSender = dependencies.sendTelegram || sendTelegram;
+  const bridgeForwarder = dependencies.forwardToBridge || forwardToBridge;
   const bridgeCallback = isBridgeExecutionCallback(reqBody);
   const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
 
@@ -7948,7 +7954,7 @@ async function processRecognizedTradingViewWebhookLifecycle(
   // Telegram, Sheets, and dashboard are updated only by the bridge callback
   // after TWS confirms an actual fill.
   if (executionConfirmationRequired && !bridgeCallback) {
-    const bridgeResult = await forwardToBridge(reqBody, parsedRow);
+    const bridgeResult = await bridgeForwarder(reqBody, parsedRow);
     console.log(
       'Execution-first deferred public ledger:',
       bridgeLogPrefix(parsedRow),
@@ -7983,7 +7989,7 @@ async function processRecognizedTradingViewWebhookLifecycle(
   let finalRow = parsedRow;
 
   try {
-    finalRow = (await processLedger(parsedRow)) || parsedRow;
+    finalRow = (await ledgerProcessor(parsedRow)) || parsedRow;
   } catch (sheetErr) {
     console.error('Google Sheets / ledger failed:', sheetErr);
     if (failOnPublicationError) throw sheetErr;
@@ -8003,7 +8009,7 @@ async function processRecognizedTradingViewWebhookLifecycle(
       )
     ) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
-      const telegramResult = await sendTelegram(telegramMessage);
+      const telegramResult = await telegramSender(telegramMessage);
       if (failOnPublicationError && telegramResult && telegramResult.ok === false) {
         const error = new Error(
           telegramResult.description || 'Telegram returned a retryable publication failure'
@@ -8021,7 +8027,7 @@ async function processRecognizedTradingViewWebhookLifecycle(
 
   // Callback events are blocked inside shouldForwardToBridge(), preventing
   // Render -> bridge -> Render loops.
-  await forwardToBridge(reqBody, finalRow);
+  await bridgeForwarder(reqBody, finalRow);
 
   return { ok: true, finalRow };
 }
@@ -8715,6 +8721,15 @@ app.post('/tv', handleTradingViewWebhook);
 
 const PORT = process.env.PORT || 10000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports.__test = {
+  parseJsonTradingViewAlert,
+  processLedger,
+  processRecognizedTradingViewWebhookLifecycle,
+  shouldForwardToBridge,
+};

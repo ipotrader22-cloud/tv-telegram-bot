@@ -103,8 +103,14 @@ assert.match(pine, /payload_version\\":2/);
 assert.match(pine, /system_id\\":\\"VIXALE_EDGE/);
 assert.match(pine, /eod_policy\\":\\"NO_EOD_CLOSE/);
 assert.match(pine, /target_tif\\":\\"GTC/);
+assert.match(
+  pine,
+  /useAtrTarget and \(_event == "SETUP" or _event == "PENDING_SETUP" or _event == "CANCEL"\)/
+);
 assert.match(pine, /UNFILLED_BY_MARKET_CLOSE/);
 assert.match(pine, /REPLACED_BY_OPPOSITE_RTH_SIGNAL/);
+assert.match(pine, /table\.cell\(statusTable, 0, 5, "ENTRY FLIP CLOSE"\)/);
+assert.doesNotMatch(pine, /table\.cell\(statusTable, 0, 5, "STOP LOSS REF"\)/);
 assert.doesNotMatch(pine, /strategy\.close_all|closeEod|newNyDay/);
 
 console.log('Vixale Edge pending lifecycle simulation: 12 focused checks passed');
