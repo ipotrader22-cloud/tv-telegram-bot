@@ -572,10 +572,13 @@ def mark_managed_bridge_close(data: Dict[str, Any], ib_result: Dict[str, Any]) -
         "order_id": ib_result.get("order_id", ""),
         "perm_id": ib_result.get("order_perm_id", ""),
         "order_ref": ib_result.get("order_ref", ""),
+        "bridge_status": ib_result.get("status", ""),
         "latest_status": ib_result.get("close_status", ""),
         "filled_qty": to_float(ib_result.get("close_filled_qty")),
         "fill_price": to_float(ib_result.get("close_fill_price")),
         "exec_ids": list(ib_result.get("close_exec_ids") or []),
+        "broker_confirmed_flat": bool(ib_result.get("broker_confirmed_flat")),
+        "position_after_close": ib_result.get("position_after_close", ""),
         "submitted_at": existing_close.get("submitted_at") or now_iso,
         "filled_at": now_iso if ib_result.get("close_filled") else "",
     }
@@ -2238,6 +2241,33 @@ async def place_entry_limit(data: Dict[str, Any]) -> Dict[str, Any]:
     return await place_entry_order(data)
 
 
+def is_edge_stop_close(data: Dict[str, Any]) -> bool:
+    return (
+        is_vixale_edge_payload(data)
+        and str(data.get("event") or "").upper().strip() == "CLOSE_STOP"
+    )
+
+
+async def apply_edge_stop_close_flat_gate(
+    data: Dict[str, Any],
+    result: Dict[str, Any],
+    symbol: str,
+) -> Dict[str, Any]:
+    if not is_edge_stop_close(data) or not result.get("close_filled"):
+        return result
+
+    flat, position_after = await verify_position_flat(
+        symbol,
+        FORCE_EOD_POSITION_VERIFY_SECONDS,
+    )
+    result["broker_confirmed_flat"] = flat
+    result["position_after_close"] = position_after
+    if not flat:
+        result["status"] = "EDGE_STOP_CLOSE_POSITION_NOT_FLAT"
+        result["critical_reason"] = "EDGE_STOP_CLOSE_POSITION_NOT_FLAT"
+    return result
+
+
 async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
     await ensure_ib_connected()
 
@@ -2362,12 +2392,6 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
             "error": rejection_reason,
         }
 
-    # Let TWS update portfolio state, then remove leftover TP orders if flat.
-    orphan_cleanup = {}
-    if close_filled and CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
-        await asyncio.sleep(0.50)
-        orphan_cleanup = await cleanup_orphan_targets_if_flat(symbol)
-
     result_payload = {
         "dry_run": False,
         "status": "submitted" if close_filled else "submitted_awaiting_close_fill",
@@ -2386,8 +2410,23 @@ async def close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
         "close_fill_price": trade_fill_price(trade, to_float(data.get("price")) or to_float(data.get("entry"))),
         "close_filled_qty": trade_filled_qty(trade),
         "close_exec_ids": trade_execution_ids(trade),
-        **orphan_cleanup,
     }
+    result_payload = await apply_edge_stop_close_flat_gate(data, result_payload, symbol)
+
+    # Let TWS update portfolio state, then remove leftover TP orders only after
+    # the Edge Stop Loss flat gate has succeeded. Prime/legacy behavior is
+    # unchanged.
+    if (
+        close_filled
+        and CANCEL_ORPHAN_TARGETS_AFTER_FLAT
+        and (
+            not is_edge_stop_close(data)
+            or result_payload.get("broker_confirmed_flat")
+        )
+    ):
+        await asyncio.sleep(0.50)
+        result_payload.update(await cleanup_orphan_targets_if_flat(symbol))
+
     mark_managed_bridge_close(data, result_payload)
 
     if not close_filled and ENABLE_EXECUTION_FILL_MONITOR:
@@ -2608,6 +2647,8 @@ def make_close_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
     payload["close_filled"] = bool(ib_result.get("close_filled"))
     payload["position_after_close"] = ib_result.get("position_after_close", "")
     payload["canceled_orphan_targets"] = ib_result.get("canceled_orphan_targets", 0)
+    if is_edge_stop_close(data):
+        payload["broker_confirmed_flat"] = bool(ib_result.get("broker_confirmed_flat"))
     exit_identity = execution_identity_text(
         exec_ids=ib_result.get("close_exec_ids") or [],
         perm_id=ib_result.get("order_perm_id"),
@@ -2921,12 +2962,31 @@ async def monitor_close_fill_confirmation(
                 result["order_perm_id"] = trade_perm_id(close_trade)
                 result["close_exec_ids"] = trade_execution_ids(close_trade)
 
+                edge_close = is_vixale_edge_payload(original_data)
+                edge_stop_close = is_edge_stop_close(original_data)
+                result = await apply_edge_stop_close_flat_gate(
+                    original_data,
+                    result,
+                    symbol,
+                )
+                mark_managed_bridge_close(original_data, result)
+
+                if (
+                    edge_stop_close
+                    and not result.get("broker_confirmed_flat")
+                ):
+                    print(
+                        f"[CLOSE FILL MONITOR CRITICAL] symbol={symbol} side={side} "
+                        f"status=EDGE_STOP_CLOSE_POSITION_NOT_FLAT "
+                        f"position_after_close={result.get('position_after_close')}. "
+                        "CLOSE_STOP and RECONCILE_FLAT callbacks withheld; managed state retained"
+                    )
+                    return
+
                 if CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
                     await asyncio.sleep(0.50)
                     result.update(await cleanup_orphan_targets_if_flat(symbol))
 
-                edge_close = is_vixale_edge_payload(original_data)
-                mark_managed_bridge_close(original_data, result)
                 if not edge_close:
                     clear_managed_position(symbol)
 
@@ -2937,7 +2997,7 @@ async def monitor_close_fill_confirmation(
                     clear_managed_position(symbol)
 
                 event = str(original_data.get("event", "")).upper()
-                if should_send_flat_reconcile(event, result):
+                if not edge_stop_close and should_send_flat_reconcile(event, result):
                     reconcile_payload = make_reconcile_flat_payload(original_data, result)
                     reconcile_result = await forward_to_render(reconcile_payload)
                     print(f"[CLOSE FILL MONITOR RECONCILE RESULT] symbol={symbol} {reconcile_result}")
@@ -3053,6 +3113,7 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
         mark_managed_position(data, ib_result)
 
     edge_close = is_vixale_edge_payload(data) and event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"]
+    edge_stop_close = is_edge_stop_close(data)
     if (
         event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"]
         and ib_close_accepted(ib_result)
@@ -3062,6 +3123,15 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
 
     # Execution-first architecture: successful fills must be echoed back to Render.
     # app.js publishes Telegram/Sheets/dashboard only from these bridge callbacks.
+    if edge_stop_close and not ib_result.get("broker_confirmed_flat"):
+        print(
+            f"[RENDER SKIPPED CRITICAL] event={event} symbol={symbol} side={side} "
+            f"status={ib_result.get('status')} "
+            f"position_after_close={ib_result.get('position_after_close')}. "
+            "Broker-flat Edge Stop Loss confirmation is required"
+        )
+        return
+
     forward, transform = should_forward_to_render(event, ib_result)
 
     if not forward:
@@ -3089,7 +3159,7 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
         if render_delivery_succeeded(render_result):
             clear_managed_position(symbol)
 
-    if should_send_flat_reconcile(event, ib_result):
+    if not edge_stop_close and should_send_flat_reconcile(event, ib_result):
         reconcile_payload = make_reconcile_flat_payload(data, ib_result)
         reconcile_result = await forward_to_render(reconcile_payload)
         print(f"[RECONCILE_FLAT RENDER RESULT] symbol={symbol} {reconcile_result}")
@@ -3477,9 +3547,9 @@ def execution_identity_text(
 ) -> str:
     if exec_ids:
         return "EXEC:" + ",".join(sorted(set(str(value) for value in exec_ids if value)))
-    if perm_id not in (None, ""):
+    if perm_id not in (None, "", 0, "0"):
         return f"PERM:{perm_id}"
-    if order_id not in (None, ""):
+    if order_id not in (None, "", 0, "0"):
         return f"ORDER:{order_id}"
     if str(order_ref_value or "").strip():
         return f"REF:{str(order_ref_value).upper().strip()}"
@@ -3677,12 +3747,8 @@ def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any
     target_identity = managed_order_identity(row, "target")
     close_identity = managed_order_identity(row, "close")
     groups: Dict[str, List[Dict[str, Any]]] = {}
-    entry_order = row.get("entry_order") if isinstance(row.get("entry_order"), dict) else {}
-    entry_time_raw = row.get("entry_filled_at") or entry_order.get("filled_at")
-    try:
-        entry_time = datetime.fromisoformat(str(entry_time_raw).replace("Z", "+00:00")) if entry_time_raw else None
-    except Exception:
-        entry_time = None
+    if entry_filled_time(row) is None:
+        return None
 
     for fill in current_ib_fills():
         details = fill_execution_details(fill)
@@ -3692,18 +3758,8 @@ def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any
             continue
         if details["qty"] <= 0 or details["price"] <= 0:
             continue
-        if entry_time is not None:
-            fill_time = details.get("time")
-            if not isinstance(fill_time, datetime):
-                continue
-            comparable_entry = entry_time
-            comparable_fill = fill_time
-            if comparable_entry.tzinfo is None and comparable_fill.tzinfo is not None:
-                comparable_entry = comparable_entry.replace(tzinfo=comparable_fill.tzinfo)
-            if comparable_entry.tzinfo is not None and comparable_fill.tzinfo is None:
-                comparable_fill = comparable_fill.replace(tzinfo=comparable_entry.tzinfo)
-            if comparable_fill < comparable_entry:
-                continue
+        if not execution_at_or_after_entry(details.get("time"), row):
+            continue
         if identity_matches(details["order_id"], details["perm_id"], details["order_ref"], target_identity):
             continue
         if identity_matches(details["order_id"], details["perm_id"], details["order_ref"], close_identity):
@@ -3717,8 +3773,8 @@ def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any
         if not identity:
             continue
         group_key = (
-            f"PERM:{details['perm_id']}" if details["perm_id"] not in (None, "")
-            else f"ORDER:{details['order_id']}" if details["order_id"] not in (None, "")
+            f"PERM:{details['perm_id']}" if details["perm_id"] not in (None, "", 0, "0")
+            else f"ORDER:{details['order_id']}" if details["order_id"] not in (None, "", 0, "0")
             else identity
         )
         groups.setdefault(group_key, []).append(details)

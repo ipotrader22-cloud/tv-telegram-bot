@@ -617,11 +617,25 @@ must confirm zero before setting `broker_confirmed_flat=true` or calling
 Render. A Filled target with a non-flat broker position sends no callback,
 retains managed state, and is retried by persistent reconciliation.
 
-When a single matching external execution is available, its actual price and
-quantity are published. Otherwise the callback explicitly marks price and
-quantity unavailable; it never substitutes the target price. `EXTERNAL_CLOSE`
-always blanks result and result percentage, ignores supplied P&L aliases, and
-never invokes normal close P&L fallback—even when actual execution price and
+The same broker-flat gate applies to every Edge `CLOSE_STOP`, whether the
+market-order fill is observed immediately or by the delayed fill monitor. The
+bridge must confirm the close execution and then confirm the actual IB position
+is zero before it sets `broker_confirmed_flat=true` or sends `CLOSE_STOP` to
+Render. A Filled close with a non-flat position is persisted as
+`EDGE_STOP_CLOSE_POSITION_NOT_FLAT`, including the execution identity and
+`position_after_close`; managed state remains for recovery, and neither
+`CLOSE_STOP` nor `RECONCILE_FLAT` is published.
+
+When one matching external execution is available after a reliably timestamped
+managed entry, its actual price and quantity are published. External attribution
+requires `entry_filled_at` or `entry_order.filled_at`, a parseable execution
+time at or after that entry, matching symbol and closing action, and one
+unambiguous execution group. Without the managed entry timestamp, or for a
+pre-entry fill, the callback explicitly marks price and quantity unavailable
+and never attaches a historical execution. It never substitutes the target
+price. `EXTERNAL_CLOSE` always blanks result and result percentage, ignores
+supplied P&L aliases, and never invokes normal close P&L fallback—even when
+actual execution price and
 quantity are available.
 
 The managed-position JSON persists entry, target, and bridge-close broker
@@ -1157,6 +1171,18 @@ Position is flat or correctly reversed
 New opposite target quantity is correct
 ```
 
+### Vixale Edge Stop Loss
+
+```text
+Edge close execution is confirmed Filled
+bridge verifies the actual IB position is zero with a bounded wait
+only then Render receives CLOSE_STOP with broker_confirmed_flat=true
+Filled but non-flat returns EDGE_STOP_CLOSE_POSITION_NOT_FLAT
+non-flat state retains managed execution identity and position_after_close
+no CLOSE_STOP or RECONCILE_FLAT is published while non-flat
+Prime reversal and EOD behavior remain unchanged
+```
+
 ### EOD
 
 ```text
@@ -1285,10 +1311,16 @@ is present, and never performs broker reversal-delta or stacking. Invalid
 targets return `PENDING_ONLY / EDGE_TARGET_REQUIRED` before broker activity. A
 later flat state is TP only with exact managed target execution evidence plus a
 confirmed zero broker position, Stop Loss only with exact bridge-close
-execution evidence, and otherwise `EXTERNAL_CLOSE` / `Manual Close`. Broker
-evidence prefers exact `permId`, then exact `orderId`; legacy `orderRef` alone
-requires post-entry timestamped, quantity-complete, unambiguous evidence.
-Manual Close retains actual price/quantity when available but never calculates
+execution evidence followed by a bounded confirmed-zero position check, and
+otherwise `EXTERNAL_CLOSE` / `Manual Close`. A Filled Edge Stop Loss that is
+still non-flat persists `EDGE_STOP_CLOSE_POSITION_NOT_FLAT` and its execution
+identity for recovery, and publishes neither `CLOSE_STOP` nor
+`RECONCILE_FLAT`. Broker evidence prefers exact `permId`, then exact `orderId`;
+legacy `orderRef` alone requires post-entry timestamped, quantity-complete,
+unambiguous evidence. External Manual Close price/quantity attribution also
+requires a reliable managed entry timestamp and a parseable, post-entry
+execution timestamp; without those timestamps it remains unavailable. Manual
+Close retains actual price/quantity when available but never calculates
 fallback P&L. The managed file persists order/execution identity and a stable
 reconciliation claim until Render confirms publication.
 
