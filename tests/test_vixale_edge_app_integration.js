@@ -40,6 +40,7 @@ Module._load = function loadWithTestDoubles(request, parent, isMain) {
 
 const {
   parseJsonTradingViewAlert,
+  formatTelegramMessage,
   processRecognizedTradingViewWebhookLifecycle,
   handleTradingViewWebhookWithDependencies,
   shouldForwardToBridge,
@@ -248,6 +249,48 @@ async function run() {
     lifecycle.dependencies = dependencies;
     return lifecycle;
   };
+
+  const pendingShortMessage = formatTelegramMessage(
+    parseJsonTradingViewAlert(edgePayload(
+      'PENDING_SETUP',
+      'VIXALE_EDGE:SBUX:15:SHORT:1785250800000',
+      { symbol: 'SBUX', side: 'SHORT', timeframe: '15', stop: 103.55 }
+    )),
+    ''
+  );
+  const pendingLongMessage = formatTelegramMessage(
+    parseJsonTradingViewAlert(edgePayload(
+      'PENDING_SETUP',
+      'VIXALE_EDGE:AAPL:60:LONG:1785254400000',
+      { side: 'LONG', stop: 121.2 }
+    )),
+    ''
+  );
+  const setupShortMessage = formatTelegramMessage(
+    parseJsonTradingViewAlert(edgePayload(
+      'SETUP',
+      'VIXALE_EDGE:SBUX:15:SHORT:1785250800000',
+      { symbol: 'SBUX', side: 'SHORT', timeframe: '15', stop: 103.55 }
+    )),
+    ''
+  );
+  const fillLongMessage = formatTelegramMessage(
+    parseJsonTradingViewAlert(edgePayload(
+      'ENTRY_FILL',
+      'VIXALE_EDGE:AAPL:60:LONG:1785254400000',
+      { side: 'LONG', stop: 121.2 }
+    )),
+    ''
+  );
+
+  assert.match(pendingShortMessage, /Stop Loss: <b>Close Over 103\.55<\/b>/);
+  assert.match(pendingLongMessage, /Stop Loss: <b>Close Under 121\.2<\/b>/);
+  assert.match(setupShortMessage, /🛑 Stop Loss: <b>Close Over 103\.55<\/b>/);
+  assert.match(fillLongMessage, /🛑 Stop Loss: <b>Close Under 121\.2<\/b>/);
+  for (const message of [pendingShortMessage, pendingLongMessage, setupShortMessage, fillLongMessage]) {
+    assert.doesNotMatch(message, /confirmed opposite signal|Stop Loss Ref|Stop Ref/);
+  }
+
   let lifecycle = createLifecycleContext();
 
   const filledId = 'VIXALE_EDGE:AAPL:60:LONG:1785254400000';
