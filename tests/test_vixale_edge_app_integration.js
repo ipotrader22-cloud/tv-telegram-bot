@@ -41,7 +41,10 @@ Module._load = function loadWithTestDoubles(request, parent, isMain) {
 const {
   parseJsonTradingViewAlert,
   processRecognizedTradingViewWebhookLifecycle,
+  handleTradingViewWebhookWithDependencies,
   shouldForwardToBridge,
+  publicExitLabel,
+  closedTradeExitDisplay,
 } = require('../app.js').__test;
 Module._load = originalLoad;
 
@@ -59,7 +62,7 @@ function createMockSheets() {
   };
   const ids = Object.fromEntries(Object.keys(rows).map((name, index) => [name, index + 1]));
   const namesById = Object.fromEntries(Object.entries(ids).map(([name, id]) => [id, name]));
-  const controls = { fail_trades_append: 0 };
+  const controls = { fail_trades_append: 0, fail_closed_append: 0 };
 
   function parseRange(range) {
     const [sheetName, cells = 'A:Z'] = range.split('!');
@@ -99,6 +102,10 @@ function createMockSheets() {
         if (sheetName === 'Trades' && controls.fail_trades_append > 0) {
           controls.fail_trades_append--;
           throw new Error('mock Trades append failure');
+        }
+        if (sheetName === 'Closed Trades' && controls.fail_closed_append > 0) {
+          controls.fail_closed_append--;
+          throw new Error('mock Closed Trades append failure');
         }
         for (const row of requestBody.values) rows[sheetName].push([...row]);
         const rowNumber = rows[sheetName].length;
@@ -161,6 +168,47 @@ function countRowsBySetupId(rows, rawColumn, setupId) {
     .length;
 }
 
+function countRowsByReconciliation(rows, rawColumn, reconciliationId, event) {
+  const normalizedEvent = event === 'CLOSE_STOP' ? 'CLOSE_STOP' : event;
+  return rows
+    .slice(1)
+    .filter(row => {
+      const raw = JSON.parse(row[rawColumn] || '{}');
+      return raw.reconciliation_id === reconciliationId &&
+        String(raw.event || '').toUpperCase() === normalizedEvent;
+    })
+    .length;
+}
+
+function countRowsBySetupEvent(rows, rawColumn, setupId, event) {
+  const normalizedEvent = String(event || '').toUpperCase();
+  return rows
+    .slice(1)
+    .filter(row => {
+      const raw = JSON.parse(row[rawColumn] || '{}');
+      return raw.setup_id === setupId &&
+        String(raw.event || '').toUpperCase() === normalizedEvent;
+    })
+    .length;
+}
+
+function createMockResponse() {
+  return {
+    sent: false,
+    statusCode: null,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    send(body) {
+      this.sent = true;
+      this.body = body;
+      return this;
+    },
+  };
+}
+
 async function run() {
   const sheets = createMockSheets();
   const telegram = [];
@@ -187,7 +235,7 @@ async function run() {
       },
     };
 
-    return async payload => {
+    const lifecycle = async payload => {
       const row = parseJsonTradingViewAlert(payload);
       return processRecognizedTradingViewWebhookLifecycle(
         payload,
@@ -197,6 +245,8 @@ async function run() {
         dependencies
       );
     };
+    lifecycle.dependencies = dependencies;
+    return lifecycle;
   };
   let lifecycle = createLifecycleContext();
 
@@ -479,6 +529,890 @@ async function run() {
   assert.strictEqual(
     concurrentBridge.filter(event => event === 'FILL').length,
     0
+  );
+
+  // Broker-confirmed manual/external close is persistent and idempotent.
+  const externalSheets = createMockSheets();
+  const externalTelegram = [];
+  const externalBridge = [];
+  let failExternalTelegram = true;
+  let externalLifecycle = createLifecycleContext({
+    sheetStore: externalSheets,
+    telegramStore: externalTelegram,
+    bridgeStore: externalBridge,
+    telegramSender: async message => {
+      if (message.includes('Vixale Edge closed manually') && failExternalTelegram) {
+        failExternalTelegram = false;
+        return { ok: false, description: 'mock manual-close Telegram failure' };
+      }
+      externalTelegram.push(message);
+      return { ok: true };
+    },
+  });
+  const externalId = 'VIXALE_EDGE:TSLA:60:LONG:1785280800000';
+  await externalLifecycle(edgePayload('PENDING_SETUP', externalId, {
+    symbol: 'TSLA',
+    flip_bar_time: 1785280800000,
+  }));
+  await externalLifecycle(edgePayload('ENTRY_FILL', externalId, {
+    symbol: 'TSLA',
+    flip_bar_time: 1785280800000,
+    render_forwarded_at: '2026-07-28T14:00:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+
+  const reconciliationId = `${externalId}:FLAT_NO_EXECUTION_HISTORY`;
+  const externalClose = edgePayload('EXTERNAL_CLOSE', externalId, {
+    source: 'IB_BRIDGE',
+    symbol: 'TSLA',
+    flip_bar_time: 1785280800000,
+    price: '',
+    qty: '',
+    render_forwarded_at: '2026-07-28T15:00:00-04:00',
+    ib_status: 'position_flat_reconciled',
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: 'FLAT_NO_EXECUTION_HISTORY',
+    reconciliation_id: reconciliationId,
+    exit_price_available: false,
+    exit_quantity_available: false,
+    reason: 'IB_POSITION_FLAT_EXTERNAL_EXECUTION',
+  });
+  await externalLifecycle({
+    ...externalClose,
+    broker_confirmed_flat: false,
+  });
+  await externalLifecycle({
+    ...externalClose,
+    source: 'TradingView',
+  });
+  assert.strictEqual(
+    countRowsBySetupId(externalSheets.rows['Open Positions'], 11, externalId),
+    1,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE cannot remove Open'
+  );
+  assert.strictEqual(
+    externalSheets.rows.Trades
+      .slice(1)
+      .filter(row => JSON.parse(row[10] || '{}').reconciliation_id === reconciliationId)
+      .length,
+    0,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE creates no Trades close'
+  );
+  assert.strictEqual(
+    externalSheets.rows['Closed Trades'].length,
+    1,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE creates no Closed row'
+  );
+  assert.strictEqual(
+    externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    0,
+    'unconfirmed or non-bridge EXTERNAL_CLOSE sends no Telegram'
+  );
+  await assert.rejects(
+    externalLifecycle(externalClose),
+    error => error.retryable === true
+  );
+  const recoveredExternal = await externalLifecycle(externalClose);
+  const duplicateExternal = await externalLifecycle(externalClose);
+  assert.strictEqual(recoveredExternal.finalRow.status, 'external_close_publication_complete');
+  assert.strictEqual(duplicateExternal.finalRow.status, 'ignored_duplicate_external_close');
+  assert.strictEqual(
+    countRowsBySetupId(externalSheets.rows['Open Positions'], 11, externalId),
+    0,
+    'EXTERNAL_CLOSE removes the exact Edge Open row'
+  );
+  assert.strictEqual(
+    externalSheets.rows.Trades
+      .slice(1)
+      .filter(row => JSON.parse(row[10] || '{}').reconciliation_id === reconciliationId)
+      .length,
+    1,
+    'duplicate EXTERNAL_CLOSE creates one Trades close row'
+  );
+  assert.strictEqual(
+    externalSheets.rows['Closed Trades']
+      .slice(1)
+      .filter(row => JSON.parse(row[11] || '{}').reconciliation_id === reconciliationId)
+      .length,
+    1,
+    'duplicate EXTERNAL_CLOSE creates one Closed row'
+  );
+  const manualClosedRow = externalSheets.rows['Closed Trades'][1];
+  assert.strictEqual(manualClosedRow[6], '', 'price-unavailable manual close stores no exit price');
+  assert.strictEqual(manualClosedRow[8], '', 'manual close stores no invented P&L');
+  assert.strictEqual(manualClosedRow[9], 'Manual Close');
+  assert.strictEqual(publicExitLabel('EXTERNAL_CLOSE'), 'Manual Close');
+  assert.strictEqual(
+    closedTradeExitDisplay({ event: 'Manual Close', exit: '' }),
+    'Manual Close — price unavailable'
+  );
+  assert.strictEqual(
+    externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    1,
+    'duplicate EXTERNAL_CLOSE sends one manual-close Telegram'
+  );
+  assert.ok(
+    externalTelegram.some(message => message.includes('Manual Close — price unavailable')),
+    `price-unavailable manual close is explicit: ${JSON.stringify(externalTelegram)}`
+  );
+  assert.strictEqual(
+    externalBridge.filter(event => event === 'EXTERNAL_CLOSE').length,
+    0,
+    'EXTERNAL_CLOSE callback never forwards to bridge'
+  );
+
+  externalLifecycle = createLifecycleContext({
+    sheetStore: externalSheets,
+    telegramStore: externalTelegram,
+    bridgeStore: externalBridge,
+  });
+  const restartExternalDuplicate = await externalLifecycle(externalClose);
+  assert.strictEqual(
+    restartExternalDuplicate.finalRow.status,
+    'ignored_duplicate_external_close',
+    'persistent Sheets state rejects EXTERNAL_CLOSE after lifecycle recreation'
+  );
+  assert.strictEqual(
+    externalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    1
+  );
+
+  // Manual close with an actual IB execution preserves price/qty but never P&L.
+  const actualExternalSheets = createMockSheets();
+  const actualExternalTelegram = [];
+  const actualExternalBridge = [];
+  const actualExternalLifecycle = createLifecycleContext({
+    sheetStore: actualExternalSheets,
+    telegramStore: actualExternalTelegram,
+    bridgeStore: actualExternalBridge,
+  });
+  const actualExternalId = 'VIXALE_EDGE:META:60:LONG:1785284400000';
+  await actualExternalLifecycle(edgePayload('PENDING_SETUP', actualExternalId, {
+    symbol: 'META',
+    flip_bar_time: 1785284400000,
+  }));
+  await actualExternalLifecycle(edgePayload('ENTRY_FILL', actualExternalId, {
+    symbol: 'META',
+    flip_bar_time: 1785284400000,
+    render_forwarded_at: '2026-07-28T15:10:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const actualReconciliationId = `${actualExternalId}:EXEC:MANUAL-META-1`;
+  const actualExternalResult = await actualExternalLifecycle(
+    edgePayload('EXTERNAL_CLOSE', actualExternalId, {
+      source: 'IB_BRIDGE',
+      symbol: 'META',
+      flip_bar_time: 1785284400000,
+      price: 130.25,
+      qty: 7,
+      result: 999,
+      pnl: 999,
+      result_pct: 88,
+      pnl_pct: 88,
+      render_forwarded_at: '2026-07-28T15:20:00-04:00',
+      ib_status: 'position_flat_reconciled',
+      broker_confirmed_flat: true,
+      position_after_close: 0,
+      exit_execution_id: 'EXEC:MANUAL-META-1',
+      reconciliation_id: actualReconciliationId,
+      exit_price_available: true,
+      exit_quantity_available: true,
+      reason: 'IB_POSITION_FLAT_EXTERNAL_EXECUTION',
+    })
+  );
+  assert.strictEqual(actualExternalResult.finalRow.result, '');
+  assert.strictEqual(actualExternalResult.finalRow.result_pct, '');
+  assert.strictEqual(
+    actualExternalSheets.rows.Trades
+      .slice(1)
+      .filter(row => JSON.parse(row[10] || '{}').reconciliation_id === actualReconciliationId)
+      .length,
+    1,
+    'actual-price EXTERNAL_CLOSE creates one Trades close'
+  );
+  const actualTradesClose = actualExternalSheets.rows.Trades
+    .slice(1)
+    .find(row => JSON.parse(row[10] || '{}').reconciliation_id === actualReconciliationId);
+  assert.strictEqual(actualTradesClose[5], 7, 'actual exit quantity is preserved in Trades');
+  assert.strictEqual(actualTradesClose[6], 130.25, 'actual exit price is preserved in Trades');
+  assert.strictEqual(actualTradesClose[8], '', 'Trades stores no Manual Close P&L');
+  assert.strictEqual(
+    actualExternalSheets.rows['Closed Trades'].length,
+    2,
+    'actual-price EXTERNAL_CLOSE creates one Closed row'
+  );
+  const actualClosed = actualExternalSheets.rows['Closed Trades'][1];
+  assert.strictEqual(actualClosed[6], 130.25, 'actual exit price is preserved in Closed Trades');
+  assert.strictEqual(actualClosed[7], 7, 'actual exit quantity is preserved in Closed Trades');
+  assert.strictEqual(actualClosed[8], '', 'Closed Trades stores no Manual Close P&L');
+  const actualCloseRaw = JSON.parse(actualClosed[11] || '{}');
+  assert.strictEqual(actualCloseRaw.result, '');
+  assert.strictEqual(actualCloseRaw.result_pct, '');
+  assert.strictEqual(actualCloseRaw.pnl, '');
+  assert.strictEqual(actualCloseRaw.pnl_pct, '');
+  assert.strictEqual(
+    actualExternalTelegram.filter(message => message.includes('Vixale Edge closed manually')).length,
+    1,
+    'actual-price EXTERNAL_CLOSE sends one Manual Close Telegram'
+  );
+  assert.ok(
+    actualExternalTelegram.some(message => message.includes('Manual Close: <b>130.25</b>')),
+    `actual execution price appears in Manual Close Telegram: ${JSON.stringify(actualExternalTelegram)}`
+  );
+  assert.ok(
+    actualExternalTelegram.every(message => !message.includes('999') && !message.includes('88')),
+    'supplied callback P&L is ignored'
+  );
+  assert.strictEqual(
+    actualExternalBridge.filter(event => event === 'EXTERNAL_CLOSE').length,
+    0,
+    'actual-price EXTERNAL_CLOSE never forwards to bridge'
+  );
+
+  // Partial target plus an attributed manual remainder is one full-size
+  // Manual Close, is restart-idempotent, and never calculates P&L.
+  const mixedManualSheets = createMockSheets();
+  const mixedManualTelegram = [];
+  const mixedManualBridge = [];
+  let mixedManualLifecycle = createLifecycleContext({
+    sheetStore: mixedManualSheets,
+    telegramStore: mixedManualTelegram,
+    bridgeStore: mixedManualBridge,
+  });
+  const mixedManualSetupId = 'VIXALE_EDGE:AMD:60:LONG:1785288000000';
+  await mixedManualLifecycle(edgePayload('PENDING_SETUP', mixedManualSetupId, {
+    symbol: 'AMD',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785288000000,
+  }));
+  await mixedManualLifecycle(edgePayload('ENTRY_FILL', mixedManualSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'AMD',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785288000000,
+    render_forwarded_at: '2026-07-28T15:20:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const mixedManualExecutionId = 'EXEC:MANUAL-AMD-7,TARGET-AMD-3';
+  const mixedManualReconciliationId =
+    `${mixedManualSetupId}:${mixedManualExecutionId}`;
+  const mixedManualExit = edgePayload('EXTERNAL_CLOSE', mixedManualSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'AMD',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785288000000,
+    price: 100.8,
+    qty: 10,
+    result: 500,
+    result_pct: 50,
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: mixedManualExecutionId,
+    reconciliation_id: mixedManualReconciliationId,
+    exit_price_available: true,
+    exit_quantity_available: true,
+    reason: 'IB_MANUAL_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED',
+    original_position_qty: 10,
+    target_partial_filled_qty: 3,
+    target_partial_fill_price: 105,
+    target_partial_exec_ids: ['TARGET-AMD-3'],
+    external_close_filled_qty: 7,
+    external_close_fill_price: 99,
+    external_close_exec_ids: ['MANUAL-AMD-7'],
+    mixed_exit_weighted_price: 100.8,
+    mixed_exit_total_qty: 10,
+    mixed_exit_exec_ids: ['MANUAL-AMD-7', 'TARGET-AMD-3'],
+    mixed_exit_evidence_complete: true,
+  });
+  const mixedManualResult = await mixedManualLifecycle(mixedManualExit);
+  assert.strictEqual(
+    mixedManualResult.finalRow.status,
+    'external_close_publication_complete'
+  );
+  assert.strictEqual(mixedManualResult.finalRow.result, '');
+  assert.strictEqual(mixedManualResult.finalRow.result_pct, '');
+  const mixedManualTrade = mixedManualSheets.rows.Trades
+    .slice(1)
+    .find(row => JSON.parse(row[10] || '{}').reconciliation_id ===
+      mixedManualReconciliationId);
+  const mixedManualClosed = mixedManualSheets.rows['Closed Trades']
+    .slice(1)
+    .find(row => JSON.parse(row[11] || '{}').reconciliation_id ===
+      mixedManualReconciliationId);
+  assert.strictEqual(mixedManualTrade[5], 10);
+  assert.strictEqual(mixedManualTrade[6], 100.8);
+  assert.strictEqual(mixedManualTrade[8], '');
+  assert.strictEqual(mixedManualClosed[7], 10);
+  assert.strictEqual(mixedManualClosed[6], 100.8);
+  assert.strictEqual(mixedManualClosed[8], '');
+  assert.strictEqual(
+    mixedManualTelegram.filter(
+      message => message.includes('Vixale Edge closed manually')
+    ).length,
+    1
+  );
+  assert.strictEqual(mixedManualBridge.length, 0);
+  const mixedManualActivity = {
+    trades: mixedManualSheets.rows.Trades.length,
+    closed: mixedManualSheets.rows['Closed Trades'].length,
+    telegram: mixedManualTelegram.length,
+    bridge: mixedManualBridge.length,
+  };
+  mixedManualLifecycle = createLifecycleContext({
+    sheetStore: mixedManualSheets,
+    telegramStore: mixedManualTelegram,
+    bridgeStore: mixedManualBridge,
+  });
+  const duplicateMixedManual = await mixedManualLifecycle(mixedManualExit);
+  assert.strictEqual(
+    duplicateMixedManual.finalRow.status,
+    'ignored_duplicate_external_close'
+  );
+  assert.deepStrictEqual({
+    trades: mixedManualSheets.rows.Trades.length,
+    closed: mixedManualSheets.rows['Closed Trades'].length,
+    telegram: mixedManualTelegram.length,
+    bridge: mixedManualBridge.length,
+  }, mixedManualActivity, 'mixed Manual Close retry after restart is ignored');
+
+  // Broker-confirmed TP publication is synchronous, repairable, and persistent.
+  const tpSheets = createMockSheets();
+  const tpTelegram = [];
+  const tpBridge = [];
+  let failTargetTelegram = true;
+  let tpLifecycle = createLifecycleContext({
+    sheetStore: tpSheets,
+    telegramStore: tpTelegram,
+    bridgeStore: tpBridge,
+    telegramSender: async message => {
+      if (message.includes('Vixale Edge hit target') && failTargetTelegram) {
+        failTargetTelegram = false;
+        return { ok: false, description: 'mock Edge TP Telegram failure' };
+      }
+      tpTelegram.push(message);
+      return { ok: true };
+    },
+  });
+  const tpSetupId = 'VIXALE_EDGE:GOOG:60:LONG:1785288000000';
+  await tpLifecycle(edgePayload('PENDING_SETUP', tpSetupId, {
+    symbol: 'GOOG',
+    flip_bar_time: 1785288000000,
+  }));
+  await tpLifecycle(edgePayload('ENTRY_FILL', tpSetupId, {
+    symbol: 'GOOG',
+    flip_bar_time: 1785288000000,
+    source: 'IB_BRIDGE',
+    render_forwarded_at: '2026-07-28T15:30:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const tpReconciliationId = `${tpSetupId}:EXEC:TP-GOOG-1`;
+  const tpExit = edgePayload('TP', tpSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'GOOG',
+    flip_bar_time: 1785288000000,
+    price: 127.8,
+    qty: 10,
+    ib_target_status: 'Filled',
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: 'EXEC:TP-GOOG-1',
+    reconciliation_id: tpReconciliationId,
+    reason: 'IB_TARGET_EXECUTION_CONFIRMED',
+  });
+  await tpLifecycle({ ...tpExit, source: 'TradingView' });
+  await tpLifecycle({ ...tpExit, exit_execution_id: '' });
+  assert.strictEqual(
+    countRowsBySetupId(tpSheets.rows['Open Positions'], 11, tpSetupId),
+    1,
+    'non-bridge or identity-free TP callback cannot remove Open'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(tpSheets.rows.Trades, 10, tpReconciliationId, 'TP'),
+    0,
+    'invalid TP callback creates no Trades exit'
+  );
+  const tpFailureResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: tpExit },
+    tpFailureResponse,
+    tpLifecycle.dependencies
+  );
+  assert.strictEqual(tpFailureResponse.statusCode, 503);
+  assert.strictEqual(tpFailureResponse.body, 'RETRY');
+  assert.strictEqual(
+    countRowsBySetupId(tpSheets.rows['Open Positions'], 11, tpSetupId),
+    0,
+    'TP Telegram failure retains the completed Open removal component'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(tpSheets.rows.Trades, 10, tpReconciliationId, 'TP'),
+    1,
+    'TP Telegram failure writes one Trades exit'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(tpSheets.rows['Closed Trades'], 11, tpReconciliationId, 'TP'),
+    1,
+    'TP Telegram failure writes one Closed Trade'
+  );
+  const recoveredTp = await tpLifecycle(tpExit);
+  assert.strictEqual(recoveredTp.finalRow.status, 'edge_broker_exit_publication_complete');
+  assert.strictEqual(
+    tpTelegram.filter(message => message.includes('Vixale Edge hit target')).length,
+    1,
+    'TP retry publishes one successful Telegram target'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(tpSheets.rows.Trades, 10, tpReconciliationId, 'TP'),
+    1,
+    'TP retry does not duplicate Trades'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(tpSheets.rows['Closed Trades'], 11, tpReconciliationId, 'TP'),
+    1,
+    'TP retry does not duplicate Closed Trades'
+  );
+  tpLifecycle = createLifecycleContext({
+    sheetStore: tpSheets,
+    telegramStore: tpTelegram,
+    bridgeStore: tpBridge,
+  });
+  const duplicateTp = await tpLifecycle(tpExit);
+  assert.strictEqual(duplicateTp.finalRow.status, 'ignored_duplicate_edge_broker_exit');
+  assert.strictEqual(
+    tpTelegram.filter(message => message.includes('Vixale Edge hit target')).length,
+    1,
+    'completed TP duplicate after lifecycle recreation is ignored'
+  );
+  assert.strictEqual(
+    tpBridge.filter(event => event === 'TP').length,
+    0,
+    'TP callback never forwards to bridge'
+  );
+
+  // Broker-confirmed CLOSE_STOP repairs a retryable Sheets failure without duplicates.
+  const stopSheets = createMockSheets();
+  const stopTelegram = [];
+  const stopBridge = [];
+  let stopLifecycle = createLifecycleContext({
+    sheetStore: stopSheets,
+    telegramStore: stopTelegram,
+    bridgeStore: stopBridge,
+  });
+  const stopSetupId = 'VIXALE_EDGE:AMZN:60:LONG:1785291600000';
+  await stopLifecycle(edgePayload('PENDING_SETUP', stopSetupId, {
+    symbol: 'AMZN',
+    flip_bar_time: 1785291600000,
+  }));
+  await stopLifecycle(edgePayload('ENTRY_FILL', stopSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'AMZN',
+    flip_bar_time: 1785291600000,
+    render_forwarded_at: '2026-07-28T15:35:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const stopReconciliationId = `${stopSetupId}:EXEC:STOP-AMZN-1`;
+  const stopExit = edgePayload('CLOSE_STOP', stopSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'AMZN',
+    flip_bar_time: 1785291600000,
+    price: 121.1,
+    qty: 10,
+    ib_close_status: 'Filled',
+    close_filled: true,
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: 'EXEC:STOP-AMZN-1',
+    reconciliation_id: stopReconciliationId,
+    reason: 'IB_STOP_CLOSE_EXECUTION_CONFIRMED',
+  });
+  stopSheets.controls.fail_closed_append = 1;
+  const stopFailureResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: stopExit },
+    stopFailureResponse,
+    stopLifecycle.dependencies
+  );
+  assert.strictEqual(stopFailureResponse.statusCode, 503);
+  assert.strictEqual(stopFailureResponse.body, 'RETRY');
+  assert.strictEqual(
+    countRowsBySetupId(stopSheets.rows['Open Positions'], 11, stopSetupId),
+    1,
+    'CLOSE_STOP Sheets failure keeps the Open row for repair'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      stopSheets.rows.Trades,
+      10,
+      stopReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'CLOSE_STOP partial failure preserves the already-written Trades exit'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      stopSheets.rows['Closed Trades'],
+      11,
+      stopReconciliationId,
+      'CLOSE_STOP'
+    ),
+    0,
+    'CLOSE_STOP partial failure leaves only the missing Closed Trade to repair'
+  );
+  const recoveredStop = await stopLifecycle(stopExit);
+  assert.strictEqual(recoveredStop.finalRow.status, 'edge_broker_exit_publication_complete');
+  assert.strictEqual(
+    countRowsByReconciliation(
+      stopSheets.rows.Trades,
+      10,
+      stopReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'CLOSE_STOP retry writes one Trades exit'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      stopSheets.rows['Closed Trades'],
+      11,
+      stopReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'CLOSE_STOP retry writes one Closed Trade'
+  );
+  assert.strictEqual(
+    stopTelegram.filter(message => message.includes('Vixale Edge hit Stop Loss')).length,
+    1,
+    'CLOSE_STOP retry publishes one Stop Loss Telegram'
+  );
+  stopLifecycle = createLifecycleContext({
+    sheetStore: stopSheets,
+    telegramStore: stopTelegram,
+    bridgeStore: stopBridge,
+  });
+  const duplicateStop = await stopLifecycle(stopExit);
+  assert.strictEqual(duplicateStop.finalRow.status, 'ignored_duplicate_edge_broker_exit');
+  assert.strictEqual(
+    stopTelegram.filter(message => message.includes('Vixale Edge hit Stop Loss')).length,
+    1,
+    'completed CLOSE_STOP duplicate after lifecycle recreation is ignored'
+  );
+  assert.strictEqual(
+    stopBridge.filter(event => event === 'SL').length,
+    0,
+    'CLOSE_STOP callback never forwards to bridge'
+  );
+
+  // A partial target plus Stop Loss publishes one full-size weighted close.
+  const mixedSheets = createMockSheets();
+  const mixedTelegram = [];
+  const mixedBridge = [];
+  let mixedLifecycle = createLifecycleContext({
+    sheetStore: mixedSheets,
+    telegramStore: mixedTelegram,
+    bridgeStore: mixedBridge,
+  });
+  const mixedSetupId = 'VIXALE_EDGE:META:60:LONG:1785293400000';
+  await mixedLifecycle(edgePayload('PENDING_SETUP', mixedSetupId, {
+    symbol: 'META',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785293400000,
+  }));
+  await mixedLifecycle(edgePayload('ENTRY_FILL', mixedSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'META',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785293400000,
+    render_forwarded_at: '2026-07-28T15:38:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const mixedExecutionId = 'EXEC:STOP-META-2,STOP-META-5,TARGET-META-3';
+  const mixedReconciliationId = `${mixedSetupId}:${mixedExecutionId}`;
+  const mixedExit = edgePayload('CLOSE_STOP', mixedSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'META',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785293400000,
+    price: 99.6,
+    qty: 10,
+    ib_close_status: 'Filled',
+    close_filled: true,
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: mixedExecutionId,
+    reconciliation_id: mixedReconciliationId,
+    reason: 'IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED',
+    original_position_qty: 10,
+    target_partial_filled_qty: 3,
+    target_partial_fill_price: 105,
+    target_partial_exec_ids: ['TARGET-META-3'],
+    expected_remaining_qty: 7,
+    confirmed_remaining_qty: 7,
+    stop_close_filled_qty: 7,
+    stop_close_fill_price: 97.2857,
+    stop_close_exec_ids: ['STOP-META-2', 'STOP-META-5'],
+    close_attempts: [
+      {
+        attempt: 1,
+        order_id: 3001,
+        perm_id: 33001,
+        order_ref: 'TVFVG_CLOSE_META_MULTI',
+        filled_qty: 2,
+        avg_fill_price: 98,
+        exec_ids: ['STOP-META-2'],
+      },
+      {
+        attempt: 2,
+        order_id: 3002,
+        perm_id: 33002,
+        order_ref: 'TVFVG_CLOSE_META_MULTI_2',
+        filled_qty: 5,
+        avg_fill_price: 97,
+        exec_ids: ['STOP-META-5'],
+      },
+    ],
+    mixed_exit_weighted_price: 99.6,
+    mixed_exit_total_qty: 10,
+    mixed_exit_exec_ids: ['STOP-META-2', 'STOP-META-5', 'TARGET-META-3'],
+    mixed_exit_evidence_complete: true,
+  });
+  const mixedResult = await mixedLifecycle(mixedExit);
+  assert.strictEqual(
+    mixedResult.finalRow.status,
+    'edge_broker_exit_publication_complete'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      mixedSheets.rows.Trades,
+      10,
+      mixedReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'mixed exit writes one final Trades CLOSE_STOP'
+  );
+  assert.strictEqual(
+    countRowsByReconciliation(
+      mixedSheets.rows['Closed Trades'],
+      11,
+      mixedReconciliationId,
+      'CLOSE_STOP'
+    ),
+    1,
+    'mixed exit writes one final Closed Trades CLOSE_STOP'
+  );
+  const mixedTradesClose = mixedSheets.rows.Trades
+    .slice(1)
+    .find(row => JSON.parse(row[10] || '{}').reconciliation_id === mixedReconciliationId);
+  const mixedClosed = mixedSheets.rows['Closed Trades']
+    .slice(1)
+    .find(row => JSON.parse(row[11] || '{}').reconciliation_id === mixedReconciliationId);
+  assert.strictEqual(mixedTradesClose[5], 10, 'mixed Trades close uses full original qty');
+  assert.strictEqual(mixedTradesClose[6], 99.6, 'mixed Trades close uses weighted exit');
+  assert.strictEqual(mixedClosed[7], 10, 'mixed Closed Trade uses full original qty');
+  assert.strictEqual(mixedClosed[6], 99.6, 'mixed Closed Trade uses weighted exit');
+  const mixedTradesRaw = JSON.parse(mixedTradesClose[10] || '{}');
+  const mixedClosedRaw = JSON.parse(mixedClosed[11] || '{}');
+  for (const raw of [mixedTradesRaw, mixedClosedRaw]) {
+    assert.deepStrictEqual(
+      raw.target_partial_exec_ids,
+      ['TARGET-META-3'],
+      'mixed raw JSON preserves target execution IDs'
+    );
+    assert.deepStrictEqual(
+      raw.stop_close_exec_ids,
+      ['STOP-META-2', 'STOP-META-5'],
+      'mixed raw JSON preserves Stop Loss execution IDs'
+    );
+    assert.deepStrictEqual(
+      raw.mixed_exit_exec_ids,
+      ['STOP-META-2', 'STOP-META-5', 'TARGET-META-3'],
+      'mixed raw JSON preserves all component execution IDs'
+    );
+    assert.strictEqual(raw.target_partial_filled_qty, 3);
+    assert.strictEqual(raw.target_partial_fill_price, 105);
+    assert.strictEqual(raw.stop_close_filled_qty, 7);
+    assert.strictEqual(raw.stop_close_fill_price, 97.2857);
+    assert.strictEqual(raw.close_attempts.length, 2);
+  }
+  assert.strictEqual(
+    mixedTelegram.filter(message => message.includes('Vixale Edge hit Stop Loss')).length,
+    1,
+    'mixed exit sends one Stop Loss Telegram'
+  );
+  assert.strictEqual(
+    countRowsBySetupEvent(mixedSheets.rows.Trades, 10, mixedSetupId, 'TP'),
+    0,
+    'partial target creates no standalone TP row'
+  );
+  assert.strictEqual(
+    mixedBridge.filter(event => event === 'CLOSE_STOP').length,
+    0,
+    'broker-confirmed mixed close never forwards back to bridge'
+  );
+  const mixedActivity = {
+    trades: mixedSheets.rows.Trades.length,
+    closed: mixedSheets.rows['Closed Trades'].length,
+    telegram: mixedTelegram.length,
+    bridge: mixedBridge.length,
+  };
+  mixedLifecycle = createLifecycleContext({
+    sheetStore: mixedSheets,
+    telegramStore: mixedTelegram,
+    bridgeStore: mixedBridge,
+  });
+  const duplicateMixed = await mixedLifecycle(mixedExit);
+  assert.strictEqual(
+    duplicateMixed.finalRow.status,
+    'ignored_duplicate_edge_broker_exit'
+  );
+  assert.deepStrictEqual({
+    trades: mixedSheets.rows.Trades.length,
+    closed: mixedSheets.rows['Closed Trades'].length,
+    telegram: mixedTelegram.length,
+    bridge: mixedBridge.length,
+  }, mixedActivity, 'mixed close retry after restart creates no duplicates');
+
+  // The HTTP route cannot send final 200 before Edge exit publication completes.
+  const routeSheets = createMockSheets();
+  const routeTelegram = [];
+  const routeBridge = [];
+  const routeLifecycle = createLifecycleContext({
+    sheetStore: routeSheets,
+    telegramStore: routeTelegram,
+    bridgeStore: routeBridge,
+  });
+  const routeSetupId = 'VIXALE_EDGE:NFLX:60:LONG:1785295200000';
+  await routeLifecycle(edgePayload('PENDING_SETUP', routeSetupId, {
+    symbol: 'NFLX',
+    flip_bar_time: 1785295200000,
+  }));
+  await routeLifecycle(edgePayload('ENTRY_FILL', routeSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'NFLX',
+    flip_bar_time: 1785295200000,
+    render_forwarded_at: '2026-07-28T15:40:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const routeReconciliationId = `${routeSetupId}:EXEC:TP-NFLX-1`;
+  const routeExit = edgePayload('TP', routeSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'NFLX',
+    flip_bar_time: 1785295200000,
+    price: 127.8,
+    qty: 10,
+    ib_target_status: 'Filled',
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: 'EXEC:TP-NFLX-1',
+    reconciliation_id: routeReconciliationId,
+  });
+  let releaseRouteTelegram;
+  let routeTelegramStarted;
+  const routeTelegramGate = new Promise(resolve => {
+    releaseRouteTelegram = resolve;
+  });
+  const routeTelegramStart = new Promise(resolve => {
+    routeTelegramStarted = resolve;
+  });
+  const routeResponse = {
+    sent: false,
+    statusCode: null,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    send(body) {
+      this.sent = true;
+      this.body = body;
+      return this;
+    },
+  };
+  const routePromise = handleTradingViewWebhookWithDependencies(
+    { body: routeExit },
+    routeResponse,
+    {
+      sheets: routeSheets,
+      sendTelegram: async message => {
+        if (message.includes('Vixale Edge hit target')) {
+          routeTelegramStarted();
+          await routeTelegramGate;
+        }
+        routeTelegram.push(message);
+        return { ok: true };
+      },
+      forwardToBridge: async (body, row) => {
+        const decision = shouldForwardToBridge(body, row);
+        if (decision.ok) routeBridge.push(row.event);
+        return { forwarded: decision.ok, skipped: !decision.ok };
+      },
+    }
+  );
+  await routeTelegramStart;
+  let routeDuplicateSettled = false;
+  const routeDuplicate = routeLifecycle(routeExit).then(result => {
+    routeDuplicateSettled = true;
+    return result;
+  });
+  await Promise.resolve();
+  assert.strictEqual(
+    routeResponse.sent,
+    false,
+    'Render does not send final 200 while Telegram publication is pending'
+  );
+  assert.strictEqual(
+    routeDuplicateSettled,
+    false,
+    'concurrent Edge exit callback awaits the same in-flight publication'
+  );
+  releaseRouteTelegram();
+  const [, routeDuplicateResult] = await Promise.all([
+    routePromise,
+    routeDuplicate,
+  ]);
+  assert.strictEqual(routeResponse.statusCode, 200);
+  assert.strictEqual(routeResponse.body, 'OK');
+  assert.strictEqual(
+    routeDuplicateResult.finalRow.status,
+    'edge_broker_exit_publication_complete'
+  );
+  assert.strictEqual(
+    routeTelegram.filter(message => message.includes('Vixale Edge hit target')).length,
+    1,
+    'concurrent Edge exit callbacks publish one Telegram message'
+  );
+  assert.strictEqual(
+    JSON.parse(routeSheets.rows.Trades.at(-1)[10]).edge_exit_publication_complete,
+    true,
+    'route 200 follows persistent publication completion'
   );
 
   console.log('Vixale Edge app lifecycle integration: mocked Sheets, Telegram, and bridge checks passed');
