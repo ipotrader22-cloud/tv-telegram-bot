@@ -179,6 +179,34 @@ An already-open Edge position is not closed at EOD. Its attached ATR target uses
 `eod_policy=NO_EOD_CLOSE`. There is no Edge Pine EOD-close option or next-day
 position reset.
 
+Part 3B distinguishes ordinary and closing-bar Stop Loss signals:
+
+```text
+confirmed RTH flip with time_close < 16:00 ET
+-> close_execution_policy=IMMEDIATE_RTH
+-> bridge runs the existing Part 3A close sequence immediately
+
+confirmed flip on the bar whose time_close reaches 16:00 ET
+-> close_execution_policy=NEXT_RTH_OPEN
+-> signal_at_rth_close=true
+-> durable QUEUED_NEXT_RTH_OPEN bridge reservation
+-> no target cancellation or close order that day
+-> scheduler resumes at the next IB-confirmed stock RTH session
+```
+
+The queued payload retains the exact `setup_id`, `signal_session_date`, and
+`signal_bar_time`, with reason `STOP_LOSS_SIGNAL_AT_RTH_CLOSE`. Pine emits it
+once per active setup and closing bar, creates no opposite pending setup, and
+does not cancel the active GTC target. Pending-only
+`UNFILLED_BY_MARKET_CLOSE` cancellation remains unchanged.
+
+For Strategy Tester parity, `process_orders_on_close=false`; ordinary pre-close
+Stop Loss calls use `immediately=true`, while the closing-bar market exit is
+submitted without immediate fill so the broker emulator fills it on the next
+available bar open. This is a bar-based emulator approximation: it cannot model
+the bridge's IB holiday/session verification, overnight target race, or exact
+TWS execution price.
+
 Telegram lifecycle:
 
 ```text
@@ -626,6 +654,60 @@ Render. A Filled close with a non-flat position is persisted as
 `position_after_close`; managed state remains for recovery, and neither
 `CLOSE_STOP` nor `RECONCILE_FLAT` is published.
 
+A v2 Edge closing-bar `CLOSE_STOP` is recognized only when all of these fields
+agree:
+
+```json
+{
+  "close_execution_policy": "NEXT_RTH_OPEN",
+  "signal_at_rth_close": true,
+  "signal_session_date": "YYYY-MM-DD",
+  "signal_bar_time": 0
+}
+```
+
+The bridge persists it as `QUEUED_NEXT_RTH_OPEN`, including the exact setup,
+deterministic reservation, original payload, signal date/bar, queue timestamp,
+and exact managed-target identity. The attempt remains zero until eligibility
+is proven. A duplicate reuses the same reservation; a stale setup is rejected.
+The webhook performs no target cancellation, market order, replacement,
+managed-state clear, or Render callback. Render/Sheets/Telegram/dashboard stay
+open until a later broker-confirmed callback completes the existing
+execution-first lifecycle.
+
+Scheduler eligibility for a queued close requires all of:
+
+1. the current New York date is later than `signal_session_date`;
+2. the current wall clock is inside stock RTH;
+3. the exact managed `setup_id` still matches after acquiring the shared close
+   lock and reloading the managed file;
+4. authoritative broker position/history evidence is available;
+5. the managed target has an exact, unambiguous identity; and
+6. IB contract details report one liquid-hours interval containing the current
+   time.
+
+Weekday/RTH wall-clock checks alone are insufficient. Missing, closed/holiday,
+unsupported, or ambiguous IB contract-session evidence returns
+`EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED` and leaves the GTC target working.
+Before the next date or outside RTH, recovery returns
+`EDGE_STOP_QUEUED_NEXT_RTH_OPEN`. Once eligible, the reservation becomes
+`RESERVED`, consumes attempt one, and reuses the existing Part 3A exact-target
+cancellation, position synchronization, market-close, fill, broker-flat, and
+publication path.
+
+Overnight outcomes are resolved before any queued Stop Loss order:
+
+- exact target fill plus broker flat uses existing TP reconciliation;
+- external/manual broker flat uses existing Manual Close reconciliation with
+  blank P&L;
+- a still-open matching position enters Part 3A on the first safe confirmed
+  next-RTH scheduler pass;
+- setup, side, position, target, or history conflicts remain non-mutating and
+  persist an ambiguous/conflict state for manual review.
+
+The managed queue survives bridge restart and the scheduler does not require a
+repeated TradingView alert.
+
 Every payload-version-2 Edge `CLOSE_STOP` uses a setup-scoped persistent close
 reservation before broker activity. The incoming `setup_id` must exactly match
 the active managed Edge row; a stale setup returns
@@ -706,6 +788,7 @@ Recovery states are deliberately separated:
 
 ```text
 Broker action (RTH + shared lock only):
+QUEUED_NEXT_RTH_OPEN (promotion only after next-date IB session confirmation)
 RESERVED
 TARGET_CANCEL_PENDING
 TARGET_CANCEL_UNCONFIRMED
@@ -1402,6 +1485,29 @@ no CLOSE_STOP or RECONCILE_FLAT is published while non-flat
 Prime reversal and EOD behavior remain unchanged
 ```
 
+### Vixale Edge 16:00 ET queued Stop Loss
+
+```text
+closing-bar flip emits one v2 NEXT_RTH_OPEN payload per setup + signal bar
+payload retains setup_id, signal_session_date, and signal_bar_time
+closing-bar signal creates no opposite Pending setup
+active GTC target is not canceled by Pine or the queue webhook
+queue reservation is durable before webhook acknowledgement
+duplicate queue payload reuses the same reservation and attempt remains zero
+restart recovery needs no repeated TradingView alert
+same-date and outside-RTH passes submit no order
+holiday, missing, unsupported, or ambiguous IB liquid-hours evidence fails closed
+next-date wall clock alone is never sufficient
+shared lock reloads and revalidates the exact setup before promotion
+eligible queue promotes once into the existing Part 3A close sequence
+overnight target-flat resolves through TP with no Stop Loss order
+overnight external-flat resolves through Manual Close with no Stop Loss order
+side/setup/evidence conflict submits no order
+no public close occurs until broker-confirmed Render callback publication
+Strategy Tester ordinary stops fill immediately; 16:00 queue fills next bar open
+Prime/Shrek behavior remains unchanged
+```
+
 ### EOD
 
 ```text
@@ -1644,10 +1750,45 @@ isolation and durable execution identity keep TWS as the source of truth.
 **Schema impact:** None. Bridge identity remains in the managed-position JSON;
 Render component and completion markers remain in existing raw JSON cells.
 
-**Activation dependency:** This is Part 3A only. The queued 16:00 Vixale Edge
-Stop Loss remains Part 3B and is not implemented here. Vixale Edge 1.1
-TradingView alerts must remain inactive until Part 3B is completed, reviewed,
-and explicitly approved. Existing Fiona alerts are not removed by Part 3A.
+**Activation dependency:** Part 3A remains the broker-close foundation. Part
+3B implements the queued 16:00 Vixale Edge Stop Loss in source, but source
+completion is separate from deployment and activation. Vixale Edge 1.1
+TradingView alerts must remain inactive until Part 3B is reviewed, merged,
+locally deployed, verified, and explicitly approved. Existing Fiona alerts are
+not removed by this source patch.
+
+### ADR-014 â€” Vixale Edge 16:00 signal queues for the next confirmed RTH
+
+**Decision:** A confirmed Vixale Edge opposite flip on the bar closing at
+16:00 `America/New_York` sends one v2 `CLOSE_STOP` with
+`close_execution_policy=NEXT_RTH_OPEN`. The bridge persists
+`QUEUED_NEXT_RTH_OPEN` without broker mutation and automatically resumes it
+only on a later New York date, inside stock RTH, after authoritative
+position/target evidence and IB contract liquid-hours confirmation. It then
+reuses the complete Part 3A Stop Loss lifecycle. The GTC target remains active
+overnight and wins through TP reconciliation if it fills first; an external
+flat wins through Manual Close reconciliation. No queued signal changes public
+state.
+
+**Reason:** A market order created on the 16:00 closing bar must not be held
+blindly across a weekend/holiday or race an overnight GTC target. Durable queue
+identity, exact setup locking, and broker-session evidence preserve
+execution-first behavior without implementing a second close path.
+
+**Pine emulator note:** `process_orders_on_close=false`, immediate pre-16:00
+stops use `immediately=true`, and the closing-bar tester exit fills on the next
+available bar open. Bar-based results cannot reproduce IB session-detail
+failures or exact overnight execution ordering.
+
+**Schema impact:** None. Queue state is stored only in existing managed-position
+JSON. No `app.js`, route, Google Sheets column, or public ledger contract
+changes.
+
+**Deployment/activation status:** Part 3B implementation is complete in source
+only when its feature PR is reviewed and merged. That is separate from local
+bridge deployment and TradingView alert activation. This change does not
+deploy/restart `C:\ib_bridge\ib_bridge.py`, activate Vixale Edge 1.1 alerts, or
+remove existing Fiona alerts.
 
 ---
 

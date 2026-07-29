@@ -83,6 +83,56 @@ sim.eod();
 assert.strictEqual(sim.open.size, 1, 'open Edge position remains open at EOD');
 assert.strictEqual(sim.targetWorking, true, 'open Edge ATR target remains working');
 
+class EdgeCloseTiming {
+  constructor() {
+    this.alerts = [];
+    this.pending = [];
+    this.targetWorking = true;
+    this.queued = null;
+    this.testerFills = [];
+  }
+
+  stop({ setupId, barTime, atRthClose }) {
+    if (!atRthClose) {
+      this.alerts.push(['CLOSE_STOP', setupId, 'IMMEDIATE_RTH']);
+      this.testerFills.push('signal-bar');
+      return;
+    }
+    const key = `${setupId}:${barTime}`;
+    if (this.queued?.key === key) return;
+    this.queued = { key, setupId, barTime };
+    this.alerts.push(['CLOSE_STOP', setupId, 'NEXT_RTH_OPEN']);
+  }
+
+  nextConfirmedRthOpen() {
+    if (!this.queued) return;
+    this.testerFills.push('next-rth-open');
+    this.queued = null;
+  }
+}
+
+const closeTiming = new EdgeCloseTiming();
+closeTiming.stop({ setupId: second, barTime: 1785260700000, atRthClose: false });
+closeTiming.stop({ setupId: second, barTime: 1785261600000, atRthClose: true });
+closeTiming.stop({ setupId: second, barTime: 1785261600000, atRthClose: true });
+assert.deepStrictEqual(
+  closeTiming.alerts,
+  [
+    ['CLOSE_STOP', second, 'IMMEDIATE_RTH'],
+    ['CLOSE_STOP', second, 'NEXT_RTH_OPEN'],
+  ],
+  'pre-close is immediate and the closing bar queues exactly once per setup/bar'
+);
+assert.strictEqual(closeTiming.pending.length, 0, 'closing-bar stop creates no opposite pending setup');
+assert.strictEqual(closeTiming.targetWorking, true, 'closing-bar queue leaves target working overnight');
+assert.deepStrictEqual(closeTiming.testerFills, ['signal-bar'], 'queued close does not fill at prior close');
+closeTiming.nextConfirmedRthOpen();
+assert.deepStrictEqual(
+  closeTiming.testerFills,
+  ['signal-bar', 'next-rth-open'],
+  'queued tester close fills at the next regular-session open'
+);
+
 assert.match(app, /PENDING_SETUP: 'PENDING_SETUP'/, 'app recognizes PENDING_SETUP');
 assert.match(app, /event === 'PENDING_SETUP' \|\| isVixaleEdgePendingCancel\(row\)/, 'pending events cannot reach bridge');
 assert.match(app, /row\.setup_id \|\| row\.trade_id/, 'fill prefers exact setup_id');
@@ -103,6 +153,25 @@ assert.match(pine, /payload_version\\":2/);
 assert.match(pine, /system_id\\":\\"VIXALE_EDGE/);
 assert.match(pine, /eod_policy\\":\\"NO_EOD_CLOSE/);
 assert.match(pine, /target_tif\\":\\"GTC/);
+assert.match(pine, /process_orders_on_close=false/);
+assert.match(pine, /closeExecutionPolicy[\s\S]*?"NEXT_RTH_OPEN"[\s\S]*?"IMMEDIATE_RTH"/);
+assert.match(pine, /signal_at_rth_close\\":/);
+assert.match(pine, /signal_session_date\\":\\"/);
+assert.match(pine, /signal_bar_time\\":/);
+assert.match(pine, /STOP_LOSS_SIGNAL_AT_RTH_CLOSE/);
+assert.match(pine, /queuedCloseIsNew[\s\S]*?lastQueuedCloseSetupId[\s\S]*?lastQueuedCloseSignalBarTime/);
+assert.match(
+  pine,
+  /strategy\.close\(\s*queuedLongClose \? "Long Limit" : "Short Limit",\s*comment="Stop Loss next RTH open"\)/
+);
+const queuedPineSection = pine.slice(
+  pine.indexOf('// Confirmed 16:00 ET closing-bar Stop Loss signal'),
+  pine.indexOf('// Working Resting LIMIT Order')
+);
+assert.doesNotMatch(queuedPineSection, /strategy\.cancel/, 'closing-bar signal does not cancel the active target');
+assert.match(queuedPineSection, /activeSetupId/, 'closing-bar signal retains the active setup_id');
+assert.doesNotMatch(queuedPineSection, /PENDING_SETUP/, 'closing-bar signal creates no opposite pending setup');
+assert.match(pine, /comment="Stop Loss",\s*immediately=true/);
 assert.match(
   pine,
   /useAtrTarget and \(_event == "SETUP" or _event == "PENDING_SETUP" or _event == "CANCEL"\)/
@@ -113,4 +182,4 @@ assert.match(pine, /table\.cell\(statusTable, 0, 5, "ENTRY FLIP CLOSE"\)/);
 assert.doesNotMatch(pine, /table\.cell\(statusTable, 0, 5, "STOP LOSS REF"\)/);
 assert.doesNotMatch(pine, /strategy\.close_all|closeEod|newNyDay/);
 
-console.log('Vixale Edge pending lifecycle simulation: 12 focused checks passed');
+console.log('Vixale Edge pending/next-RTH lifecycle simulation: focused checks passed');

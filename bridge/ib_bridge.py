@@ -4,7 +4,7 @@ import asyncio
 import logging
 import math
 import hashlib
-from datetime import datetime, time
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional, Tuple, List
 
@@ -286,6 +286,7 @@ EDGE_STOP_POSITION_SYNC_SECONDS = max(
 )
 EDGE_STOP_MAX_CLOSE_ATTEMPTS = 2
 EDGE_STOP_BROKER_ACTION_RECOVERY_STATES = {
+    "QUEUED_NEXT_RTH_OPEN",
     "RESERVED",
     "TARGET_CANCEL_PENDING",
     "TARGET_CANCEL_UNCONFIRMED",
@@ -926,6 +927,37 @@ def is_edge_v2_stop_close(data: Dict[str, Any]) -> bool:
     )
 
 
+def payload_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def is_edge_next_rth_stop_close(data: Dict[str, Any]) -> bool:
+    return (
+        is_edge_v2_stop_close(data)
+        and str(data.get("close_execution_policy") or "").upper().strip()
+        == "NEXT_RTH_OPEN"
+        and payload_bool(data.get("signal_at_rth_close"))
+        and parse_signal_session_date(data.get("signal_session_date"))
+        is not None
+        and to_float(data.get("signal_bar_time")) > 0
+    )
+
+
+def requests_edge_next_rth_stop_close(data: Dict[str, Any]) -> bool:
+    return (
+        is_edge_v2_stop_close(data)
+        and (
+            str(data.get("close_execution_policy") or "").upper().strip()
+            == "NEXT_RTH_OPEN"
+            or payload_bool(data.get("signal_at_rth_close"))
+            or str(data.get("reason") or "").upper().strip()
+            == "STOP_LOSS_SIGNAL_AT_RTH_CLOSE"
+        )
+    )
+
+
 def edge_stop_close_reservation_id(setup_id: str) -> str:
     return f"{str(setup_id or '').strip()}:CLOSE_STOP"
 
@@ -1023,6 +1055,94 @@ def reserve_edge_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
         "reservation": reservation,
         "existing": False,
     }
+
+
+def queue_edge_next_rth_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist a publication-silent close intent without touching IB."""
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    managed = load_managed_positions()
+    row = dict(managed.get(symbol) or {})
+    managed_setup_id = str(row.get("setup_id") or "").strip()
+    if (
+        not row
+        or not is_vixale_edge_managed_position(row)
+        or setup_id != managed_setup_id
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_SETUP_MISMATCH",
+            managed_setup_id=managed_setup_id,
+            canceled_open_orders=0,
+            managed_state_persisted=True,
+        )
+
+    reservation_id = edge_stop_close_reservation_id(setup_id)
+    existing = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    if existing:
+        if str(existing.get("reservation_id") or "") != reservation_id:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_SETUP_MISMATCH",
+                managed_setup_id=managed_setup_id,
+                canceled_open_orders=0,
+                managed_state_persisted=True,
+            )
+        return edge_stop_close_result(
+            data,
+            (
+                "EDGE_STOP_QUEUED_NEXT_RTH_OPEN"
+                if str(existing.get("state") or "").upper().strip()
+                == "QUEUED_NEXT_RTH_OPEN"
+                else "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS"
+            ),
+            reservation_id=reservation_id,
+            queued_at=existing.get("queued_at", ""),
+            canceled_open_orders=0,
+            managed_state_persisted=True,
+            duplicate=True,
+        )
+
+    now_iso = now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat()
+    reservation = {
+        "reservation_id": reservation_id,
+        "setup_id": setup_id,
+        "event": "CLOSE_STOP",
+        "state": "QUEUED_NEXT_RTH_OPEN",
+        "close_execution_policy": "NEXT_RTH_OPEN",
+        "signal_session_date": str(data.get("signal_session_date") or ""),
+        "signal_bar_time": data.get("signal_bar_time"),
+        "queued_at": now_iso,
+        "original_payload": dict(data),
+        "target_identity": managed_order_identity(row, "target"),
+        "order_ref": edge_stop_close_order_ref(symbol, setup_id),
+        "attempt": 0,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    row["close_reservation"] = reservation
+    row["updated_at"] = now_iso
+    managed[symbol] = row
+    if not save_managed_positions(managed):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+    return edge_stop_close_result(
+        data,
+        "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+        reservation_id=reservation_id,
+        queued_at=now_iso,
+        canceled_open_orders=0,
+        managed_state_persisted=True,
+        duplicate=False,
+    )
 
 
 def update_edge_stop_close_reservation(
@@ -3936,8 +4056,16 @@ async def recover_reserved_edge_stop_close(
 def edge_stop_recovery_payload(
     row: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    queued_payload = reservation.get("original_payload")
     payload = (
-        dict(row.get("last_payload"))
+        dict(queued_payload)
+        if isinstance(queued_payload, dict)
+        else dict(row.get("last_payload"))
         if isinstance(row.get("last_payload"), dict)
         else {}
     )
@@ -3967,6 +4095,267 @@ def edge_stop_scheduler_broker_action_allowed(
         and BLOCK_MARKET_CLOSES_OUTSIDE_RTH
         and is_us_stock_rth_now()
     )
+
+
+def parse_signal_session_date(value: Any) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(value or "").strip())
+    except Exception:
+        return None
+
+
+def ib_session_timezone(value: Any) -> Optional[ZoneInfo]:
+    name = str(value or "").strip()
+    aliases = {
+        "US/EASTERN": "America/New_York",
+        "EST5EDT": "America/New_York",
+    }
+    try:
+        return ZoneInfo(aliases.get(name.upper(), name))
+    except Exception:
+        return None
+
+
+def parse_ib_session_stamp(
+    value: str,
+    default_day: str,
+    session_tz: ZoneInfo,
+) -> Optional[datetime]:
+    text = str(value or "").strip()
+    try:
+        if ":" in text:
+            day_text, hhmm = text.split(":", 1)
+        else:
+            day_text, hhmm = default_day, text
+        if len(day_text) != 8 or len(hhmm) != 4:
+            return None
+        return datetime(
+            int(day_text[0:4]),
+            int(day_text[4:6]),
+            int(day_text[6:8]),
+            int(hhmm[0:2]),
+            int(hhmm[2:4]),
+            tzinfo=session_tz,
+        )
+    except Exception:
+        return None
+
+
+def ib_contract_session_contains(
+    details: Any,
+    now_value: datetime,
+) -> bool:
+    session_tz = ib_session_timezone(
+        getattr(details, "timeZoneId", "")
+    )
+    hours = str(getattr(details, "liquidHours", "") or "").strip()
+    if session_tz is None or not hours:
+        return False
+
+    local_now = now_value.astimezone(session_tz)
+    for segment in hours.split(";"):
+        clean = segment.strip()
+        if not clean or "CLOSED" in clean.upper() or "-" not in clean:
+            continue
+        start_text, end_text = clean.split("-", 1)
+        default_day = start_text.split(":", 1)[0]
+        start = parse_ib_session_stamp(start_text, default_day, session_tz)
+        end = parse_ib_session_stamp(end_text, default_day, session_tz)
+        if start is not None and end is not None and start <= local_now < end:
+            return True
+    return False
+
+
+async def confirm_edge_next_rth_session(
+    data: Dict[str, Any],
+    now_value: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Require next-date NY RTH plus authoritative IB liquid-hours evidence."""
+    now_ny = now_value or now_in_tz(RTH_TIMEZONE)
+    signal_day = parse_signal_session_date(data.get("signal_session_date"))
+    if signal_day is None or now_ny.date() <= signal_day:
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+            "reason": "next_new_york_date_not_reached",
+        }
+    if not is_us_stock_rth_now():
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+            "reason": "outside_stock_rth",
+        }
+
+    try:
+        await ensure_ib_connected()
+        contract = await qualify_contract(data)
+        result = await bounded_ib_refresh_request(
+            "reqContractDetailsAsync",
+            contract,
+        )
+    except Exception as exc:
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            "reason": f"contract_session_lookup_failed:{exc}",
+        }
+
+    details = list(result.get("values") or [])
+    if (
+        not result.get("ok")
+        or len(details) != 1
+        or not ib_contract_session_contains(details[0], now_ny)
+    ):
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            "reason": (
+                result.get("error")
+                or "ib_liquid_hours_missing_closed_or_ambiguous"
+            ),
+        }
+    return {
+        "confirmed": True,
+        "status": "EDGE_STOP_NEXT_RTH_SESSION_CONFIRMED",
+        "contract": contract,
+        "liquid_hours": str(getattr(details[0], "liquidHours", "") or ""),
+        "time_zone_id": str(getattr(details[0], "timeZoneId", "") or ""),
+    }
+
+
+async def recover_queued_edge_stop_next_rth(
+    data: Dict[str, Any],
+    row: Dict[str, Any],
+    reservation: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Observe overnight outcomes, then promote once into the Part 3A sequence."""
+    refresh = await authoritative_edge_close_refresh(row, reservation)
+    position_size = to_float(refresh.get("position"))
+    if "trades" in refresh or "fills" in refresh:
+        if not persist_edge_close_attempt_history(data, refresh):
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_before_close=position_size,
+                canceled_open_orders=0,
+                managed_state_persisted=False,
+            )
+        current = reserve_edge_stop_close(data)
+        row = dict(current.get("row") or row)
+        reservation = dict(current.get("reservation") or reservation)
+
+    if (
+        refresh.get("ambiguous")
+        or not refresh.get("authoritative")
+        or not refresh.get("position_authoritative")
+    ):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "QUEUED_NEXT_RTH_OPEN",
+            last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            recovery_errors=refresh.get("errors") or [],
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    if abs(position_size) <= 0.000001:
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+            position_after_recovery_refresh=position_size,
+            overnight_flat_before_next_rth=True,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_POSITION_FLAT_RECOVERY",
+            position_after_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    if not position_matches_managed_side(data.get("side"), position_size):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            prior_state="QUEUED_NEXT_RTH_OPEN",
+            position_after_recovery_refresh=position_size,
+            critical_reason="EDGE_STOP_NEXT_RTH_POSITION_CONFLICT",
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    session = await confirm_edge_next_rth_session(data)
+    if not session.get("confirmed"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "QUEUED_NEXT_RTH_OPEN",
+            last_queue_status=session.get("status"),
+            session_confirmation_reason=session.get("reason", ""),
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            str(session.get("status") or "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED"),
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    target_identity = managed_order_identity(row, "target")
+    target_trade = find_exact_managed_target_trade(row)
+    if (
+        not any(
+            target_identity.get(key) not in (None, "", 0, "0")
+            for key in ("perm_id", "order_id", "order_ref")
+        )
+        or target_trade is None
+    ):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "QUEUED_NEXT_RTH_OPEN",
+            last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            session_confirmation_reason="managed_target_identity_unconfirmed",
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    if not update_edge_stop_close_reservation(
+        data,
+        "RESERVED",
+        attempt=1,
+        eligible_at=now_in_tz(RTH_TIMEZONE).isoformat(),
+        ib_session_confirmed=True,
+        ib_liquid_hours=session.get("liquid_hours", ""),
+        ib_session_timezone=session.get("time_zone_id", ""),
+        position_before_close=position_size,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+
+    current = reserve_edge_stop_close(data)
+    return await execute_edge_v2_stop_close(data, current)
 
 
 async def recover_edge_stop_read_only(
@@ -4312,6 +4701,13 @@ async def recover_edge_stop_reservation_from_scheduler(
                 "status": "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
                 "state": state,
             }
+
+        if state == "QUEUED_NEXT_RTH_OPEN":
+            return await recover_queued_edge_stop_next_rth(
+                data,
+                current_row,
+                reservation,
+            )
 
         if (
             state in EDGE_STOP_PUBLICATION_ONLY_RECOVERY_STATES
@@ -4724,6 +5120,15 @@ async def _close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
 
     reserved: Optional[Dict[str, Any]] = None
     if is_edge_v2_stop_close(data):
+        if is_edge_next_rth_stop_close(data):
+            return queue_edge_next_rth_stop_close(data)
+        if requests_edge_next_rth_stop_close(data):
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_NEXT_RTH_POLICY_INVALID",
+                canceled_open_orders=0,
+                managed_state_persisted=True,
+            )
         reserved = reserve_edge_stop_close(data)
         if not reserved.get("ok"):
             return edge_stop_close_result(
