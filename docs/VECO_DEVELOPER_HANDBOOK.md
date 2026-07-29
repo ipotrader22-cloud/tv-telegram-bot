@@ -687,9 +687,50 @@ loop scans active Edge close-reservation states on startup and every poll. It
 reconstructs the original payload from the managed row, performs the same
 authoritative refresh, and resumes target cancellation, position
 synchronization, close adoption/replacement, flat reconciliation, or pending
-Render delivery without requiring TradingView to resend `CLOSE_STOP`. Every
-state transition is saved before broker activity, the persisted attempt cap is
-honored after restart, and ambiguous evidence remains retained with no order.
+Render delivery without requiring TradingView to resend `CLOSE_STOP`.
+
+Scheduler recovery and incoming payload-version-2 Edge `CLOSE_STOP` handling
+share the same close lock. After acquiring it, the scheduler reloads the
+managed row and reservation and revalidates the exact `setup_id`; a setup that
+changed while waiting returns `EDGE_STOP_SETUP_MISMATCH` with no broker
+activity. Target cancellation, re-cancellation, initial close submission, and
+replacement submission are allowed only for an eligible stock while
+`BLOCK_MARKET_CLOSES_OUTSIDE_RTH` applies and the New York stock session is
+currently RTH. Outside RTH, recovery returns
+`EDGE_STOP_RECOVERY_DEFERRED_OUTSIDE_RTH`, leaves the GTC target and reservation
+intact, and is limited to authoritative read-only refresh, execution-history
+collection, broker-flat reconciliation, and retry of an already-persisted
+Render publication.
+
+Recovery states are deliberately separated:
+
+```text
+Broker action (RTH + shared lock only):
+RESERVED
+TARGET_CANCEL_PENDING
+TARGET_CANCEL_UNCONFIRMED
+TARGET_RESOLVED
+CLOSE_SUBMISSION_PENDING
+RECOVERY_REPLACEMENT_SUBMISSION_PENDING
+EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN
+POSITION_SYNC_UNCONFIRMED
+
+Publication only (never cancel or submit):
+CALLBACK_PENDING
+MIXED_EXIT_EVIDENCE_INCOMPLETE
+POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION
+```
+
+`CLOSE_SUBMITTED` is observation-only. Ambiguous recovery is non-mutating until
+a later authoritative refresh resolves it into a specific state.
+`FILLED_POSITION_NOT_FLAT` permits a residual close only when exact executions
+from the same setup prove the already-closed quantity and the broker position
+equals the calculated residual; it never permits a generic replacement.
+A non-flat position encountered in a publication-only state is persisted as
+`EDGE_STOP_POST_CLOSE_POSITION_CONFLICT`, including its prior state and
+position, and requires explicit/manual intervention. Every transition is
+saved before broker activity and the persisted attempt cap is honored across
+restart.
 
 When a partial target execution is followed by the Stop Loss remainder, the
 bridge publishes one final `CLOSE_STOP` for the full original managed
@@ -697,13 +738,17 @@ quantity. Its exit price is the quantity-weighted average of confirmed target
 and every Stop Loss execution across all close attempts. The managed JSON
 stores an append-preserving `close_attempts` list with attempt number,
 `orderId`, `permId`, `orderRef`, status, cumulative filled quantity, average
-price, and execution IDs. Reconciliation deduplicates execution IDs, requires
-the component total to equal the original quantity, includes every execution
-identity in the reconciliation identity, and stores all component details in
-raw JSON. Its reason is
+price, and execution IDs. Every positive target, Stop Loss attempt, or manual
+component must contain at least one real IB `execId`; `permId`, `orderId`, and
+`orderRef` are not sufficient for a mixed or multi-attempt final publication.
+Aggregation is performed by unique `execId`, identical duplicates count once,
+overlapping ID sets do not discard unrelated executions, and conflicting
+quantity or price for the same `execId` is ambiguous. The component total must
+equal the original quantity, the `reconciliation_id` contains the sorted
+complete `execId` set, and raw JSON retains every component. Its reason is
 `IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. The existing Sheets
 schema is unchanged. A partial target is not published as a separate TP. If
-any component price, quantity, or execution identity is missing, the bridge
+any component price, quantity, or exact `execId` evidence is missing, the bridge
 persists `EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE`, withholds the callback,
 and retains the managed row for reconciliation rather than fabricating P&L.
 
@@ -1296,6 +1341,12 @@ stale setup returns EDGE_STOP_SETUP_MISMATCH with no broker activity
 concurrent/restarted duplicate recovers the stored close and submits no second order
 CLOSE_SUBMISSION_PENDING recovery refreshes open/completed orders, executions, and position
 the managed reconciliation scheduler resumes active reservations without another alert
+webhook and scheduler recovery serialize on the same setup-scoped close lock
+the scheduler reloads setup state inside the lock and rejects a stale setup
+outside RTH scheduler recovery cancels no target and submits no close/replacement
+outside RTH authoritative read-only refresh may still reconcile and publish an already-filled close
+publication-only recovery states perform zero broker mutation
+publication-only state plus non-flat position persists EDGE_STOP_POST_CLOSE_POSITION_CONFLICT
 authoritative no-order recovery permits only one persisted replacement attempt
 Rejected/Cancelled/ApiCancelled/Inactive close is retryable, not permanently in progress
 ambiguous recovery returns EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS with no new order
@@ -1305,6 +1356,9 @@ bridge verifies the actual IB position is zero with a bounded wait
 only then Render receives CLOSE_STOP with broker_confirmed_flat=true
 partial target plus Stop Loss produces one full-quantity weighted CLOSE_STOP
 all stop attempts remain in close_attempts and are execution-ID deduplicated
+every positive mixed/multi-attempt component has a real IB execId
+duplicate execIds count once and conflicting duplicate quantity/price withholds publication
+reconciliation_id contains the sorted complete execId set
 mixed raw JSON contains target and every Stop Loss execution ID, price, and quantity
 partial target plus confirmed manual remainder produces one full-quantity Manual Close
 Manual Close keeps result and result percentage blank
@@ -1480,15 +1534,34 @@ nothing and defers to execution-evidence reconciliation.
 The existing managed-position reconciliation scheduler performs this recovery
 automatically after bridge restart and on every poll for active close
 reservation states. It does not require a repeated TradingView alert. It
-persists each transition before broker activity, adopts an already accepted
-order, honors the attempt cap, and retains ambiguous state without submitting.
+shares the webhook close lock, reloads and revalidates the exact setup inside
+that lock, persists each transition before broker activity, adopts an already
+accepted order, and honors the attempt cap. All scheduler target cancellation
+and close/replacement submission is RTH-only and requires the configured stock
+market-close block policy. Outside RTH it returns
+`EDGE_STOP_RECOVERY_DEFERRED_OUTSIDE_RTH`, preserves the GTC target, and permits
+only authoritative read-only refresh, flat reconciliation, and Render
+publication retry.
+
+Broker-action and publication-only recovery states are separate.
+`CALLBACK_PENDING`, `MIXED_EXIT_EVIDENCE_INCOMPLETE`, and
+`POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION` never cancel or submit orders.
+A non-flat broker position in one of those states becomes
+`EDGE_STOP_POST_CLOSE_POSITION_CONFLICT` and requires explicit/manual
+intervention. Ambiguous recovery remains non-mutating until authoritative
+evidence resolves a specific state. `FILLED_POSITION_NOT_FLAT` can close only
+an exact, execution-proven residual from the same setup.
 
 A partial target followed by Stop Loss is one public `CLOSE_STOP` for the full
 original quantity at the confirmed execution-weighted exit price. Every close
 attempt is retained in managed JSON as `close_attempts`; reconciliation
-aggregates confirmed fills across all attempts, deduplicates execution IDs,
-requires the component quantity to equal the original position, and retains
-all components in raw JSON with reason
+aggregates confirmed fills across all attempts by real IB `execId`. Every
+positive target, Stop Loss, or manual component requires an `execId`;
+order-level identity alone is insufficient. Identical duplicates count once,
+overlapping ID sets retain their non-overlapping executions, and a conflicting
+duplicate ID is ambiguous. The unique component quantity must equal the
+original position, the reconciliation identity contains the sorted complete
+`execId` set, and raw JSON retains all components with reason
 `IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. Incomplete component
 evidence is persisted and retried, never published as a remainder-only close
 or separate partial TP.
