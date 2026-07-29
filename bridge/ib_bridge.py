@@ -606,16 +606,52 @@ def normalized_edge_close_attempts(row: Dict[str, Any]) -> List[Dict[str, Any]]:
         if isinstance(row.get("bridge_close_order"), dict)
         else {}
     )
+    reservation = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
     if not any(
         legacy.get(key) not in (None, "", 0, "0", [])
         for key in ("order_id", "perm_id", "order_ref", "filled_qty", "exec_ids")
     ):
-        return []
-    reservation = (
-        row.get("close_reservation")
-        if isinstance(row.get("close_reservation"), dict)
-        else {}
-    )
+        legacy = {
+            "attempt": reservation.get("attempt"),
+            "order_id": reservation.get("order_id", ""),
+            "perm_id": reservation.get("perm_id", ""),
+            "order_ref": reservation.get("order_ref", ""),
+            "latest_status": reservation.get(
+                "broker_close_status",
+                reservation.get("latest_status", ""),
+            ),
+            "filled_qty": reservation.get(
+                "close_filled_qty",
+                reservation.get("filled_qty", 0),
+            ),
+            "fill_price": reservation.get(
+                "close_fill_price",
+                reservation.get("fill_price", 0),
+            ),
+            "exec_ids": reservation.get(
+                "close_exec_ids",
+                reservation.get("exec_ids", []),
+            ),
+            "execution_components": reservation.get(
+                "close_execution_components",
+                [],
+            ),
+        }
+        if not any(
+            legacy.get(key) not in (None, "", 0, "0", [])
+            for key in (
+                "order_id",
+                "perm_id",
+                "order_ref",
+                "filled_qty",
+                "exec_ids",
+            )
+        ):
+            return []
     return [{
         "attempt": max(
             1,
@@ -637,6 +673,11 @@ def normalized_edge_close_attempts(row: Dict[str, Any]) -> List[Dict[str, Any]]:
             for value in legacy.get("exec_ids") or []
             if str(value or "").strip()
         }),
+        "execution_components": [
+            durable_execution_component(value)
+            for value in legacy.get("execution_components") or []
+            if isinstance(value, dict)
+        ],
         "submitted_at": legacy.get("submitted_at", ""),
         "filled_at": legacy.get("filled_at", ""),
     }]
@@ -2974,9 +3015,13 @@ def persist_edge_close_attempt_history(
         list(refresh.get("trades") or []),
         list(refresh.get("fills") or []),
     )
-    if ambiguous:
-        return False
     row["close_attempts"] = attempts
+    target_exact = exact_execution_components_for_expected_order(
+        row,
+        managed_order_identity(row, "target"),
+        list(refresh.get("trades") or []),
+        list(refresh.get("fills") or []),
+    )
     external_evidence = find_external_close_execution(
         row,
         list(refresh.get("fills") or []),
@@ -2990,6 +3035,45 @@ def persist_edge_close_attempt_history(
     )
     if reservation:
         reservation["close_attempts"] = attempts
+        reservation["execution_history_ambiguous"] = bool(
+            ambiguous or target_exact["ambiguous"]
+        )
+        target_components = list(target_exact.get("components") or [])
+        target_qty = sum(
+            to_float(component.get("qty"))
+            for component in target_components
+        )
+        original_qty = (
+            to_float(reservation.get("original_position_qty"))
+            or to_float(row.get("qty"))
+        )
+        if (
+            target_components
+            and not target_exact.get("incomplete")
+            and target_qty > 0
+            and original_qty > 0
+            and target_qty + 0.000001 < original_qty
+        ):
+            reservation["target_partial_execution_components"] = (
+                target_components
+            )
+            reservation["target_partial_exec_ids"] = [
+                component["exec_id"]
+                for component in target_components
+            ]
+            reservation["target_partial_filled_qty"] = target_qty
+            reservation["target_partial_fill_price"] = round_price(
+                sum(
+                    to_float(component.get("qty"))
+                    * to_float(component.get("price"))
+                    for component in target_components
+                )
+                / target_qty
+            )
+            reservation["expected_remaining_qty"] = max(
+                0.0,
+                original_qty - target_qty,
+            )
         row["close_reservation"] = reservation
     row["updated_at"] = now_in_tz(
         FORCE_EOD_FLATTEN_TIMEZONE
@@ -3895,10 +3979,149 @@ async def recover_edge_stop_read_only(
     refresh = await authoritative_edge_close_refresh(row, reservation)
     position_size = to_float(refresh.get("position"))
     if "trades" in refresh or "fills" in refresh:
-        persist_edge_close_attempt_history(data, refresh)
+        if not persist_edge_close_attempt_history(data, refresh):
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_before_close=position_size,
+                canceled_open_orders=0,
+                recovery_state=state,
+                managed_state_persisted=False,
+                critical_reason="EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            )
         current = reserve_edge_stop_close(data)
         row = dict(current.get("row") or row)
         reservation = dict(current.get("reservation") or reservation)
+
+    if state == "CLOSE_SUBMITTED":
+        if refresh.get("ambiguous") or not refresh.get("authoritative"):
+            persisted = update_edge_stop_close_reservation(
+                data,
+                "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+                prior_state=state,
+                recovery_errors=refresh.get("errors") or [],
+                position_after_recovery_refresh=position_size,
+            )
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+                position_before_close=position_size,
+                canceled_open_orders=0,
+                managed_state_persisted=persisted,
+            )
+
+        close_trade = refresh.get("trade")
+        close_status = trade_status(close_trade) if close_trade else ""
+        close_evidence = edge_close_attempt_execution_aggregate(
+            row,
+            list(refresh.get("trades") or []),
+            list(refresh.get("fills") or []),
+        )
+        expected_close_qty = (
+            to_float(reservation.get("remaining_qty"))
+            or to_float(row.get("qty"))
+        )
+        filled_execution = bool(
+            close_evidence
+            and (
+                (
+                    refresh.get("execution")
+                    and to_float(
+                        refresh.get("execution", {}).get("qty")
+                    )
+                    + 0.000001
+                    >= expected_close_qty
+                )
+                or (
+                    close_trade is not None
+                    and trade_is_filled(
+                        close_trade,
+                        expected_close_qty,
+                    )
+                )
+            )
+        )
+        if filled_execution:
+            resolved_state = (
+                "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION"
+                if abs(position_size) <= 0.000001
+                else "FILLED_POSITION_NOT_FLAT"
+            )
+        elif (
+            close_trade is not None
+            and close_status.lower() in ORDER_BAD_STATUSES
+            and position_matches_managed_side(
+                data.get("side"),
+                position_size,
+            )
+        ):
+            resolved_state = "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN"
+        elif (
+            close_trade is not None
+            and close_status.lower() in {
+                "submitted",
+                "presubmitted",
+                "pendingsubmit",
+            }
+        ):
+            resolved_state = "CLOSE_SUBMITTED"
+        else:
+            resolved_state = "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS"
+
+        values: Dict[str, Any] = {
+            "prior_state": state,
+            "broker_close_status": close_status,
+            "position_after_recovery_refresh": position_size,
+            "recovery_errors": refresh.get("errors") or [],
+        }
+        if close_evidence:
+            values.update({
+                "close_filled_qty": close_evidence.get("qty", 0),
+                "close_fill_price": close_evidence.get("price", 0),
+                "close_exec_ids": close_evidence.get("exec_ids", []),
+                "close_execution_components": close_evidence.get(
+                    "execution_components",
+                    [],
+                ),
+                "close_attempts": close_evidence.get("attempts", []),
+            })
+        persisted = update_edge_stop_close_reservation(
+            data,
+            resolved_state,
+            **values,
+        )
+        if not persisted:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_before_close=position_size,
+                canceled_open_orders=0,
+                recovery_state=state,
+                managed_state_persisted=False,
+                critical_reason="EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            )
+        return edge_stop_close_result(
+            data,
+            (
+                "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS"
+                if resolved_state == "CLOSE_SUBMITTED"
+                else resolved_state
+            ),
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            close_status=close_status,
+            close_filled=filled_execution,
+            close_filled_qty=(
+                (close_evidence or {}).get("qty", 0)
+            ),
+            close_fill_price=(
+                (close_evidence or {}).get("price", 0)
+            ),
+            close_exec_ids=(
+                (close_evidence or {}).get("exec_ids", [])
+            ),
+            managed_state_persisted=persisted,
+        )
 
     if (
         state in EDGE_STOP_PUBLICATION_ONLY_RECOVERY_STATES
@@ -6092,6 +6315,182 @@ def dedupe_execution_details_by_exec_id(
     ], False, missing_exec_id
 
 
+def durable_execution_component(
+    details: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return only JSON-safe exact execution evidence."""
+    return {
+        "exec_id": str(details.get("exec_id") or "").strip(),
+        "qty": to_float(details.get("qty")),
+        "price": to_float(details.get("price")),
+        "order_id": details.get("order_id"),
+        "perm_id": details.get("perm_id"),
+        "order_ref": str(details.get("order_ref") or ""),
+    }
+
+
+def exact_execution_components_for_expected_order(
+    row: Dict[str, Any],
+    expected: Dict[str, Any],
+    trades: List[Any],
+    fills: List[Any],
+) -> Dict[str, Any]:
+    """Combine exact trade and execution history without double counting."""
+    symbol = str(row.get("symbol") or "").upper().strip()
+    exit_action = expected_exit_action(row)
+    matching_trades = [
+        trade
+        for trade in trades
+        if trade_contract_symbol(trade) == symbol
+        and normalized_execution_action(trade_action(trade)) == exit_action
+        and identity_matches(
+            trade_order_id(trade),
+            trade_perm_id(trade),
+            trade_order_ref_value(trade),
+            expected,
+        )
+    ]
+    if len(matching_trades) > 1:
+        return {
+            "components": [],
+            "trade": None,
+            "cumulative_qty": 0.0,
+            "ambiguous": True,
+            "incomplete": True,
+        }
+
+    candidates: List[Dict[str, Any]] = []
+    observed_trade_exec_ids = set()
+    missing_unidentified_execution = False
+    missing_detail_exec_ids = set()
+    for fill in fills:
+        details = fill_execution_details(fill)
+        if fill_contract_symbol(fill) != symbol:
+            continue
+        if details["action"] != exit_action:
+            continue
+        if not identity_matches(
+            details["order_id"],
+            details["perm_id"],
+            details["order_ref"],
+            expected,
+        ):
+            continue
+        if (
+            not details["exec_id"]
+            or details["qty"] <= 0
+            or details["price"] <= 0
+        ):
+            if details["exec_id"]:
+                missing_detail_exec_ids.add(details["exec_id"])
+            else:
+                missing_unidentified_execution = True
+            continue
+        candidates.append(durable_execution_component(details))
+
+    trade = matching_trades[0] if matching_trades else None
+    cumulative_qty = trade_filled_qty(trade) if trade is not None else 0.0
+    cumulative_price = trade_fill_price(trade) if trade is not None else 0.0
+    if trade is not None:
+        for fill in getattr(trade, "fills", []) or []:
+            details = fill_execution_details(fill)
+            exec_id = str(details.get("exec_id") or "").strip()
+            if exec_id:
+                observed_trade_exec_ids.add(exec_id)
+            if not exec_id:
+                missing_unidentified_execution = True
+                continue
+            if details["qty"] <= 0 or details["price"] <= 0:
+                missing_detail_exec_ids.add(exec_id)
+                continue
+            candidates.append(durable_execution_component({
+                **details,
+                "order_id": details.get("order_id") or trade_order_id(trade),
+                "perm_id": details.get("perm_id") or trade_perm_id(trade),
+                "order_ref": (
+                    details.get("order_ref")
+                    or trade_order_ref_value(trade)
+                ),
+            }))
+
+    unique, conflict, _missing_exec_id = (
+        dedupe_execution_details_by_exec_id(candidates)
+    )
+    if conflict:
+        return {
+            "components": [],
+            "trade": trade,
+            "cumulative_qty": cumulative_qty,
+            "ambiguous": True,
+            "incomplete": True,
+        }
+
+    known_exec_ids = {
+        str(component.get("exec_id") or "").strip()
+        for component in unique
+    }
+    missing_trade_exec_ids = observed_trade_exec_ids - known_exec_ids
+    if (
+        trade is not None
+        and len(observed_trade_exec_ids) == 1
+        and len(missing_trade_exec_ids) == 1
+        and cumulative_qty > 0
+        and cumulative_price > 0
+    ):
+        exec_id = next(iter(missing_trade_exec_ids))
+        unique.append({
+            "exec_id": exec_id,
+            "qty": cumulative_qty,
+            "price": cumulative_price,
+            "order_id": trade_order_id(trade),
+            "perm_id": trade_perm_id(trade),
+            "order_ref": trade_order_ref_value(trade),
+        })
+        known_exec_ids.add(exec_id)
+        missing_trade_exec_ids.clear()
+
+    unique, conflict, _missing_exec_id = (
+        dedupe_execution_details_by_exec_id(unique)
+    )
+    exact_qty = sum(to_float(component.get("qty")) for component in unique)
+    if conflict or (
+        cumulative_qty > 0
+        and exact_qty > cumulative_qty + 0.000001
+    ):
+        return {
+            "components": [],
+            "trade": trade,
+            "cumulative_qty": cumulative_qty,
+            "ambiguous": True,
+            "incomplete": True,
+        }
+
+    incomplete = bool(
+        missing_trade_exec_ids
+        or (
+            cumulative_qty > 0
+            and exact_qty + 0.000001 < cumulative_qty
+        )
+        or (
+            missing_unidentified_execution
+            or not missing_detail_exec_ids.issubset({
+                str(component.get("exec_id") or "").strip()
+                for component in unique
+            })
+        )
+    )
+    return {
+        "components": [
+            durable_execution_component(component)
+            for component in unique
+        ],
+        "trade": trade,
+        "cumulative_qty": cumulative_qty,
+        "ambiguous": False,
+        "incomplete": incomplete,
+    }
+
+
 def trade_exact_execution_components(trade: Any) -> List[Dict[str, Any]]:
     details = [
         fill_execution_details(fill)
@@ -6103,7 +6502,11 @@ def trade_exact_execution_components(trade: Any) -> List[Dict[str, Any]]:
         if item["exec_id"] and item["qty"] > 0 and item["price"] > 0
     ]
     unique, conflict, missing = dedupe_execution_details_by_exec_id(details)
-    return [] if conflict or missing else unique
+    return (
+        []
+        if conflict or missing
+        else [durable_execution_component(item) for item in unique]
+    )
 
 
 def fill_execution_evidence(
@@ -6245,6 +6648,16 @@ def edge_close_attempts_with_history(
             ambiguous = True
             continue
 
+        exact = exact_execution_components_for_expected_order(
+            row,
+            expected,
+            known_trades,
+            known_fills,
+        )
+        if exact["ambiguous"]:
+            ambiguous = True
+            continue
+
         evidence = fill_evidence
         if evidence is None and len(trade_matches) == 1:
             trade = trade_matches[0]
@@ -6292,6 +6705,20 @@ def edge_close_attempts_with_history(
                 ]
                 if str(value or "").strip()
             })
+        if exact["components"]:
+            attempt["execution_components"] = exact["components"]
+            attempt["exec_ids"] = sorted({
+                *(
+                    str(value)
+                    for value in attempt.get("exec_ids") or []
+                    if str(value or "").strip()
+                ),
+                *(
+                    str(component.get("exec_id") or "")
+                    for component in exact["components"]
+                    if str(component.get("exec_id") or "").strip()
+                ),
+            })
         attempts[index] = attempt
     return attempts, ambiguous
 
@@ -6324,59 +6751,24 @@ def edge_close_attempt_execution_aggregate(
                 or to_float(attempt.get("filled_qty"))
             ),
         }
-        attempt_candidates: List[Dict[str, Any]] = []
-        for fill in known_fills:
-            details = fill_execution_details(fill)
-            if (
-                fill_contract_symbol(fill)
-                == str(row.get("symbol") or "").upper().strip()
-                and details["action"] == expected_exit_action(row)
-                and identity_matches(
-                    details["order_id"],
-                    details["perm_id"],
-                    details["order_ref"],
-                    expected,
-                )
-                and details["exec_id"]
-                and details["qty"] > 0
-                and details["price"] > 0
-            ):
-                attempt_candidates.append(details)
-
-        matching_trades = [
-            trade
-            for trade in known_trades
-            if trade_contract_symbol(trade)
-            == str(row.get("symbol") or "").upper().strip()
-            and normalized_execution_action(trade_action(trade))
-            == expected_exit_action(row)
-            and identity_matches(
-                trade_order_id(trade),
-                trade_perm_id(trade),
-                trade_order_ref_value(trade),
-                expected,
-            )
-        ]
-        if len(matching_trades) > 1:
+        exact = exact_execution_components_for_expected_order(
+            row,
+            expected,
+            known_trades,
+            known_fills,
+        )
+        if exact["ambiguous"]:
             return None
-        if matching_trades:
-            trade = matching_trades[0]
-            trade_exec_ids = sorted(set(trade_execution_ids(trade)))
-            trade_qty = trade_filled_qty(trade)
-            trade_price = trade_fill_price(trade)
-            if len(trade_exec_ids) == 1 and trade_qty > 0 and trade_price > 0:
-                attempt_candidates.append({
-                    "exec_id": trade_exec_ids[0],
-                    "qty": trade_qty,
-                    "price": trade_price,
-                    "order_id": trade_order_id(trade),
-                    "perm_id": trade_perm_id(trade),
-                    "order_ref": trade_order_ref_value(trade),
-                })
-            elif trade_qty > 0:
-                # A cumulative trade price/quantity cannot be divided safely
-                # across multiple execution IDs.
-                incomplete = True
+        attempt_candidates: List[Dict[str, Any]] = [
+            dict(component)
+            for component in (
+                list(attempt.get("execution_components") or [])
+                + list(exact["components"])
+            )
+            if isinstance(component, dict)
+        ]
+        if exact["incomplete"]:
+            incomplete = True
 
         if not attempt_candidates:
             stored_exec_ids = sorted({
@@ -6412,9 +6804,13 @@ def edge_close_attempt_execution_aggregate(
             for component in unique_attempt
         )
         stored_filled_qty = to_float(attempt.get("filled_qty"))
+        broker_cumulative_qty = max(
+            stored_filled_qty,
+            to_float(exact.get("cumulative_qty")),
+        )
         if (
-            stored_filled_qty > 0
-            and known_attempt_qty + 0.000001 < stored_filled_qty
+            broker_cumulative_qty > 0
+            and known_attempt_qty + 0.000001 < broker_cumulative_qty
         ):
             incomplete = True
         for component in unique_attempt:

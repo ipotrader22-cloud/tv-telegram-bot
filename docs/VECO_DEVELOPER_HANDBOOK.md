@@ -721,8 +721,20 @@ MIXED_EXIT_EVIDENCE_INCOMPLETE
 POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION
 ```
 
-`CLOSE_SUBMITTED` is observation-only. Ambiguous recovery is non-mutating until
-a later authoritative refresh resolves it into a specific state.
+`CLOSE_SUBMITTED` is observation-only but not terminally stuck. Authoritative
+refresh maps a Filled close plus a flat broker position to
+`POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION`, and a Filled close plus a
+non-flat position to `FILLED_POSITION_NOT_FLAT`, preserving every exact
+execution component. Rejected, Cancelled, ApiCancelled, or Inactive plus an
+open managed-side position becomes
+`EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`; replacement is deferred until a
+later RTH broker-action pass. Submitted, PreSubmitted, and PendingSubmit remain
+`CLOSE_SUBMITTED`. Ambiguous or non-authoritative evidence becomes
+`EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`. The read-only pass never submits the
+replacement itself.
+
+Ambiguous recovery is non-mutating until a later authoritative refresh
+resolves it into a specific state.
 `FILLED_POSITION_NOT_FLAT` permits a residual close only when exact executions
 from the same setup prove the already-closed quantity and the broker position
 equals the calculated residual; it never permits a generic replacement.
@@ -741,16 +753,33 @@ stores an append-preserving `close_attempts` list with attempt number,
 price, and execution IDs. Every positive target, Stop Loss attempt, or manual
 component must contain at least one real IB `execId`; `permId`, `orderId`, and
 `orderRef` are not sufficient for a mixed or multi-attempt final publication.
-Aggregation is performed by unique `execId`, identical duplicates count once,
-overlapping ID sets do not discard unrelated executions, and conflicting
-quantity or price for the same `execId` is ambiguous. The component total must
-equal the original quantity, the `reconciliation_id` contains the sorted
-complete `execId` set, and raw JSON retains every component. Its reason is
+Aggregation combines exact components from both `trade.fills` and execution
+history by unique `execId`. Identical duplicates count once, overlapping ID
+sets do not discard unrelated executions, and conflicting quantity or price
+for the same `execId` is ambiguous. Multiple `execId` values on one trade are
+valid when each has exact quantity and price and their unique quantity equals
+the broker cumulative fill; evidence is incomplete only when the exact total
+is lower than the cumulative total or an execution lacks required evidence.
+Authoritative history also reconstructs and durably saves multi-execution
+partial-target components after restart so they can participate in final
+mixed-exit accounting.
+
+The component total must equal the original quantity, the
+`reconciliation_id` contains the sorted complete `execId` set, and raw JSON
+retains every component. Its reason is
 `IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. The existing Sheets
 schema is unchanged. A partial target is not published as a separate TP. If
 any component price, quantity, or exact `execId` evidence is missing, the bridge
 persists `EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE`, withholds the callback,
 and retains the managed row for reconciliation rather than fabricating P&L.
+
+Every read-only recovery saves refreshed close-attempt and partial-target
+execution history before advancing state or authorizing a residual. If that
+managed-file save fails, recovery returns
+`EDGE_STOP_STATE_PERSISTENCE_FAILED`, retains the existing managed record, and
+performs no target cancellation, initial close, residual close, or replacement
+close. A residual is eligible only after all exact components used to prove
+its quantity have been durably saved.
 
 If a confirmed partial target is followed by an unambiguous attributed manual
 remainder, the same component accounting publishes one full-original-quantity
@@ -1552,19 +1581,40 @@ intervention. Ambiguous recovery remains non-mutating until authoritative
 evidence resolves a specific state. `FILLED_POSITION_NOT_FLAT` can close only
 an exact, execution-proven residual from the same setup.
 
+Observation-only `CLOSE_SUBMITTED` is resolved by authoritative terminal
+broker state. Filled plus flat advances to
+`POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION`; Filled plus non-flat advances
+to `FILLED_POSITION_NOT_FLAT`; Rejected, Cancelled, ApiCancelled, or Inactive
+plus an open managed-side position advances to
+`EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`; working Submitted, PreSubmitted, or
+PendingSubmit remains in progress. Ambiguous or non-authoritative evidence is
+persisted as `EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`. None of these read-only
+transitions submits a broker order in the same pass.
+
 A partial target followed by Stop Loss is one public `CLOSE_STOP` for the full
 original quantity at the confirmed execution-weighted exit price. Every close
 attempt is retained in managed JSON as `close_attempts`; reconciliation
 aggregates confirmed fills across all attempts by real IB `execId`. Every
 positive target, Stop Loss, or manual component requires an `execId`;
-order-level identity alone is insufficient. Identical duplicates count once,
+order-level identity alone is insufficient. Exact components are combined
+from `trade.fills` and execution history. Identical duplicates count once,
 overlapping ID sets retain their non-overlapping executions, and a conflicting
-duplicate ID is ambiguous. The unique component quantity must equal the
-original position, the reconciliation identity contains the sorted complete
-`execId` set, and raw JSON retains all components with reason
+duplicate ID is ambiguous. A trade with multiple `execId` values is complete
+when every execution has exact quantity and price and their unique total
+equals broker cumulative filled quantity. Multi-execution partial-target
+components are reconstructed and persisted from authoritative history after
+restart. The unique component quantity must equal the original position, the
+reconciliation identity contains the sorted complete `execId` set, and raw
+JSON retains all components with reason
 `IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. Incomplete component
 evidence is persisted and retried, never published as a remainder-only close
 or separate partial TP.
+
+Read-only recovery treats refreshed execution-history persistence as a hard
+precondition. A failed managed-file save returns
+`EDGE_STOP_STATE_PERSISTENCE_FAILED` and authorizes no broker mutation or state
+advance. In particular, a proven residual cannot be submitted until the exact
+components proving that residual are durably saved.
 
 When the remainder is an unambiguous post-entry manual execution, confirmed
 target and manual components instead produce one full-quantity
