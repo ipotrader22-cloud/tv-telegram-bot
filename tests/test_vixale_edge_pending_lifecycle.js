@@ -140,8 +140,8 @@ assert.match(app, /raw\.startsWith\('VIXALE_EDGE:'\)\) return raw/, 'setup_id ma
 assert.match(app, /event === 'SETUP'[\s\S]{0,160}row\.setup_id[\s\S]{0,160}isVixaleEdgePendingLifecycleRow/, 'identified SETUP is execution-first');
 assert.match(app, /\['SHREK', 'SHREK_1_4'\]/, 'Prime/Shrek lifecycle guard remains present');
 assert.match(app, /if \(\['SETUP', 'FILL', 'TP', 'SL', 'EOD', 'EXTERNAL_CLOSE'\]\.includes\(event\)\)/, 'legacy Edge SETUP remains recognized without setup_id');
-assert.match(app, /Stop Loss: <b>confirmed opposite signal<\/b>/, 'pending setup describes the confirmed opposite-signal stop');
-assert.doesNotMatch(app, /Stop Loss Ref: <b>\$\{row\.stop\}<\/b>/, 'pending setup does not expose the numeric stop reference');
+assert.match(app, /side === 'SHORT' \? 'Close Over' : 'Close Under'/, 'Edge stop threshold copy is direction-aware');
+assert.doesNotMatch(app, /Stop Loss: <b>confirmed opposite signal<\/b>/, 'old generic pending stop wording is removed');
 
 assert.match(pine, /strategy\("Vixale Edge 1\.1"/);
 assert.match(pine, /default_qty_type=strategy\.percent_of_equity/);
@@ -183,5 +183,32 @@ assert.match(pine, /REPLACED_BY_OPPOSITE_RTH_SIGNAL/);
 assert.match(pine, /table\.cell\(statusTable, 0, 5, "ENTRY FLIP CLOSE"\)/);
 assert.doesNotMatch(pine, /table\.cell\(statusTable, 0, 5, "STOP LOSS REF"\)/);
 assert.doesNotMatch(pine, /strategy\.close_all|closeEod|newNyDay/);
+
+const longPendingCall = pine.match(
+  /"PENDING_SETUP",\s*"LONG",\s*setupLimitEntry,\s*setupFlipClose,\s*setupTarget,\s*stLine,\s*f_entry_qty\(setupLimitEntry\),\s*"VIXALE_EDGE_LONG_PENDING",\s*setupBrokenStl,/
+);
+const shortPendingCall = pine.match(
+  /"PENDING_SETUP",\s*"SHORT",\s*setupLimitEntry,\s*setupFlipClose,\s*setupTarget,\s*stLine,\s*f_entry_qty\(setupLimitEntry\),\s*"VIXALE_EDGE_SHORT_PENDING",\s*setupBrokenStl,/
+);
+assert(longPendingCall, 'LONG PENDING_SETUP passes current stLine as stop and retains setupBrokenStl as broken_stl');
+assert(shortPendingCall, 'SHORT PENDING_SETUP passes current stLine as stop and retains setupBrokenStl as broken_stl');
+assert(
+  pine.includes('j += "\\"broken_stl\\":" + f_payload_num(_brokenStl)'),
+  'raw broken_stl remains in JSON'
+);
+assert.match(pine, /options=\["Flip Close", "Broken STL"\]/, 'optional Broken STL entry anchor remains');
+assert.match(pine, /"Show Broken STL \+ Limit Entry"/, 'legacy UAM input title remains unchanged');
+assert.match(pine, /Legacy input title retained for UAM automation compatibility/);
+
+const plotsSection = pine.slice(
+  pine.indexOf('// Plots'),
+  pine.indexOf('// HTF / Pending Status Table')
+);
+assert.doesNotMatch(plotsSection, /setupBrokenStl/, 'Plots section no longer draws setupBrokenStl');
+assert.doesNotMatch(plotsSection, /"Broken STL"/, 'gray Broken STL plot title is removed');
+assert.match(plotsSection, /setupLimitEntry[\s\S]*?"Pending Limit Entry"[\s\S]*?color=color\.orange/, 'orange pending limit plot remains');
+assert.match(plotsSection, /"Bullish SuperTrend"[\s\S]*?color=color\.green/, 'green current SuperTrend remains');
+assert.match(plotsSection, /"Bearish SuperTrend"[\s\S]*?color=color\.red/, 'red current SuperTrend remains');
+assert.match(plotsSection, /"Planned \/ Active ATR Target"[\s\S]*?color=color\.blue/, 'blue target plot remains');
 
 console.log('Vixale Edge pending/next-RTH lifecycle simulation: focused checks passed');

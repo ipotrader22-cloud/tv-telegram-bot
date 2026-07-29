@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-07-28
+**Last updated:** 2026-07-29
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -224,6 +224,20 @@ Telegram lifecycle:
 The purple circle identifies Vixale Edge. Direction is written explicitly. The
 internal Fiona identifiers remain unchanged.
 
+For a new Vixale Edge `PENDING_SETUP`, the JSON `stop` field contains the
+current primary SuperTrend `stLine` on the confirmed flip bar: the current
+green/bullish value for LONG and the current red/bearish value for SHORT. This
+value is a candle-close threshold/reference, not a native TWS stop order.
+Telegram renders it as `Close Under <value>` for LONG and
+`Close Over <value>` for SHORT in both pending and broker-confirmed open
+messages.
+
+The frozen `broken_stl` value remains in raw payload data, setup state, the
+status table, and the optional `Broken STL` entry-anchor calculation. It is no
+longer drawn as a gray chart line. The legacy TradingView input title
+`Show Broken STL + Limit Entry` remains unchanged for UAM automation
+compatibility and now controls only the orange pending limit line.
+
 ### 3.3 Elvis
 
 **Public VECO name:** Elvis  
@@ -255,7 +269,8 @@ Verified features in this exact snapshot:
 - `FIONA_LIMIT_PULLBACK_ATR_TARGET` classification;
 - `🟣 Vixale Edge opened LONG/SHORT`;
 - Vixale Edge target, Stop Loss, and EOD lifecycle messages;
-- `Stop Ref` in Vixale Edge and Vixale Prime opening messages;
+- direction-aware `Close Under` / `Close Over` thresholds in Vixale Edge
+  pending/open messages, while Vixale Prime retains `Stop Ref`;
 - separate Vixale Prime opening messages preserved.
 
 Delivery convention when a direct file artifact is needed:
@@ -532,7 +547,7 @@ Webhook: https://www.vixale.com/tv
 Expiration: Open-ended
 ```
 
-Important: TradingView alerts store a snapshot of the strategy and its settings at creation time. Changing chart settings later does not update an existing alert. The alert must be recreated.
+Important: TradingView alerts store a snapshot of the strategy and its settings at creation time. Changing chart settings later does not update an existing alert. The alert must be recreated. Existing Vixale Edge alerts must be recreated after the current-SuperTrend pending-stop and chart-visual update so they use the new Pine payload semantics.
 
 ---
 
@@ -595,6 +610,12 @@ The same ID is retained across `PENDING_SETUP`, submitted `SETUP`, confirmed
 IB bridge. An identified `SETUP` preserves the exact Pending row until the
 broker returns `ENTRY_FILL`; the fill removes that row by `setup_id` and creates
 Open once. Legacy Edge alerts without `setup_id` remain supported.
+
+For a newly created Edge `PENDING_SETUP`, `stop` is the current primary
+SuperTrend `stLine` from the confirmed flip bar. LONG carries the current
+bullish/green threshold and SHORT carries the current bearish/red threshold.
+The separate `broken_stl` field retains the frozen prior SuperTrend value used
+by the optional Broken STL limit-entry anchor.
 
 For internal Shrek/Fiona processing, `CLOSE_STOP` still means the broker-confirmed
 opposite SuperTrend flip close. The raw event and stored Sheets event
@@ -1236,7 +1257,10 @@ Shrek and Fiona share a generic Opposite Flip strategy identifier. Always classi
 
 ### 13.2 TradingView alert snapshots
 
-Changing strategy settings on the chart does not alter existing alerts. Recreate the alert.
+Changing strategy settings or Pine source on the chart does not alter existing
+alerts. Recreate the alert. In particular, existing Vixale Edge alert instances
+retain the old pending `stop` semantics and must be recreated after the
+current-SuperTrend threshold update.
 
 ### 13.3 TradingView quantity
 
@@ -1694,7 +1718,10 @@ for intraday HTF misalignment, and expires visibly at the RTH close through a
 publication-only `PENDING_ONLY` cancellation. Filled Edge positions are never
 closed at EOD; their ATR targets remain GTC overnight. `app.js` publishes
 Pending state before execution and Open state only after broker-confirmed
-`ENTRY_FILL`.
+`ENTRY_FILL`. A new pending setup publishes the current primary SuperTrend
+`stLine` as `stop`, while preserving the frozen prior level separately as
+`broken_stl`; public Telegram copy renders that threshold as `Close Under` for
+LONG and `Close Over` for SHORT.
 **Reason:** Keep unfilled intent session-bounded while preserving the strategy's
 overnight-position design and execution-first public ledger.
 

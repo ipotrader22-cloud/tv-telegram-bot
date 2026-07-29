@@ -201,6 +201,8 @@ showSuperTrend = input.bool(
      "Show Current SuperTrend",
      group=groupVisuals)
 
+// Legacy input title retained for UAM automation compatibility; it now controls
+// only the orange Pending Limit Entry plot.
 showPendingLevels = input.bool(
      true,
      "Show Broken STL + Limit Entry",
@@ -682,7 +684,7 @@ if bullFlip and inRth and time_close < eodTimestamp
              setupLimitEntry,
              setupFlipClose,
              setupTarget,
-             setupBrokenStl,
+             stLine,
              f_entry_qty(setupLimitEntry),
              "VIXALE_EDGE_LONG_PENDING",
              setupBrokenStl,
@@ -757,7 +759,7 @@ if bearFlip and inRth and time_close < eodTimestamp
              setupLimitEntry,
              setupFlipClose,
              setupTarget,
-             setupBrokenStl,
+             stLine,
              f_entry_qty(setupLimitEntry),
              "VIXALE_EDGE_SHORT_PENDING",
              setupBrokenStl,
@@ -947,15 +949,6 @@ plot(
      showSuperTrend and bearTrend ? stLine : na,
      "Bearish SuperTrend",
      color=color.red,
-     linewidth=2,
-     style=plot.style_linebr)
-
-plot(
-     showPendingLevels and pendingDirection != 0 ?
-     setupBrokenStl :
-     na,
-     "Broken STL",
-     color=color.gray,
      linewidth=2,
      style=plot.style_linebr)
 

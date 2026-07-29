@@ -1159,6 +1159,16 @@ function parseJsonTradingViewAlert(data) {
 // PRETTY TELEGRAM FORMATTER
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+function edgeStopLossThresholdLine(row, prefix = '') {
+  if (!row || row.stop === '') return '';
+
+  const side = String(row.side || '').toUpperCase();
+  if (side !== 'LONG' && side !== 'SHORT') return '';
+
+  const thresholdDirection = side === 'SHORT' ? 'Close Over' : 'Close Under';
+  return `${prefix}Stop Loss: <b>${thresholdDirection} ${row.stop}</b>`;
+}
+
 function formatTelegramMessage(row, originalMessage) {
   if (!row || row.event === 'UNKNOWN') return originalMessage;
 
@@ -1172,7 +1182,7 @@ function formatTelegramMessage(row, originalMessage) {
       `<b>${row.symbol}${row.timeframe ? ` · ${row.timeframe}` : ''}</b>`,
       row.entry !== '' ? `Planned Entry: <b>${row.entry}</b>` : '',
       row.target !== '' ? `Target: <b>${row.target}</b>` : '',
-      row.stop !== '' ? 'Stop Loss: <b>confirmed opposite signal</b>' : '',
+      edgeStopLossThresholdLine(row),
     ].filter(Boolean).join('\n');
   }
 
@@ -1186,7 +1196,7 @@ function formatTelegramMessage(row, originalMessage) {
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
-        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
+        edgeStopLossThresholdLine(row, '🛑 '),
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -1243,7 +1253,7 @@ function formatTelegramMessage(row, originalMessage) {
         `<b>${row.symbol}</b>`,
         row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
-        row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
+        edgeStopLossThresholdLine(row, '🛑 '),
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
     }
@@ -9786,6 +9796,7 @@ if (require.main === module) {
 
 module.exports.__test = {
   parseJsonTradingViewAlert,
+  formatTelegramMessage,
   processLedger,
   processRecognizedTradingViewWebhookLifecycle,
   handleTradingViewWebhookWithDependencies,
