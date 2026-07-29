@@ -4,7 +4,8 @@ import asyncio
 import logging
 import math
 import hashlib
-from datetime import datetime, time
+import uuid
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional, Tuple, List
 
@@ -286,6 +287,7 @@ EDGE_STOP_POSITION_SYNC_SECONDS = max(
 )
 EDGE_STOP_MAX_CLOSE_ATTEMPTS = 2
 EDGE_STOP_BROKER_ACTION_RECOVERY_STATES = {
+    "QUEUED_NEXT_RTH_OPEN",
     "RESERVED",
     "TARGET_CANCEL_PENDING",
     "TARGET_CANCEL_UNCONFIRMED",
@@ -303,6 +305,7 @@ EDGE_STOP_PUBLICATION_ONLY_RECOVERY_STATES = {
 EDGE_STOP_READ_ONLY_RECOVERY_STATES = {
     "CLOSE_SUBMITTED",
     "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+    "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
     "FILLED_POSITION_NOT_FLAT",
 }
 EDGE_STOP_AUTOMATIC_RECOVERY_STATES = (
@@ -311,6 +314,12 @@ EDGE_STOP_AUTOMATIC_RECOVERY_STATES = (
     | EDGE_STOP_READ_ONLY_RECOVERY_STATES
 )
 SHREK_EOD_STRATEGY_IDS = {"SHREK", "SHREK_1_4"}
+
+BRIDGE_PROCESS_INSTANCE_ID = uuid.uuid4().hex
+BRIDGE_PROCESS_STARTED_AT = datetime.now(ZoneInfo("UTC")).isoformat()
+_ib_connection_generation = 0
+_ib_connection_ever_established = False
+_ib_connection_gap_observed = False
 
 _last_force_eod_date = None
 _force_eod_task = None
@@ -327,6 +336,7 @@ _execution_monitor_tasks = set()
 _target_report_claims = set()
 _target_report_claim_lock = asyncio.Lock()
 _edge_stop_close_lock = asyncio.Lock()
+_ib_connection_lock = asyncio.Lock()
 logger = logging.getLogger("vixale.ib_bridge")
 
 
@@ -338,6 +348,19 @@ def spawn_execution_monitor(coro: Any) -> None:
 
 app = FastAPI()
 ib = IB()
+
+
+def mark_ib_connection_gap(*_args: Any) -> None:
+    global _ib_connection_gap_observed
+    if _ib_connection_ever_established:
+        _ib_connection_gap_observed = True
+
+
+try:
+    ib.disconnectedEvent += mark_ib_connection_gap
+except Exception:
+    # Compatibility for test doubles and older IB client wrappers.
+    pass
 
 # Important:
 # IB API calls should not be hammered in parallel during EOD burst.
@@ -467,6 +490,7 @@ def mark_managed_position(data: Dict[str, Any], ib_result: Dict[str, Any]) -> No
         "fill_price": round_price(fill_price) if fill_price > 0 else "",
         "latest_status": ib_result.get("entry_status", ""),
         "filled_at": now_iso,
+        "exec_ids": list(ib_result.get("entry_exec_ids") or []),
     }
     target_order = {
         "order_id": ib_result.get("target_order_id", existing.get("ib_target_order_id", "")),
@@ -556,6 +580,7 @@ def mark_edge_entry_submission(data: Dict[str, Any], ib_result: Dict[str, Any]) 
             "fill_price": to_float(ib_result.get("entry_fill_price")),
             "latest_status": ib_result.get("entry_status", ""),
             "submitted_at": now_iso,
+            "exec_ids": list(ib_result.get("entry_exec_ids") or []),
         },
         "target_order": {
             "order_id": ib_result.get("target_order_id", ""),
@@ -926,6 +951,37 @@ def is_edge_v2_stop_close(data: Dict[str, Any]) -> bool:
     )
 
 
+def payload_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def is_edge_next_rth_stop_close(data: Dict[str, Any]) -> bool:
+    return (
+        is_edge_v2_stop_close(data)
+        and str(data.get("close_execution_policy") or "").upper().strip()
+        == "NEXT_RTH_OPEN"
+        and payload_bool(data.get("signal_at_rth_close"))
+        and parse_signal_session_date(data.get("signal_session_date"))
+        is not None
+        and to_float(data.get("signal_bar_time")) > 0
+    )
+
+
+def requests_edge_next_rth_stop_close(data: Dict[str, Any]) -> bool:
+    return (
+        is_edge_v2_stop_close(data)
+        and (
+            str(data.get("close_execution_policy") or "").upper().strip()
+            == "NEXT_RTH_OPEN"
+            or payload_bool(data.get("signal_at_rth_close"))
+            or str(data.get("reason") or "").upper().strip()
+            == "STOP_LOSS_SIGNAL_AT_RTH_CLOSE"
+        )
+    )
+
+
 def edge_stop_close_reservation_id(setup_id: str) -> str:
     return f"{str(setup_id or '').strip()}:CLOSE_STOP"
 
@@ -1023,6 +1079,124 @@ def reserve_edge_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
         "reservation": reservation,
         "existing": False,
     }
+
+
+def queue_edge_next_rth_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist a publication-silent close intent without touching IB."""
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    managed = load_managed_positions()
+    row = dict(managed.get(symbol) or {})
+    managed_setup_id = str(row.get("setup_id") or "").strip()
+    if (
+        not row
+        or not is_vixale_edge_managed_position(row)
+        or setup_id != managed_setup_id
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_SETUP_MISMATCH",
+            managed_setup_id=managed_setup_id,
+            canceled_open_orders=0,
+            managed_state_persisted=True,
+        )
+
+    reservation_id = edge_stop_close_reservation_id(setup_id)
+    existing = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    if existing:
+        if str(existing.get("reservation_id") or "") != reservation_id:
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_SETUP_MISMATCH",
+                managed_setup_id=managed_setup_id,
+                canceled_open_orders=0,
+                managed_state_persisted=True,
+            )
+        return edge_stop_close_result(
+            data,
+            (
+                "EDGE_STOP_QUEUED_NEXT_RTH_OPEN"
+                if str(existing.get("state") or "").upper().strip()
+                == "QUEUED_NEXT_RTH_OPEN"
+                else "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS"
+            ),
+            reservation_id=reservation_id,
+            queued_at=existing.get("queued_at", ""),
+            canceled_open_orders=0,
+            managed_state_persisted=True,
+            duplicate=True,
+        )
+
+    now_iso = now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat()
+    target_identity = managed_order_identity(row, "target")
+    entry_identity = managed_entry_order_identity(row)
+    original_managed_qty = to_float(row.get("qty"))
+    signal_time = queued_edge_signal_time({
+        "signal_bar_time": data.get("signal_bar_time"),
+    })
+    signal_timestamp = signal_time.isoformat() if signal_time else ""
+    signal_new_york_date = (
+        signal_time.astimezone(ZoneInfo(RTH_TIMEZONE)).date().isoformat()
+        if signal_time
+        else ""
+    )
+    reservation = {
+        "reservation_id": reservation_id,
+        "setup_id": setup_id,
+        "event": "CLOSE_STOP",
+        "state": "QUEUED_NEXT_RTH_OPEN",
+        "close_execution_policy": "NEXT_RTH_OPEN",
+        "signal_session_date": str(data.get("signal_session_date") or ""),
+        "signal_bar_time": data.get("signal_bar_time"),
+        "signal_timestamp": signal_timestamp,
+        "signal_new_york_date": signal_new_york_date,
+        "execution_coverage_required_from": signal_timestamp,
+        "bridge_process_instance_id": BRIDGE_PROCESS_INSTANCE_ID,
+        "bridge_process_started_at": BRIDGE_PROCESS_STARTED_AT,
+        "ib_connection_generation": _ib_connection_generation,
+        "coverage_continuity_process_instance_id": (
+            BRIDGE_PROCESS_INSTANCE_ID
+        ),
+        "coverage_continuity_connection_generation": (
+            _ib_connection_generation
+        ),
+        "queued_at": now_iso,
+        "original_payload": dict(data),
+        "managed_side": str(row.get("side") or "").upper().strip(),
+        "original_managed_qty": original_managed_qty,
+        "original_position_qty": original_managed_qty,
+        "entry_identity": entry_identity,
+        "entry_exec_ids": list(entry_identity.get("exec_ids") or []),
+        "queued_target_identity": target_identity,
+        "target_identity": target_identity,
+        "order_ref": edge_stop_close_order_ref(symbol, setup_id),
+        "attempt": 0,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    row["close_reservation"] = reservation
+    row["updated_at"] = now_iso
+    managed[symbol] = row
+    if not save_managed_positions(managed):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+    return edge_stop_close_result(
+        data,
+        "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+        reservation_id=reservation_id,
+        queued_at=now_iso,
+        canceled_open_orders=0,
+        managed_state_persisted=True,
+        duplicate=False,
+    )
 
 
 def update_edge_stop_close_reservation(
@@ -1440,15 +1614,31 @@ def validate_pretrade_risk(symbol: str, side: str, entry: float, qty: int, sec_t
 
 
 async def ensure_ib_connected() -> None:
-    if ib.isConnected():
-        return
+    global _ib_connection_generation
+    global _ib_connection_ever_established
+    global _ib_connection_gap_observed
 
-    await ib.connectAsync(
-        host=IB_HOST,
-        port=IB_PORT,
-        clientId=IB_CLIENT_ID,
-        timeout=10,
-    )
+    async with _ib_connection_lock:
+        if ib.isConnected():
+            if (
+                not _ib_connection_ever_established
+                or _ib_connection_gap_observed
+            ):
+                _ib_connection_generation += 1
+                _ib_connection_ever_established = True
+                _ib_connection_gap_observed = False
+            return
+
+        await ib.connectAsync(
+            host=IB_HOST,
+            port=IB_PORT,
+            clientId=IB_CLIENT_ID,
+            timeout=10,
+        )
+        if ib.isConnected():
+            _ib_connection_generation += 1
+            _ib_connection_ever_established = True
+            _ib_connection_gap_observed = False
 
 
 def stock_contract(symbol: str, data: Optional[Dict[str, Any]] = None) -> Stock:
@@ -2578,6 +2768,7 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             "entry_filled": entry_filled,
             "entry_fill_price": entry_fill_price,
             "entry_filled_qty": entry_filled_qty,
+            "entry_exec_ids": trade_execution_ids(entry_trade),
             "target_working": target_working,
         }
         mark_edge_entry_submission(data, identity_payload)
@@ -2634,6 +2825,7 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             "entry_filled": entry_filled,
             "entry_fill_price": entry_fill_price,
             "entry_filled_qty": entry_filled_qty,
+            "entry_exec_ids": trade_execution_ids(entry_trade),
             "target_working": target_working,
             **base_payload,
         }
@@ -2923,6 +3115,10 @@ async def authoritative_edge_close_refresh(
     )
     executions_result = await bounded_ib_refresh_request("reqExecutionsAsync")
     positions_result = await bounded_ib_refresh_request("reqPositionsAsync")
+    execution_coverage = execution_history_coverage_metadata(
+        reservation,
+        executions_result,
+    )
 
     trades = dedupe_ib_trades([
         *all_known_ib_trades(),
@@ -2987,6 +3183,10 @@ async def authoritative_edge_close_refresh(
 
     return {
         "authoritative": authoritative,
+        "execution_history_authoritative": execution_coverage[
+            "execution_history_covers_signal"
+        ],
+        **execution_coverage,
         "ambiguous": ambiguous,
         "trade": trade_matches[0] if len(trade_matches) == 1 else None,
         "execution": fill_evidence,
@@ -3936,8 +4136,16 @@ async def recover_reserved_edge_stop_close(
 def edge_stop_recovery_payload(
     row: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    queued_payload = reservation.get("original_payload")
     payload = (
-        dict(row.get("last_payload"))
+        dict(queued_payload)
+        if isinstance(queued_payload, dict)
+        else dict(row.get("last_payload"))
         if isinstance(row.get("last_payload"), dict)
         else {}
     )
@@ -3967,6 +4175,765 @@ def edge_stop_scheduler_broker_action_allowed(
         and BLOCK_MARKET_CLOSES_OUTSIDE_RTH
         and is_us_stock_rth_now()
     )
+
+
+def parse_signal_session_date(value: Any) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(value or "").strip())
+    except Exception:
+        return None
+
+
+def ib_session_timezone(value: Any) -> Optional[ZoneInfo]:
+    name = str(value or "").strip()
+    aliases = {
+        "US/EASTERN": "America/New_York",
+        "EST5EDT": "America/New_York",
+    }
+    try:
+        return ZoneInfo(aliases.get(name.upper(), name))
+    except Exception:
+        return None
+
+
+def parse_ib_session_stamp(
+    value: str,
+    default_day: str,
+    session_tz: ZoneInfo,
+) -> Optional[datetime]:
+    text = str(value or "").strip()
+    try:
+        if ":" in text:
+            day_text, hhmm = text.split(":", 1)
+        else:
+            day_text, hhmm = default_day, text
+        if len(day_text) != 8 or len(hhmm) != 4:
+            return None
+        return datetime(
+            int(day_text[0:4]),
+            int(day_text[4:6]),
+            int(day_text[6:8]),
+            int(hhmm[0:2]),
+            int(hhmm[2:4]),
+            tzinfo=session_tz,
+        )
+    except Exception:
+        return None
+
+
+def ib_contract_session_contains(
+    details: Any,
+    now_value: datetime,
+) -> bool:
+    session_tz = ib_session_timezone(
+        getattr(details, "timeZoneId", "")
+    )
+    hours = str(getattr(details, "liquidHours", "") or "").strip()
+    if session_tz is None or not hours:
+        return False
+
+    local_now = now_value.astimezone(session_tz)
+    for segment in hours.split(";"):
+        clean = segment.strip()
+        if not clean or "CLOSED" in clean.upper() or "-" not in clean:
+            continue
+        start_text, end_text = clean.split("-", 1)
+        default_day = start_text.split(":", 1)[0]
+        start = parse_ib_session_stamp(start_text, default_day, session_tz)
+        end = parse_ib_session_stamp(end_text, default_day, session_tz)
+        if start is not None and end is not None and start <= local_now < end:
+            return True
+    return False
+
+
+async def confirm_edge_next_rth_session(
+    data: Dict[str, Any],
+    now_value: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Require next-date NY RTH plus authoritative IB liquid-hours evidence."""
+    now_ny = now_value or now_in_tz(RTH_TIMEZONE)
+    signal_day = parse_signal_session_date(data.get("signal_session_date"))
+    if signal_day is None or now_ny.date() <= signal_day:
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+            "reason": "next_new_york_date_not_reached",
+        }
+    if not is_us_stock_rth_now():
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+            "reason": "outside_stock_rth",
+        }
+
+    try:
+        await ensure_ib_connected()
+        contract = await qualify_contract(data)
+        result = await bounded_ib_refresh_request(
+            "reqContractDetailsAsync",
+            contract,
+        )
+    except Exception as exc:
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            "reason": f"contract_session_lookup_failed:{exc}",
+        }
+
+    details = list(result.get("values") or [])
+    if (
+        not result.get("ok")
+        or len(details) != 1
+        or not ib_contract_session_contains(details[0], now_ny)
+    ):
+        return {
+            "confirmed": False,
+            "status": "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            "reason": (
+                result.get("error")
+                or "ib_liquid_hours_missing_closed_or_ambiguous"
+            ),
+        }
+    return {
+        "confirmed": True,
+        "status": "EDGE_STOP_NEXT_RTH_SESSION_CONFIRMED",
+        "contract": contract,
+        "liquid_hours": str(getattr(details[0], "liquidHours", "") or ""),
+        "time_zone_id": str(getattr(details[0], "timeZoneId", "") or ""),
+    }
+
+
+def comparable_execution_time(value: Any) -> Optional[datetime]:
+    parsed = parse_execution_time(value)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=ZoneInfo("UTC"))
+    return parsed.astimezone(ZoneInfo("UTC"))
+
+
+def queued_edge_signal_time(reservation: Dict[str, Any]) -> Optional[datetime]:
+    exact_value = (
+        reservation.get("execution_coverage_required_from")
+        or reservation.get("signal_timestamp")
+    )
+    if exact_value not in (None, ""):
+        exact_time = comparable_execution_time(exact_value)
+        if exact_time is not None:
+            return exact_time
+
+    value = reservation.get("signal_bar_time")
+    numeric = to_float(value)
+    if numeric > 0:
+        try:
+            seconds = numeric / 1000.0 if numeric > 100000000000 else numeric
+            return datetime.fromtimestamp(seconds, tz=ZoneInfo("UTC"))
+        except (OverflowError, OSError, ValueError):
+            return None
+    return comparable_execution_time(value)
+
+
+def execution_history_coverage_metadata(
+    reservation: Dict[str, Any],
+    executions_result: Dict[str, Any],
+    now_value: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    now_utc = comparable_execution_time(
+        now_value or datetime.now(ZoneInfo("UTC"))
+    )
+    if now_utc is None:
+        now_utc = datetime.now(ZoneInfo("UTC"))
+    now_ny = now_utc.astimezone(ZoneInfo(RTH_TIMEZONE))
+    ny_midnight = datetime(
+        now_ny.year,
+        now_ny.month,
+        now_ny.day,
+        tzinfo=ZoneInfo(RTH_TIMEZONE),
+    ).astimezone(ZoneInfo("UTC"))
+    signal_time = queued_edge_signal_time(reservation)
+    queued_process_id = str(
+        reservation.get("bridge_process_instance_id") or ""
+    ).strip()
+    queued_generation = int(
+        to_float(reservation.get("ib_connection_generation"))
+    )
+    continuity_process_id = str(
+        reservation.get("coverage_continuity_process_instance_id")
+        or queued_process_id
+    ).strip()
+    continuity_generation = int(to_float(
+        reservation.get("coverage_continuity_connection_generation")
+        if reservation.get("coverage_continuity_connection_generation")
+        not in (None, "")
+        else queued_generation
+    ))
+    process_unchanged = (
+        bool(continuity_process_id)
+        and continuity_process_id == BRIDGE_PROCESS_INSTANCE_ID
+    )
+    connection_unchanged = (
+        continuity_generation > 0
+        and continuity_generation == _ib_connection_generation
+    )
+    api_ok = bool(
+        executions_result.get("supported")
+        and executions_result.get("ok")
+    )
+    metadata = {
+        "execution_history_scope_start": ny_midnight.isoformat(),
+        "execution_history_scope_end": (
+            now_utc.isoformat() if executions_result.get("ok") else ""
+        ),
+        "execution_history_covers_signal": False,
+        "coverage_process_instance_id": BRIDGE_PROCESS_INSTANCE_ID,
+        "coverage_process_started_at": BRIDGE_PROCESS_STARTED_AT,
+        "coverage_connection_generation": _ib_connection_generation,
+        "coverage_continuity_process_instance_id": (
+            continuity_process_id
+        ),
+        "coverage_continuity_connection_generation": (
+            continuity_generation
+        ),
+        "coverage_gap_detected": True,
+        "coverage_reason": "",
+    }
+
+    if signal_time is None:
+        metadata["coverage_reason"] = "queued_signal_timestamp_missing"
+        return metadata
+    if signal_time > now_utc:
+        metadata["coverage_reason"] = "queued_signal_after_refresh_scope_end"
+        return metadata
+    if not executions_result.get("supported"):
+        metadata["coverage_reason"] = "req_executions_unsupported"
+        return metadata
+    if not executions_result.get("ok"):
+        metadata["coverage_reason"] = "req_executions_refresh_failed"
+        return metadata
+
+    signal_ny_date = signal_time.astimezone(
+        ZoneInfo(RTH_TIMEZONE)
+    ).date()
+    if signal_ny_date == now_ny.date() and signal_time >= ny_midnight:
+        metadata["execution_history_covers_signal"] = True
+        metadata["coverage_gap_detected"] = False
+        metadata["coverage_reason"] = (
+            "same_new_york_date_req_executions_since_midnight"
+        )
+        metadata["coverage_continuity_process_instance_id"] = (
+            BRIDGE_PROCESS_INSTANCE_ID
+        )
+        metadata["coverage_continuity_connection_generation"] = (
+            _ib_connection_generation
+        )
+        return metadata
+
+    if api_ok and process_unchanged and connection_unchanged:
+        metadata["execution_history_covers_signal"] = True
+        metadata["coverage_gap_detected"] = False
+        metadata["coverage_reason"] = (
+            "retained_fills_plus_current_req_executions_continuous"
+        )
+        return metadata
+
+    if not continuity_process_id:
+        metadata["coverage_reason"] = "queued_process_identity_missing"
+    elif not process_unchanged:
+        metadata["coverage_reason"] = "bridge_process_changed_after_signal"
+    elif continuity_generation <= 0:
+        metadata["coverage_reason"] = (
+            "queued_ib_connection_generation_unestablished"
+        )
+    elif not connection_unchanged:
+        metadata["coverage_reason"] = (
+            "ib_connection_generation_changed_after_signal"
+        )
+    else:
+        metadata["coverage_reason"] = "prior_day_execution_coverage_unproven"
+    return metadata
+
+
+def same_order_identity(
+    expected: Dict[str, Any],
+    actual: Dict[str, Any],
+) -> bool:
+    return identity_matches(
+        actual.get("order_id"),
+        actual.get("perm_id"),
+        actual.get("order_ref"),
+        expected,
+    )
+
+
+def queued_target_replacement_is_authorized(
+    reservation: Dict[str, Any],
+    queued_identity: Dict[str, Any],
+    current_identity: Dict[str, Any],
+) -> bool:
+    setup_id = str(reservation.get("setup_id") or "").strip()
+    for item in reservation.get("authorized_target_replacements") or []:
+        if not isinstance(item, dict):
+            continue
+        prior = item.get("prior_identity")
+        replacement = item.get("replacement_identity")
+        broker_evidence = item.get("broker_evidence")
+        if (
+            str(item.get("setup_id") or "").strip() == setup_id
+            and item.get("authorized_by_bridge") is True
+            and isinstance(prior, dict)
+            and isinstance(replacement, dict)
+            and isinstance(broker_evidence, dict)
+            and any(
+                broker_evidence.get(key) not in (None, "", 0, "0")
+                for key in ("perm_id", "order_id")
+            )
+            and same_order_identity(queued_identity, prior)
+            and same_order_identity(replacement, current_identity)
+        ):
+            return True
+    return False
+
+
+def queued_edge_stop_ownership_evidence(
+    row: Dict[str, Any],
+    reservation: Dict[str, Any],
+    refresh: Dict[str, Any],
+) -> Dict[str, Any]:
+    queued_target = dict(
+        reservation.get("queued_target_identity")
+        or reservation.get("target_identity")
+        or {}
+    )
+    current_target = managed_order_identity(row, "target")
+    original_qty = (
+        to_float(reservation.get("original_managed_qty"))
+        or to_float(reservation.get("original_position_qty"))
+    )
+    position_size = to_float(refresh.get("position"))
+    managed_side = str(
+        reservation.get("managed_side")
+        or row.get("side")
+        or ""
+    ).upper().strip()
+    signal_time = queued_edge_signal_time(reservation)
+    result = {
+        "proven": False,
+        "reason": "",
+        "queued_target_identity": queued_target,
+        "current_target_identity": current_target,
+        "original_managed_qty": original_qty,
+        "target_filled_qty": 0.0,
+        "expected_remaining_qty": original_qty,
+        "current_position": position_size,
+        "unexpected_execution_ids": [],
+    }
+    if (
+        signal_time is None
+        or original_qty <= 0
+        or managed_side not in ("LONG", "SHORT")
+    ):
+        result["reason"] = "queued_ownership_snapshot_incomplete"
+        return result
+
+    target_identity_present = any(
+        queued_target.get(key) not in (None, "", 0, "0")
+        for key in ("perm_id", "order_id", "order_ref")
+    )
+    if not target_identity_present:
+        result["reason"] = "queued_target_identity_missing"
+        return result
+    if not (
+        same_order_identity(queued_target, current_target)
+        or queued_target_replacement_is_authorized(
+            reservation,
+            queued_target,
+            current_target,
+        )
+    ):
+        result["reason"] = "queued_target_identity_changed"
+        return result
+
+    symbol = str(row.get("symbol") or "").upper().strip()
+    exit_action = expected_exit_action(row)
+    close_identities = [
+        expected
+        for _attempt, expected in edge_close_attempt_identities(row)
+    ]
+    reservation_identity = {
+        "order_id": reservation.get("order_id"),
+        "perm_id": reservation.get("perm_id"),
+        "order_ref": reservation.get("order_ref"),
+    }
+    if any(
+        reservation_identity.get(key) not in (None, "", 0, "0")
+        for key in ("perm_id", "order_id", "order_ref")
+    ):
+        close_identities.append(reservation_identity)
+
+    after_signal = []
+    history_incomplete = False
+    for fill in list(refresh.get("fills") or []):
+        if fill_contract_symbol(fill) != symbol:
+            continue
+        details = fill_execution_details(fill)
+        executed_at = comparable_execution_time(details.get("time"))
+        if executed_at is None:
+            history_incomplete = True
+            continue
+        if executed_at < signal_time:
+            continue
+        after_signal.append(details)
+
+    unique, conflicting, missing_exec_id = dedupe_execution_details_by_exec_id(
+        after_signal
+    )
+    if conflicting or missing_exec_id or history_incomplete:
+        result["reason"] = "post_signal_execution_history_incomplete"
+        result["unexpected_execution_ids"] = sorted({
+            str(item.get("exec_id") or "<missing>")
+            for item in after_signal
+        })
+        return result
+
+    target_components = []
+    unexpected = []
+    for details in unique:
+        is_closing_action = str(details.get("action") or "").upper() == exit_action
+        is_target = (
+            is_closing_action
+            and identity_matches(
+                details.get("order_id"),
+                details.get("perm_id"),
+                details.get("order_ref"),
+                queued_target,
+            )
+        )
+        is_reserved_close = (
+            is_closing_action
+            and any(
+                identity_matches(
+                    details.get("order_id"),
+                    details.get("perm_id"),
+                    details.get("order_ref"),
+                    expected,
+                )
+                for expected in close_identities
+            )
+        )
+        if is_target:
+            if (
+                to_float(details.get("qty")) <= 0
+                or to_float(details.get("price")) <= 0
+            ):
+                result["reason"] = "queued_target_execution_incomplete"
+                result["unexpected_execution_ids"] = [
+                    str(details.get("exec_id") or "<missing>")
+                ]
+                return result
+            target_components.append(details)
+        elif not is_reserved_close:
+            unexpected.append(str(details.get("exec_id") or "<missing>"))
+
+    target_filled_qty = sum(
+        to_float(component.get("qty"))
+        for component in target_components
+    )
+    expected_remaining = max(0.0, original_qty - target_filled_qty)
+    result["target_filled_qty"] = target_filled_qty
+    result["expected_remaining_qty"] = expected_remaining
+    result["unexpected_execution_ids"] = sorted(set(unexpected))
+    if unexpected:
+        result["reason"] = "unexpected_post_signal_execution"
+        return result
+    if target_filled_qty - original_qty > 0.000001:
+        result["reason"] = "target_execution_exceeds_original_quantity"
+        return result
+    if not position_matches_managed_side(managed_side, position_size):
+        result["reason"] = "managed_side_changed"
+        return result
+    if abs(abs(position_size) - expected_remaining) > 0.000001:
+        result["reason"] = "position_quantity_breaks_ownership_continuity"
+        return result
+
+    result["proven"] = True
+    result["reason"] = "ownership_continuity_proven"
+    return result
+
+
+async def recover_queued_edge_stop_next_rth(
+    data: Dict[str, Any],
+    row: Dict[str, Any],
+    reservation: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Observe overnight outcomes, then promote once into the Part 3A sequence."""
+    refresh = await authoritative_edge_close_refresh(row, reservation)
+    position_size = to_float(refresh.get("position"))
+    coverage_fields = {
+        key: refresh.get(key)
+        for key in (
+            "execution_history_scope_start",
+            "execution_history_scope_end",
+            "execution_history_covers_signal",
+            "coverage_process_instance_id",
+            "coverage_process_started_at",
+            "coverage_connection_generation",
+            "coverage_continuity_process_instance_id",
+            "coverage_continuity_connection_generation",
+            "coverage_gap_detected",
+            "coverage_reason",
+        )
+    }
+    if "trades" in refresh or "fills" in refresh:
+        if not persist_edge_close_attempt_history(data, refresh):
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_before_close=position_size,
+                canceled_open_orders=0,
+                managed_state_persisted=False,
+            )
+        current = reserve_edge_stop_close(data)
+        row = dict(current.get("row") or row)
+        reservation = dict(current.get("reservation") or reservation)
+
+    current_state = str(
+        reservation.get("state") or "QUEUED_NEXT_RTH_OPEN"
+    ).upper().strip()
+    if not update_edge_stop_close_reservation(
+        data,
+        current_state,
+        **coverage_fields,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+    current = reserve_edge_stop_close(data)
+    row = dict(current.get("row") or row)
+    reservation = dict(current.get("reservation") or reservation)
+
+    if not refresh.get("position_authoritative"):
+        deferred_state = (
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            if current_state
+            == "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            else "QUEUED_NEXT_RTH_OPEN"
+        )
+        persisted = update_edge_stop_close_reservation(
+            data,
+            deferred_state,
+            last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            recovery_errors=refresh.get("errors") or [],
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    if abs(position_size) <= 0.000001:
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+            position_after_recovery_refresh=position_size,
+            overnight_flat_before_next_rth=True,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_POSITION_FLAT_RECOVERY",
+            position_after_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    if not refresh.get("execution_history_covers_signal"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+            prior_state=current_state,
+            position_after_recovery_refresh=position_size,
+            signal_timestamp=reservation.get("signal_timestamp", ""),
+            execution_coverage_required_from=reservation.get(
+                "execution_coverage_required_from",
+                "",
+            ),
+            bridge_process_instance_id=reservation.get(
+                "bridge_process_instance_id",
+                "",
+            ),
+            ib_connection_generation=reservation.get(
+                "ib_connection_generation",
+                0,
+            ),
+            **coverage_fields,
+        )
+        logger.critical(
+            "[EDGE STOP NEXT RTH HISTORY COVERAGE UNPROVEN] "
+            "symbol=%s setup_id=%s signal=%s queued_process=%s "
+            "current_process=%s queued_generation=%s current_generation=%s "
+            "scope_start=%s scope_end=%s reason=%s",
+            str(data.get("symbol") or "").upper().strip(),
+            str(data.get("setup_id") or "").strip(),
+            reservation.get("signal_timestamp"),
+            reservation.get("bridge_process_instance_id"),
+            coverage_fields.get("coverage_process_instance_id"),
+            reservation.get("ib_connection_generation"),
+            coverage_fields.get("coverage_connection_generation"),
+            coverage_fields.get("execution_history_scope_start"),
+            coverage_fields.get("execution_history_scope_end"),
+            coverage_fields.get("coverage_reason"),
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+            coverage_gap_detected=True,
+            coverage_reason=coverage_fields.get("coverage_reason"),
+        )
+
+    if (
+        refresh.get("ambiguous")
+        or not refresh.get("authoritative")
+    ):
+        deferred_state = (
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            if current_state
+            == "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            else "QUEUED_NEXT_RTH_OPEN"
+        )
+        persisted = update_edge_stop_close_reservation(
+            data,
+            deferred_state,
+            last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            recovery_errors=refresh.get("errors") or [],
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    ownership = queued_edge_stop_ownership_evidence(
+        row,
+        reservation,
+        refresh,
+    )
+    if not ownership.get("proven"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+            prior_state="QUEUED_NEXT_RTH_OPEN",
+            critical_reason=ownership.get("reason", "ownership_unproven"),
+            queued_target_identity=ownership.get("queued_target_identity", {}),
+            current_target_identity=ownership.get("current_target_identity", {}),
+            original_managed_qty=ownership.get("original_managed_qty", 0),
+            expected_remaining_qty=ownership.get("expected_remaining_qty", 0),
+            position_after_recovery_refresh=position_size,
+            unexpected_execution_ids=ownership.get(
+                "unexpected_execution_ids",
+                [],
+            ),
+        )
+        logger.critical(
+            "[EDGE STOP NEXT RTH OWNERSHIP CONFLICT] "
+            "symbol=%s setup_id=%s queued_target=%s current_target=%s "
+            "original_qty=%s expected_remaining=%s current_position=%s "
+            "unexpected_exec_ids=%s reason=%s",
+            str(data.get("symbol") or "").upper().strip(),
+            str(data.get("setup_id") or "").strip(),
+            ownership.get("queued_target_identity"),
+            ownership.get("current_target_identity"),
+            ownership.get("original_managed_qty"),
+            ownership.get("expected_remaining_qty"),
+            position_size,
+            ownership.get("unexpected_execution_ids"),
+            ownership.get("reason"),
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+            position_before_close=position_size,
+            expected_remaining_qty=ownership.get("expected_remaining_qty", 0),
+            unexpected_execution_ids=ownership.get(
+                "unexpected_execution_ids",
+                [],
+            ),
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    session = await confirm_edge_next_rth_session(data)
+    if not session.get("confirmed"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "QUEUED_NEXT_RTH_OPEN",
+            last_queue_status=session.get("status"),
+            session_confirmation_reason=session.get("reason", ""),
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            str(session.get("status") or "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED"),
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    target_identity = managed_order_identity(row, "target")
+    target_trade = find_exact_managed_target_trade(row)
+    if (
+        not any(
+            target_identity.get(key) not in (None, "", 0, "0")
+            for key in ("perm_id", "order_id", "order_ref")
+        )
+        or target_trade is None
+    ):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "QUEUED_NEXT_RTH_OPEN",
+            last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            session_confirmation_reason="managed_target_identity_unconfirmed",
+            position_after_recovery_refresh=position_size,
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    if not update_edge_stop_close_reservation(
+        data,
+        "RESERVED",
+        attempt=1,
+        eligible_at=now_in_tz(RTH_TIMEZONE).isoformat(),
+        ib_session_confirmed=True,
+        ib_liquid_hours=session.get("liquid_hours", ""),
+        ib_session_timezone=session.get("time_zone_id", ""),
+        position_before_close=position_size,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+
+    current = reserve_edge_stop_close(data)
+    return await execute_edge_v2_stop_close(data, current)
 
 
 async def recover_edge_stop_read_only(
@@ -4312,6 +5279,16 @@ async def recover_edge_stop_reservation_from_scheduler(
                 "status": "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
                 "state": state,
             }
+
+        if state in {
+            "QUEUED_NEXT_RTH_OPEN",
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        }:
+            return await recover_queued_edge_stop_next_rth(
+                data,
+                current_row,
+                reservation,
+            )
 
         if (
             state in EDGE_STOP_PUBLICATION_ONLY_RECOVERY_STATES
@@ -4724,6 +5701,15 @@ async def _close_position_market(data: Dict[str, Any]) -> Dict[str, Any]:
 
     reserved: Optional[Dict[str, Any]] = None
     if is_edge_v2_stop_close(data):
+        if is_edge_next_rth_stop_close(data):
+            return queue_edge_next_rth_stop_close(data)
+        if requests_edge_next_rth_stop_close(data):
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_NEXT_RTH_POLICY_INVALID",
+                canceled_open_orders=0,
+                managed_state_persisted=True,
+            )
         reserved = reserve_edge_stop_close(data)
         if not reserved.get("ok"):
             return edge_stop_close_result(
@@ -5249,6 +6235,7 @@ async def monitor_entry_fill_confirmation(
                 result["entry_filled"] = True
                 result["entry_fill_price"] = trade_fill_price(entry_trade, entry_reference_price)
                 result["entry_filled_qty"] = filled_qty
+                result["entry_exec_ids"] = trade_execution_ids(entry_trade)
                 result["target_position_qty"] = final_position_qty
                 result["desired_qty"] = final_position_qty
 
@@ -6062,6 +7049,24 @@ def managed_order_identity(row: Dict[str, Any], kind: str) -> Dict[str, Any]:
             or to_float(reservation.get("remaining_qty"))
             or to_float(row.get("qty"))
         ),
+    }
+
+
+def managed_entry_order_identity(row: Dict[str, Any]) -> Dict[str, Any]:
+    entry = row.get("entry_order") if isinstance(row.get("entry_order"), dict) else {}
+    return {
+        "order_id": entry.get("order_id") or row.get("ib_order_id"),
+        "perm_id": entry.get("perm_id") or row.get("ib_order_perm_id"),
+        "order_ref": entry.get("order_ref") or row.get("ib_order_ref"),
+        "exec_ids": sorted({
+            str(value)
+            for value in (
+                entry.get("exec_ids")
+                or row.get("ib_entry_exec_ids")
+                or []
+            )
+            if str(value or "").strip()
+        }),
     }
 
 

@@ -128,6 +128,12 @@ def managed_edge_row(setup_id="VIXALE_EDGE:AAPL:60:LONG:1"):
         "strategy": payload["strategy"],
         "variant": payload["variant"],
         "last_payload": payload,
+        "entry_order": {
+            "order_id": 100,
+            "perm_id": 1100,
+            "order_ref": "TVFVG_AAPL_LONG_ENTRY",
+            "exec_ids": ["ENTRY-1"],
+        },
         "target_order": {
             "order_id": 200,
             "perm_id": 2200,
@@ -873,7 +879,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             order_ref="TVFVG_CLOSE_AAPL_PARTIAL",
             action="SELL",
             status="Filled",
-            filled=6,
+            filled=7,
             price=97.1,
             exec_id="STOP-PARTIAL-1",
         )
@@ -889,7 +895,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
 
         def partial_fill_then_cancel(_order):
             target_trade.orderStatus.status = "Cancelled"
-            target_trade.orderStatus.filled = 4
+            target_trade.orderStatus.filled = 3
             target_trade.orderStatus.avgFillPrice = 105.2
 
         def place_order(_contract, order):
@@ -902,7 +908,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             patch.object(ib_bridge, "CANCEL_ORPHAN_TARGETS_AFTER_FLAT", False),
             patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
             patch.object(ib_bridge, "qualify_contract", AsyncMock(return_value=SimpleNamespace(symbol="AAPL"))),
-            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=6.0)),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=7.0)),
             patch.object(ib_bridge, "verify_position_flat", AsyncMock(return_value=(True, 0.0))),
             patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
             patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
@@ -920,12 +926,12 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             result = await ib_bridge.close_position_market(payload)
 
         self.assertEqual(result["status"], "submitted")
-        self.assertEqual(result["qty"], 6)
-        self.assertEqual(result["position_before_close"], 6.0)
+        self.assertEqual(result["qty"], 7)
+        self.assertEqual(result["position_before_close"], 7.0)
         self.assertEqual(len(placed_orders), 1)
-        self.assertEqual(placed_orders[0].totalQuantity, 6)
+        self.assertEqual(placed_orders[0].totalQuantity, 7)
         self.assertEqual(result["public_close_qty"], 10)
-        self.assertEqual(result["public_close_price"], 100.34)
+        self.assertEqual(result["public_close_price"], 99.53)
         self.assertEqual(
             result["reason"],
             "IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED",
@@ -3144,6 +3150,1350 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["status"], "EDGE_STOP_SETUP_MISMATCH")
         execute_close.assert_not_awaited()
+
+
+class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
+    def queued_payload(self, **overrides):
+        return edge_payload(
+            event="CLOSE_STOP",
+            close_execution_policy="NEXT_RTH_OPEN",
+            signal_at_rth_close=True,
+            signal_session_date="2026-07-28",
+            signal_bar_time=1785279600000,
+            reason="STOP_LOSS_SIGNAL_AT_RTH_CLOSE",
+            **overrides,
+        )
+
+    def store(self):
+        return {"AAPL": managed_edge_row()}
+
+    async def queue_into_store(self, store, payload=None):
+        payload = payload or self.queued_payload()
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+        ):
+            result = await ib_bridge.close_position_market(payload)
+        return result
+
+    async def recover_queued_store(
+        self,
+        store,
+        refresh,
+        *,
+        session_confirmed=True,
+        target_trade=None,
+    ):
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        if target_trade is None:
+            target_trade = fake_trade(
+                order_id=200,
+                perm_id=2200,
+                order_ref="TVFVG_AAPL_LONG_TP",
+                action="SELL",
+                status="Submitted",
+                filled=0,
+                price=0,
+            )
+        execute_result = {
+            "status": "submitted_awaiting_close_fill",
+            "close_order_qty": abs(ib_bridge.to_float(refresh.get("position"))),
+        }
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "authoritative_edge_close_refresh",
+                AsyncMock(return_value=refresh),
+            ),
+            patch.object(
+                ib_bridge,
+                "confirm_edge_next_rth_session",
+                AsyncMock(return_value={
+                    "confirmed": session_confirmed,
+                    "status": (
+                        "EDGE_STOP_NEXT_RTH_SESSION_CONFIRMED"
+                        if session_confirmed
+                        else "EDGE_STOP_QUEUED_NEXT_RTH_OPEN"
+                    ),
+                    "reason": (
+                        ""
+                        if session_confirmed
+                        else "next_new_york_date_not_reached"
+                    ),
+                    "liquid_hours": "20260729:0930-20260729:1600",
+                    "time_zone_id": "US/Eastern",
+                }),
+            ) as confirm_session,
+            patch.object(
+                ib_bridge,
+                "find_exact_managed_target_trade",
+                return_value=target_trade,
+            ),
+            patch.object(
+                ib_bridge,
+                "execute_edge_v2_stop_close",
+                AsyncMock(return_value=execute_result),
+            ) as execute_close,
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            result = await ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                copy.deepcopy(store["AAPL"])
+            )
+        return {
+            "result": result,
+            "execute_close": execute_close,
+            "confirm_session": confirm_session,
+            "cancel_target": cancel_target,
+            "place_order": place_order,
+        }
+
+    def authoritative_refresh(self, position, fills=None, trades=None, **overrides):
+        result = {
+            "authoritative": True,
+            "execution_history_authoritative": True,
+            "execution_history_scope_start": (
+                "2026-07-29T04:00:00+00:00"
+            ),
+            "execution_history_scope_end": (
+                "2026-07-29T13:31:00+00:00"
+            ),
+            "execution_history_covers_signal": True,
+            "coverage_process_instance_id": (
+                ib_bridge.BRIDGE_PROCESS_INSTANCE_ID
+            ),
+            "coverage_process_started_at": (
+                ib_bridge.BRIDGE_PROCESS_STARTED_AT
+            ),
+            "coverage_connection_generation": (
+                ib_bridge._ib_connection_generation
+            ),
+            "coverage_continuity_process_instance_id": (
+                ib_bridge.BRIDGE_PROCESS_INSTANCE_ID
+            ),
+            "coverage_continuity_connection_generation": (
+                ib_bridge._ib_connection_generation
+            ),
+            "coverage_gap_detected": False,
+            "coverage_reason": (
+                "retained_fills_plus_current_req_executions_continuous"
+            ),
+            "ambiguous": False,
+            "trade": None,
+            "execution": None,
+            "position": position,
+            "position_authoritative": True,
+            "matching_trade_count": 0,
+            "trades": list(trades or []),
+            "fills": list(fills or []),
+            "errors": [],
+        }
+        result.update(overrides)
+        return result
+
+    def post_signal_fill(
+        self,
+        *,
+        exec_id,
+        shares,
+        side,
+        order_id,
+        perm_id,
+        order_ref,
+        minute=1,
+    ):
+        return fake_fill(
+            order_id=order_id,
+            perm_id=perm_id,
+            exec_id=exec_id,
+            side=side,
+            shares=shares,
+            price=99,
+            order_ref=order_ref,
+            execution_time=datetime(
+                2026,
+                7,
+                28,
+                23,
+                minute,
+                tzinfo=ib_bridge.ZoneInfo("UTC"),
+            ),
+        )
+
+    def coverage_reservation(self, **overrides):
+        reservation = {
+            "signal_timestamp": "2026-07-28T20:00:00+00:00",
+            "execution_coverage_required_from": (
+                "2026-07-28T20:00:00+00:00"
+            ),
+            "bridge_process_instance_id": (
+                ib_bridge.BRIDGE_PROCESS_INSTANCE_ID
+            ),
+            "ib_connection_generation": 7,
+        }
+        reservation.update(overrides)
+        return reservation
+
+    def successful_empty_executions(self):
+        return {
+            "supported": True,
+            "ok": True,
+            "values": [],
+            "error": "",
+        }
+
+    def test_execution_history_coverage_rules(self):
+        next_rth = datetime(
+            2026,
+            7,
+            29,
+            13,
+            31,
+            tzinfo=ib_bridge.ZoneInfo("UTC"),
+        )
+        same_date = datetime(
+            2026,
+            7,
+            28,
+            21,
+            0,
+            tzinfo=ib_bridge.ZoneInfo("UTC"),
+        )
+        with patch.object(ib_bridge, "_ib_connection_generation", 7):
+            uninterrupted = (
+                ib_bridge.execution_history_coverage_metadata(
+                    self.coverage_reservation(),
+                    self.successful_empty_executions(),
+                    next_rth,
+                )
+            )
+            restarted = ib_bridge.execution_history_coverage_metadata(
+                self.coverage_reservation(
+                    bridge_process_instance_id="PRIOR-PROCESS",
+                ),
+                self.successful_empty_executions(),
+                next_rth,
+            )
+            same_date_restart = (
+                ib_bridge.execution_history_coverage_metadata(
+                    self.coverage_reservation(
+                        bridge_process_instance_id="PRIOR-PROCESS",
+                    ),
+                    self.successful_empty_executions(),
+                    same_date,
+                )
+            )
+            reconstructed_reservation = self.coverage_reservation(
+                bridge_process_instance_id="PRIOR-PROCESS",
+                coverage_continuity_process_instance_id=(
+                    same_date_restart[
+                        "coverage_continuity_process_instance_id"
+                    ]
+                ),
+                coverage_continuity_connection_generation=(
+                    same_date_restart[
+                        "coverage_continuity_connection_generation"
+                    ]
+                ),
+            )
+            reconstructed_next_day = (
+                ib_bridge.execution_history_coverage_metadata(
+                    reconstructed_reservation,
+                    self.successful_empty_executions(),
+                    next_rth,
+                )
+            )
+        with patch.object(ib_bridge, "_ib_connection_generation", 8):
+            disconnected = ib_bridge.execution_history_coverage_metadata(
+                self.coverage_reservation(),
+                self.successful_empty_executions(),
+                next_rth,
+            )
+
+        self.assertTrue(
+            uninterrupted["execution_history_covers_signal"]
+        )
+        self.assertEqual(
+            uninterrupted["coverage_reason"],
+            "retained_fills_plus_current_req_executions_continuous",
+        )
+        self.assertFalse(restarted["execution_history_covers_signal"])
+        self.assertTrue(restarted["coverage_gap_detected"])
+        self.assertEqual(
+            restarted["coverage_reason"],
+            "bridge_process_changed_after_signal",
+        )
+        self.assertFalse(disconnected["execution_history_covers_signal"])
+        self.assertEqual(
+            disconnected["coverage_reason"],
+            "ib_connection_generation_changed_after_signal",
+        )
+        self.assertTrue(
+            same_date_restart["execution_history_covers_signal"]
+        )
+        self.assertEqual(
+            same_date_restart["coverage_reason"],
+            "same_new_york_date_req_executions_since_midnight",
+        )
+        self.assertTrue(
+            reconstructed_next_day["execution_history_covers_signal"]
+        )
+
+    async def test_connection_generation_changes_after_reconnect(self):
+        connected = [False, True, False, True]
+
+        def is_connected():
+            return connected.pop(0)
+
+        with (
+            patch.object(ib_bridge, "_ib_connection_generation", 0),
+            patch.object(ib_bridge, "_ib_connection_ever_established", False),
+            patch.object(ib_bridge, "_ib_connection_gap_observed", False),
+            patch.object(
+                ib_bridge.ib,
+                "isConnected",
+                side_effect=is_connected,
+            ),
+            patch.object(
+                ib_bridge.ib,
+                "connectAsync",
+                AsyncMock(),
+                create=True,
+            ) as connect,
+        ):
+            await ib_bridge.ensure_ib_connected()
+            first_generation = ib_bridge._ib_connection_generation
+            await ib_bridge.ensure_ib_connected()
+            second_generation = ib_bridge._ib_connection_generation
+
+        self.assertEqual(first_generation, 1)
+        self.assertEqual(second_generation, 2)
+        self.assertEqual(connect.await_count, 2)
+
+    async def test_queue_is_persistent_publication_silent_and_idempotent(self):
+        payload = self.queued_payload()
+        store = self.store()
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "ensure_ib_connected",
+                AsyncMock(),
+            ) as connect,
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(
+                ib_bridge,
+                "forward_to_render",
+                AsyncMock(),
+            ) as forward,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            first = await ib_bridge.close_position_market(payload)
+            second = await ib_bridge.close_position_market(payload)
+            await ib_bridge.process_signal_background(payload)
+
+        self.assertEqual(first["status"], "EDGE_STOP_QUEUED_NEXT_RTH_OPEN")
+        self.assertFalse(first["duplicate"])
+        self.assertEqual(second["status"], "EDGE_STOP_QUEUED_NEXT_RTH_OPEN")
+        self.assertTrue(second["duplicate"])
+        reservation = store["AAPL"]["close_reservation"]
+        self.assertEqual(reservation["state"], "QUEUED_NEXT_RTH_OPEN")
+        self.assertEqual(reservation["attempt"], 0)
+        self.assertEqual(reservation["setup_id"], payload["setup_id"])
+        self.assertEqual(
+            reservation["reservation_id"],
+            f"{payload['setup_id']}:CLOSE_STOP",
+        )
+        self.assertEqual(
+            reservation["signal_session_date"],
+            payload["signal_session_date"],
+        )
+        self.assertEqual(
+            reservation["signal_bar_time"],
+            payload["signal_bar_time"],
+        )
+        self.assertEqual(
+            reservation["original_payload"]["close_execution_policy"],
+            "NEXT_RTH_OPEN",
+        )
+        self.assertEqual(
+            reservation["target_identity"]["perm_id"],
+            2200,
+        )
+        self.assertEqual(reservation["managed_side"], "LONG")
+        self.assertEqual(reservation["original_managed_qty"], 10)
+        self.assertEqual(reservation["original_position_qty"], 10)
+        self.assertEqual(reservation["entry_identity"]["perm_id"], 1100)
+        self.assertEqual(reservation["entry_exec_ids"], ["ENTRY-1"])
+        self.assertEqual(reservation["queued_target_identity"]["perm_id"], 2200)
+        self.assertEqual(
+            reservation["bridge_process_instance_id"],
+            ib_bridge.BRIDGE_PROCESS_INSTANCE_ID,
+        )
+        self.assertEqual(
+            reservation["ib_connection_generation"],
+            ib_bridge._ib_connection_generation,
+        )
+        self.assertEqual(
+            reservation["coverage_continuity_process_instance_id"],
+            ib_bridge.BRIDGE_PROCESS_INSTANCE_ID,
+        )
+        self.assertEqual(
+            reservation["execution_coverage_required_from"],
+            reservation["signal_timestamp"],
+        )
+        self.assertEqual(reservation["signal_new_york_date"], "2026-07-28")
+        connect.assert_not_awaited()
+        cancel_target.assert_not_awaited()
+        forward.assert_not_awaited()
+        place_order.assert_not_called()
+
+    async def test_manual_close_reopen_and_quantity_changes_break_ownership(self):
+        scenarios = (
+            (
+                "manual_full_close_same_side_reopen",
+                10,
+                [
+                    self.post_signal_fill(
+                        exec_id="MANUAL-CLOSE-10",
+                        shares=10,
+                        side="SLD",
+                        order_id=901,
+                        perm_id=9901,
+                        order_ref="MANUAL",
+                    ),
+                    self.post_signal_fill(
+                        exec_id="MANUAL-REOPEN-10",
+                        shares=10,
+                        side="BOT",
+                        order_id=902,
+                        perm_id=9902,
+                        order_ref="MANUAL",
+                        minute=2,
+                    ),
+                ],
+            ),
+            (
+                "manual_partial_close_smaller_remainder",
+                7,
+                [
+                    self.post_signal_fill(
+                        exec_id="MANUAL-CLOSE-3",
+                        shares=3,
+                        side="SLD",
+                        order_id=903,
+                        perm_id=9903,
+                        order_ref="MANUAL",
+                    ),
+                ],
+            ),
+            (
+                "same_side_open_increases_quantity",
+                12,
+                [
+                    self.post_signal_fill(
+                        exec_id="MANUAL-ADD-2",
+                        shares=2,
+                        side="BOT",
+                        order_id=904,
+                        perm_id=9904,
+                        order_ref="MANUAL",
+                    ),
+                ],
+            ),
+        )
+        for name, position, fills in scenarios:
+            with self.subTest(name=name):
+                store = self.store()
+                await self.queue_into_store(store)
+                outcome = await self.recover_queued_store(
+                    store,
+                    self.authoritative_refresh(position, fills=fills),
+                )
+
+                self.assertEqual(
+                    outcome["result"]["status"],
+                    "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+                )
+                self.assertEqual(
+                    store["AAPL"]["close_reservation"]["state"],
+                    "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+                )
+                outcome["execute_close"].assert_not_awaited()
+                outcome["confirm_session"].assert_not_awaited()
+                outcome["cancel_target"].assert_not_awaited()
+                outcome["place_order"].assert_not_called()
+
+    async def test_changed_target_without_authorized_evidence_breaks_ownership(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        store["AAPL"]["target_order"] = {
+            **store["AAPL"]["target_order"],
+            "order_id": 300,
+            "perm_id": 3300,
+            "order_ref": "TVFVG_AAPL_LONG_TP_REPLACED",
+        }
+
+        outcome = await self.recover_queued_store(
+            store,
+            self.authoritative_refresh(10),
+        )
+
+        self.assertEqual(
+            outcome["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["critical_reason"],
+            "queued_target_identity_changed",
+        )
+        outcome["execute_close"].assert_not_awaited()
+        outcome["cancel_target"].assert_not_awaited()
+        outcome["place_order"].assert_not_called()
+
+    async def test_exact_target_partial_preserves_ownership_and_promotes_only_remainder(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        target_fill = self.post_signal_fill(
+            exec_id="TARGET-PARTIAL-3",
+            shares=3,
+            side="SLD",
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+        )
+
+        outcome = await self.recover_queued_store(
+            store,
+            self.authoritative_refresh(7, fills=[target_fill]),
+        )
+
+        self.assertEqual(
+            outcome["result"]["status"],
+            "submitted_awaiting_close_fill",
+        )
+        self.assertEqual(outcome["result"]["close_order_qty"], 7)
+        outcome["execute_close"].assert_awaited_once()
+        reserved = outcome["execute_close"].await_args.args[1]
+        self.assertEqual(
+            reserved["reservation"]["target_partial_filled_qty"],
+            3,
+        )
+        self.assertEqual(
+            reserved["reservation"]["target_partial_exec_ids"],
+            ["TARGET-PARTIAL-3"],
+        )
+
+    async def test_exact_target_full_uses_existing_flat_reconciliation(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        target_fill = self.post_signal_fill(
+            exec_id="TARGET-FULL-10",
+            shares=10,
+            side="SLD",
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+        )
+
+        outcome = await self.recover_queued_store(
+            store,
+            self.authoritative_refresh(0, fills=[target_fill]),
+        )
+
+        self.assertEqual(
+            outcome["result"]["status"],
+            "EDGE_STOP_POSITION_FLAT_RECOVERY",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+        )
+        outcome["execute_close"].assert_not_awaited()
+        outcome["cancel_target"].assert_not_awaited()
+        outcome["place_order"].assert_not_called()
+
+    async def test_restart_with_incomplete_execution_history_fails_closed(self):
+        store = self.store()
+        await self.queue_into_store(store)
+
+        outcome = await self.recover_queued_store(
+            store,
+            self.authoritative_refresh(
+                10,
+                execution_history_authoritative=False,
+                execution_history_covers_signal=False,
+                coverage_gap_detected=True,
+                coverage_reason="bridge_process_changed_after_signal",
+                errors=["execution_history_unavailable_after_restart"],
+            ),
+        )
+
+        self.assertEqual(
+            outcome["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        outcome["execute_close"].assert_not_awaited()
+        outcome["cancel_target"].assert_not_awaited()
+        outcome["place_order"].assert_not_called()
+
+    async def test_empty_next_day_history_cannot_hide_manual_roundtrip(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        refresh = self.authoritative_refresh(
+            10,
+            fills=[],
+            execution_history_authoritative=False,
+            execution_history_covers_signal=False,
+            coverage_process_instance_id="RESTARTED-PROCESS",
+            coverage_connection_generation=1,
+            coverage_gap_detected=True,
+            coverage_reason="bridge_process_changed_after_signal",
+        )
+
+        outcome = await self.recover_queued_store(store, refresh)
+
+        self.assertEqual(
+            outcome["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        reservation = store["AAPL"]["close_reservation"]
+        self.assertEqual(
+            reservation["state"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(reservation["attempt"], 0)
+        self.assertEqual(
+            reservation["coverage_reason"],
+            "bridge_process_changed_after_signal",
+        )
+        self.assertEqual(
+            reservation["execution_history_scope_start"],
+            "2026-07-29T04:00:00+00:00",
+        )
+        outcome["execute_close"].assert_not_awaited()
+        outcome["confirm_session"].assert_not_awaited()
+        outcome["cancel_target"].assert_not_awaited()
+        outcome["place_order"].assert_not_called()
+
+    async def test_coverage_unproven_later_flat_uses_existing_reconciliation(self):
+        for outcome_name, fills in (
+            ("manual_flat", []),
+            (
+                "target_flat",
+                [
+                    self.post_signal_fill(
+                        exec_id="TARGET-FLAT-AFTER-GAP",
+                        shares=10,
+                        side="SLD",
+                        order_id=200,
+                        perm_id=2200,
+                        order_ref="TVFVG_AAPL_LONG_TP",
+                    )
+                ],
+            ),
+        ):
+            with self.subTest(outcome=outcome_name):
+                store = self.store()
+                await self.queue_into_store(store)
+                gap = self.authoritative_refresh(
+                    10,
+                    execution_history_authoritative=False,
+                    execution_history_covers_signal=False,
+                    coverage_gap_detected=True,
+                    coverage_reason="bridge_process_changed_after_signal",
+                )
+                first = await self.recover_queued_store(store, gap)
+                self.assertEqual(
+                    first["result"]["status"],
+                    "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+                )
+
+                flat = self.authoritative_refresh(
+                    0,
+                    fills=fills,
+                    execution_history_authoritative=False,
+                    execution_history_covers_signal=False,
+                    coverage_gap_detected=True,
+                    coverage_reason="bridge_process_changed_after_signal",
+                )
+                second = await self.recover_queued_store(store, flat)
+
+                self.assertEqual(
+                    second["result"]["status"],
+                    "EDGE_STOP_POSITION_FLAT_RECOVERY",
+                )
+                self.assertEqual(
+                    store["AAPL"]["close_reservation"]["state"],
+                    "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+                )
+                second["execute_close"].assert_not_awaited()
+                second["cancel_target"].assert_not_awaited()
+                second["place_order"].assert_not_called()
+
+    async def test_coverage_unproven_duplicate_webhook_and_scheduler_are_nonmutating(self):
+        payload = self.queued_payload()
+        store = self.store()
+        await self.queue_into_store(store, payload)
+        gap = self.authoritative_refresh(
+            10,
+            execution_history_authoritative=False,
+            execution_history_covers_signal=False,
+            coverage_gap_detected=True,
+            coverage_reason="ib_connection_generation_changed_after_signal",
+        )
+        first = await self.recover_queued_store(store, gap)
+        self.assertEqual(
+            first["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            duplicate = await ib_bridge.close_position_market(payload)
+
+        second = await self.recover_queued_store(store, gap)
+
+        self.assertEqual(
+            duplicate["status"],
+            "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+        )
+        self.assertEqual(
+            second["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(store["AAPL"]["close_reservation"]["attempt"], 0)
+        cancel_target.assert_not_awaited()
+        place_order.assert_not_called()
+        second["execute_close"].assert_not_awaited()
+        second["cancel_target"].assert_not_awaited()
+        second["place_order"].assert_not_called()
+
+    async def test_coverage_state_promotes_only_after_full_coverage_later(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        gap = self.authoritative_refresh(
+            10,
+            execution_history_authoritative=False,
+            execution_history_covers_signal=False,
+            coverage_gap_detected=True,
+            coverage_reason="req_executions_refresh_failed",
+        )
+        first = await self.recover_queued_store(store, gap)
+        self.assertEqual(
+            first["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+
+        covered = self.authoritative_refresh(10)
+        second = await self.recover_queued_store(store, covered)
+
+        self.assertEqual(
+            second["result"]["status"],
+            "submitted_awaiting_close_fill",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "RESERVED",
+        )
+        self.assertEqual(store["AAPL"]["close_reservation"]["attempt"], 1)
+        second["execute_close"].assert_awaited_once()
+
+    async def test_duplicate_queued_webhook_and_scheduler_are_serialized(self):
+        payload = self.queued_payload()
+        store = self.store()
+        await self.queue_into_store(store, payload)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        calls = []
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        async def block_scheduler(*_args):
+            calls.append("scheduler_entered")
+            entered.set()
+            await release.wait()
+            calls.append("scheduler_released")
+            return {"status": "EDGE_STOP_QUEUED_NEXT_RTH_OPEN"}
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "recover_queued_edge_stop_next_rth",
+                side_effect=block_scheduler,
+            ),
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            scheduler = asyncio.create_task(
+                ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                    copy.deepcopy(store["AAPL"])
+                )
+            )
+            await entered.wait()
+            duplicate = asyncio.create_task(
+                ib_bridge.close_position_market(payload)
+            )
+            await asyncio.sleep(0)
+            self.assertFalse(duplicate.done())
+            release.set()
+            scheduler_result, duplicate_result = await asyncio.gather(
+                scheduler,
+                duplicate,
+            )
+
+        self.assertEqual(
+            scheduler_result["status"],
+            "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+        )
+        self.assertEqual(
+            duplicate_result["status"],
+            "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+        )
+        self.assertTrue(duplicate_result["duplicate"])
+        self.assertEqual(calls, ["scheduler_entered", "scheduler_released"])
+        cancel_target.assert_not_awaited()
+        place_order.assert_not_called()
+
+    async def test_queue_rejects_stale_or_incomplete_identity_without_broker_action(self):
+        stale = self.queued_payload(
+            setup_id="VIXALE_EDGE:AAPL:60:LONG:STALE",
+        )
+        invalid = self.queued_payload()
+        invalid["signal_at_rth_close"] = False
+        store = self.store()
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                return_value=copy.deepcopy(store),
+            ),
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            stale_result = await ib_bridge.close_position_market(stale)
+            invalid_result = await ib_bridge.close_position_market(invalid)
+
+        self.assertEqual(stale_result["status"], "EDGE_STOP_SETUP_MISMATCH")
+        self.assertEqual(
+            invalid_result["status"],
+            "EDGE_STOP_NEXT_RTH_POLICY_INVALID",
+        )
+        cancel_target.assert_not_awaited()
+        place_order.assert_not_called()
+
+    async def test_ib_session_confirmation_is_next_date_and_liquid_hours_only(self):
+        payload = self.queued_payload()
+        details = SimpleNamespace(
+            timeZoneId="US/Eastern",
+            liquidHours=(
+                "20260728:0930-20260728:1600;"
+                "20260729:0930-20260729:1600"
+            ),
+        )
+        next_rth = datetime(
+            2026,
+            7,
+            29,
+            9,
+            31,
+            tzinfo=ib_bridge.ZoneInfo("America/New_York"),
+        )
+        same_day = datetime(
+            2026,
+            7,
+            28,
+            15,
+            59,
+            tzinfo=ib_bridge.ZoneInfo("America/New_York"),
+        )
+        with (
+            patch.object(
+                ib_bridge,
+                "is_us_stock_rth_now",
+                return_value=True,
+            ),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "qualify_contract",
+                AsyncMock(return_value=SimpleNamespace(symbol="AAPL")),
+            ),
+            patch.object(
+                ib_bridge,
+                "bounded_ib_refresh_request",
+                AsyncMock(return_value={
+                    "supported": True,
+                    "ok": True,
+                    "values": [details],
+                    "error": "",
+                }),
+            ),
+        ):
+            same_day_result = await ib_bridge.confirm_edge_next_rth_session(
+                payload,
+                same_day,
+            )
+            next_day_result = await ib_bridge.confirm_edge_next_rth_session(
+                payload,
+                next_rth,
+            )
+
+        self.assertEqual(
+            same_day_result["status"],
+            "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+        )
+        self.assertTrue(next_day_result["confirmed"])
+        self.assertTrue(
+            ib_bridge.ib_contract_session_contains(details, next_rth)
+        )
+        holiday = SimpleNamespace(
+            timeZoneId="US/Eastern",
+            liquidHours="20260729:CLOSED",
+        )
+        self.assertFalse(
+            ib_bridge.ib_contract_session_contains(holiday, next_rth)
+        )
+
+    async def test_scheduler_waits_then_promotes_once_into_part3a_sequence(self):
+        payload = self.queued_payload()
+        store = self.store()
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        target = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+        ):
+            await ib_bridge.close_position_market(payload)
+
+        refresh = {
+            "authoritative": True,
+            "execution_history_covers_signal": True,
+            "ambiguous": False,
+            "trade": None,
+            "execution": None,
+            "position": 10,
+            "position_authoritative": True,
+            "matching_trade_count": 0,
+            "errors": [],
+        }
+        execute_result = {"status": "submitted_awaiting_close_fill"}
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "authoritative_edge_close_refresh",
+                AsyncMock(return_value=refresh),
+            ),
+            patch.object(
+                ib_bridge,
+                "confirm_edge_next_rth_session",
+                AsyncMock(return_value={
+                    "confirmed": False,
+                    "status": "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+                    "reason": "next_new_york_date_not_reached",
+                }),
+            ),
+            patch.object(
+                ib_bridge,
+                "find_exact_managed_target_trade",
+                return_value=target,
+            ),
+            patch.object(
+                ib_bridge,
+                "execute_edge_v2_stop_close",
+                AsyncMock(return_value=execute_result),
+            ) as execute_close,
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            deferred = await (
+                ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                    copy.deepcopy(store["AAPL"])
+                )
+            )
+
+        self.assertEqual(
+            deferred["status"],
+            "EDGE_STOP_QUEUED_NEXT_RTH_OPEN",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "QUEUED_NEXT_RTH_OPEN",
+        )
+        self.assertEqual(store["AAPL"]["close_reservation"]["attempt"], 0)
+        execute_close.assert_not_awaited()
+        cancel_target.assert_not_awaited()
+        place_order.assert_not_called()
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "authoritative_edge_close_refresh",
+                AsyncMock(return_value=refresh),
+            ),
+            patch.object(
+                ib_bridge,
+                "confirm_edge_next_rth_session",
+                AsyncMock(return_value={
+                    "confirmed": True,
+                    "status": "EDGE_STOP_NEXT_RTH_SESSION_CONFIRMED",
+                    "liquid_hours": "20260729:0930-20260729:1600",
+                    "time_zone_id": "US/Eastern",
+                }),
+            ),
+            patch.object(
+                ib_bridge,
+                "find_exact_managed_target_trade",
+                return_value=target,
+            ),
+            patch.object(
+                ib_bridge,
+                "execute_edge_v2_stop_close",
+                AsyncMock(return_value=execute_result),
+            ) as execute_close,
+        ):
+            executed = await (
+                ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                    copy.deepcopy(store["AAPL"])
+                )
+            )
+
+        self.assertEqual(executed, execute_result)
+        execute_close.assert_awaited_once()
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "RESERVED",
+        )
+        self.assertEqual(store["AAPL"]["close_reservation"]["attempt"], 1)
+
+    async def test_unconfirmed_contract_session_and_ambiguous_evidence_fail_closed(self):
+        payload = self.queued_payload()
+        for scenario, refresh, confirmation in (
+            (
+                "holiday",
+                {
+                    "authoritative": True,
+                    "execution_history_covers_signal": True,
+                    "ambiguous": False,
+                    "position": 10,
+                    "position_authoritative": True,
+                    "errors": [],
+                },
+                {
+                    "confirmed": False,
+                    "status": "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+                    "reason": "ib_liquid_hours_missing_closed_or_ambiguous",
+                },
+            ),
+            (
+                "ambiguous_history",
+                {
+                    "authoritative": False,
+                    "execution_history_covers_signal": True,
+                    "ambiguous": True,
+                    "position": 10,
+                    "position_authoritative": True,
+                    "errors": ["history_ambiguous"],
+                },
+                None,
+            ),
+        ):
+            with self.subTest(scenario=scenario):
+                store = self.store()
+
+                def load_managed():
+                    return copy.deepcopy(store)
+
+                def save_managed(value):
+                    store.clear()
+                    store.update(copy.deepcopy(value))
+                    return True
+
+                with (
+                    patch.object(
+                        ib_bridge,
+                        "load_managed_positions",
+                        side_effect=load_managed,
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "save_managed_positions",
+                        side_effect=save_managed,
+                    ),
+                ):
+                    await ib_bridge.close_position_market(payload)
+
+                patches = [
+                    patch.object(
+                        ib_bridge,
+                        "load_managed_positions",
+                        side_effect=load_managed,
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "save_managed_positions",
+                        side_effect=save_managed,
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "authoritative_edge_close_refresh",
+                        AsyncMock(return_value=refresh),
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "cancel_and_verify_edge_target",
+                        AsyncMock(),
+                    ),
+                    patch.object(ib_bridge.ib, "placeOrder"),
+                ]
+                if confirmation is not None:
+                    patches.append(patch.object(
+                        ib_bridge,
+                        "confirm_edge_next_rth_session",
+                        AsyncMock(return_value=confirmation),
+                    ))
+                entered = [item.start() for item in patches]
+                try:
+                    result = await (
+                        ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                            copy.deepcopy(store["AAPL"])
+                        )
+                    )
+                finally:
+                    for item in reversed(patches):
+                        item.stop()
+
+                self.assertEqual(
+                    result["status"],
+                    "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+                )
+                self.assertEqual(
+                    store["AAPL"]["close_reservation"]["state"],
+                    "QUEUED_NEXT_RTH_OPEN",
+                )
+                entered[3].assert_not_awaited()
+                entered[4].assert_not_called()
+
+    async def test_overnight_flat_transitions_to_existing_reconciliation_without_order(self):
+        payload = self.queued_payload()
+        for outcome in ("target_fill", "manual_flat"):
+            with self.subTest(outcome=outcome):
+                store = self.store()
+
+                def load_managed():
+                    return copy.deepcopy(store)
+
+                def save_managed(value):
+                    store.clear()
+                    store.update(copy.deepcopy(value))
+                    return True
+
+                with (
+                    patch.object(
+                        ib_bridge,
+                        "load_managed_positions",
+                        side_effect=load_managed,
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "save_managed_positions",
+                        side_effect=save_managed,
+                    ),
+                ):
+                    await ib_bridge.close_position_market(payload)
+
+                with (
+                    patch.object(
+                        ib_bridge,
+                        "load_managed_positions",
+                        side_effect=load_managed,
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "save_managed_positions",
+                        side_effect=save_managed,
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "authoritative_edge_close_refresh",
+                        AsyncMock(return_value={
+                            "authoritative": True,
+                            "ambiguous": False,
+                            "trade": None,
+                            "execution": None,
+                            "position": 0,
+                            "position_authoritative": True,
+                            "matching_trade_count": 0,
+                            "errors": [],
+                        }),
+                    ),
+                    patch.object(
+                        ib_bridge,
+                        "cancel_and_verify_edge_target",
+                        AsyncMock(),
+                    ) as cancel_target,
+                    patch.object(ib_bridge.ib, "placeOrder") as place_order,
+                ):
+                    result = await (
+                        ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                            copy.deepcopy(store["AAPL"])
+                        )
+                    )
+
+                self.assertEqual(
+                    result["status"],
+                    "EDGE_STOP_POSITION_FLAT_RECOVERY",
+                )
+                self.assertEqual(
+                    store["AAPL"]["close_reservation"]["state"],
+                    "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+                )
+                cancel_target.assert_not_awaited()
+                place_order.assert_not_called()
 
 
 class EdgeTargetMonitorTests(unittest.IsolatedAsyncioTestCase):

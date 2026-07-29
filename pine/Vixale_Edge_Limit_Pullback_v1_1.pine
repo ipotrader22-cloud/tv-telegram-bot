@@ -7,7 +7,7 @@ strategy("Vixale Edge 1.1",
      pyramiding=0,
      commission_type=strategy.commission.cash_per_contract,
      commission_value=0.00,
-     process_orders_on_close=true,
+     process_orders_on_close=false,
      calc_on_every_tick=false,
      calc_on_order_fills=true,
      max_labels_count=500,
@@ -32,6 +32,11 @@ strategy("Vixale Edge 1.1",
 // SHORT is mirrored:
 // - SHORT limit entry = flip candle close + ATR(14) × entry buffer.
 //
+// NEXT_RTH_OPEN tester parity requires an RTH-only chart/session. On a chart
+// that includes extended hours, TradingView may fill the queued strategy.close
+// on the next extended-hours bar instead of the 09:30 ET RTH open. Live bridge
+// execution remains gated by the authoritative IB stock RTH session.
+//
 // An optional second anchor is included for direct comparison:
 // - "Broken STL" LONG  = broken STL - ATR buffer.
 // - "Broken STL" SHORT = broken STL + ATR buffer.
@@ -45,6 +50,7 @@ strategy("Vixale Edge 1.1",
 // - Outside the currently aligned intraday entry window the virtual order is canceled while the setup remains pending.
 // - Opposite primary SuperTrend flip replaces the old pending setup.
 // - Open trades exit only by fixed ATR target or a confirmed RTH Stop Loss flip.
+// - A flip on the bar closing at 16:00 ET queues execution for the next confirmed RTH open.
 // - Live SETUP is sent when the TradingView limit order is actually filled.
 // - Bridge enters TWS at MARKET and attaches the frozen ATR target immediately.
 // - Open positions and their GTC targets remain active overnight; Pine never emits EOD_CLOSE.
@@ -450,6 +456,25 @@ f_json(
          _event == "CLOSE_STOP" ? activeFlipBarTime :
          pendingFlipBarTime
 
+    signalAtRthClose =
+         _event == "CLOSE_STOP" and
+         _reason == "STOP_LOSS_SIGNAL_AT_RTH_CLOSE"
+
+    closeExecutionPolicy =
+         _event == "CLOSE_STOP" ?
+         (signalAtRthClose ? "NEXT_RTH_OPEN" : "IMMEDIATE_RTH") :
+         ""
+
+    signalSessionDate =
+         signalAtRthClose ?
+         str.format_time(time_close - 1, "yyyy-MM-dd", sessionTimezone) :
+         ""
+
+    signalBarTime =
+         signalAtRthClose ?
+         time :
+         0
+
     string j = "{"
     j += "\"source\":\"TradingView\","
     j += "\"payload_version\":2,"
@@ -480,6 +505,10 @@ f_json(
     j += "\"target_type\":\"" + targetType + "\","
     j += "\"stop_type\":\"OPPOSITE_SUPERTREND_FLIP_CLOSE\","
     j += "\"eod_policy\":\"NO_EOD_CLOSE\","
+    j += "\"close_execution_policy\":\"" + closeExecutionPolicy + "\","
+    j += "\"signal_at_rth_close\":" + str.tostring(signalAtRthClose) + ","
+    j += "\"signal_session_date\":\"" + signalSessionDate + "\","
+    j += "\"signal_bar_time\":" + str.tostring(signalBarTime) + ","
     j += "\"st_atr_period\":" + str.tostring(stAtrPeriod) + ","
     j += "\"st_factor\":" + str.tostring(stFactor) + ","
     j += "\"atr_length\":14,"
@@ -500,6 +529,8 @@ f_send(_json) =>
     alert(_json, alert.freq_all)
 
 bool exitAlertSentThisBar = false
+var string lastQueuedCloseSetupId = ""
+var int lastQueuedCloseSignalBarTime = na
 
 // Send SETUP only after the TradingView LIMIT order actually fills.
 if newLong
@@ -628,7 +659,8 @@ if bullFlip and inRth and time_close < eodTimestamp
              0.0))
         strategy.close(
              "Short Limit",
-             comment="Stop Loss")
+             comment="Stop Loss",
+             immediately=true)
         exitAlertSentThisBar := true
 
     if canCreateSetup
@@ -702,7 +734,8 @@ if bearFlip and inRth and time_close < eodTimestamp
              0.0))
         strategy.close(
              "Long Limit",
-             comment="Stop Loss")
+             comment="Stop Loss",
+             immediately=true)
         exitAlertSentThisBar := true
 
     if canCreateSetup
@@ -730,6 +763,58 @@ if bearFlip and inRth and time_close < eodTimestamp
              setupBrokenStl,
              setupFlipClose,
              setupLimitEntry))
+
+//==================================================================================================
+// Confirmed 16:00 ET closing-bar Stop Loss signal
+//--------------------------------------------------------------------------------------------------
+// The alert queues broker execution for the next confirmed stock RTH session.
+// process_orders_on_close=false keeps the Strategy Tester market close from
+// filling at the prior session close; the emulator fills it on the next
+// available bar open. The live bridge remains the execution authority.
+// The active GTC target is intentionally left working overnight.
+//==================================================================================================
+queuedLongClose =
+     bearFlip and
+     isRthClosingBar and
+     strategy.position_size > 0
+
+queuedShortClose =
+     bullFlip and
+     isRthClosingBar and
+     strategy.position_size < 0
+
+queuedCloseSetupId =
+     queuedLongClose or queuedShortClose ?
+     activeSetupId :
+     ""
+
+queuedCloseIsNew =
+     str.length(queuedCloseSetupId) > 0 and
+     (
+         queuedCloseSetupId != lastQueuedCloseSetupId or
+         time != lastQueuedCloseSignalBarTime
+     )
+
+if queuedCloseIsNew
+    f_send(f_json(
+         "CLOSE_STOP",
+         queuedLongClose ? "LONG" : "SHORT",
+         strategy.position_avg_price,
+         close,
+         0.0,
+         stLine[1],
+         f_close_qty(),
+         "STOP_LOSS_SIGNAL_AT_RTH_CLOSE",
+         0.0,
+         0.0,
+         0.0))
+
+    strategy.close(
+         queuedLongClose ? "Long Limit" : "Short Limit",
+         comment="Stop Loss next RTH open")
+
+    lastQueuedCloseSetupId := queuedCloseSetupId
+    lastQueuedCloseSignalBarTime := time
 
 //────────────────────────────────────────────────────────────
 // Working Resting LIMIT Order
