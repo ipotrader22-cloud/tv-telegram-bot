@@ -468,6 +468,7 @@ def mark_managed_position(data: Dict[str, Any], ib_result: Dict[str, Any]) -> No
         "fill_price": round_price(fill_price) if fill_price > 0 else "",
         "latest_status": ib_result.get("entry_status", ""),
         "filled_at": now_iso,
+        "exec_ids": list(ib_result.get("entry_exec_ids") or []),
     }
     target_order = {
         "order_id": ib_result.get("target_order_id", existing.get("ib_target_order_id", "")),
@@ -557,6 +558,7 @@ def mark_edge_entry_submission(data: Dict[str, Any], ib_result: Dict[str, Any]) 
             "fill_price": to_float(ib_result.get("entry_fill_price")),
             "latest_status": ib_result.get("entry_status", ""),
             "submitted_at": now_iso,
+            "exec_ids": list(ib_result.get("entry_exec_ids") or []),
         },
         "target_order": {
             "order_id": ib_result.get("target_order_id", ""),
@@ -1108,6 +1110,9 @@ def queue_edge_next_rth_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     now_iso = now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat()
+    target_identity = managed_order_identity(row, "target")
+    entry_identity = managed_entry_order_identity(row)
+    original_managed_qty = to_float(row.get("qty"))
     reservation = {
         "reservation_id": reservation_id,
         "setup_id": setup_id,
@@ -1118,7 +1123,13 @@ def queue_edge_next_rth_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
         "signal_bar_time": data.get("signal_bar_time"),
         "queued_at": now_iso,
         "original_payload": dict(data),
-        "target_identity": managed_order_identity(row, "target"),
+        "managed_side": str(row.get("side") or "").upper().strip(),
+        "original_managed_qty": original_managed_qty,
+        "original_position_qty": original_managed_qty,
+        "entry_identity": entry_identity,
+        "entry_exec_ids": list(entry_identity.get("exec_ids") or []),
+        "queued_target_identity": target_identity,
+        "target_identity": target_identity,
         "order_ref": edge_stop_close_order_ref(symbol, setup_id),
         "attempt": 0,
         "created_at": now_iso,
@@ -2698,6 +2709,7 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             "entry_filled": entry_filled,
             "entry_fill_price": entry_fill_price,
             "entry_filled_qty": entry_filled_qty,
+            "entry_exec_ids": trade_execution_ids(entry_trade),
             "target_working": target_working,
         }
         mark_edge_entry_submission(data, identity_payload)
@@ -2754,6 +2766,7 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             "entry_filled": entry_filled,
             "entry_fill_price": entry_fill_price,
             "entry_filled_qty": entry_filled_qty,
+            "entry_exec_ids": trade_execution_ids(entry_trade),
             "target_working": target_working,
             **base_payload,
         }
@@ -3107,6 +3120,9 @@ async def authoritative_edge_close_refresh(
 
     return {
         "authoritative": authoritative,
+        "execution_history_authoritative": (
+            executions_result["supported"] and executions_result["ok"]
+        ),
         "ambiguous": ambiguous,
         "trade": trade_matches[0] if len(trade_matches) == 1 else None,
         "execution": fill_evidence,
@@ -4223,6 +4239,234 @@ async def confirm_edge_next_rth_session(
     }
 
 
+def comparable_execution_time(value: Any) -> Optional[datetime]:
+    parsed = parse_execution_time(value)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=ZoneInfo("UTC"))
+    return parsed.astimezone(ZoneInfo("UTC"))
+
+
+def queued_edge_signal_time(reservation: Dict[str, Any]) -> Optional[datetime]:
+    value = reservation.get("signal_bar_time")
+    numeric = to_float(value)
+    if numeric > 0:
+        try:
+            seconds = numeric / 1000.0 if numeric > 100000000000 else numeric
+            return datetime.fromtimestamp(seconds, tz=ZoneInfo("UTC"))
+        except (OverflowError, OSError, ValueError):
+            return None
+    return comparable_execution_time(value)
+
+
+def same_order_identity(
+    expected: Dict[str, Any],
+    actual: Dict[str, Any],
+) -> bool:
+    return identity_matches(
+        actual.get("order_id"),
+        actual.get("perm_id"),
+        actual.get("order_ref"),
+        expected,
+    )
+
+
+def queued_target_replacement_is_authorized(
+    reservation: Dict[str, Any],
+    queued_identity: Dict[str, Any],
+    current_identity: Dict[str, Any],
+) -> bool:
+    setup_id = str(reservation.get("setup_id") or "").strip()
+    for item in reservation.get("authorized_target_replacements") or []:
+        if not isinstance(item, dict):
+            continue
+        prior = item.get("prior_identity")
+        replacement = item.get("replacement_identity")
+        broker_evidence = item.get("broker_evidence")
+        if (
+            str(item.get("setup_id") or "").strip() == setup_id
+            and item.get("authorized_by_bridge") is True
+            and isinstance(prior, dict)
+            and isinstance(replacement, dict)
+            and isinstance(broker_evidence, dict)
+            and any(
+                broker_evidence.get(key) not in (None, "", 0, "0")
+                for key in ("perm_id", "order_id")
+            )
+            and same_order_identity(queued_identity, prior)
+            and same_order_identity(replacement, current_identity)
+        ):
+            return True
+    return False
+
+
+def queued_edge_stop_ownership_evidence(
+    row: Dict[str, Any],
+    reservation: Dict[str, Any],
+    refresh: Dict[str, Any],
+) -> Dict[str, Any]:
+    queued_target = dict(
+        reservation.get("queued_target_identity")
+        or reservation.get("target_identity")
+        or {}
+    )
+    current_target = managed_order_identity(row, "target")
+    original_qty = (
+        to_float(reservation.get("original_managed_qty"))
+        or to_float(reservation.get("original_position_qty"))
+    )
+    position_size = to_float(refresh.get("position"))
+    managed_side = str(
+        reservation.get("managed_side")
+        or row.get("side")
+        or ""
+    ).upper().strip()
+    signal_time = queued_edge_signal_time(reservation)
+    result = {
+        "proven": False,
+        "reason": "",
+        "queued_target_identity": queued_target,
+        "current_target_identity": current_target,
+        "original_managed_qty": original_qty,
+        "target_filled_qty": 0.0,
+        "expected_remaining_qty": original_qty,
+        "current_position": position_size,
+        "unexpected_execution_ids": [],
+    }
+    if (
+        signal_time is None
+        or original_qty <= 0
+        or managed_side not in ("LONG", "SHORT")
+    ):
+        result["reason"] = "queued_ownership_snapshot_incomplete"
+        return result
+
+    target_identity_present = any(
+        queued_target.get(key) not in (None, "", 0, "0")
+        for key in ("perm_id", "order_id", "order_ref")
+    )
+    if not target_identity_present:
+        result["reason"] = "queued_target_identity_missing"
+        return result
+    if not (
+        same_order_identity(queued_target, current_target)
+        or queued_target_replacement_is_authorized(
+            reservation,
+            queued_target,
+            current_target,
+        )
+    ):
+        result["reason"] = "queued_target_identity_changed"
+        return result
+
+    symbol = str(row.get("symbol") or "").upper().strip()
+    exit_action = expected_exit_action(row)
+    close_identities = [
+        expected
+        for _attempt, expected in edge_close_attempt_identities(row)
+    ]
+    reservation_identity = {
+        "order_id": reservation.get("order_id"),
+        "perm_id": reservation.get("perm_id"),
+        "order_ref": reservation.get("order_ref"),
+    }
+    if any(
+        reservation_identity.get(key) not in (None, "", 0, "0")
+        for key in ("perm_id", "order_id", "order_ref")
+    ):
+        close_identities.append(reservation_identity)
+
+    after_signal = []
+    history_incomplete = False
+    for fill in list(refresh.get("fills") or []):
+        if fill_contract_symbol(fill) != symbol:
+            continue
+        details = fill_execution_details(fill)
+        executed_at = comparable_execution_time(details.get("time"))
+        if executed_at is None:
+            history_incomplete = True
+            continue
+        if executed_at < signal_time:
+            continue
+        after_signal.append(details)
+
+    unique, conflicting, missing_exec_id = dedupe_execution_details_by_exec_id(
+        after_signal
+    )
+    if conflicting or missing_exec_id or history_incomplete:
+        result["reason"] = "post_signal_execution_history_incomplete"
+        result["unexpected_execution_ids"] = sorted({
+            str(item.get("exec_id") or "<missing>")
+            for item in after_signal
+        })
+        return result
+
+    target_components = []
+    unexpected = []
+    for details in unique:
+        is_closing_action = str(details.get("action") or "").upper() == exit_action
+        is_target = (
+            is_closing_action
+            and identity_matches(
+                details.get("order_id"),
+                details.get("perm_id"),
+                details.get("order_ref"),
+                queued_target,
+            )
+        )
+        is_reserved_close = (
+            is_closing_action
+            and any(
+                identity_matches(
+                    details.get("order_id"),
+                    details.get("perm_id"),
+                    details.get("order_ref"),
+                    expected,
+                )
+                for expected in close_identities
+            )
+        )
+        if is_target:
+            if (
+                to_float(details.get("qty")) <= 0
+                or to_float(details.get("price")) <= 0
+            ):
+                result["reason"] = "queued_target_execution_incomplete"
+                result["unexpected_execution_ids"] = [
+                    str(details.get("exec_id") or "<missing>")
+                ]
+                return result
+            target_components.append(details)
+        elif not is_reserved_close:
+            unexpected.append(str(details.get("exec_id") or "<missing>"))
+
+    target_filled_qty = sum(
+        to_float(component.get("qty"))
+        for component in target_components
+    )
+    expected_remaining = max(0.0, original_qty - target_filled_qty)
+    result["target_filled_qty"] = target_filled_qty
+    result["expected_remaining_qty"] = expected_remaining
+    result["unexpected_execution_ids"] = sorted(set(unexpected))
+    if unexpected:
+        result["reason"] = "unexpected_post_signal_execution"
+        return result
+    if target_filled_qty - original_qty > 0.000001:
+        result["reason"] = "target_execution_exceeds_original_quantity"
+        return result
+    if not position_matches_managed_side(managed_side, position_size):
+        result["reason"] = "managed_side_changed"
+        return result
+    if abs(abs(position_size) - expected_remaining) > 0.000001:
+        result["reason"] = "position_quantity_breaks_ownership_continuity"
+        return result
+
+    result["proven"] = True
+    result["reason"] = "ownership_continuity_proven"
+    return result
+
+
 async def recover_queued_edge_stop_next_rth(
     data: Dict[str, Any],
     row: Dict[str, Any],
@@ -4244,11 +4488,7 @@ async def recover_queued_edge_stop_next_rth(
         row = dict(current.get("row") or row)
         reservation = dict(current.get("reservation") or reservation)
 
-    if (
-        refresh.get("ambiguous")
-        or not refresh.get("authoritative")
-        or not refresh.get("position_authoritative")
-    ):
+    if not refresh.get("position_authoritative"):
         persisted = update_edge_stop_close_reservation(
             data,
             "QUEUED_NEXT_RTH_OPEN",
@@ -4279,18 +4519,74 @@ async def recover_queued_edge_stop_next_rth(
             managed_state_persisted=persisted,
         )
 
-    if not position_matches_managed_side(data.get("side"), position_size):
+    if (
+        refresh.get("ambiguous")
+        or not refresh.get("authoritative")
+        or not refresh.get(
+            "execution_history_authoritative",
+            refresh.get("authoritative", False),
+        )
+    ):
         persisted = update_edge_stop_close_reservation(
             data,
-            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
-            prior_state="QUEUED_NEXT_RTH_OPEN",
+            "QUEUED_NEXT_RTH_OPEN",
+            last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            recovery_errors=refresh.get("errors") or [],
             position_after_recovery_refresh=position_size,
-            critical_reason="EDGE_STOP_NEXT_RTH_POSITION_CONFLICT",
         )
         return edge_stop_close_result(
             data,
-            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
             position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+        )
+
+    ownership = queued_edge_stop_ownership_evidence(
+        row,
+        reservation,
+        refresh,
+    )
+    if not ownership.get("proven"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+            prior_state="QUEUED_NEXT_RTH_OPEN",
+            critical_reason=ownership.get("reason", "ownership_unproven"),
+            queued_target_identity=ownership.get("queued_target_identity", {}),
+            current_target_identity=ownership.get("current_target_identity", {}),
+            original_managed_qty=ownership.get("original_managed_qty", 0),
+            expected_remaining_qty=ownership.get("expected_remaining_qty", 0),
+            position_after_recovery_refresh=position_size,
+            unexpected_execution_ids=ownership.get(
+                "unexpected_execution_ids",
+                [],
+            ),
+        )
+        logger.critical(
+            "[EDGE STOP NEXT RTH OWNERSHIP CONFLICT] "
+            "symbol=%s setup_id=%s queued_target=%s current_target=%s "
+            "original_qty=%s expected_remaining=%s current_position=%s "
+            "unexpected_exec_ids=%s reason=%s",
+            str(data.get("symbol") or "").upper().strip(),
+            str(data.get("setup_id") or "").strip(),
+            ownership.get("queued_target_identity"),
+            ownership.get("current_target_identity"),
+            ownership.get("original_managed_qty"),
+            ownership.get("expected_remaining_qty"),
+            position_size,
+            ownership.get("unexpected_execution_ids"),
+            ownership.get("reason"),
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT",
+            position_before_close=position_size,
+            expected_remaining_qty=ownership.get("expected_remaining_qty", 0),
+            unexpected_execution_ids=ownership.get(
+                "unexpected_execution_ids",
+                [],
+            ),
             canceled_open_orders=0,
             managed_state_persisted=persisted,
         )
@@ -5654,6 +5950,7 @@ async def monitor_entry_fill_confirmation(
                 result["entry_filled"] = True
                 result["entry_fill_price"] = trade_fill_price(entry_trade, entry_reference_price)
                 result["entry_filled_qty"] = filled_qty
+                result["entry_exec_ids"] = trade_execution_ids(entry_trade)
                 result["target_position_qty"] = final_position_qty
                 result["desired_qty"] = final_position_qty
 
@@ -6467,6 +6764,24 @@ def managed_order_identity(row: Dict[str, Any], kind: str) -> Dict[str, Any]:
             or to_float(reservation.get("remaining_qty"))
             or to_float(row.get("qty"))
         ),
+    }
+
+
+def managed_entry_order_identity(row: Dict[str, Any]) -> Dict[str, Any]:
+    entry = row.get("entry_order") if isinstance(row.get("entry_order"), dict) else {}
+    return {
+        "order_id": entry.get("order_id") or row.get("ib_order_id"),
+        "perm_id": entry.get("perm_id") or row.get("ib_order_perm_id"),
+        "order_ref": entry.get("order_ref") or row.get("ib_order_ref"),
+        "exec_ids": sorted({
+            str(value)
+            for value in (
+                entry.get("exec_ids")
+                or row.get("ib_entry_exec_ids")
+                or []
+            )
+            if str(value or "").strip()
+        }),
     }
 
 

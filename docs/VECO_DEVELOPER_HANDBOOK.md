@@ -203,9 +203,13 @@ does not cancel the active GTC target. Pending-only
 For Strategy Tester parity, `process_orders_on_close=false`; ordinary pre-close
 Stop Loss calls use `immediately=true`, while the closing-bar market exit is
 submitted without immediate fill so the broker emulator fills it on the next
-available bar open. This is a bar-based emulator approximation: it cannot model
-the bridge's IB holiday/session verification, overnight target race, or exact
-TWS execution price.
+available bar open. Next-RTH-open parity therefore requires an RTH-only chart
+and session. If extended-hours bars are enabled, TradingView may fill the queued
+`strategy.close` on the next extended-hours bar rather than the 09:30 ET RTH
+open. The live bridge remains gated by the authoritative IB stock RTH session.
+This is a bar-based emulator approximation, not universal tester/live parity:
+it cannot model the bridge's IB holiday/session verification, overnight target
+race, or exact TWS execution price.
 
 Telegram lifecycle:
 
@@ -667,13 +671,14 @@ agree:
 ```
 
 The bridge persists it as `QUEUED_NEXT_RTH_OPEN`, including the exact setup,
-deterministic reservation, original payload, signal date/bar, queue timestamp,
-and exact managed-target identity. The attempt remains zero until eligibility
-is proven. A duplicate reuses the same reservation; a stale setup is rejected.
-The webhook performs no target cancellation, market order, replacement,
-managed-state clear, or Render callback. Render/Sheets/Telegram/dashboard stay
-open until a later broker-confirmed callback completes the existing
-execution-first lifecycle.
+managed side, original managed quantity, managed entry
+`orderId`/`permId`/`orderRef`/execution IDs, exact queued-target identity,
+original payload, signal date/bar, queue timestamp, and deterministic
+reservation. The attempt remains zero until eligibility is proven. A duplicate
+reuses the same reservation; a stale setup is rejected. The webhook performs no
+target cancellation, market order, replacement, managed-state clear, or Render
+callback. Render/Sheets/Telegram/dashboard stay open until a later
+broker-confirmed callback completes the existing execution-first lifecycle.
 
 Scheduler eligibility for a queued close requires all of:
 
@@ -682,8 +687,15 @@ Scheduler eligibility for a queued close requires all of:
 3. the exact managed `setup_id` still matches after acquiring the shared close
    lock and reloading the managed file;
 4. authoritative broker position/history evidence is available;
-5. the managed target has an exact, unambiguous identity; and
-6. IB contract details report one liquid-hours interval containing the current
+5. every symbol execution at or after the queued signal time is attributable
+   to the exact queued target or to an exact bridge close in the same
+   reservation;
+6. the current managed target still matches the queued snapshot using
+   `permId > orderId > orderRef` precedence, unless a durable exact bridge
+   record proves an authorized same-setup target replacement;
+7. current position side and absolute quantity exactly match
+   `original managed quantity - exact queued-target executions`; and
+8. IB contract details report one liquid-hours interval containing the current
    time.
 
 Weekday/RTH wall-clock checks alone are insufficient. Missing, closed/holiday,
@@ -700,10 +712,18 @@ Overnight outcomes are resolved before any queued Stop Loss order:
 - exact target fill plus broker flat uses existing TP reconciliation;
 - external/manual broker flat uses existing Manual Close reconciliation with
   blank P&L;
+- an exact partial target fill reduces the ownership-proven remaining quantity,
+  so a 3-share target fill from an original 10 permits Part 3A to close only
+  the broker-confirmed remaining 7;
 - a still-open matching position enters Part 3A on the first safe confirmed
   next-RTH scheduler pass;
-- setup, side, position, target, or history conflicts remain non-mutating and
-  persist an ambiguous/conflict state for manual review.
+- any other post-signal execution, same-side close/reopen, manual partial close,
+  quantity increase, target identity change without durable authorization, or
+  incomplete restart history persists
+  `EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT`. That state is non-mutating: no target
+  cancellation, market/replacement order, Stop Loss publication, or managed
+  clear occurs. Broker-flat outcomes still use the existing evidence-based TP
+  versus Manual Close reconciliation instead of the ownership-conflict path.
 
 The managed queue survives bridge restart and the scheduler does not require a
 repeated TradingView alert.
@@ -1764,21 +1784,35 @@ not removed by this source patch.
 `close_execution_policy=NEXT_RTH_OPEN`. The bridge persists
 `QUEUED_NEXT_RTH_OPEN` without broker mutation and automatically resumes it
 only on a later New York date, inside stock RTH, after authoritative
-position/target evidence and IB contract liquid-hours confirmation. It then
-reuses the complete Part 3A Stop Loss lifecycle. The GTC target remains active
-overnight and wins through TP reconciliation if it fills first; an external
-flat wins through Manual Close reconciliation. No queued signal changes public
-state.
+position/execution history, queue-ownership continuity, and IB contract
+liquid-hours confirmation. Queue ownership snapshots the managed side and
+quantity, entry identity/execution IDs, exact target identity, setup, signal
+session date, and signal bar time. Before promotion, all post-signal symbol
+executions must be exact queued-target fills or exact bridge closes in the same
+reservation, the target identity must remain continuous under
+`permId > orderId > orderRef`, and the position must equal the original
+quantity less exact target fills. It then reuses the complete Part 3A Stop Loss
+lifecycle. The GTC target remains active overnight and wins through TP
+reconciliation if it fills first; an external flat wins through Manual Close
+reconciliation. No queued signal changes public state.
 
 **Reason:** A market order created on the 16:00 closing bar must not be held
 blindly across a weekend/holiday or race an overnight GTC target. Durable queue
 identity, exact setup locking, and broker-session evidence preserve
-execution-first behavior without implementing a second close path.
+execution-first behavior without implementing a second close path. The durable
+ownership snapshot prevents a manually closed then same-side reopened position,
+a manual partial close, or a new same-side add from inheriting the stale queued
+close. Unproven continuity persists
+`EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT` and performs no broker or public-ledger
+mutation.
 
 **Pine emulator note:** `process_orders_on_close=false`, immediate pre-16:00
 stops use `immediately=true`, and the closing-bar tester exit fills on the next
-available bar open. Bar-based results cannot reproduce IB session-detail
-failures or exact overnight execution ordering.
+available bar open. This represents the 09:30 ET next-RTH open only on an
+RTH-only chart/session. With extended-hours bars enabled, TradingView may fill
+on the next extended-hours bar; live bridge execution remains IB-RTH-gated.
+Bar-based results cannot reproduce IB session-detail failures or exact
+overnight execution ordering, so universal tester/live parity is not claimed.
 
 **Schema impact:** None. Queue state is stored only in existing managed-position
 JSON. No `app.js`, route, Google Sheets column, or public ledger contract

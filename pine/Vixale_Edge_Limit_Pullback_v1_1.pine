@@ -32,6 +32,11 @@ strategy("Vixale Edge 1.1",
 // SHORT is mirrored:
 // - SHORT limit entry = flip candle close + ATR(14) × entry buffer.
 //
+// NEXT_RTH_OPEN tester parity requires an RTH-only chart/session. On a chart
+// that includes extended hours, TradingView may fill the queued strategy.close
+// on the next extended-hours bar instead of the 09:30 ET RTH open. Live bridge
+// execution remains gated by the authoritative IB stock RTH session.
+//
 // An optional second anchor is included for direct comparison:
 // - "Broken STL" LONG  = broken STL - ATR buffer.
 // - "Broken STL" SHORT = broken STL + ATR buffer.
