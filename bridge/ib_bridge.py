@@ -285,6 +285,22 @@ EDGE_STOP_POSITION_SYNC_SECONDS = max(
     min(FORCE_EOD_POSITION_VERIFY_SECONDS, 10.0),
 )
 EDGE_STOP_MAX_CLOSE_ATTEMPTS = 2
+EDGE_STOP_AUTOMATIC_RECOVERY_STATES = {
+    "RESERVED",
+    "TARGET_CANCEL_PENDING",
+    "TARGET_CANCEL_UNCONFIRMED",
+    "TARGET_RESOLVED",
+    "CLOSE_SUBMISSION_PENDING",
+    "RECOVERY_REPLACEMENT_SUBMISSION_PENDING",
+    "CLOSE_SUBMITTED",
+    "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN",
+    "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+    "POSITION_SYNC_UNCONFIRMED",
+    "FILLED_POSITION_NOT_FLAT",
+    "MIXED_EXIT_EVIDENCE_INCOMPLETE",
+    "CALLBACK_PENDING",
+    "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+}
 SHREK_EOD_STRATEGY_IDS = {"SHREK", "SHREK_1_4"}
 
 _last_force_eod_date = None
@@ -567,6 +583,147 @@ def clear_edge_submission_if_unfilled(symbol: str, setup_id: str) -> None:
         save_managed_positions(managed)
 
 
+def normalized_edge_close_attempts(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    attempts = [
+        dict(value)
+        for value in row.get("close_attempts") or []
+        if isinstance(value, dict)
+    ]
+    if attempts:
+        return attempts
+
+    legacy = (
+        dict(row.get("bridge_close_order"))
+        if isinstance(row.get("bridge_close_order"), dict)
+        else {}
+    )
+    if not any(
+        legacy.get(key) not in (None, "", 0, "0", [])
+        for key in ("order_id", "perm_id", "order_ref", "filled_qty", "exec_ids")
+    ):
+        return []
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    return [{
+        "attempt": max(
+            1,
+            int(legacy.get("attempt") or reservation.get("attempt") or 1),
+        ),
+        "order_id": legacy.get("order_id", ""),
+        "perm_id": legacy.get("perm_id", ""),
+        "order_ref": legacy.get("order_ref", ""),
+        "status": legacy.get("latest_status", ""),
+        "bridge_status": legacy.get("bridge_status", ""),
+        "order_qty": (
+            to_float(reservation.get("remaining_qty"))
+            or to_float(legacy.get("filled_qty"))
+        ),
+        "filled_qty": to_float(legacy.get("filled_qty")),
+        "avg_fill_price": to_float(legacy.get("fill_price")),
+        "exec_ids": sorted({
+            str(value)
+            for value in legacy.get("exec_ids") or []
+            if str(value or "").strip()
+        }),
+        "submitted_at": legacy.get("submitted_at", ""),
+        "filled_at": legacy.get("filled_at", ""),
+    }]
+
+
+def merge_edge_close_attempt(
+    row: Dict[str, Any],
+    ib_result: Dict[str, Any],
+    now_iso: str,
+) -> List[Dict[str, Any]]:
+    attempts = normalized_edge_close_attempts(row)
+    reservation = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    attempt_number = max(
+        1,
+        int(ib_result.get("attempt") or reservation.get("attempt") or 1),
+    )
+    result_order_id = ib_result.get("order_id")
+    result_perm_id = ib_result.get("order_perm_id")
+    result_order_ref = str(ib_result.get("order_ref") or "").strip()
+
+    match_index = None
+    for index, attempt in enumerate(attempts):
+        if int(attempt.get("attempt") or 0) == attempt_number:
+            match_index = index
+            break
+        if (
+            result_perm_id not in (None, "", 0, "0")
+            and str(attempt.get("perm_id") or "") == str(result_perm_id)
+        ):
+            match_index = index
+            break
+        if (
+            result_perm_id in (None, "", 0, "0")
+            and result_order_id not in (None, "", 0, "0")
+            and str(attempt.get("order_id") or "") == str(result_order_id)
+        ):
+            match_index = index
+            break
+        if (
+            result_perm_id in (None, "", 0, "0")
+            and result_order_id in (None, "", 0, "0")
+            and result_order_ref
+            and str(attempt.get("order_ref") or "").upper() == result_order_ref.upper()
+        ):
+            match_index = index
+            break
+
+    existing = dict(attempts[match_index]) if match_index is not None else {}
+    exec_ids = sorted({
+        str(value)
+        for value in [
+            *(existing.get("exec_ids") or []),
+            *(ib_result.get("close_exec_ids") or []),
+        ]
+        if str(value or "").strip()
+    })
+    entry = {
+        **existing,
+        "attempt": attempt_number,
+        "order_id": result_order_id or existing.get("order_id", ""),
+        "perm_id": result_perm_id or existing.get("perm_id", ""),
+        "order_ref": result_order_ref or existing.get("order_ref", ""),
+        "status": ib_result.get("close_status") or existing.get("status", ""),
+        "bridge_status": ib_result.get("status") or existing.get("bridge_status", ""),
+        "order_qty": (
+            to_float(ib_result.get("qty"))
+            or to_float(existing.get("order_qty"))
+        ),
+        "filled_qty": max(
+            to_float(existing.get("filled_qty")),
+            to_float(ib_result.get("close_filled_qty")),
+        ),
+        "avg_fill_price": (
+            to_float(ib_result.get("close_fill_price"))
+            or to_float(existing.get("avg_fill_price"))
+        ),
+        "exec_ids": exec_ids,
+        "submitted_at": existing.get("submitted_at") or now_iso,
+        "filled_at": (
+            now_iso
+            if ib_result.get("close_filled")
+            else existing.get("filled_at", "")
+        ),
+    }
+    if match_index is None:
+        attempts.append(entry)
+    else:
+        attempts[match_index] = entry
+    attempts.sort(key=lambda value: int(value.get("attempt") or 0))
+    return attempts
+
+
 def mark_managed_bridge_close(
     data: Dict[str, Any],
     ib_result: Dict[str, Any],
@@ -586,8 +743,25 @@ def mark_managed_bridge_close(
         return False
 
     now_iso = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    row["close_attempts"] = merge_edge_close_attempt(row, ib_result, now_iso)
     existing_close = row.get("bridge_close_order") if isinstance(row.get("bridge_close_order"), dict) else {}
+    reservation_for_attempt = (
+        row.get("close_reservation")
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    result_attempt = max(
+        1,
+        int(
+            ib_result.get("attempt")
+            or reservation_for_attempt.get("attempt")
+            or 1
+        ),
+    )
+    existing_attempt = max(1, int(existing_close.get("attempt") or 1))
+    preserve_existing_fill = existing_attempt == result_attempt
     row["bridge_close_order"] = {
+        "attempt": result_attempt,
         "order_id": ib_result.get("order_id") or existing_close.get("order_id", ""),
         "perm_id": ib_result.get("order_perm_id") or existing_close.get("perm_id", ""),
         "order_ref": ib_result.get("order_ref") or existing_close.get("order_ref", ""),
@@ -595,15 +769,27 @@ def mark_managed_bridge_close(
         "latest_status": ib_result.get("close_status") or existing_close.get("latest_status", ""),
         "filled_qty": (
             to_float(ib_result.get("close_filled_qty"))
-            or to_float(existing_close.get("filled_qty"))
+            or (
+                to_float(existing_close.get("filled_qty"))
+                if preserve_existing_fill
+                else 0.0
+            )
         ),
         "fill_price": (
             to_float(ib_result.get("close_fill_price"))
-            or to_float(existing_close.get("fill_price"))
+            or (
+                to_float(existing_close.get("fill_price"))
+                if preserve_existing_fill
+                else 0.0
+            )
         ),
         "exec_ids": list(
             ib_result.get("close_exec_ids")
-            or existing_close.get("exec_ids")
+            or (
+                existing_close.get("exec_ids")
+                if preserve_existing_fill
+                else []
+            )
             or []
         ),
         "broker_confirmed_flat": bool(
@@ -653,6 +839,7 @@ def mark_managed_bridge_close(
             "exec_ids": row["bridge_close_order"]["exec_ids"],
             "broker_confirmed_flat": row["bridge_close_order"]["broker_confirmed_flat"],
             "position_after_close": row["bridge_close_order"]["position_after_close"],
+            "close_attempts": row["close_attempts"],
             "updated_at": now_iso,
         })
         for key in (
@@ -2705,7 +2892,14 @@ async def authoritative_edge_close_refresh(
             for result in optional_history_results
         )
     )
-    ambiguous = len(trade_matches) > 1 or fill_ambiguous
+    _attempts, close_attempt_history_ambiguous = (
+        edge_close_attempts_with_history(row, trades, fills)
+    )
+    ambiguous = (
+        len(trade_matches) > 1
+        or fill_ambiguous
+        or close_attempt_history_ambiguous
+    )
     errors = [
         result["error"]
         for result in (
@@ -2725,8 +2919,50 @@ async def authoritative_edge_close_refresh(
         "position": position,
         "position_authoritative": position_authoritative,
         "matching_trade_count": len(trade_matches),
+        "trades": trades,
+        "fills": fills,
         "errors": errors,
     }
+
+
+def persist_edge_close_attempt_history(
+    data: Dict[str, Any],
+    refresh: Dict[str, Any],
+) -> bool:
+    symbol = str(data.get("symbol") or "").upper().strip()
+    setup_id = str(data.get("setup_id") or "").strip()
+    managed = load_managed_positions()
+    row = dict(managed.get(symbol) or {})
+    if not row or str(row.get("setup_id") or "").strip() != setup_id:
+        return False
+
+    attempts, ambiguous = edge_close_attempts_with_history(
+        row,
+        list(refresh.get("trades") or []),
+        list(refresh.get("fills") or []),
+    )
+    if ambiguous:
+        return False
+    row["close_attempts"] = attempts
+    external_evidence = find_external_close_execution(
+        row,
+        list(refresh.get("fills") or []),
+    )
+    if external_evidence:
+        row["external_close_execution"] = external_evidence
+    reservation = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    if reservation:
+        reservation["close_attempts"] = attempts
+        row["close_reservation"] = reservation
+    row["updated_at"] = now_in_tz(
+        FORCE_EOD_FLATTEN_TIMEZONE
+    ).isoformat()
+    managed[symbol] = row
+    return save_managed_positions(managed)
 
 
 def find_trade_by_expected_identity(
@@ -3084,6 +3320,7 @@ async def submit_edge_stop_recovery_replacement(
         remaining_qty=qty,
         position_before_close=position_size,
         prior_order_ref=reservation.get("order_ref", ""),
+        prior_attempt=reservation.get("prior_attempt", current_attempt),
         order_ref=order_ref_value,
         order_id="",
         perm_id="",
@@ -3098,34 +3335,55 @@ async def submit_edge_stop_recovery_replacement(
             managed_state_persisted=False,
         )
 
-    position_refresh = await bounded_ib_refresh_request(
-        "reqPositionsAsync",
+    original_qty = (
+        to_float(reservation.get("original_position_qty"))
+        or to_float(row.get("qty"))
     )
-    if not position_refresh.get("ok"):
+    target_filled_qty = to_float(
+        reservation.get("target_partial_filled_qty")
+    )
+    expected_remaining_qty = (
+        to_float(reservation.get("expected_remaining_qty"))
+        or max(0.0, original_qty - target_filled_qty)
+    )
+    sync_result = await wait_for_edge_partial_position_sync(
+        symbol,
+        side,
+        expected_remaining_qty,
+    )
+    position_size = to_float(sync_result.get("position"))
+    if not sync_result.get("confirmed"):
+        restored_attempt = max(
+            1,
+            int(reservation.get("prior_attempt") or current_attempt),
+        )
         persisted = update_edge_stop_close_reservation(
             data,
-            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
-            attempt=attempt,
-            recovery_errors=[position_refresh.get("error")],
+            "POSITION_SYNC_UNCONFIRMED",
+            attempt=restored_attempt,
+            pending_attempt=attempt,
+            expected_remaining_qty=expected_remaining_qty,
+            position_after_recovery_refresh=position_size,
         )
         logger.critical(
-            "[EDGE STOP REPLACEMENT POSITION REFRESH FAILED] "
-            "symbol=%s setup_id=%s attempt=%s. No replacement submitted.",
+            "[EDGE STOP REPLACEMENT POSITION SYNC UNCONFIRMED] "
+            "symbol=%s setup_id=%s attempt=%s expected_remaining=%s "
+            "observed_position=%s. No replacement submitted.",
             symbol,
             data.get("setup_id"),
             attempt,
+            expected_remaining_qty,
+            position_size,
         )
         return edge_stop_close_result(
             data,
-            "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            "EDGE_STOP_POSITION_SYNC_UNCONFIRMED",
+            position_before_close=position_size,
+            expected_remaining_qty=expected_remaining_qty,
             attempt=attempt,
             managed_state_persisted=persisted,
         )
 
-    position_size = position_from_rows(
-        position_refresh.get("values") or [],
-        symbol,
-    )
     if abs(position_size) <= 0.000001:
         persisted = update_edge_stop_close_reservation(
             data,
@@ -3172,6 +3430,7 @@ async def submit_edge_stop_recovery_replacement(
         remaining_qty=qty,
         position_before_close=position_size,
         confirmed_remaining_qty=qty,
+        expected_remaining_qty=expected_remaining_qty,
         order_ref=order_ref_value,
     ):
         return edge_stop_close_result(
@@ -3318,6 +3577,19 @@ async def recover_reserved_edge_stop_close(
             attempt=attempt,
             managed_state_persisted=True,
         )
+
+    if "trades" in refresh or "fills" in refresh:
+        if not persist_edge_close_attempt_history(data, refresh):
+            return edge_stop_close_result(
+                data,
+                "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+                position_before_close=position_size,
+                attempt=attempt,
+                managed_state_persisted=False,
+            )
+        current = reserve_edge_stop_close(data)
+        row = dict(current.get("row") or row)
+        reservation = dict(current.get("reservation") or reservation)
 
     close_trade = refresh.get("trade")
     execution = refresh.get("execution")
@@ -3501,6 +3773,11 @@ async def recover_reserved_edge_stop_close(
         "CLOSE_SUBMISSION_PENDING",
         "RECOVERY_REPLACEMENT_SUBMISSION_PENDING",
         "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN",
+        "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+        "POSITION_SYNC_UNCONFIRMED",
+        "FILLED_POSITION_NOT_FLAT",
+        "MIXED_EXIT_EVIDENCE_INCOMPLETE",
+        "CALLBACK_PENDING",
     }
     if (
         refresh.get("authoritative")
@@ -3537,6 +3814,77 @@ async def recover_reserved_edge_stop_close(
         attempt=attempt,
         managed_state_persisted=persisted,
     )
+
+
+def edge_stop_recovery_payload(
+    row: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    payload = (
+        dict(row.get("last_payload"))
+        if isinstance(row.get("last_payload"), dict)
+        else {}
+    )
+    setup_id = str(row.get("setup_id") or payload.get("setup_id") or "").strip()
+    symbol = str(row.get("symbol") or payload.get("symbol") or "").upper().strip()
+    side = str(row.get("side") or payload.get("side") or "").upper().strip()
+    if not setup_id or not symbol or side not in ("LONG", "SHORT"):
+        return None
+    payload.update({
+        "source": payload.get("source") or "IB_BRIDGE",
+        "payload_version": 2,
+        "system_id": payload.get("system_id") or row.get("system_id") or "VIXALE_EDGE",
+        "setup_id": setup_id,
+        "event": "CLOSE_STOP",
+        "symbol": symbol,
+        "side": side,
+        "qty": to_int_qty(row.get("qty")) or to_int_qty(payload.get("qty")),
+    })
+    return payload
+
+
+async def recover_edge_stop_reservation_from_scheduler(
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    reservation = (
+        dict(row.get("close_reservation"))
+        if isinstance(row.get("close_reservation"), dict)
+        else {}
+    )
+    state = str(reservation.get("state") or "").upper().strip()
+    if state not in EDGE_STOP_AUTOMATIC_RECOVERY_STATES:
+        return {
+            "status": "no_active_edge_stop_recovery",
+            "state": state,
+        }
+
+    data = edge_stop_recovery_payload(row)
+    if data is None:
+        logger.critical(
+            "[EDGE STOP SCHEDULER RECOVERY INVALID STATE] symbol=%s "
+            "setup_id=%s state=%s. No broker order submitted.",
+            row.get("symbol"),
+            row.get("setup_id"),
+            state,
+        )
+        return {
+            "status": "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+            "state": state,
+        }
+
+    reserved = {
+        "ok": True,
+        "existing": True,
+        "row": row,
+        "reservation": reservation,
+    }
+    if state in {
+        "RESERVED",
+        "TARGET_CANCEL_PENDING",
+        "TARGET_CANCEL_UNCONFIRMED",
+        "TARGET_RESOLVED",
+    }:
+        return await execute_edge_v2_stop_close(data, reserved)
+    return await recover_reserved_edge_stop_close(data, reserved)
 
 
 async def execute_edge_v2_stop_close(
@@ -5229,6 +5577,31 @@ def managed_order_identity(row: Dict[str, Any], kind: str) -> Dict[str, Any]:
     }
 
 
+def edge_close_attempt_identities(
+    row: Dict[str, Any],
+) -> List[Tuple[int, Dict[str, Any]]]:
+    identities = []
+    for attempt in normalized_edge_close_attempts(row):
+        expected = {
+            "order_id": attempt.get("order_id"),
+            "perm_id": attempt.get("perm_id"),
+            "order_ref": attempt.get("order_ref"),
+            "expected_qty": (
+                to_float(attempt.get("order_qty"))
+                or to_float(attempt.get("filled_qty"))
+            ),
+        }
+        if any(
+            expected.get(key) not in (None, "", 0, "0")
+            for key in ("order_id", "perm_id", "order_ref")
+        ):
+            identities.append((
+                max(1, int(attempt.get("attempt") or 1)),
+                expected,
+            ))
+    return identities
+
+
 def identity_matches(
     actual_order_id: Any,
     actual_perm_id: Any,
@@ -5494,6 +5867,192 @@ def fill_execution_evidence(
     }
 
 
+def edge_close_attempts_with_history(
+    row: Dict[str, Any],
+    trades: Optional[List[Any]] = None,
+    fills: Optional[List[Any]] = None,
+) -> Tuple[List[Dict[str, Any]], bool]:
+    attempts = normalized_edge_close_attempts(row)
+    known_trades = list(current_ib_trades() if trades is None else trades)
+    known_fills = list(current_ib_fills() if fills is None else fills)
+    ambiguous = False
+
+    for index, attempt in enumerate(attempts):
+        expected = {
+            "order_id": attempt.get("order_id"),
+            "perm_id": attempt.get("perm_id"),
+            "order_ref": attempt.get("order_ref"),
+            "expected_qty": (
+                to_float(attempt.get("order_qty"))
+                or to_float(attempt.get("filled_qty"))
+            ),
+        }
+        if not any(
+            expected.get(key) not in (None, "", 0, "0")
+            for key in ("order_id", "perm_id", "order_ref")
+        ):
+            continue
+
+        fill_evidence, fill_ambiguous = close_fill_evidence_for_expected(
+            known_fills,
+            row,
+            expected,
+        )
+        trade_matches = [
+            trade
+            for trade in known_trades
+            if trade_contract_symbol(trade)
+            == str(row.get("symbol") or "").upper().strip()
+            and normalized_execution_action(trade_action(trade))
+            == expected_exit_action(row)
+            and identity_matches(
+                trade_order_id(trade),
+                trade_perm_id(trade),
+                trade_order_ref_value(trade),
+                expected,
+            )
+        ]
+        if fill_ambiguous or len(trade_matches) > 1:
+            ambiguous = True
+            continue
+
+        evidence = fill_evidence
+        if evidence is None and len(trade_matches) == 1:
+            trade = trade_matches[0]
+            filled_qty = trade_filled_qty(trade)
+            fill_price = trade_fill_price(trade)
+            if filled_qty > 0 and fill_price > 0:
+                evidence = {
+                    "price": fill_price,
+                    "qty": filled_qty,
+                    "order_id": trade_order_id(trade),
+                    "perm_id": trade_perm_id(trade),
+                    "order_ref": trade_order_ref_value(trade),
+                    "status": trade_status(trade),
+                    "exec_ids": trade_execution_ids(trade),
+                }
+            elif trade_status(trade):
+                attempt["status"] = trade_status(trade)
+
+        if evidence:
+            attempt["order_id"] = (
+                evidence.get("order_id") or attempt.get("order_id", "")
+            )
+            attempt["perm_id"] = (
+                evidence.get("perm_id") or attempt.get("perm_id", "")
+            )
+            attempt["order_ref"] = (
+                evidence.get("order_ref") or attempt.get("order_ref", "")
+            )
+            attempt["status"] = (
+                evidence.get("status") or attempt.get("status", "")
+            )
+            attempt["filled_qty"] = max(
+                to_float(attempt.get("filled_qty")),
+                to_float(evidence.get("qty")),
+            )
+            attempt["avg_fill_price"] = (
+                to_float(evidence.get("price"))
+                or to_float(attempt.get("avg_fill_price"))
+            )
+            attempt["exec_ids"] = sorted({
+                str(value)
+                for value in [
+                    *(attempt.get("exec_ids") or []),
+                    *(evidence.get("exec_ids") or []),
+                ]
+                if str(value or "").strip()
+            })
+        attempts[index] = attempt
+    return attempts, ambiguous
+
+
+def edge_close_attempt_execution_aggregate(
+    row: Dict[str, Any],
+    trades: Optional[List[Any]] = None,
+    fills: Optional[List[Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    attempts, ambiguous = edge_close_attempts_with_history(
+        row,
+        trades,
+        fills,
+    )
+    if ambiguous:
+        return None
+
+    components = []
+    seen_exec_ids = set()
+    seen_fallback_identities = set()
+    for attempt in attempts:
+        qty = to_float(attempt.get("filled_qty"))
+        price = to_float(attempt.get("avg_fill_price"))
+        if qty <= 0 or price <= 0:
+            continue
+        exec_ids = sorted({
+            str(value)
+            for value in attempt.get("exec_ids") or []
+            if str(value or "").strip()
+        })
+        if exec_ids:
+            if seen_exec_ids.intersection(exec_ids):
+                continue
+            seen_exec_ids.update(exec_ids)
+        else:
+            fallback_identity = execution_identity_text(
+                perm_id=attempt.get("perm_id"),
+                order_id=attempt.get("order_id"),
+                order_ref_value=attempt.get("order_ref"),
+            )
+            if not fallback_identity or fallback_identity in seen_fallback_identities:
+                continue
+            seen_fallback_identities.add(fallback_identity)
+        components.append({
+            "attempt": max(1, int(attempt.get("attempt") or 1)),
+            "qty": qty,
+            "price": price,
+            "order_id": attempt.get("order_id", ""),
+            "perm_id": attempt.get("perm_id", ""),
+            "order_ref": attempt.get("order_ref", ""),
+            "status": attempt.get("status", ""),
+            "exec_ids": exec_ids,
+        })
+
+    total_qty = sum(component["qty"] for component in components)
+    if total_qty <= 0:
+        return None
+    weighted_price = sum(
+        component["qty"] * component["price"]
+        for component in components
+    ) / total_qty
+    all_exec_ids = sorted({
+        exec_id
+        for component in components
+        for exec_id in component["exec_ids"]
+    })
+    identities = [
+        execution_identity_text(
+            exec_ids=component["exec_ids"],
+            perm_id=component["perm_id"],
+            order_id=component["order_id"],
+            order_ref_value=component["order_ref"],
+        )
+        for component in components
+    ]
+    identity = "ATTEMPTS:" + ",".join(sorted(set(identities)))
+    latest = components[-1]
+    return {
+        "identity": identity,
+        "price": round_price(weighted_price),
+        "qty": total_qty,
+        "order_id": latest["order_id"],
+        "perm_id": latest["perm_id"],
+        "order_ref": latest["order_ref"],
+        "status": latest["status"] or "Filled",
+        "exec_ids": all_exec_ids,
+        "attempts": components,
+    }
+
+
 def current_ib_trades() -> List[Any]:
     try:
         return list(ib.trades() or [])
@@ -5530,16 +6089,24 @@ def find_managed_execution_evidence(row: Dict[str, Any], kind: str) -> Optional[
     return fill_execution_evidence(current_ib_fills(), row, expected)
 
 
-def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def find_external_close_execution(
+    row: Dict[str, Any],
+    fills: Optional[List[Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """Use a single unambiguous non-managed closing execution when available."""
     symbol = str(row.get("symbol") or "").upper().strip()
     target_identity = managed_order_identity(row, "target")
-    close_identity = managed_order_identity(row, "close")
+    managed_close_identities = [
+        expected
+        for _attempt, expected in edge_close_attempt_identities(row)
+    ]
+    if not managed_close_identities:
+        managed_close_identities = [managed_order_identity(row, "close")]
     groups: Dict[str, List[Dict[str, Any]]] = {}
     if entry_filled_time(row) is None:
         return None
 
-    for fill in current_ib_fills():
+    for fill in current_ib_fills() if fills is None else fills:
         details = fill_execution_details(fill)
         if fill_contract_symbol(fill) != symbol:
             continue
@@ -5551,7 +6118,15 @@ def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any
             continue
         if identity_matches(details["order_id"], details["perm_id"], details["order_ref"], target_identity):
             continue
-        if identity_matches(details["order_id"], details["perm_id"], details["order_ref"], close_identity):
+        if any(
+            identity_matches(
+                details["order_id"],
+                details["perm_id"],
+                details["order_ref"],
+                close_identity,
+            )
+            for close_identity in managed_close_identities
+        ):
             continue
         identity = execution_identity_text(
             exec_ids=[details["exec_id"]] if details["exec_id"] else [],
@@ -5596,6 +6171,7 @@ def find_external_close_execution(row: Dict[str, Any]) -> Optional[Dict[str, Any
 def edge_mixed_exit_reconciliation_evidence(
     row: Dict[str, Any],
     close_evidence: Optional[Dict[str, Any]],
+    external_evidence: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     reservation = (
         row.get("close_reservation")
@@ -5623,32 +6199,71 @@ def edge_mixed_exit_reconciliation_evidence(
         for value in (close_evidence or {}).get("exec_ids") or []
         if str(value or "").strip()
     })
-    total_qty = target_qty + stop_qty
+    external_qty = to_float((external_evidence or {}).get("qty"))
+    external_price = to_float((external_evidence or {}).get("price"))
+    external_exec_ids = sorted({
+        str(value)
+        for value in (external_evidence or {}).get("exec_ids") or []
+        if str(value or "").strip()
+    })
+    component_identities = [
+        execution_identity_text(exec_ids=target_exec_ids),
+    ]
+    if close_evidence:
+        component_identities.append(str(close_evidence.get("identity") or ""))
+    if external_evidence:
+        component_identities.append(
+            str(external_evidence.get("identity") or "")
+        )
+    total_qty = target_qty + stop_qty + external_qty
     if not (
         original_qty > 0
         and target_price > 0
-        and stop_qty > 0
-        and stop_price > 0
         and target_exec_ids
-        and stop_exec_ids
+        and (stop_qty > 0 or external_qty > 0)
+        and (stop_qty <= 0 or (stop_price > 0 and bool(close_evidence)))
+        and (
+            external_qty <= 0
+            or (
+                external_price > 0
+                and bool(external_evidence)
+                and bool(external_evidence.get("identity"))
+            )
+        )
+        and all(component_identities)
         and abs(total_qty - original_qty) <= 0.000001
     ):
         return None
 
-    mixed_exec_ids = sorted(set(target_exec_ids + stop_exec_ids))
+    mixed_exec_ids = sorted(set(
+        target_exec_ids + stop_exec_ids + external_exec_ids
+    ))
     weighted_price = round_price(
         (
             target_qty * target_price
             + stop_qty * stop_price
+            + external_qty * external_price
         ) / original_qty
     )
+    identity = "COMPONENTS:" + ",".join(
+        sorted(set(component_identities))
+    )
     return {
-        "identity": execution_identity_text(exec_ids=mixed_exec_ids),
+        "identity": identity,
         "price": weighted_price,
         "qty": original_qty,
-        "order_id": (close_evidence or {}).get("order_id", ""),
-        "perm_id": (close_evidence or {}).get("perm_id", ""),
-        "order_ref": (close_evidence or {}).get("order_ref", ""),
+        "order_id": (
+            (external_evidence or {}).get("order_id")
+            or (close_evidence or {}).get("order_id", "")
+        ),
+        "perm_id": (
+            (external_evidence or {}).get("perm_id")
+            or (close_evidence or {}).get("perm_id", "")
+        ),
+        "order_ref": (
+            (external_evidence or {}).get("order_ref")
+            or (close_evidence or {}).get("order_ref", "")
+        ),
         "status": "Filled",
         "exec_ids": mixed_exec_ids,
         "original_position_qty": original_qty,
@@ -5666,6 +6281,15 @@ def edge_mixed_exit_reconciliation_evidence(
         "stop_close_filled_qty": stop_qty,
         "stop_close_fill_price": stop_price,
         "stop_close_exec_ids": stop_exec_ids,
+        "external_close_filled_qty": external_qty,
+        "external_close_fill_price": external_price,
+        "external_close_exec_ids": external_exec_ids,
+        "external_close_identity": (
+            (external_evidence or {}).get("identity", "")
+        ),
+        "close_attempts": (
+            (close_evidence or {}).get("attempts") or []
+        ),
         "mixed_exit_weighted_price": weighted_price,
         "mixed_exit_total_qty": total_qty,
         "mixed_exit_exec_ids": mixed_exec_ids,
@@ -5675,7 +6299,10 @@ def edge_mixed_exit_reconciliation_evidence(
 
 def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
     target_evidence = find_managed_execution_evidence(row, "target")
-    close_evidence = find_managed_execution_evidence(row, "close")
+    close_evidence = (
+        edge_close_attempt_execution_aggregate(row)
+        or find_managed_execution_evidence(row, "close")
+    )
     reservation = (
         row.get("close_reservation")
         if isinstance(row.get("close_reservation"), dict)
@@ -5684,19 +6311,41 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
     has_partial_target = (
         to_float(reservation.get("target_partial_filled_qty")) > 0
     )
+    external_evidence = (
+        (
+            dict(row.get("external_close_execution"))
+            if isinstance(row.get("external_close_execution"), dict)
+            else find_external_close_execution(row)
+        )
+        if not target_evidence
+        else None
+    )
     mixed_evidence = (
-        edge_mixed_exit_reconciliation_evidence(row, close_evidence)
+        edge_mixed_exit_reconciliation_evidence(
+            row,
+            close_evidence,
+            external_evidence,
+        )
         if has_partial_target and not target_evidence
         else None
     )
     if has_partial_target and not target_evidence and not mixed_evidence:
         return {}, "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE"
 
-    external_evidence = (
-        None
-        if target_evidence or close_evidence or mixed_evidence
-        else find_external_close_execution(row)
-    )
+    original_qty = to_float(row.get("qty"))
+    if (
+        close_evidence
+        and not has_partial_target
+        and original_qty > 0
+        and abs(to_float(close_evidence.get("qty")) - original_qty) > 0.000001
+    ):
+        return {}, "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE"
+    if target_evidence or close_evidence or mixed_evidence:
+        if not (
+            mixed_evidence
+            and to_float(mixed_evidence.get("external_close_filled_qty")) > 0
+        ):
+            external_evidence = None
     payload = dict(row.get("last_payload") or {})
     setup_id = str(row.get("setup_id") or payload.get("setup_id") or "").strip()
     symbol = str(row.get("symbol") or payload.get("symbol") or "").upper().strip()
@@ -5708,6 +6357,11 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
     event = (
         "TP"
         if target_evidence
+        else "EXTERNAL_CLOSE"
+        if (
+            mixed_evidence
+            and to_float(mixed_evidence.get("external_close_filled_qty")) > 0
+        )
         else "CLOSE_STOP"
         if mixed_evidence or close_evidence
         else "EXTERNAL_CLOSE"
@@ -5715,6 +6369,11 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
     reason = (
         "IB_TARGET_EXECUTION_CONFIRMED"
         if target_evidence
+        else "IB_MANUAL_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED"
+        if (
+            mixed_evidence
+            and to_float(mixed_evidence.get("external_close_filled_qty")) > 0
+        )
         else "IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED"
         if mixed_evidence
         else "IB_STOP_CLOSE_EXECUTION_CONFIRMED"
@@ -5765,6 +6424,11 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
                 "mixed_exit_total_qty",
                 "mixed_exit_exec_ids",
                 "mixed_exit_evidence_complete",
+                "external_close_filled_qty",
+                "external_close_fill_price",
+                "external_close_exec_ids",
+                "external_close_identity",
+                "close_attempts",
             ):
                 payload[key] = mixed_evidence.get(key)
     else:
@@ -5805,12 +6469,40 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
             })
             continue
 
+        recovery_result = None
+        if is_vixale_edge_managed_position(row):
+            reservation = (
+                row.get("close_reservation")
+                if isinstance(row.get("close_reservation"), dict)
+                else {}
+            )
+            recovery_state = str(
+                reservation.get("state") or ""
+            ).upper().strip()
+            if recovery_state in EDGE_STOP_AUTOMATIC_RECOVERY_STATES:
+                recovery_result = (
+                    await recover_edge_stop_reservation_from_scheduler(row)
+                )
+                refreshed_managed = load_managed_positions()
+                if symbol not in refreshed_managed:
+                    details.append({
+                        "symbol": symbol,
+                        "status": "edge_stop_recovery_state_cleared",
+                    })
+                    continue
+                row = dict(refreshed_managed[symbol])
+                managed[symbol] = row
+
         position_size = await get_position_size(symbol)
 
         if abs(position_size) > 0.000001:
             details.append({
                 "symbol": symbol,
-                "status": "still_open",
+                "status": (
+                    recovery_result.get("status")
+                    if isinstance(recovery_result, dict)
+                    else "still_open"
+                ),
                 "position": position_size,
                 "target": target_price,
             })

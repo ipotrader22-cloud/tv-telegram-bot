@@ -670,7 +670,11 @@ causes a duplicate submission. If the broker is already flat, recovery submits
 no order and leaves publication to evidence-based reconciliation. If an
 authoritative refresh proves there is no matching order or execution while the
 managed-side position remains open, the bridge persists a retry attempt,
-refreshes the position again, and permits one controlled replacement. A
+polls the position through the same bounded synchronization gate used after a
+partial target, and permits one controlled replacement only when the managed
+side and quantity are confirmed. A stale quantity above original quantity
+minus all confirmed target executions persists `POSITION_SYNC_UNCONFIRMED`,
+returns `EDGE_STOP_POSITION_SYNC_UNCONFIRMED`, and submits no order. A
 Rejected, Cancelled, ApiCancelled, or Inactive close is
 `EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`, not permanently in progress, and may
 use that one replacement. A second replacement is prohibited across restart.
@@ -678,16 +682,38 @@ Ambiguous or non-authoritative evidence returns
 `EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`, retains managed state, and submits no
 order because the position may be unprotected.
 
+Recovery is automatic: the existing persistent managed-position reconciliation
+loop scans active Edge close-reservation states on startup and every poll. It
+reconstructs the original payload from the managed row, performs the same
+authoritative refresh, and resumes target cancellation, position
+synchronization, close adoption/replacement, flat reconciliation, or pending
+Render delivery without requiring TradingView to resend `CLOSE_STOP`. Every
+state transition is saved before broker activity, the persisted attempt cap is
+honored after restart, and ambiguous evidence remains retained with no order.
+
 When a partial target execution is followed by the Stop Loss remainder, the
 bridge publishes one final `CLOSE_STOP` for the full original managed
 quantity. Its exit price is the quantity-weighted average of confirmed target
-and Stop Loss executions, its raw JSON contains all component execution IDs,
-quantities, and prices, and its reason is
+and every Stop Loss execution across all close attempts. The managed JSON
+stores an append-preserving `close_attempts` list with attempt number,
+`orderId`, `permId`, `orderRef`, status, cumulative filled quantity, average
+price, and execution IDs. Reconciliation deduplicates execution IDs, requires
+the component total to equal the original quantity, includes every execution
+identity in the reconciliation identity, and stores all component details in
+raw JSON. Its reason is
 `IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. The existing Sheets
 schema is unchanged. A partial target is not published as a separate TP. If
 any component price, quantity, or execution identity is missing, the bridge
 persists `EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE`, withholds the callback,
 and retains the managed row for reconciliation rather than fabricating P&L.
+
+If a confirmed partial target is followed by an unambiguous attributed manual
+remainder, the same component accounting publishes one full-original-quantity
+`EXTERNAL_CLOSE` / `Manual Close` at the weighted actual exit price. It never
+publishes a partial TP. Every component must have confirmed price, quantity,
+and identity; otherwise publication is withheld. Manual Close continues to
+store blank result and result percentage even when all actual component prices
+are available.
 
 When one matching external execution is available after a reliably timestamped
 managed entry, its actual price and quantity are published. External attribution
@@ -1269,14 +1295,19 @@ unconfirmed target cancellation returns EDGE_STOP_TARGET_CANCEL_UNCONFIRMED
 stale setup returns EDGE_STOP_SETUP_MISMATCH with no broker activity
 concurrent/restarted duplicate recovers the stored close and submits no second order
 CLOSE_SUBMISSION_PENDING recovery refreshes open/completed orders, executions, and position
+the managed reconciliation scheduler resumes active reservations without another alert
 authoritative no-order recovery permits only one persisted replacement attempt
 Rejected/Cancelled/ApiCancelled/Inactive close is retryable, not permanently in progress
 ambiguous recovery returns EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS with no new order
+every replacement re-polls position and rejects a stale quantity above expected remaining
 Edge close execution is confirmed Filled
 bridge verifies the actual IB position is zero with a bounded wait
 only then Render receives CLOSE_STOP with broker_confirmed_flat=true
 partial target plus Stop Loss produces one full-quantity weighted CLOSE_STOP
-mixed raw JSON contains target and Stop Loss execution IDs, prices, and quantities
+all stop attempts remain in close_attempts and are execution-ID deduplicated
+mixed raw JSON contains target and every Stop Loss execution ID, price, and quantity
+partial target plus confirmed manual remainder produces one full-quantity Manual Close
+Manual Close keeps result and result percentage blank
 incomplete mixed evidence withholds publication and retains managed state
 partial target creates no standalone TP row
 Render awaits Trades, Closed Trades, Open removal, and Telegram publication
@@ -1438,17 +1469,35 @@ An existing `CLOSE_SUBMISSION_PENDING` reservation is recovered through
 bounded authoritative refresh of open orders/trades, supported completed-order
 and execution history, and position. Exact order or execution evidence is
 adopted without resubmission. Authoritative proof of an open managed position
-and no matching close permits one persisted replacement attempt; a rejected or
+and no matching close permits one persisted replacement attempt only after the
+bounded position gate confirms the managed side and a quantity no greater than
+original quantity minus confirmed target executions; stale position data
+returns `EDGE_STOP_POSITION_SYNC_UNCONFIRMED` with no order. A rejected or
 canceled close follows the same capped recovery. Ambiguity returns
 `EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS` with no order. Flat recovery submits
 nothing and defers to execution-evidence reconciliation.
 
+The existing managed-position reconciliation scheduler performs this recovery
+automatically after bridge restart and on every poll for active close
+reservation states. It does not require a repeated TradingView alert. It
+persists each transition before broker activity, adopts an already accepted
+order, honors the attempt cap, and retains ambiguous state without submitting.
+
 A partial target followed by Stop Loss is one public `CLOSE_STOP` for the full
-original quantity at the confirmed execution-weighted exit price, with both
-execution components retained in raw JSON and reason
+original quantity at the confirmed execution-weighted exit price. Every close
+attempt is retained in managed JSON as `close_attempts`; reconciliation
+aggregates confirmed fills across all attempts, deduplicates execution IDs,
+requires the component quantity to equal the original position, and retains
+all components in raw JSON with reason
 `IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. Incomplete component
 evidence is persisted and retried, never published as a remainder-only close
 or separate partial TP.
+
+When the remainder is an unambiguous post-entry manual execution, confirmed
+target and manual components instead produce one full-quantity
+`EXTERNAL_CLOSE` / `Manual Close` at their weighted actual price. Incomplete
+component evidence is withheld, and Manual Close result/result percentage
+remain blank.
 
 Broker-confirmed Edge TP and `CLOSE_STOP` callbacks use synchronous persistent
 Render publication keyed by `setup_id + reconciliation_id + event`. HTTP 200

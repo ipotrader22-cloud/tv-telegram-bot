@@ -772,6 +772,122 @@ async function run() {
     'actual-price EXTERNAL_CLOSE never forwards to bridge'
   );
 
+  // Partial target plus an attributed manual remainder is one full-size
+  // Manual Close, is restart-idempotent, and never calculates P&L.
+  const mixedManualSheets = createMockSheets();
+  const mixedManualTelegram = [];
+  const mixedManualBridge = [];
+  let mixedManualLifecycle = createLifecycleContext({
+    sheetStore: mixedManualSheets,
+    telegramStore: mixedManualTelegram,
+    bridgeStore: mixedManualBridge,
+  });
+  const mixedManualSetupId = 'VIXALE_EDGE:AMD:60:LONG:1785288000000';
+  await mixedManualLifecycle(edgePayload('PENDING_SETUP', mixedManualSetupId, {
+    symbol: 'AMD',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785288000000,
+  }));
+  await mixedManualLifecycle(edgePayload('ENTRY_FILL', mixedManualSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'AMD',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785288000000,
+    render_forwarded_at: '2026-07-28T15:20:00-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  const mixedManualExecutionId = 'EXEC:MANUAL-AMD-7,TARGET-AMD-3';
+  const mixedManualReconciliationId =
+    `${mixedManualSetupId}:${mixedManualExecutionId}`;
+  const mixedManualExit = edgePayload('EXTERNAL_CLOSE', mixedManualSetupId, {
+    source: 'IB_BRIDGE',
+    symbol: 'AMD',
+    entry: 100,
+    planned_limit_entry: 100,
+    target: 105,
+    stop: 98,
+    flip_bar_time: 1785288000000,
+    price: 100.8,
+    qty: 10,
+    result: 500,
+    result_pct: 50,
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: mixedManualExecutionId,
+    reconciliation_id: mixedManualReconciliationId,
+    exit_price_available: true,
+    exit_quantity_available: true,
+    reason: 'IB_MANUAL_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED',
+    original_position_qty: 10,
+    target_partial_filled_qty: 3,
+    target_partial_fill_price: 105,
+    target_partial_exec_ids: ['TARGET-AMD-3'],
+    external_close_filled_qty: 7,
+    external_close_fill_price: 99,
+    external_close_exec_ids: ['MANUAL-AMD-7'],
+    mixed_exit_weighted_price: 100.8,
+    mixed_exit_total_qty: 10,
+    mixed_exit_exec_ids: ['MANUAL-AMD-7', 'TARGET-AMD-3'],
+    mixed_exit_evidence_complete: true,
+  });
+  const mixedManualResult = await mixedManualLifecycle(mixedManualExit);
+  assert.strictEqual(
+    mixedManualResult.finalRow.status,
+    'external_close_publication_complete'
+  );
+  assert.strictEqual(mixedManualResult.finalRow.result, '');
+  assert.strictEqual(mixedManualResult.finalRow.result_pct, '');
+  const mixedManualTrade = mixedManualSheets.rows.Trades
+    .slice(1)
+    .find(row => JSON.parse(row[10] || '{}').reconciliation_id ===
+      mixedManualReconciliationId);
+  const mixedManualClosed = mixedManualSheets.rows['Closed Trades']
+    .slice(1)
+    .find(row => JSON.parse(row[11] || '{}').reconciliation_id ===
+      mixedManualReconciliationId);
+  assert.strictEqual(mixedManualTrade[5], 10);
+  assert.strictEqual(mixedManualTrade[6], 100.8);
+  assert.strictEqual(mixedManualTrade[8], '');
+  assert.strictEqual(mixedManualClosed[7], 10);
+  assert.strictEqual(mixedManualClosed[6], 100.8);
+  assert.strictEqual(mixedManualClosed[8], '');
+  assert.strictEqual(
+    mixedManualTelegram.filter(
+      message => message.includes('Vixale Edge closed manually')
+    ).length,
+    1
+  );
+  assert.strictEqual(mixedManualBridge.length, 0);
+  const mixedManualActivity = {
+    trades: mixedManualSheets.rows.Trades.length,
+    closed: mixedManualSheets.rows['Closed Trades'].length,
+    telegram: mixedManualTelegram.length,
+    bridge: mixedManualBridge.length,
+  };
+  mixedManualLifecycle = createLifecycleContext({
+    sheetStore: mixedManualSheets,
+    telegramStore: mixedManualTelegram,
+    bridgeStore: mixedManualBridge,
+  });
+  const duplicateMixedManual = await mixedManualLifecycle(mixedManualExit);
+  assert.strictEqual(
+    duplicateMixedManual.finalRow.status,
+    'ignored_duplicate_external_close'
+  );
+  assert.deepStrictEqual({
+    trades: mixedManualSheets.rows.Trades.length,
+    closed: mixedManualSheets.rows['Closed Trades'].length,
+    telegram: mixedManualTelegram.length,
+    bridge: mixedManualBridge.length,
+  }, mixedManualActivity, 'mixed Manual Close retry after restart is ignored');
+
   // Broker-confirmed TP publication is synchronous, repairable, and persistent.
   const tpSheets = createMockSheets();
   const tpTelegram = [];
@@ -1033,7 +1149,7 @@ async function run() {
     ib_status: 'FILLED',
     entry_filled: true,
   }));
-  const mixedExecutionId = 'EXEC:STOP-META-7,TARGET-META-3';
+  const mixedExecutionId = 'EXEC:STOP-META-2,STOP-META-5,TARGET-META-3';
   const mixedReconciliationId = `${mixedSetupId}:${mixedExecutionId}`;
   const mixedExit = edgePayload('CLOSE_STOP', mixedSetupId, {
     source: 'IB_BRIDGE',
@@ -1043,7 +1159,7 @@ async function run() {
     target: 105,
     stop: 98,
     flip_bar_time: 1785293400000,
-    price: 100.1,
+    price: 99.6,
     qty: 10,
     ib_close_status: 'Filled',
     close_filled: true,
@@ -1059,11 +1175,31 @@ async function run() {
     expected_remaining_qty: 7,
     confirmed_remaining_qty: 7,
     stop_close_filled_qty: 7,
-    stop_close_fill_price: 98,
-    stop_close_exec_ids: ['STOP-META-7'],
-    mixed_exit_weighted_price: 100.1,
+    stop_close_fill_price: 97.2857,
+    stop_close_exec_ids: ['STOP-META-2', 'STOP-META-5'],
+    close_attempts: [
+      {
+        attempt: 1,
+        order_id: 3001,
+        perm_id: 33001,
+        order_ref: 'TVFVG_CLOSE_META_MULTI',
+        filled_qty: 2,
+        avg_fill_price: 98,
+        exec_ids: ['STOP-META-2'],
+      },
+      {
+        attempt: 2,
+        order_id: 3002,
+        perm_id: 33002,
+        order_ref: 'TVFVG_CLOSE_META_MULTI_2',
+        filled_qty: 5,
+        avg_fill_price: 97,
+        exec_ids: ['STOP-META-5'],
+      },
+    ],
+    mixed_exit_weighted_price: 99.6,
     mixed_exit_total_qty: 10,
-    mixed_exit_exec_ids: ['STOP-META-7', 'TARGET-META-3'],
+    mixed_exit_exec_ids: ['STOP-META-2', 'STOP-META-5', 'TARGET-META-3'],
     mixed_exit_evidence_complete: true,
   });
   const mixedResult = await mixedLifecycle(mixedExit);
@@ -1098,9 +1234,9 @@ async function run() {
     .slice(1)
     .find(row => JSON.parse(row[11] || '{}').reconciliation_id === mixedReconciliationId);
   assert.strictEqual(mixedTradesClose[5], 10, 'mixed Trades close uses full original qty');
-  assert.strictEqual(mixedTradesClose[6], 100.1, 'mixed Trades close uses weighted exit');
+  assert.strictEqual(mixedTradesClose[6], 99.6, 'mixed Trades close uses weighted exit');
   assert.strictEqual(mixedClosed[7], 10, 'mixed Closed Trade uses full original qty');
-  assert.strictEqual(mixedClosed[6], 100.1, 'mixed Closed Trade uses weighted exit');
+  assert.strictEqual(mixedClosed[6], 99.6, 'mixed Closed Trade uses weighted exit');
   const mixedTradesRaw = JSON.parse(mixedTradesClose[10] || '{}');
   const mixedClosedRaw = JSON.parse(mixedClosed[11] || '{}');
   for (const raw of [mixedTradesRaw, mixedClosedRaw]) {
@@ -1111,18 +1247,19 @@ async function run() {
     );
     assert.deepStrictEqual(
       raw.stop_close_exec_ids,
-      ['STOP-META-7'],
+      ['STOP-META-2', 'STOP-META-5'],
       'mixed raw JSON preserves Stop Loss execution IDs'
     );
     assert.deepStrictEqual(
       raw.mixed_exit_exec_ids,
-      ['STOP-META-7', 'TARGET-META-3'],
+      ['STOP-META-2', 'STOP-META-5', 'TARGET-META-3'],
       'mixed raw JSON preserves all component execution IDs'
     );
     assert.strictEqual(raw.target_partial_filled_qty, 3);
     assert.strictEqual(raw.target_partial_fill_price, 105);
     assert.strictEqual(raw.stop_close_filled_qty, 7);
-    assert.strictEqual(raw.stop_close_fill_price, 98);
+    assert.strictEqual(raw.stop_close_fill_price, 97.2857);
+    assert.strictEqual(raw.close_attempts.length, 2);
   }
   assert.strictEqual(
     mixedTelegram.filter(message => message.includes('Vixale Edge hit Stop Loss')).length,

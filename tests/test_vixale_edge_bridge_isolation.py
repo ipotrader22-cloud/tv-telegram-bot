@@ -1094,6 +1094,11 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             store["AAPL"]["close_reservation"]["state"],
             "POSITION_SYNC_UNCONFIRMED",
         )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["attempt"],
+            1,
+            "a stale position consumes no broker close attempt",
+        )
 
     async def test_stale_setup_id_mismatch_has_no_broker_activity(self):
         payload = edge_payload(
@@ -1279,6 +1284,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         *,
         replacement_trade=None,
         retries=1,
+        scheduler=False,
     ):
         payload, store = self.recovery_store()
         placed_orders = []
@@ -1328,6 +1334,11 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(
                 ib_bridge,
+                "get_position_size",
+                AsyncMock(return_value=10.0),
+            ),
+            patch.object(
+                ib_bridge,
                 "qualify_contract",
                 AsyncMock(return_value=SimpleNamespace(symbol="AAPL")),
             ),
@@ -1349,9 +1360,16 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             patch.object(ib_bridge.ib, "placeOrder", side_effect=place_order),
         ):
             for _index in range(retries):
-                results.append(
-                    await ib_bridge.close_position_market(payload)
-                )
+                if scheduler:
+                    results.append(
+                        await ib_bridge.recover_edge_stop_reservation_from_scheduler(
+                            copy.deepcopy(store["AAPL"])
+                        )
+                    )
+                else:
+                    results.append(
+                        await ib_bridge.close_position_market(payload)
+                    )
 
         return results, store, placed_orders
 
@@ -1388,6 +1406,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             [no_order, accepted],
             replacement_trade=replacement,
             retries=2,
+            scheduler=True,
         )
 
         self.assertEqual(
@@ -1496,6 +1515,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         }
         results, store, placed_orders = await self.run_recovery_case(
             [refresh],
+            scheduler=True,
         )
 
         self.assertEqual(
@@ -1556,6 +1576,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             [rejected_refresh, replacement_refresh],
             replacement_trade=replacement,
             retries=2,
+            scheduler=True,
         )
 
         self.assertEqual(
@@ -1571,6 +1592,14 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
             store["AAPL"]["close_reservation"]["attempt"],
             2,
         )
+        self.assertEqual(
+            [attempt["attempt"] for attempt in store["AAPL"]["close_attempts"]],
+            [1, 2],
+        )
+        self.assertEqual(
+            store["AAPL"]["close_attempts"][0]["status"],
+            "Rejected",
+        )
 
     async def test_ambiguous_recovery_submits_no_replacement(self):
         refresh = {
@@ -1585,6 +1614,7 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         }
         results, store, placed_orders = await self.run_recovery_case(
             [refresh],
+            scheduler=True,
         )
 
         self.assertEqual(
@@ -1596,6 +1626,280 @@ class EdgeStopCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             store["AAPL"]["close_reservation"]["state"],
             "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+        )
+
+    async def test_scheduler_recovers_pending_reservation_without_new_alert(self):
+        payload, store = self.recovery_store()
+        placed_orders = []
+        replacement = fake_trade(
+            order_id=411,
+            perm_id=4411,
+            order_ref=ib_bridge.edge_stop_close_attempt_order_ref(
+                "AAPL",
+                payload["setup_id"],
+                2,
+            ),
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        no_order = {
+            "authoritative": True,
+            "ambiguous": False,
+            "trade": None,
+            "execution": None,
+            "position": 10,
+            "position_authoritative": True,
+            "matching_trade_count": 0,
+            "errors": [],
+        }
+        accepted = {
+            **no_order,
+            "trade": replacement,
+            "matching_trade_count": 1,
+        }
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        def place_order(_contract, order):
+            placed_orders.append(order)
+            return replacement
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "ENABLE_EXECUTION_FILL_MONITOR", False),
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "authoritative_edge_close_refresh",
+                AsyncMock(side_effect=[no_order, accepted]),
+            ),
+            patch.object(
+                ib_bridge,
+                "get_position_size",
+                AsyncMock(return_value=10.0),
+            ),
+            patch.object(
+                ib_bridge,
+                "qualify_contract",
+                AsyncMock(return_value=SimpleNamespace(symbol="AAPL")),
+            ),
+            patch.object(
+                ib_bridge,
+                "wait_for_ib_confirmation",
+                AsyncMock(return_value=""),
+            ),
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder", side_effect=place_order),
+            patch.object(ib_bridge, "forward_to_render", AsyncMock()) as forward,
+        ):
+            first = await ib_bridge.reconcile_managed_target_fills_once()
+            second = await ib_bridge.reconcile_managed_target_fills_once()
+
+        self.assertEqual(len(placed_orders), 1)
+        self.assertEqual(placed_orders[0].totalQuantity, 10)
+        self.assertEqual(
+            first["details"][0]["status"],
+            "submitted_awaiting_close_fill",
+        )
+        self.assertEqual(
+            second["details"][0]["status"],
+            "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["order_id"],
+            411,
+        )
+        forward.assert_not_awaited()
+
+    async def test_partial_target_recovery_waits_for_confirmed_remaining_qty(self):
+        payload, store = self.recovery_store(state="CLOSE_SUBMISSION_PENDING")
+        store["AAPL"]["close_reservation"].update({
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-3"],
+            "expected_remaining_qty": 7,
+        })
+        placed_orders = []
+        replacement = fake_trade(
+            order_id=412,
+            perm_id=4412,
+            order_ref=ib_bridge.edge_stop_close_attempt_order_ref(
+                "AAPL",
+                payload["setup_id"],
+                2,
+            ),
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        refresh = {
+            "authoritative": True,
+            "ambiguous": False,
+            "trade": None,
+            "execution": None,
+            "position": 10,
+            "position_authoritative": True,
+            "matching_trade_count": 0,
+            "errors": [],
+        }
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(ib_bridge, "DRY_RUN", False),
+            patch.object(ib_bridge, "ENABLE_EXECUTION_FILL_MONITOR", False),
+            patch.object(ib_bridge, "EDGE_STOP_POSITION_SYNC_SECONDS", 0.20),
+            patch.object(ib_bridge, "FORCE_EOD_VERIFY_POLL_SECONDS", 0.10),
+            patch.object(
+                ib_bridge,
+                "authoritative_edge_close_refresh",
+                AsyncMock(return_value=refresh),
+            ),
+            patch.object(
+                ib_bridge,
+                "get_position_size",
+                AsyncMock(side_effect=[10.0, 10.0, 7.0]),
+            ),
+            patch.object(ib_bridge.asyncio, "sleep", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "qualify_contract",
+                AsyncMock(return_value=SimpleNamespace(symbol="AAPL")),
+            ),
+            patch.object(
+                ib_bridge,
+                "wait_for_ib_confirmation",
+                AsyncMock(return_value=""),
+            ),
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(
+                ib_bridge.ib,
+                "placeOrder",
+                side_effect=lambda _contract, order: (
+                    placed_orders.append(order) or replacement
+                ),
+            ),
+        ):
+            result = await ib_bridge.recover_reserved_edge_stop_close(
+                payload,
+                {
+                    "row": copy.deepcopy(store["AAPL"]),
+                    "reservation": copy.deepcopy(
+                        store["AAPL"]["close_reservation"]
+                    ),
+                },
+            )
+
+        self.assertEqual(result["status"], "submitted_awaiting_close_fill")
+        self.assertEqual(len(placed_orders), 1)
+        self.assertEqual(placed_orders[0].totalQuantity, 7)
+
+    async def test_partial_target_recovery_with_stale_position_submits_no_order(self):
+        payload, store = self.recovery_store(state="CLOSE_SUBMISSION_PENDING")
+        store["AAPL"]["close_reservation"].update({
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-3"],
+            "expected_remaining_qty": 7,
+        })
+        refresh = {
+            "authoritative": True,
+            "ambiguous": False,
+            "trade": None,
+            "execution": None,
+            "position": 10,
+            "position_authoritative": True,
+            "matching_trade_count": 0,
+            "errors": [],
+        }
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(ib_bridge, "EDGE_STOP_POSITION_SYNC_SECONDS", 0.10),
+            patch.object(ib_bridge, "FORCE_EOD_VERIFY_POLL_SECONDS", 0.10),
+            patch.object(
+                ib_bridge,
+                "authoritative_edge_close_refresh",
+                AsyncMock(return_value=refresh),
+            ),
+            patch.object(
+                ib_bridge,
+                "get_position_size",
+                AsyncMock(return_value=10.0),
+            ),
+            patch.object(ib_bridge.asyncio, "sleep", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            result = await ib_bridge.recover_reserved_edge_stop_close(
+                payload,
+                {
+                    "row": copy.deepcopy(store["AAPL"]),
+                    "reservation": copy.deepcopy(
+                        store["AAPL"]["close_reservation"]
+                    ),
+                },
+            )
+
+        self.assertEqual(
+            result["status"],
+            "EDGE_STOP_POSITION_SYNC_UNCONFIRMED",
+        )
+        place_order.assert_not_called()
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "POSITION_SYNC_UNCONFIRMED",
         )
 
     async def test_close_reservation_persistence_failure_has_no_broker_activity(self):
@@ -2189,6 +2493,402 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             ["STOP-MIXED-7", "TARGET-MIXED-3"],
         )
         self.assertTrue(payloads[0]["mixed_exit_evidence_complete"])
+
+    async def test_partial_target_and_multiple_stop_attempts_aggregate_once(self):
+        row = managed_edge_row()
+        row["close_attempts"] = [
+            {
+                "attempt": 1,
+                "order_id": 307,
+                "perm_id": 3307,
+                "order_ref": "TVFVG_CLOSE_AAPL_MULTI",
+                "order_qty": 7,
+            },
+            {
+                "attempt": 2,
+                "order_id": 308,
+                "perm_id": 3308,
+                "order_ref": "TVFVG_CLOSE_AAPL_MULTI_2",
+                "order_qty": 5,
+            },
+        ]
+        row["bridge_close_order"] = {
+            "order_id": 308,
+            "perm_id": 3308,
+            "order_ref": "TVFVG_CLOSE_AAPL_MULTI_2",
+            "filled_qty": 5,
+        }
+        row["close_reservation"] = {
+            "reservation_id": ib_bridge.edge_stop_close_reservation_id(
+                row["setup_id"],
+            ),
+            "state": "CALLBACK_PENDING",
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-MULTI-3"],
+            "expected_remaining_qty": 7,
+            "confirmed_remaining_qty": 5,
+            "remaining_qty": 5,
+            "attempt": 2,
+        }
+        attempts = [
+            fake_trade(
+                order_id=307,
+                perm_id=3307,
+                order_ref="TVFVG_CLOSE_AAPL_MULTI",
+                action="SELL",
+                status="Filled",
+                filled=2,
+                price=98,
+                exec_id="STOP-MULTI-2",
+            ),
+            fake_trade(
+                order_id=308,
+                perm_id=3308,
+                order_ref="TVFVG_CLOSE_AAPL_MULTI_2",
+                action="SELL",
+                status="Filled",
+                filled=5,
+                price=97,
+                exec_id="STOP-MULTI-5",
+            ),
+        ]
+
+        result, store, payloads = await self.classify_once(
+            row,
+            trades=attempts,
+        )
+
+        self.assertEqual(result["reported"], 1)
+        self.assertEqual(store, {})
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["event"], "CLOSE_STOP")
+        self.assertEqual(payloads[0]["qty"], 10)
+        self.assertEqual(payloads[0]["price"], 99.6)
+        self.assertEqual(
+            payloads[0]["mixed_exit_exec_ids"],
+            ["STOP-MULTI-2", "STOP-MULTI-5", "TARGET-MULTI-3"],
+        )
+        self.assertEqual(len(payloads[0]["close_attempts"]), 2)
+        for exec_id in (
+            "TARGET-MULTI-3",
+            "STOP-MULTI-2",
+            "STOP-MULTI-5",
+        ):
+            self.assertIn(exec_id, payloads[0]["reconciliation_id"])
+
+    def test_partial_stop_and_replacement_are_append_preserved_and_aggregated(self):
+        row = managed_edge_row()
+        row["close_reservation"] = {
+            "reservation_id": ib_bridge.edge_stop_close_reservation_id(
+                row["setup_id"],
+            ),
+            "setup_id": row["setup_id"],
+            "state": "CLOSE_SUBMITTED",
+            "attempt": 1,
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-PERSIST-3"],
+            "expected_remaining_qty": 7,
+            "remaining_qty": 7,
+        }
+        store = {"AAPL": copy.deepcopy(row)}
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        first = {
+            "status": "EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN",
+            "attempt": 1,
+            "qty": 7,
+            "order_id": 319,
+            "order_perm_id": 3319,
+            "order_ref": "TVFVG_CLOSE_AAPL_PERSIST",
+            "close_status": "Cancelled",
+            "close_filled": False,
+            "close_filled_qty": 2,
+            "close_fill_price": 98,
+            "close_exec_ids": ["STOP-PERSIST-2"],
+        }
+        second = {
+            "status": "EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE",
+            "attempt": 2,
+            "qty": 5,
+            "order_id": 320,
+            "order_perm_id": 3320,
+            "order_ref": "TVFVG_CLOSE_AAPL_PERSIST_2",
+            "close_status": "Filled",
+            "close_filled": True,
+            "close_filled_qty": 5,
+            "close_fill_price": 97,
+            "close_exec_ids": ["STOP-PERSIST-5"],
+            "broker_confirmed_flat": True,
+        }
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+        ):
+            self.assertTrue(
+                ib_bridge.mark_managed_bridge_close(
+                    edge_payload(event="CLOSE_STOP"),
+                    first,
+                )
+            )
+            self.assertTrue(
+                ib_bridge.mark_managed_bridge_close(
+                    edge_payload(event="CLOSE_STOP"),
+                    second,
+                )
+            )
+
+        self.assertEqual(
+            [attempt["attempt"] for attempt in store["AAPL"]["close_attempts"]],
+            [1, 2],
+        )
+        self.assertEqual(
+            store["AAPL"]["close_attempts"][0]["filled_qty"],
+            2,
+        )
+        self.assertEqual(
+            store["AAPL"]["close_attempts"][1]["filled_qty"],
+            5,
+        )
+        self.assertEqual(
+            store["AAPL"]["bridge_close_order"]["filled_qty"],
+            5,
+            "the latest-order compatibility field does not inherit attempt 1",
+        )
+
+        with (
+            patch.object(ib_bridge.ib, "trades", return_value=[]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+        ):
+            payload, _reconciliation_id = (
+                ib_bridge.edge_reconciliation_payload(store["AAPL"])
+            )
+        self.assertEqual(payload["event"], "CLOSE_STOP")
+        self.assertEqual(payload["qty"], 10)
+        self.assertEqual(payload["price"], 99.6)
+
+    def test_restart_reconstructs_all_stop_attempts_from_execution_history(self):
+        row = managed_edge_row()
+        row["close_attempts"] = [
+            {
+                "attempt": 1,
+                "order_id": 317,
+                "perm_id": 3317,
+                "order_ref": "TVFVG_CLOSE_AAPL_HISTORY",
+                "order_qty": 7,
+            },
+            {
+                "attempt": 2,
+                "order_id": 318,
+                "perm_id": 3318,
+                "order_ref": "TVFVG_CLOSE_AAPL_HISTORY_2",
+                "order_qty": 5,
+            },
+        ]
+        row["close_reservation"] = {
+            "reservation_id": ib_bridge.edge_stop_close_reservation_id(
+                row["setup_id"],
+            ),
+            "state": "CALLBACK_PENDING",
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-HISTORY-3"],
+            "expected_remaining_qty": 7,
+            "remaining_qty": 5,
+            "attempt": 2,
+        }
+        store = {"AAPL": copy.deepcopy(row)}
+        history = [
+            fake_trade(
+                order_id=317,
+                perm_id=3317,
+                order_ref="TVFVG_CLOSE_AAPL_HISTORY",
+                action="SELL",
+                status="Filled",
+                filled=2,
+                price=98,
+                exec_id="STOP-HISTORY-2",
+            ),
+            fake_trade(
+                order_id=318,
+                perm_id=3318,
+                order_ref="TVFVG_CLOSE_AAPL_HISTORY_2",
+                action="SELL",
+                status="Filled",
+                filled=5,
+                price=97,
+                exec_id="STOP-HISTORY-5",
+            ),
+        ]
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+        ):
+            persisted = ib_bridge.persist_edge_close_attempt_history(
+                edge_payload(event="CLOSE_STOP"),
+                {"trades": history, "fills": []},
+            )
+        self.assertTrue(persisted)
+
+        with (
+            patch.object(ib_bridge.ib, "trades", return_value=[]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+        ):
+            payload, reconciliation_id = (
+                ib_bridge.edge_reconciliation_payload(store["AAPL"])
+            )
+        self.assertEqual(payload["event"], "CLOSE_STOP")
+        self.assertEqual(payload["qty"], 10)
+        self.assertEqual(payload["price"], 99.6)
+        self.assertIn("STOP-HISTORY-2", reconciliation_id)
+        self.assertIn("STOP-HISTORY-5", reconciliation_id)
+
+    async def test_partial_target_and_manual_remainder_publish_one_manual_close(self):
+        row = managed_edge_row()
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
+        row["close_reservation"] = {
+            "reservation_id": ib_bridge.edge_stop_close_reservation_id(
+                row["setup_id"],
+            ),
+            "state": "MIXED_EXIT_EVIDENCE_INCOMPLETE",
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-MANUAL-3"],
+            "expected_remaining_qty": 7,
+        }
+        manual = fake_fill(
+            order_id=910,
+            perm_id=9910,
+            exec_id="MANUAL-REMAINDER-7",
+            side="SLD",
+            shares=7,
+            price=99,
+            order_ref="MANUAL_TWS",
+            execution_time="2026-07-28T14:01:00Z",
+        )
+
+        result, store, payloads = await self.classify_once(
+            row,
+            fills=[manual],
+        )
+
+        self.assertEqual(result["reported"], 1)
+        self.assertEqual(store, {})
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
+        self.assertEqual(payloads[0]["qty"], 10)
+        self.assertEqual(payloads[0]["price"], 100.8)
+        self.assertEqual(
+            payloads[0]["reason"],
+            "IB_MANUAL_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED",
+        )
+        self.assertEqual(payloads[0]["external_close_filled_qty"], 7)
+        self.assertEqual(
+            payloads[0]["mixed_exit_exec_ids"],
+            ["MANUAL-REMAINDER-7", "TARGET-MANUAL-3"],
+        )
+
+    def test_restart_retains_manual_remainder_from_execution_history(self):
+        row = managed_edge_row()
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
+        row["close_reservation"] = {
+            "reservation_id": ib_bridge.edge_stop_close_reservation_id(
+                row["setup_id"],
+            ),
+            "state": "MIXED_EXIT_EVIDENCE_INCOMPLETE",
+            "original_position_qty": 10,
+            "target_partial_filled_qty": 3,
+            "target_partial_fill_price": 105,
+            "target_partial_exec_ids": ["TARGET-MANUAL-HISTORY-3"],
+            "expected_remaining_qty": 7,
+        }
+        store = {"AAPL": copy.deepcopy(row)}
+        manual = fake_fill(
+            order_id=911,
+            perm_id=9911,
+            exec_id="MANUAL-HISTORY-7",
+            side="SLD",
+            shares=7,
+            price=99,
+            order_ref="MANUAL_TWS",
+            execution_time="2026-07-28T14:01:00Z",
+        )
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        def save_managed(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "save_managed_positions",
+                side_effect=save_managed,
+            ),
+        ):
+            persisted = ib_bridge.persist_edge_close_attempt_history(
+                edge_payload(event="CLOSE_STOP"),
+                {"trades": [], "fills": [manual]},
+            )
+        self.assertTrue(persisted)
+
+        with (
+            patch.object(ib_bridge.ib, "trades", return_value=[]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+        ):
+            payload, reconciliation_id = (
+                ib_bridge.edge_reconciliation_payload(store["AAPL"])
+            )
+        self.assertEqual(payload["event"], "EXTERNAL_CLOSE")
+        self.assertEqual(payload["qty"], 10)
+        self.assertEqual(payload["price"], 100.8)
+        self.assertIn("MANUAL-HISTORY-7", reconciliation_id)
 
     async def test_incomplete_mixed_exit_evidence_withholds_reconciliation(self):
         row = managed_edge_row()
