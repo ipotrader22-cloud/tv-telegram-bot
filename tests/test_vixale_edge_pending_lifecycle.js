@@ -140,6 +140,8 @@ assert.match(app, /raw\.startsWith\('VIXALE_EDGE:'\)\) return raw/, 'setup_id ma
 assert.match(app, /event === 'SETUP'[\s\S]{0,160}row\.setup_id[\s\S]{0,160}isVixaleEdgePendingLifecycleRow/, 'identified SETUP is execution-first');
 assert.match(app, /\['SHREK', 'SHREK_1_4'\]/, 'Prime/Shrek lifecycle guard remains present');
 assert.match(app, /if \(\['SETUP', 'FILL', 'TP', 'SL', 'EOD', 'EXTERNAL_CLOSE'\]\.includes\(event\)\)/, 'legacy Edge SETUP remains recognized without setup_id');
+assert.match(app, /Stop Loss: <b>confirmed opposite signal<\/b>/, 'pending setup describes the confirmed opposite-signal stop');
+assert.doesNotMatch(app, /Stop Loss Ref: <b>\$\{row\.stop\}<\/b>/, 'pending setup does not expose the numeric stop reference');
 
 assert.match(pine, /strategy\("Vixale Edge 1\.1"/);
 assert.match(pine, /default_qty_type=strategy\.percent_of_equity/);
