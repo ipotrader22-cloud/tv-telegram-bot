@@ -1172,7 +1172,7 @@ function formatTelegramMessage(row, originalMessage) {
       `<b>${row.symbol}${row.timeframe ? ` · ${row.timeframe}` : ''}</b>`,
       row.entry !== '' ? `Planned Entry: <b>${row.entry}</b>` : '',
       row.target !== '' ? `Target: <b>${row.target}</b>` : '',
-      row.stop !== '' ? `Stop Loss Ref: <b>${row.stop}</b>` : '',
+      row.stop !== '' ? 'Stop Loss: <b>confirmed opposite signal</b>' : '',
     ].filter(Boolean).join('\n');
   }
 
