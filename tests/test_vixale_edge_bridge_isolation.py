@@ -3290,6 +3290,32 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
         result = {
             "authoritative": True,
             "execution_history_authoritative": True,
+            "execution_history_scope_start": (
+                "2026-07-29T04:00:00+00:00"
+            ),
+            "execution_history_scope_end": (
+                "2026-07-29T13:31:00+00:00"
+            ),
+            "execution_history_covers_signal": True,
+            "coverage_process_instance_id": (
+                ib_bridge.BRIDGE_PROCESS_INSTANCE_ID
+            ),
+            "coverage_process_started_at": (
+                ib_bridge.BRIDGE_PROCESS_STARTED_AT
+            ),
+            "coverage_connection_generation": (
+                ib_bridge._ib_connection_generation
+            ),
+            "coverage_continuity_process_instance_id": (
+                ib_bridge.BRIDGE_PROCESS_INSTANCE_ID
+            ),
+            "coverage_continuity_connection_generation": (
+                ib_bridge._ib_connection_generation
+            ),
+            "coverage_gap_detected": False,
+            "coverage_reason": (
+                "retained_fills_plus_current_req_executions_continuous"
+            ),
             "ambiguous": False,
             "trade": None,
             "execution": None,
@@ -3331,6 +3357,156 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
                 tzinfo=ib_bridge.ZoneInfo("UTC"),
             ),
         )
+
+    def coverage_reservation(self, **overrides):
+        reservation = {
+            "signal_timestamp": "2026-07-28T20:00:00+00:00",
+            "execution_coverage_required_from": (
+                "2026-07-28T20:00:00+00:00"
+            ),
+            "bridge_process_instance_id": (
+                ib_bridge.BRIDGE_PROCESS_INSTANCE_ID
+            ),
+            "ib_connection_generation": 7,
+        }
+        reservation.update(overrides)
+        return reservation
+
+    def successful_empty_executions(self):
+        return {
+            "supported": True,
+            "ok": True,
+            "values": [],
+            "error": "",
+        }
+
+    def test_execution_history_coverage_rules(self):
+        next_rth = datetime(
+            2026,
+            7,
+            29,
+            13,
+            31,
+            tzinfo=ib_bridge.ZoneInfo("UTC"),
+        )
+        same_date = datetime(
+            2026,
+            7,
+            28,
+            21,
+            0,
+            tzinfo=ib_bridge.ZoneInfo("UTC"),
+        )
+        with patch.object(ib_bridge, "_ib_connection_generation", 7):
+            uninterrupted = (
+                ib_bridge.execution_history_coverage_metadata(
+                    self.coverage_reservation(),
+                    self.successful_empty_executions(),
+                    next_rth,
+                )
+            )
+            restarted = ib_bridge.execution_history_coverage_metadata(
+                self.coverage_reservation(
+                    bridge_process_instance_id="PRIOR-PROCESS",
+                ),
+                self.successful_empty_executions(),
+                next_rth,
+            )
+            same_date_restart = (
+                ib_bridge.execution_history_coverage_metadata(
+                    self.coverage_reservation(
+                        bridge_process_instance_id="PRIOR-PROCESS",
+                    ),
+                    self.successful_empty_executions(),
+                    same_date,
+                )
+            )
+            reconstructed_reservation = self.coverage_reservation(
+                bridge_process_instance_id="PRIOR-PROCESS",
+                coverage_continuity_process_instance_id=(
+                    same_date_restart[
+                        "coverage_continuity_process_instance_id"
+                    ]
+                ),
+                coverage_continuity_connection_generation=(
+                    same_date_restart[
+                        "coverage_continuity_connection_generation"
+                    ]
+                ),
+            )
+            reconstructed_next_day = (
+                ib_bridge.execution_history_coverage_metadata(
+                    reconstructed_reservation,
+                    self.successful_empty_executions(),
+                    next_rth,
+                )
+            )
+        with patch.object(ib_bridge, "_ib_connection_generation", 8):
+            disconnected = ib_bridge.execution_history_coverage_metadata(
+                self.coverage_reservation(),
+                self.successful_empty_executions(),
+                next_rth,
+            )
+
+        self.assertTrue(
+            uninterrupted["execution_history_covers_signal"]
+        )
+        self.assertEqual(
+            uninterrupted["coverage_reason"],
+            "retained_fills_plus_current_req_executions_continuous",
+        )
+        self.assertFalse(restarted["execution_history_covers_signal"])
+        self.assertTrue(restarted["coverage_gap_detected"])
+        self.assertEqual(
+            restarted["coverage_reason"],
+            "bridge_process_changed_after_signal",
+        )
+        self.assertFalse(disconnected["execution_history_covers_signal"])
+        self.assertEqual(
+            disconnected["coverage_reason"],
+            "ib_connection_generation_changed_after_signal",
+        )
+        self.assertTrue(
+            same_date_restart["execution_history_covers_signal"]
+        )
+        self.assertEqual(
+            same_date_restart["coverage_reason"],
+            "same_new_york_date_req_executions_since_midnight",
+        )
+        self.assertTrue(
+            reconstructed_next_day["execution_history_covers_signal"]
+        )
+
+    async def test_connection_generation_changes_after_reconnect(self):
+        connected = [False, True, False, True]
+
+        def is_connected():
+            return connected.pop(0)
+
+        with (
+            patch.object(ib_bridge, "_ib_connection_generation", 0),
+            patch.object(ib_bridge, "_ib_connection_ever_established", False),
+            patch.object(ib_bridge, "_ib_connection_gap_observed", False),
+            patch.object(
+                ib_bridge.ib,
+                "isConnected",
+                side_effect=is_connected,
+            ),
+            patch.object(
+                ib_bridge.ib,
+                "connectAsync",
+                AsyncMock(),
+                create=True,
+            ) as connect,
+        ):
+            await ib_bridge.ensure_ib_connected()
+            first_generation = ib_bridge._ib_connection_generation
+            await ib_bridge.ensure_ib_connected()
+            second_generation = ib_bridge._ib_connection_generation
+
+        self.assertEqual(first_generation, 1)
+        self.assertEqual(second_generation, 2)
+        self.assertEqual(connect.await_count, 2)
 
     async def test_queue_is_persistent_publication_silent_and_idempotent(self):
         payload = self.queued_payload()
@@ -3410,6 +3586,23 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reservation["entry_identity"]["perm_id"], 1100)
         self.assertEqual(reservation["entry_exec_ids"], ["ENTRY-1"])
         self.assertEqual(reservation["queued_target_identity"]["perm_id"], 2200)
+        self.assertEqual(
+            reservation["bridge_process_instance_id"],
+            ib_bridge.BRIDGE_PROCESS_INSTANCE_ID,
+        )
+        self.assertEqual(
+            reservation["ib_connection_generation"],
+            ib_bridge._ib_connection_generation,
+        )
+        self.assertEqual(
+            reservation["coverage_continuity_process_instance_id"],
+            ib_bridge.BRIDGE_PROCESS_INSTANCE_ID,
+        )
+        self.assertEqual(
+            reservation["execution_coverage_required_from"],
+            reservation["signal_timestamp"],
+        )
+        self.assertEqual(reservation["signal_new_york_date"], "2026-07-28")
         connect.assert_not_awaited()
         cancel_target.assert_not_awaited()
         forward.assert_not_awaited()
@@ -3589,21 +3782,204 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
             self.authoritative_refresh(
                 10,
                 execution_history_authoritative=False,
+                execution_history_covers_signal=False,
+                coverage_gap_detected=True,
+                coverage_reason="bridge_process_changed_after_signal",
                 errors=["execution_history_unavailable_after_restart"],
             ),
         )
 
         self.assertEqual(
             outcome["result"]["status"],
-            "EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
         )
         self.assertEqual(
             store["AAPL"]["close_reservation"]["state"],
-            "QUEUED_NEXT_RTH_OPEN",
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
         )
         outcome["execute_close"].assert_not_awaited()
         outcome["cancel_target"].assert_not_awaited()
         outcome["place_order"].assert_not_called()
+
+    async def test_empty_next_day_history_cannot_hide_manual_roundtrip(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        refresh = self.authoritative_refresh(
+            10,
+            fills=[],
+            execution_history_authoritative=False,
+            execution_history_covers_signal=False,
+            coverage_process_instance_id="RESTARTED-PROCESS",
+            coverage_connection_generation=1,
+            coverage_gap_detected=True,
+            coverage_reason="bridge_process_changed_after_signal",
+        )
+
+        outcome = await self.recover_queued_store(store, refresh)
+
+        self.assertEqual(
+            outcome["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        reservation = store["AAPL"]["close_reservation"]
+        self.assertEqual(
+            reservation["state"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(reservation["attempt"], 0)
+        self.assertEqual(
+            reservation["coverage_reason"],
+            "bridge_process_changed_after_signal",
+        )
+        self.assertEqual(
+            reservation["execution_history_scope_start"],
+            "2026-07-29T04:00:00+00:00",
+        )
+        outcome["execute_close"].assert_not_awaited()
+        outcome["confirm_session"].assert_not_awaited()
+        outcome["cancel_target"].assert_not_awaited()
+        outcome["place_order"].assert_not_called()
+
+    async def test_coverage_unproven_later_flat_uses_existing_reconciliation(self):
+        for outcome_name, fills in (
+            ("manual_flat", []),
+            (
+                "target_flat",
+                [
+                    self.post_signal_fill(
+                        exec_id="TARGET-FLAT-AFTER-GAP",
+                        shares=10,
+                        side="SLD",
+                        order_id=200,
+                        perm_id=2200,
+                        order_ref="TVFVG_AAPL_LONG_TP",
+                    )
+                ],
+            ),
+        ):
+            with self.subTest(outcome=outcome_name):
+                store = self.store()
+                await self.queue_into_store(store)
+                gap = self.authoritative_refresh(
+                    10,
+                    execution_history_authoritative=False,
+                    execution_history_covers_signal=False,
+                    coverage_gap_detected=True,
+                    coverage_reason="bridge_process_changed_after_signal",
+                )
+                first = await self.recover_queued_store(store, gap)
+                self.assertEqual(
+                    first["result"]["status"],
+                    "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+                )
+
+                flat = self.authoritative_refresh(
+                    0,
+                    fills=fills,
+                    execution_history_authoritative=False,
+                    execution_history_covers_signal=False,
+                    coverage_gap_detected=True,
+                    coverage_reason="bridge_process_changed_after_signal",
+                )
+                second = await self.recover_queued_store(store, flat)
+
+                self.assertEqual(
+                    second["result"]["status"],
+                    "EDGE_STOP_POSITION_FLAT_RECOVERY",
+                )
+                self.assertEqual(
+                    store["AAPL"]["close_reservation"]["state"],
+                    "POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION",
+                )
+                second["execute_close"].assert_not_awaited()
+                second["cancel_target"].assert_not_awaited()
+                second["place_order"].assert_not_called()
+
+    async def test_coverage_unproven_duplicate_webhook_and_scheduler_are_nonmutating(self):
+        payload = self.queued_payload()
+        store = self.store()
+        await self.queue_into_store(store, payload)
+        gap = self.authoritative_refresh(
+            10,
+            execution_history_authoritative=False,
+            execution_history_covers_signal=False,
+            coverage_gap_detected=True,
+            coverage_reason="ib_connection_generation_changed_after_signal",
+        )
+        first = await self.recover_queued_store(store, gap)
+        self.assertEqual(
+            first["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+
+        def load_managed():
+            return copy.deepcopy(store)
+
+        with (
+            patch.object(
+                ib_bridge,
+                "load_managed_positions",
+                side_effect=load_managed,
+            ),
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(),
+            ) as cancel_target,
+            patch.object(ib_bridge.ib, "placeOrder") as place_order,
+        ):
+            duplicate = await ib_bridge.close_position_market(payload)
+
+        second = await self.recover_queued_store(store, gap)
+
+        self.assertEqual(
+            duplicate["status"],
+            "EDGE_STOP_CLOSE_ALREADY_IN_PROGRESS",
+        )
+        self.assertEqual(
+            second["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+        self.assertEqual(store["AAPL"]["close_reservation"]["attempt"], 0)
+        cancel_target.assert_not_awaited()
+        place_order.assert_not_called()
+        second["execute_close"].assert_not_awaited()
+        second["cancel_target"].assert_not_awaited()
+        second["place_order"].assert_not_called()
+
+    async def test_coverage_state_promotes_only_after_full_coverage_later(self):
+        store = self.store()
+        await self.queue_into_store(store)
+        gap = self.authoritative_refresh(
+            10,
+            execution_history_authoritative=False,
+            execution_history_covers_signal=False,
+            coverage_gap_detected=True,
+            coverage_reason="req_executions_refresh_failed",
+        )
+        first = await self.recover_queued_store(store, gap)
+        self.assertEqual(
+            first["result"]["status"],
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        )
+
+        covered = self.authoritative_refresh(10)
+        second = await self.recover_queued_store(store, covered)
+
+        self.assertEqual(
+            second["result"]["status"],
+            "submitted_awaiting_close_fill",
+        )
+        self.assertEqual(
+            store["AAPL"]["close_reservation"]["state"],
+            "RESERVED",
+        )
+        self.assertEqual(store["AAPL"]["close_reservation"]["attempt"], 1)
+        second["execute_close"].assert_awaited_once()
 
     async def test_duplicate_queued_webhook_and_scheduler_are_serialized(self):
         payload = self.queued_payload()
@@ -3812,6 +4188,7 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
 
         refresh = {
             "authoritative": True,
+            "execution_history_covers_signal": True,
             "ambiguous": False,
             "trade": None,
             "execution": None,
@@ -3940,6 +4317,7 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
                 "holiday",
                 {
                     "authoritative": True,
+                    "execution_history_covers_signal": True,
                     "ambiguous": False,
                     "position": 10,
                     "position_authoritative": True,
@@ -3955,6 +4333,7 @@ class EdgeNextRthQueueTests(unittest.IsolatedAsyncioTestCase):
                 "ambiguous_history",
                 {
                     "authoritative": False,
+                    "execution_history_covers_signal": True,
                     "ambiguous": True,
                     "position": 10,
                     "position_authoritative": True,

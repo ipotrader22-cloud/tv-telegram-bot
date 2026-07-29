@@ -673,12 +673,14 @@ agree:
 The bridge persists it as `QUEUED_NEXT_RTH_OPEN`, including the exact setup,
 managed side, original managed quantity, managed entry
 `orderId`/`permId`/`orderRef`/execution IDs, exact queued-target identity,
-original payload, signal date/bar, queue timestamp, and deterministic
-reservation. The attempt remains zero until eligibility is proven. A duplicate
-reuses the same reservation; a stale setup is rejected. The webhook performs no
-target cancellation, market order, replacement, managed-state clear, or Render
-callback. Render/Sheets/Telegram/dashboard stay open until a later
-broker-confirmed callback completes the existing execution-first lifecycle.
+original payload, exact signal timestamp/New York date, queue timestamp,
+bridge process-instance ID/start time, IB connection generation, execution
+coverage start requirement, and deterministic reservation. The attempt remains
+zero until eligibility is proven. A duplicate reuses the same reservation; a
+stale setup is rejected. The webhook performs no target cancellation, market
+order, replacement, managed-state clear, or Render callback.
+Render/Sheets/Telegram/dashboard stay open until a later broker-confirmed
+callback completes the existing execution-first lifecycle.
 
 Scheduler eligibility for a queued close requires all of:
 
@@ -686,7 +688,8 @@ Scheduler eligibility for a queued close requires all of:
 2. the current wall clock is inside stock RTH;
 3. the exact managed `setup_id` still matches after acquiring the shared close
    lock and reloading the managed file;
-4. authoritative broker position/history evidence is available;
+4. authoritative broker position evidence and execution history that explicitly
+   covers the queued signal interval are available;
 5. every symbol execution at or after the queued signal time is attributable
    to the exact queued target or to an exact bridge close in the same
    reservation;
@@ -701,6 +704,39 @@ Scheduler eligibility for a queued close requires all of:
 Weekday/RTH wall-clock checks alone are insufficient. Missing, closed/holiday,
 unsupported, or ambiguous IB contract-session evidence returns
 `EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED` and leaves the GTC target working.
+Likewise, a successful default `reqExecutions` response proves coverage only
+from the current New York day's midnight through the refresh time. It proves a
+same-date queued signal, but it is not evidence for the previous afternoon.
+Previous-day coverage is complete only when the bridge process-instance ID and
+IB connection generation are unchanged from queue creation and the union of
+continuously retained IB fills plus the current `reqExecutions` response covers
+the signal through the current pass. A same-signal-date restart may use the
+since-midnight response to reconstruct the full interval and establish a new
+process/generation continuity baseline; that new baseline must then remain
+unchanged through next-day recovery.
+
+Each refresh returns and persists:
+
+```text
+execution_history_scope_start
+execution_history_scope_end
+execution_history_covers_signal
+coverage_process_instance_id
+coverage_connection_generation
+coverage_gap_detected
+coverage_reason
+```
+
+A restart or IB disconnect/reconnect that destroys previous-day retained
+coverage persists `EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN`. A successful
+empty next-day `reqExecutions` response cannot clear that state. It is
+read-only and consumes no attempt: no target cancellation, market/replacement
+order, Render Stop Loss callback, or managed-state clear is permitted. Repeated
+scheduler/webhook passes remain non-mutating unless complete coverage later
+becomes authoritatively available. If the broker becomes flat, existing exact
+target-versus-Manual-Close reconciliation still runs and no Stop Loss order is
+created.
+
 Before the next date or outside RTH, recovery returns
 `EDGE_STOP_QUEUED_NEXT_RTH_OPEN`. Once eligible, the reservation becomes
 `RESERVED`, consumes attempt one, and reuses the existing Part 3A exact-target
@@ -726,7 +762,15 @@ Overnight outcomes are resolved before any queued Stop Loss order:
   versus Manual Close reconciliation instead of the ownership-conflict path.
 
 The managed queue survives bridge restart and the scheduler does not require a
-repeated TradingView alert.
+repeated TradingView alert, but restart survival is not the same as automatic
+broker-action eligibility. A same-signal-date restart may reconstruct complete
+coverage from the default since-midnight API response. Normal uninterrupted
+bridge/TWS operation may auto-promote the queue next morning. A restart or
+connection gap across midnight fails closed for manual reconciliation because
+closing a replacement position is the greater risk. Fully automatic recovery
+after such a gap would require a separate durable broker execution-history
+source; Part 3B does not implement one and does not rely on undocumented TWS
+Trade Log configuration.
 
 Every payload-version-2 Edge `CLOSE_STOP` uses a setup-scoped persistent close
 reservation before broker activity. The incoming `setup_id` must exactly match
@@ -822,6 +866,9 @@ Publication only (never cancel or submit):
 CALLBACK_PENDING
 MIXED_EXIT_EVIDENCE_INCOMPLETE
 POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION
+
+Read-only queue coverage (never cancel or submit while unproven):
+EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN
 ```
 
 `CLOSE_SUBMITTED` is observation-only but not terminally stuck. Authoritative
@@ -1513,8 +1560,16 @@ payload retains setup_id, signal_session_date, and signal_bar_time
 closing-bar signal creates no opposite Pending setup
 active GTC target is not canceled by Pine or the queue webhook
 queue reservation is durable before webhook acknowledgement
+queue snapshots process instance, connection generation, exact signal
+timestamp/New York date, and coverage-required start
 duplicate queue payload reuses the same reservation and attempt remains zero
 restart recovery needs no repeated TradingView alert
+same-date restart may use successful since-midnight reqExecutions coverage
+next-day reqExecutions success/empty response is not prior-day coverage proof
+uninterrupted same-process/same-generation retained fills may prove overnight coverage
+restart or connection generation change across midnight persists EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN
+coverage-unproven state cancels no target, submits no order, and consumes no attempt
+coverage-unproven broker-flat state still enters TP/Manual Close reconciliation
 same-date and outside-RTH passes submit no order
 holiday, missing, unsupported, or ambiguous IB liquid-hours evidence fails closed
 next-date wall clock alone is never sufficient
@@ -1796,6 +1851,24 @@ lifecycle. The GTC target remains active overnight and wins through TP
 reconciliation if it fills first; an external flat wins through Manual Close
 reconciliation. No queued signal changes public state.
 
+Default TWS `reqExecutions` history begins at the current day's midnight, so a
+successful next-day response is not previous-day coverage proof. Same-day
+signals may use the successful since-midnight response. Previous-day promotion
+requires the same bridge process instance and unchanged IB connection
+generation from queue creation through recovery, allowing continuously retained
+fills and the current API response to form one covered interval. The queue
+persists both identities and every coverage scope/reason field.
+
+If process or connection continuity across midnight is lost, recovery persists
+`EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN`. This is a read-only,
+zero-attempt state: no target cancel, close/replacement order, Stop Loss
+publication, or managed clear may occur. Broker-flat TP/Manual Close
+reconciliation remains available. A same-date restart may recover from the
+since-midnight response; an overnight gap requires manual reconciliation.
+Automatic recovery after such a gap would require a separate durable broker
+execution-history source, which Part 3B does not implement. No undocumented
+TWS Trade Log setting is assumed.
+
 **Reason:** A market order created on the 16:00 closing bar must not be held
 blindly across a weekend/holiday or race an overnight GTC target. Durable queue
 identity, exact setup locking, and broker-session evidence preserve
@@ -1805,6 +1878,10 @@ a manual partial close, or a new same-side add from inheriting the stale queued
 close. Unproven continuity persists
 `EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT` and performs no broker or public-ledger
 mutation.
+
+Failing closed after an execution-history gap is intentionally safer than
+possibly flattening a manually closed and subsequently reopened replacement
+position.
 
 **Pine emulator note:** `process_orders_on_close=false`, immediate pre-16:00
 stops use `immediately=true`, and the closing-bar tester exit fills on the next

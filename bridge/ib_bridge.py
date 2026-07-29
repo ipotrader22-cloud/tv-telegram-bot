@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import hashlib
+import uuid
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional, Tuple, List
@@ -304,6 +305,7 @@ EDGE_STOP_PUBLICATION_ONLY_RECOVERY_STATES = {
 EDGE_STOP_READ_ONLY_RECOVERY_STATES = {
     "CLOSE_SUBMITTED",
     "EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS",
+    "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
     "FILLED_POSITION_NOT_FLAT",
 }
 EDGE_STOP_AUTOMATIC_RECOVERY_STATES = (
@@ -312,6 +314,12 @@ EDGE_STOP_AUTOMATIC_RECOVERY_STATES = (
     | EDGE_STOP_READ_ONLY_RECOVERY_STATES
 )
 SHREK_EOD_STRATEGY_IDS = {"SHREK", "SHREK_1_4"}
+
+BRIDGE_PROCESS_INSTANCE_ID = uuid.uuid4().hex
+BRIDGE_PROCESS_STARTED_AT = datetime.now(ZoneInfo("UTC")).isoformat()
+_ib_connection_generation = 0
+_ib_connection_ever_established = False
+_ib_connection_gap_observed = False
 
 _last_force_eod_date = None
 _force_eod_task = None
@@ -328,6 +336,7 @@ _execution_monitor_tasks = set()
 _target_report_claims = set()
 _target_report_claim_lock = asyncio.Lock()
 _edge_stop_close_lock = asyncio.Lock()
+_ib_connection_lock = asyncio.Lock()
 logger = logging.getLogger("vixale.ib_bridge")
 
 
@@ -339,6 +348,19 @@ def spawn_execution_monitor(coro: Any) -> None:
 
 app = FastAPI()
 ib = IB()
+
+
+def mark_ib_connection_gap(*_args: Any) -> None:
+    global _ib_connection_gap_observed
+    if _ib_connection_ever_established:
+        _ib_connection_gap_observed = True
+
+
+try:
+    ib.disconnectedEvent += mark_ib_connection_gap
+except Exception:
+    # Compatibility for test doubles and older IB client wrappers.
+    pass
 
 # Important:
 # IB API calls should not be hammered in parallel during EOD burst.
@@ -1113,6 +1135,15 @@ def queue_edge_next_rth_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
     target_identity = managed_order_identity(row, "target")
     entry_identity = managed_entry_order_identity(row)
     original_managed_qty = to_float(row.get("qty"))
+    signal_time = queued_edge_signal_time({
+        "signal_bar_time": data.get("signal_bar_time"),
+    })
+    signal_timestamp = signal_time.isoformat() if signal_time else ""
+    signal_new_york_date = (
+        signal_time.astimezone(ZoneInfo(RTH_TIMEZONE)).date().isoformat()
+        if signal_time
+        else ""
+    )
     reservation = {
         "reservation_id": reservation_id,
         "setup_id": setup_id,
@@ -1121,6 +1152,18 @@ def queue_edge_next_rth_stop_close(data: Dict[str, Any]) -> Dict[str, Any]:
         "close_execution_policy": "NEXT_RTH_OPEN",
         "signal_session_date": str(data.get("signal_session_date") or ""),
         "signal_bar_time": data.get("signal_bar_time"),
+        "signal_timestamp": signal_timestamp,
+        "signal_new_york_date": signal_new_york_date,
+        "execution_coverage_required_from": signal_timestamp,
+        "bridge_process_instance_id": BRIDGE_PROCESS_INSTANCE_ID,
+        "bridge_process_started_at": BRIDGE_PROCESS_STARTED_AT,
+        "ib_connection_generation": _ib_connection_generation,
+        "coverage_continuity_process_instance_id": (
+            BRIDGE_PROCESS_INSTANCE_ID
+        ),
+        "coverage_continuity_connection_generation": (
+            _ib_connection_generation
+        ),
         "queued_at": now_iso,
         "original_payload": dict(data),
         "managed_side": str(row.get("side") or "").upper().strip(),
@@ -1571,15 +1614,31 @@ def validate_pretrade_risk(symbol: str, side: str, entry: float, qty: int, sec_t
 
 
 async def ensure_ib_connected() -> None:
-    if ib.isConnected():
-        return
+    global _ib_connection_generation
+    global _ib_connection_ever_established
+    global _ib_connection_gap_observed
 
-    await ib.connectAsync(
-        host=IB_HOST,
-        port=IB_PORT,
-        clientId=IB_CLIENT_ID,
-        timeout=10,
-    )
+    async with _ib_connection_lock:
+        if ib.isConnected():
+            if (
+                not _ib_connection_ever_established
+                or _ib_connection_gap_observed
+            ):
+                _ib_connection_generation += 1
+                _ib_connection_ever_established = True
+                _ib_connection_gap_observed = False
+            return
+
+        await ib.connectAsync(
+            host=IB_HOST,
+            port=IB_PORT,
+            clientId=IB_CLIENT_ID,
+            timeout=10,
+        )
+        if ib.isConnected():
+            _ib_connection_generation += 1
+            _ib_connection_ever_established = True
+            _ib_connection_gap_observed = False
 
 
 def stock_contract(symbol: str, data: Optional[Dict[str, Any]] = None) -> Stock:
@@ -3056,6 +3115,10 @@ async def authoritative_edge_close_refresh(
     )
     executions_result = await bounded_ib_refresh_request("reqExecutionsAsync")
     positions_result = await bounded_ib_refresh_request("reqPositionsAsync")
+    execution_coverage = execution_history_coverage_metadata(
+        reservation,
+        executions_result,
+    )
 
     trades = dedupe_ib_trades([
         *all_known_ib_trades(),
@@ -3120,9 +3183,10 @@ async def authoritative_edge_close_refresh(
 
     return {
         "authoritative": authoritative,
-        "execution_history_authoritative": (
-            executions_result["supported"] and executions_result["ok"]
-        ),
+        "execution_history_authoritative": execution_coverage[
+            "execution_history_covers_signal"
+        ],
+        **execution_coverage,
         "ambiguous": ambiguous,
         "trade": trade_matches[0] if len(trade_matches) == 1 else None,
         "execution": fill_evidence,
@@ -4249,6 +4313,15 @@ def comparable_execution_time(value: Any) -> Optional[datetime]:
 
 
 def queued_edge_signal_time(reservation: Dict[str, Any]) -> Optional[datetime]:
+    exact_value = (
+        reservation.get("execution_coverage_required_from")
+        or reservation.get("signal_timestamp")
+    )
+    if exact_value not in (None, ""):
+        exact_time = comparable_execution_time(exact_value)
+        if exact_time is not None:
+            return exact_time
+
     value = reservation.get("signal_bar_time")
     numeric = to_float(value)
     if numeric > 0:
@@ -4258,6 +4331,126 @@ def queued_edge_signal_time(reservation: Dict[str, Any]) -> Optional[datetime]:
         except (OverflowError, OSError, ValueError):
             return None
     return comparable_execution_time(value)
+
+
+def execution_history_coverage_metadata(
+    reservation: Dict[str, Any],
+    executions_result: Dict[str, Any],
+    now_value: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    now_utc = comparable_execution_time(
+        now_value or datetime.now(ZoneInfo("UTC"))
+    )
+    if now_utc is None:
+        now_utc = datetime.now(ZoneInfo("UTC"))
+    now_ny = now_utc.astimezone(ZoneInfo(RTH_TIMEZONE))
+    ny_midnight = datetime(
+        now_ny.year,
+        now_ny.month,
+        now_ny.day,
+        tzinfo=ZoneInfo(RTH_TIMEZONE),
+    ).astimezone(ZoneInfo("UTC"))
+    signal_time = queued_edge_signal_time(reservation)
+    queued_process_id = str(
+        reservation.get("bridge_process_instance_id") or ""
+    ).strip()
+    queued_generation = int(
+        to_float(reservation.get("ib_connection_generation"))
+    )
+    continuity_process_id = str(
+        reservation.get("coverage_continuity_process_instance_id")
+        or queued_process_id
+    ).strip()
+    continuity_generation = int(to_float(
+        reservation.get("coverage_continuity_connection_generation")
+        if reservation.get("coverage_continuity_connection_generation")
+        not in (None, "")
+        else queued_generation
+    ))
+    process_unchanged = (
+        bool(continuity_process_id)
+        and continuity_process_id == BRIDGE_PROCESS_INSTANCE_ID
+    )
+    connection_unchanged = (
+        continuity_generation > 0
+        and continuity_generation == _ib_connection_generation
+    )
+    api_ok = bool(
+        executions_result.get("supported")
+        and executions_result.get("ok")
+    )
+    metadata = {
+        "execution_history_scope_start": ny_midnight.isoformat(),
+        "execution_history_scope_end": (
+            now_utc.isoformat() if executions_result.get("ok") else ""
+        ),
+        "execution_history_covers_signal": False,
+        "coverage_process_instance_id": BRIDGE_PROCESS_INSTANCE_ID,
+        "coverage_process_started_at": BRIDGE_PROCESS_STARTED_AT,
+        "coverage_connection_generation": _ib_connection_generation,
+        "coverage_continuity_process_instance_id": (
+            continuity_process_id
+        ),
+        "coverage_continuity_connection_generation": (
+            continuity_generation
+        ),
+        "coverage_gap_detected": True,
+        "coverage_reason": "",
+    }
+
+    if signal_time is None:
+        metadata["coverage_reason"] = "queued_signal_timestamp_missing"
+        return metadata
+    if signal_time > now_utc:
+        metadata["coverage_reason"] = "queued_signal_after_refresh_scope_end"
+        return metadata
+    if not executions_result.get("supported"):
+        metadata["coverage_reason"] = "req_executions_unsupported"
+        return metadata
+    if not executions_result.get("ok"):
+        metadata["coverage_reason"] = "req_executions_refresh_failed"
+        return metadata
+
+    signal_ny_date = signal_time.astimezone(
+        ZoneInfo(RTH_TIMEZONE)
+    ).date()
+    if signal_ny_date == now_ny.date() and signal_time >= ny_midnight:
+        metadata["execution_history_covers_signal"] = True
+        metadata["coverage_gap_detected"] = False
+        metadata["coverage_reason"] = (
+            "same_new_york_date_req_executions_since_midnight"
+        )
+        metadata["coverage_continuity_process_instance_id"] = (
+            BRIDGE_PROCESS_INSTANCE_ID
+        )
+        metadata["coverage_continuity_connection_generation"] = (
+            _ib_connection_generation
+        )
+        return metadata
+
+    if api_ok and process_unchanged and connection_unchanged:
+        metadata["execution_history_covers_signal"] = True
+        metadata["coverage_gap_detected"] = False
+        metadata["coverage_reason"] = (
+            "retained_fills_plus_current_req_executions_continuous"
+        )
+        return metadata
+
+    if not continuity_process_id:
+        metadata["coverage_reason"] = "queued_process_identity_missing"
+    elif not process_unchanged:
+        metadata["coverage_reason"] = "bridge_process_changed_after_signal"
+    elif continuity_generation <= 0:
+        metadata["coverage_reason"] = (
+            "queued_ib_connection_generation_unestablished"
+        )
+    elif not connection_unchanged:
+        metadata["coverage_reason"] = (
+            "ib_connection_generation_changed_after_signal"
+        )
+    else:
+        metadata["coverage_reason"] = "prior_day_execution_coverage_unproven"
+    return metadata
 
 
 def same_order_identity(
@@ -4475,6 +4668,21 @@ async def recover_queued_edge_stop_next_rth(
     """Observe overnight outcomes, then promote once into the Part 3A sequence."""
     refresh = await authoritative_edge_close_refresh(row, reservation)
     position_size = to_float(refresh.get("position"))
+    coverage_fields = {
+        key: refresh.get(key)
+        for key in (
+            "execution_history_scope_start",
+            "execution_history_scope_end",
+            "execution_history_covers_signal",
+            "coverage_process_instance_id",
+            "coverage_process_started_at",
+            "coverage_connection_generation",
+            "coverage_continuity_process_instance_id",
+            "coverage_continuity_connection_generation",
+            "coverage_gap_detected",
+            "coverage_reason",
+        )
+    }
     if "trades" in refresh or "fills" in refresh:
         if not persist_edge_close_attempt_history(data, refresh):
             return edge_stop_close_result(
@@ -4488,10 +4696,35 @@ async def recover_queued_edge_stop_next_rth(
         row = dict(current.get("row") or row)
         reservation = dict(current.get("reservation") or reservation)
 
+    current_state = str(
+        reservation.get("state") or "QUEUED_NEXT_RTH_OPEN"
+    ).upper().strip()
+    if not update_edge_stop_close_reservation(
+        data,
+        current_state,
+        **coverage_fields,
+    ):
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_STATE_PERSISTENCE_FAILED",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=False,
+        )
+    current = reserve_edge_stop_close(data)
+    row = dict(current.get("row") or row)
+    reservation = dict(current.get("reservation") or reservation)
+
     if not refresh.get("position_authoritative"):
+        deferred_state = (
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            if current_state
+            == "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            else "QUEUED_NEXT_RTH_OPEN"
+        )
         persisted = update_edge_stop_close_reservation(
             data,
-            "QUEUED_NEXT_RTH_OPEN",
+            deferred_state,
             last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
             recovery_errors=refresh.get("errors") or [],
             position_after_recovery_refresh=position_size,
@@ -4519,17 +4752,66 @@ async def recover_queued_edge_stop_next_rth(
             managed_state_persisted=persisted,
         )
 
+    if not refresh.get("execution_history_covers_signal"):
+        persisted = update_edge_stop_close_reservation(
+            data,
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+            prior_state=current_state,
+            position_after_recovery_refresh=position_size,
+            signal_timestamp=reservation.get("signal_timestamp", ""),
+            execution_coverage_required_from=reservation.get(
+                "execution_coverage_required_from",
+                "",
+            ),
+            bridge_process_instance_id=reservation.get(
+                "bridge_process_instance_id",
+                "",
+            ),
+            ib_connection_generation=reservation.get(
+                "ib_connection_generation",
+                0,
+            ),
+            **coverage_fields,
+        )
+        logger.critical(
+            "[EDGE STOP NEXT RTH HISTORY COVERAGE UNPROVEN] "
+            "symbol=%s setup_id=%s signal=%s queued_process=%s "
+            "current_process=%s queued_generation=%s current_generation=%s "
+            "scope_start=%s scope_end=%s reason=%s",
+            str(data.get("symbol") or "").upper().strip(),
+            str(data.get("setup_id") or "").strip(),
+            reservation.get("signal_timestamp"),
+            reservation.get("bridge_process_instance_id"),
+            coverage_fields.get("coverage_process_instance_id"),
+            reservation.get("ib_connection_generation"),
+            coverage_fields.get("coverage_connection_generation"),
+            coverage_fields.get("execution_history_scope_start"),
+            coverage_fields.get("execution_history_scope_end"),
+            coverage_fields.get("coverage_reason"),
+        )
+        return edge_stop_close_result(
+            data,
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+            position_before_close=position_size,
+            canceled_open_orders=0,
+            managed_state_persisted=persisted,
+            coverage_gap_detected=True,
+            coverage_reason=coverage_fields.get("coverage_reason"),
+        )
+
     if (
         refresh.get("ambiguous")
         or not refresh.get("authoritative")
-        or not refresh.get(
-            "execution_history_authoritative",
-            refresh.get("authoritative", False),
-        )
     ):
+        deferred_state = (
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            if current_state
+            == "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN"
+            else "QUEUED_NEXT_RTH_OPEN"
+        )
         persisted = update_edge_stop_close_reservation(
             data,
-            "QUEUED_NEXT_RTH_OPEN",
+            deferred_state,
             last_queue_status="EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED",
             recovery_errors=refresh.get("errors") or [],
             position_after_recovery_refresh=position_size,
@@ -4998,7 +5280,10 @@ async def recover_edge_stop_reservation_from_scheduler(
                 "state": state,
             }
 
-        if state == "QUEUED_NEXT_RTH_OPEN":
+        if state in {
+            "QUEUED_NEXT_RTH_OPEN",
+            "EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN",
+        }:
             return await recover_queued_edge_stop_next_rth(
                 data,
                 current_row,
