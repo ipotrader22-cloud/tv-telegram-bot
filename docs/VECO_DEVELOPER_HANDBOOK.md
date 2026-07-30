@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-07-29
+**Last updated:** 2026-07-30
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -134,7 +134,8 @@ Logic:
 
 ```text
 SuperTrend flip
-→ only a confirmed RTH bar before the closing bar may create a setup
+→ require matching completed 1H and completed 4H SuperTrend bias
+→ only a confirmed RTH bar before the deterministic closing bar may create a setup
 → freeze Flip Close or Broken STL anchor
 → freeze ATR(14)
 → publish PENDING_SETUP with a stable setup_id
@@ -169,10 +170,54 @@ EDGE_ENTRY_BLOCKED_EXISTING_POSITION
 EDGE_DUPLICATE_ACTIVE_SETUP
 ```
 
-An unfilled setup expires at the New York RTH closing bar. Pine cancels its
-virtual entry and unfilled target, publishes one `PENDING_ONLY` `CANCEL` with
-reason `UNFILLED_BY_MARKET_CLOSE`, and clears it permanently. Pending setups may
-survive temporary intraday HTF misalignment but never survive overnight.
+An Edge pending setup exists only while its original direction remains
+confirmed by both completed 1H and completed 4H SuperTrend bias. Loss of either
+confirmation, an opposite primary flip, or RTH expiry cancels the virtual entry
+and planned target, publishes exactly one `PENDING_ONLY` `CANCEL`, clears every
+pending variable, and removes the orange Pending line. A canceled setup cannot
+reactivate when HTF bias later returns; a new setup requires a new fully
+qualified primary flip. The legacy `Use 1H + 4H SuperTrend Bias` input remains
+for UAM/settings compatibility; disabling it fails closed by preventing new
+pending setups and never bypasses confirmation.
+
+For 15-, 30-, 45-, and 60-minute charts, Pine identifies the deterministic
+final custom RTH bar from `time()` and `time_close()` calls that explicitly use
+the `09:30-16:00` session and `America/New_York`. TradingView constructs that
+custom-session bar representation independently of the chart's regular- or
+extended-hours alignment, so the final custom bar closes exactly at the
+session's 16:00 boundary. The detector does not use the chart `time_close`
+variable or infer the final bar from timeframe duration. It publishes
+`UNFILLED_BY_MARKET_CLOSE` once and leaves open positions and their GTC targets
+untouched. A stored New York session date provides a fail-closed next-session
+fallback: missing-date or prior-date pending state is canceled before it can
+work in a later session.
+
+Render provides an independent fail-safe for the same virtual Pending state.
+On process startup and every five minutes thereafter, `app.js` reads only the
+`Pending` worksheet. It classifies Edge rows with the existing lifecycle
+helpers and derives their New York session date from immutable
+`flip_bar_time`, falling back to the timestamp embedded in the exact
+`setup_id`. It never uses the mutable worksheet update timestamp as the sole
+staleness source. A row from the current New York date is eligible only at or
+after 16:00 ET; a row from an earlier date is eligible immediately because its
+session is already complete. Eligible rows are re-read, revalidated, and
+deleted by exact `setup_id`.
+
+This cleanup does not synthesize a `CANCEL` webhook or run `processLedger`.
+Consequently it sends no Telegram message, forwards nothing to the bridge,
+performs no IB/TWS action, and does not read or mutate Trades, Open Positions,
+Closed Trades, Prime/Shrek state, or active GTC targets. One process-wide
+Pending-sheet mutation serializer covers the cleanup's complete
+read/classify/re-read/validate/delete transaction and every existing Pending
+upsert, exact setup removal, and symbol/side cleanup. Cleanup uses internal
+unlocked helpers while it owns that serializer, preventing nested-lock
+deadlocks. A webhook cannot shift Pending row numbers between cleanup
+validation and deletion; unrelated Open Positions and Closed Trades operations
+are not locked. The scheduler's separate in-flight guard still prevents
+overlapping cleanup passes, and deleting an already-removed `setup_id` remains
+a harmless no-op. The immediate startup pass supplies restart and after-close
+catch-up even when the TradingView alert is stopped or its snapshot never
+executes the Pine final-bar logic.
 
 An already-open Edge position is not closed at EOD. Its attached ATR target uses
 `GTC`, remains active overnight, and the payload declares
@@ -214,23 +259,23 @@ race, or exact TWS execution price.
 Telegram lifecycle:
 
 ```text
-🟣 Vixale Edge setup LONG / SHORT
 🟣 Vixale Edge opened LONG / SHORT
 🎯 Vixale Edge hit target
 🛑 Vixale Edge hit Stop Loss
-⚪ Vixale Edge setup canceled — Unfilled by market close
 ```
 
-The purple circle identifies Vixale Edge. Direction is written explicitly. The
-internal Fiona identifiers remain unchanged.
+The purple circle identifies Vixale Edge. Direction is written explicitly.
+`PENDING_SETUP`, pre-broker `SETUP`, and `CANCEL` remain available to the
+Sheets/site lifecycle but are Telegram-silent. Telegram OPEN is published only
+from broker-confirmed `ENTRY_FILL`; target and Stop Loss messages likewise
+remain broker-confirmed. The internal Fiona identifiers remain unchanged.
 
 For a new Vixale Edge `PENDING_SETUP`, the JSON `stop` field contains the
 current primary SuperTrend `stLine` on the confirmed flip bar: the current
 green/bullish value for LONG and the current red/bearish value for SHORT. This
 value is a candle-close threshold/reference, not a native TWS stop order.
-Telegram renders it as `Close Under <value>` for LONG and
-`Close Over <value>` for SHORT in both pending and broker-confirmed open
-messages.
+Broker-confirmed Telegram OPEN renders it as `Close Under <value>` for LONG
+and `Close Over <value>` for SHORT.
 
 The frozen `broken_stl` value remains in raw payload data, setup state, the
 status table, and the optional `Broken STL` entry-anchor calculation. It is no
@@ -547,7 +592,13 @@ Webhook: https://www.vixale.com/tv
 Expiration: Open-ended
 ```
 
-Important: TradingView alerts store a snapshot of the strategy and its settings at creation time. Changing chart settings later does not update an existing alert. The alert must be recreated. Existing Vixale Edge alerts must be recreated after the current-SuperTrend pending-stop and chart-visual update so they use the new Pine payload semantics.
+Important: TradingView alerts store a snapshot of the strategy and its settings
+at creation time. Changing chart source, settings, symbol, or interval later
+does not update an existing alert. An alert may therefore remain active while
+its server-side snapshot differs from the visible chart instance. This is a
+possible diagnostic branch, not proof of any specific missed alert. Recreate
+the alert after every approved Pine lifecycle deployment so the active
+snapshot uses the reviewed source and settings.
 
 ---
 
@@ -610,6 +661,11 @@ The same ID is retained across `PENDING_SETUP`, submitted `SETUP`, confirmed
 IB bridge. An identified `SETUP` preserves the exact Pending row until the
 broker returns `ENTRY_FILL`; the fill removes that row by `setup_id` and creates
 Open once. Legacy Edge alerts without `setup_id` remain supported.
+
+Edge `PENDING_SETUP` and every pending-only `CANCEL` update Google Sheets and
+the website/dashboard but never publish to Telegram. A TradingView `SETUP`
+continues to be forwarded to the bridge without public OPEN publication.
+Telegram OPEN begins only after the broker-confirmed `ENTRY_FILL` callback.
 
 For a newly created Edge `PENDING_SETUP`, `stop` is the current primary
 SuperTrend `stLine` from the confirmed flip bar. LONG carries the current
@@ -1258,9 +1314,48 @@ Shrek and Fiona share a generic Opposite Flip strategy identifier. Always classi
 ### 13.2 TradingView alert snapshots
 
 Changing strategy settings or Pine source on the chart does not alter existing
-alerts. Recreate the alert. In particular, existing Vixale Edge alert instances
-retain the old pending `stop` semantics and must be recreated after the
-current-SuperTrend threshold update.
+alerts. Recreate the alert after an approved Pine deployment. An alert can
+remain enabled and executing while retaining an older source/settings/interval
+snapshot; “active” does not prove that it matches the chart instance. Snapshot
+divergence must be verified from the alert configuration/logs rather than
+assumed from a missed event.
+
+### 13.2.1 July 30, 2026 Edge Pending expiry incident
+
+Eight active Edge Pending setups remained after 16:00 ET and no `CANCEL`
+appeared in the TradingView Alert Log. The alerts were not deleted, paused, or
+recreated before the close, so deletion is not a valid explanation. The local
+bridge's 15:59 `managed_symbols_checked=0` is also expected: Edge Pending
+setups are virtual TradingView/Render records, while the broker watchdog is
+intentionally restricted to managed Prime/Shrek positions.
+
+The legacy `isRthClosingBar` predicate was evaluated against modeled final bars
+for 15, 30, 45, and 60 minutes under both regular- and extended-hours chart
+alignments. Those modeled cases satisfied the predicate. Therefore the
+production miss was not reproduced from the predicate alone, and no single
+root cause is claimed without the exact server-side alert snapshot and runtime
+evidence.
+
+The hardened detector no longer mixes custom-session membership with the
+chart's `time` / `time_close` alignment. It compares the confirmed bar's
+explicit custom-session `time_close()` value directly with the New York 16:00
+timestamp. TradingView documents that these session-filtered functions create
+their own bar representations; a final custom bar can end at the session
+boundary even when its chart bar ends later.
+
+`process_orders_on_close=false` is not an explanation for a missing direct
+`alert()` call. With default strategy calculation settings, Pine still executes
+once on the confirmed bar's closing tick; the flag controls whether the broker
+emulator may fill an order on that same closing tick or waits for the next
+available bar. It remains required for the queued next-RTH Strategy Tester
+behavior.
+
+The server-side safety layer is independent of TradingView execution. Render
+runs an immediate startup/catch-up pass and a five-minute interval pass over
+the `Pending` worksheet. It removes only exact, classified Edge `setup_id`
+rows whose immutable flip/session identity proves that the associated New York
+RTH session has completed. No alert runtime, bridge connection, broker
+position, or synthetic lifecycle callback is required.
 
 ### 13.3 TradingView quantity
 
@@ -1477,6 +1572,9 @@ For every strategy lifecycle change, verify:
 TradingView alert delivered
 Render receives SETUP
 Bridge receives SETUP
+Edge PENDING_SETUP was created only from aligned primary + completed 1H + completed 4H direction
+Edge PENDING_SETUP and pending-only CANCEL update Sheets/site without Telegram
+pre-broker Edge SETUP sends no Telegram OPEN
 Edge target is finite, positive, directionally valid, and GTC
 invalid Edge target returns PENDING_ONLY / EDGE_TARGET_REQUIRED with no IB order
 TWS entry fills
@@ -1616,6 +1714,16 @@ Positions become flat
 Render receives confirmed close
 Dashboard and Sheets clear open rows
 No duplicate Pine close is published later
+Edge unfilled Pending emits one final-bar CANCEL on 15m, 30m, 45m, and 60m
+Final-bar detection uses the explicit 09:30-16:00 New York custom-session close
+Regular- and extended-hours chart alignment does not change that custom close
+Render startup and interval cleanup remove exact stale Edge setup_id rows
+All Pending upserts/removals and EOD cleanup share one mutation serializer
+Render cleanup sends no Telegram or bridge/TWS request
+Render cleanup leaves Prime, Open Positions, Closed Trades, and GTC targets unchanged
+Edge Pending state and orange line are cleared before the next session
+Missing-date or prior-date Pending fails closed on the next session
+Edge open positions and active GTC targets remain untouched overnight
 ```
 
 ---
@@ -1713,17 +1821,56 @@ without changing the backward-compatible VECO execution contract.
 ### ADR-012 — Vixale Edge session-bound pending and overnight-open policy
 
 **Decision:** Vixale Edge v1.1 creates pending setups only from confirmed RTH
-flips before the closing bar. A pending setup has a stable `setup_id`, may pause
-for intraday HTF misalignment, and expires visibly at the RTH close through a
-publication-only `PENDING_ONLY` cancellation. Filled Edge positions are never
+flips before the closing bar only when completed 1H and 4H SuperTrend bias both
+confirm the new direction. A pending setup has a stable `setup_id` and is
+permanently invalidated by loss of either HTF confirmation, an opposite primary
+flip, or RTH expiry. Cancellation removes the virtual entry and planned target,
+emits one publication-only `PENDING_ONLY` event, and clears the setup so later
+HTF realignment cannot reactivate it.
+
+The final RTH bar for 15-, 30-, 45-, and 60-minute alerts is recognized only
+when the confirmed bar's explicit `09:30-16:00`
+`America/New_York` custom-session `time_close()` equals 16:00. The
+session-filtered `time()` / `time_close()` representation is independent of
+regular- versus extended-hours chart-bar alignment; the chart `time_close`
+variable and a timeframe-duration heuristic are not used. A stored-session
+fallback treats a missing or different New York date as stale and prevents
+prior-session state from working the next day. Filled Edge positions are never
 closed at EOD; their ATR targets remain GTC overnight. `app.js` publishes
-Pending state before execution and Open state only after broker-confirmed
+Pending/CANCEL state to Sheets/site without Telegram, keeps pre-broker `SETUP`
+execution-first, and publishes Telegram/Open only after broker-confirmed
 `ENTRY_FILL`. A new pending setup publishes the current primary SuperTrend
 `stLine` as `stop`, while preserving the frozen prior level separately as
-`broken_stl`; public Telegram copy renders that threshold as `Close Under` for
-LONG and `Close Over` for SHORT.
+`broken_stl`; broker-confirmed Telegram OPEN copy renders that threshold as
+`Close Under` for LONG and `Close Over` for SHORT.
+
+The July 30, 2026 miss was not reproduced by applying the legacy predicate to
+modeled 15/30/45/60 final bars under regular and extended alignment. Alert
+snapshot divergence remains possible because TradingView alerts retain their
+creation-time source/settings/interval, but it is not established as the
+incident root cause. `process_orders_on_close=false` controls simulated
+same-tick fills, not whether the confirmed-bar strategy calculation can execute
+a direct `alert()` call.
+
+Render independently scans the existing `Pending` worksheet at startup and
+every five minutes. It uses the existing Edge classifier plus immutable
+`flip_bar_time` or the timestamp embedded in the exact `setup_id`, never only
+the mutable row timestamp. Current-date rows remain until 16:00 ET; prior-date
+rows are catch-up eligible on restart. Cleanup revalidates and deletes only
+exact Edge identities and never publishes Telegram, forwards to the bridge,
+touches execution-backed position/close sheets, or changes broker/GTC-target
+state. Its complete read-through-delete sequence shares one Pending-only
+mutation serializer with `PENDING_SETUP`, exact Edge `CANCEL`, `ENTRY_FILL`
+Pending removal, and legacy symbol/side cleanup. This prevents concurrent row
+deletions or appends from invalidating a validated row number without
+serializing unrelated Open Positions or Closed Trades work.
 **Reason:** Keep unfilled intent session-bounded while preserving the strategy's
-overnight-position design and execution-first public ledger.
+overnight-position design and execution-first public ledger. Permanent
+invalidation prevents an obsolete virtual order from silently reactivating
+after its confirming market structure has disappeared. The independent Render
+cleanup prevents an active, stopped, or divergent TradingView alert snapshot
+from leaving virtual Pending rows indefinitely without creating a second
+execution lifecycle.
 
 **Deployment dependency:** This Part 2 source and server support must not be
 activated in TradingView until the unfinished Part 3 migration is completed and
