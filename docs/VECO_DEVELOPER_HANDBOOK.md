@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-07-29
+**Last updated:** 2026-07-30
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -134,7 +134,8 @@ Logic:
 
 ```text
 SuperTrend flip
-→ only a confirmed RTH bar before the closing bar may create a setup
+→ require matching completed 1H and completed 4H SuperTrend bias
+→ only a confirmed RTH bar before the deterministic closing bar may create a setup
 → freeze Flip Close or Broken STL anchor
 → freeze ATR(14)
 → publish PENDING_SETUP with a stable setup_id
@@ -169,10 +170,23 @@ EDGE_ENTRY_BLOCKED_EXISTING_POSITION
 EDGE_DUPLICATE_ACTIVE_SETUP
 ```
 
-An unfilled setup expires at the New York RTH closing bar. Pine cancels its
-virtual entry and unfilled target, publishes one `PENDING_ONLY` `CANCEL` with
-reason `UNFILLED_BY_MARKET_CLOSE`, and clears it permanently. Pending setups may
-survive temporary intraday HTF misalignment but never survive overnight.
+An Edge pending setup exists only while its original direction remains
+confirmed by both completed 1H and completed 4H SuperTrend bias. Loss of either
+confirmation, an opposite primary flip, or RTH expiry cancels the virtual entry
+and planned target, publishes exactly one `PENDING_ONLY` `CANCEL`, clears every
+pending variable, and removes the orange Pending line. A canceled setup cannot
+reactivate when HTF bias later returns; a new setup requires a new fully
+qualified primary flip. The legacy `Use 1H + 4H SuperTrend Bias` input remains
+for UAM/settings compatibility; disabling it fails closed by preventing new
+pending setups and never bypasses confirmation.
+
+For 15-, 30-, 45-, and 60-minute charts, Pine identifies the deterministic
+final RTH bar using the bar's New York open time plus its timeframe duration,
+not only `time_close` reaching 16:00. It publishes
+`UNFILLED_BY_MARKET_CLOSE` once and leaves open positions and their GTC targets
+untouched. A stored New York session date provides a fail-closed next-session
+fallback: stale pending state is canceled before it can work in a later
+session.
 
 An already-open Edge position is not closed at EOD. Its attached ATR target uses
 `GTC`, remains active overnight, and the payload declares
@@ -214,23 +228,23 @@ race, or exact TWS execution price.
 Telegram lifecycle:
 
 ```text
-🟣 Vixale Edge setup LONG / SHORT
 🟣 Vixale Edge opened LONG / SHORT
 🎯 Vixale Edge hit target
 🛑 Vixale Edge hit Stop Loss
-⚪ Vixale Edge setup canceled — Unfilled by market close
 ```
 
-The purple circle identifies Vixale Edge. Direction is written explicitly. The
-internal Fiona identifiers remain unchanged.
+The purple circle identifies Vixale Edge. Direction is written explicitly.
+`PENDING_SETUP`, pre-broker `SETUP`, and `CANCEL` remain available to the
+Sheets/site lifecycle but are Telegram-silent. Telegram OPEN is published only
+from broker-confirmed `ENTRY_FILL`; target and Stop Loss messages likewise
+remain broker-confirmed. The internal Fiona identifiers remain unchanged.
 
 For a new Vixale Edge `PENDING_SETUP`, the JSON `stop` field contains the
 current primary SuperTrend `stLine` on the confirmed flip bar: the current
 green/bullish value for LONG and the current red/bearish value for SHORT. This
 value is a candle-close threshold/reference, not a native TWS stop order.
-Telegram renders it as `Close Under <value>` for LONG and
-`Close Over <value>` for SHORT in both pending and broker-confirmed open
-messages.
+Broker-confirmed Telegram OPEN renders it as `Close Under <value>` for LONG
+and `Close Over <value>` for SHORT.
 
 The frozen `broken_stl` value remains in raw payload data, setup state, the
 status table, and the optional `Broken STL` entry-anchor calculation. It is no
@@ -547,7 +561,12 @@ Webhook: https://www.vixale.com/tv
 Expiration: Open-ended
 ```
 
-Important: TradingView alerts store a snapshot of the strategy and its settings at creation time. Changing chart settings later does not update an existing alert. The alert must be recreated. Existing Vixale Edge alerts must be recreated after the current-SuperTrend pending-stop and chart-visual update so they use the new Pine payload semantics.
+Important: TradingView alerts store a snapshot of the strategy and its settings
+at creation time. Changing chart settings later does not update an existing
+alert. The alert must be recreated. Existing Vixale Edge alerts must be
+recreated after the current-SuperTrend pending-stop/chart update and again
+after the mandatory-HTF/permanent-invalidation/EOD-expiry update so they use
+the corrected Pine lifecycle.
 
 ---
 
@@ -610,6 +629,11 @@ The same ID is retained across `PENDING_SETUP`, submitted `SETUP`, confirmed
 IB bridge. An identified `SETUP` preserves the exact Pending row until the
 broker returns `ENTRY_FILL`; the fill removes that row by `setup_id` and creates
 Open once. Legacy Edge alerts without `setup_id` remain supported.
+
+Edge `PENDING_SETUP` and every pending-only `CANCEL` update Google Sheets and
+the website/dashboard but never publish to Telegram. A TradingView `SETUP`
+continues to be forwarded to the bridge without public OPEN publication.
+Telegram OPEN begins only after the broker-confirmed `ENTRY_FILL` callback.
 
 For a newly created Edge `PENDING_SETUP`, `stop` is the current primary
 SuperTrend `stLine` from the confirmed flip bar. LONG carries the current
@@ -1259,8 +1283,9 @@ Shrek and Fiona share a generic Opposite Flip strategy identifier. Always classi
 
 Changing strategy settings or Pine source on the chart does not alter existing
 alerts. Recreate the alert. In particular, existing Vixale Edge alert instances
-retain the old pending `stop` semantics and must be recreated after the
-current-SuperTrend threshold update.
+retain the old pending `stop`, HTF eligibility, invalidation, and final-bar
+expiry semantics. Recreate every Edge alert after deploying a Pine lifecycle
+change.
 
 ### 13.3 TradingView quantity
 
@@ -1477,6 +1502,9 @@ For every strategy lifecycle change, verify:
 TradingView alert delivered
 Render receives SETUP
 Bridge receives SETUP
+Edge PENDING_SETUP was created only from aligned primary + completed 1H + completed 4H direction
+Edge PENDING_SETUP and pending-only CANCEL update Sheets/site without Telegram
+pre-broker Edge SETUP sends no Telegram OPEN
 Edge target is finite, positive, directionally valid, and GTC
 invalid Edge target returns PENDING_ONLY / EDGE_TARGET_REQUIRED with no IB order
 TWS entry fills
@@ -1616,6 +1644,9 @@ Positions become flat
 Render receives confirmed close
 Dashboard and Sheets clear open rows
 No duplicate Pine close is published later
+Edge unfilled Pending emits one final-bar CANCEL on 15m, 30m, 45m, and 60m
+Edge Pending state and orange line are cleared before the next session
+Edge open positions and active GTC targets remain untouched overnight
 ```
 
 ---
@@ -1713,17 +1744,27 @@ without changing the backward-compatible VECO execution contract.
 ### ADR-012 — Vixale Edge session-bound pending and overnight-open policy
 
 **Decision:** Vixale Edge v1.1 creates pending setups only from confirmed RTH
-flips before the closing bar. A pending setup has a stable `setup_id`, may pause
-for intraday HTF misalignment, and expires visibly at the RTH close through a
-publication-only `PENDING_ONLY` cancellation. Filled Edge positions are never
-closed at EOD; their ATR targets remain GTC overnight. `app.js` publishes
-Pending state before execution and Open state only after broker-confirmed
-`ENTRY_FILL`. A new pending setup publishes the current primary SuperTrend
-`stLine` as `stop`, while preserving the frozen prior level separately as
-`broken_stl`; public Telegram copy renders that threshold as `Close Under` for
-LONG and `Close Over` for SHORT.
+flips before the closing bar only when completed 1H and 4H SuperTrend bias both
+confirm the new direction. A pending setup has a stable `setup_id` and is
+permanently invalidated by loss of either HTF confirmation, an opposite primary
+flip, or RTH expiry. Cancellation removes the virtual entry and planned target,
+emits one publication-only `PENDING_ONLY` event, and clears the setup so later
+HTF realignment cannot reactivate it.
+
+The final RTH bar for 15-, 30-, 45-, and 60-minute alerts is recognized by New
+York cutoff and timeframe duration, with a stored-session fallback that
+prevents prior-session state from working the next day. Filled Edge positions
+are never closed at EOD; their ATR targets remain GTC overnight. `app.js`
+publishes Pending/CANCEL state to Sheets/site without Telegram, keeps
+pre-broker `SETUP` execution-first, and publishes Telegram/Open only after
+broker-confirmed `ENTRY_FILL`. A new pending setup publishes the current
+primary SuperTrend `stLine` as `stop`, while preserving the frozen prior level
+separately as `broken_stl`; broker-confirmed Telegram OPEN copy renders that
+threshold as `Close Under` for LONG and `Close Over` for SHORT.
 **Reason:** Keep unfilled intent session-bounded while preserving the strategy's
-overnight-position design and execution-first public ledger.
+overnight-position design and execution-first public ledger. Permanent
+invalidation prevents an obsolete virtual order from silently reactivating
+after its confirming market structure has disappeared.
 
 **Deployment dependency:** This Part 2 source and server support must not be
 activated in TradingView until the unfinished Part 3 migration is completed and

@@ -300,12 +300,13 @@ async function run() {
 
   assert.strictEqual(sheets.rows.Pending.length, 2, 'PENDING_SETUP inserts one row');
   assert.strictEqual(sheets.rows.Pending[1][0], filledId, 'Pending is keyed by setup_id');
-  assert.strictEqual(telegram.length, 1, 'duplicate PENDING_SETUP sends no second Telegram');
+  assert.strictEqual(telegram.length, 0, 'PENDING_SETUP sends no Telegram');
   assert.deepStrictEqual(bridgeNetwork, [], 'PENDING_SETUP never forwards to bridge');
 
   await lifecycle(edgePayload('SETUP', filledId));
   assert.strictEqual(sheets.rows.Pending.length, 2, 'SETUP preserves Pending before broker fill');
   assert.deepStrictEqual(bridgeNetwork, ['SETUP'], 'SETUP remains execution-first');
+  assert.strictEqual(telegram.length, 0, 'pre-broker SETUP sends no Telegram OPEN');
 
   const entryFill = edgePayload('ENTRY_FILL', filledId, {
     render_forwarded_at: '2026-07-28T10:00:00-04:00',
@@ -374,6 +375,16 @@ async function run() {
   assert.strictEqual(sheets.rows['Open Positions'].length, 2, 'CANCEL creates no Open row');
   assert.strictEqual(sheets.rows['Closed Trades'].length, 1, 'CANCEL creates no Closed row');
   assert.deepStrictEqual(bridgeNetwork, ['SETUP'], 'PENDING_ONLY CANCEL never forwards to bridge');
+  assert.strictEqual(
+    telegram.filter(message => message.includes('setup canceled')).length,
+    0,
+    'PENDING_ONLY CANCEL sends no Telegram'
+  );
+  assert.strictEqual(
+    telegram.length,
+    1,
+    'only the broker-confirmed Edge OPEN has reached Telegram'
+  );
 
   assert.strictEqual(parsedCancel.planned_limit_entry, 123.45);
   assert.strictEqual(parsedCancel.target, 127.8);

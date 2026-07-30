@@ -1169,6 +1169,19 @@ function edgeStopLossThresholdLine(row, prefix = '') {
   return `${prefix}Stop Loss: <b>${thresholdDirection} ${row.stop}</b>`;
 }
 
+function shouldSuppressTelegram(row) {
+  if (!row) return false;
+
+  if (
+    row.event === 'PENDING_SETUP' &&
+    isVixaleEdgePendingLifecycleRow(row)
+  ) {
+    return true;
+  }
+
+  return SILENT_TELEGRAM_EVENTS.has(row.event);
+}
+
 function formatTelegramMessage(row, originalMessage) {
   if (!row || row.event === 'UNKNOWN') return originalMessage;
 
@@ -2376,7 +2389,11 @@ async function processLedger(row, dependencies = {}) {
       status: 'pending',
     };
     const result = await upsertPending(sheets, pendingRow);
-    return { ...pendingRow, skip_telegram: !result.created };
+    return {
+      ...pendingRow,
+      skip_telegram: true,
+      duplicate_pending_setup: !result.created,
+    };
   }
 
   if (row.event === 'SETUP') {
@@ -2467,9 +2484,7 @@ async function processLedger(row, dependencies = {}) {
       return {
         ...row,
         trade_id: row.setup_id,
-        skip_telegram:
-          !removedPending ||
-          String(row.reason || '').toUpperCase() !== 'UNFILLED_BY_MARKET_CLOSE',
+        skip_telegram: true,
       };
     }
 
@@ -8944,13 +8959,7 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
   try {
     if (finalRow.skip_telegram) {
       console.log('Telegram skipped for row:', finalRow.event, finalRow.raw_event || '', finalRow.status || '');
-    } else if (
-      !SILENT_TELEGRAM_EVENTS.has(finalRow.event) ||
-      (
-        isVixaleEdgePendingCancel(finalRow) &&
-        String(finalRow.reason || '').toUpperCase() === 'UNFILLED_BY_MARKET_CLOSE'
-      )
-    ) {
+    } else if (!shouldSuppressTelegram(finalRow)) {
       const telegramMessage = formatTelegramMessage(finalRow, message);
       const telegramResult = await telegramSender(telegramMessage);
       if (

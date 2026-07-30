@@ -21,10 +21,45 @@ class EdgeLifecycle {
     this.targetWorking = false;
   }
 
-  flip({ rth, beforeClose, setupId, side }) {
-    if (!rth || !beforeClose || this.open.size) return;
+  static htfAligned(side, htf1H, htf4H) {
+    const required = side === 'LONG' ? 'BULLISH' : 'BEARISH';
+    return htf1H === required && htf4H === required;
+  }
+
+  static isFinalRthBar(timeframeMinutes, barStartMinutes) {
+    return [15, 30, 45, 60].includes(timeframeMinutes) &&
+      barStartMinutes < 16 * 60 &&
+      barStartMinutes >= 16 * 60 - timeframeMinutes;
+  }
+
+  flip({ rth, beforeClose, setupId, side, htf1H, htf4H }) {
+    for (const [existingId, existingSide] of this.pending.entries()) {
+      if (existingSide !== side) {
+        this.cancel(existingId, 'REPLACED_BY_OPPOSITE_RTH_SIGNAL');
+      }
+    }
+    if (
+      !rth ||
+      !beforeClose ||
+      this.open.size ||
+      this.pending.size ||
+      !EdgeLifecycle.htfAligned(side, htf1H, htf4H)
+    ) {
+      return;
+    }
     this.pending.set(setupId, side);
     this.alerts.push(['PENDING_SETUP', setupId]);
+  }
+
+  updateHtf({ htf1H, htf4H }) {
+    for (const [setupId, side] of [...this.pending.entries()]) {
+      const required = side === 'LONG' ? 'BULLISH' : 'BEARISH';
+      if (htf1H !== required) {
+        this.cancel(setupId, 'HTF_1H_CONFIRMATION_LOST');
+      } else if (htf4H !== required) {
+        this.cancel(setupId, 'HTF_4H_CONFIRMATION_LOST');
+      }
+    }
   }
 
   cancel(setupId, reason) {
@@ -45,9 +80,16 @@ class EdgeLifecycle {
     this.alerts.push(['OPEN', setupId]);
   }
 
-  eod() {
+  eod({ timeframeMinutes = 60, barStartMinutes = 15 * 60 } = {}) {
+    if (!EdgeLifecycle.isFinalRthBar(timeframeMinutes, barStartMinutes)) return;
     for (const setupId of [...this.pending.keys()]) {
       this.cancel(setupId, 'UNFILLED_BY_MARKET_CLOSE');
+    }
+  }
+
+  nextSession() {
+    for (const setupId of [...this.pending.keys()]) {
+      this.cancel(setupId, 'STALE_PRIOR_SESSION');
     }
   }
 }
@@ -56,22 +98,125 @@ const first = 'VIXALE_EDGE:AAPL:60:LONG:1785254400000';
 const second = 'VIXALE_EDGE:AAPL:60:SHORT:1785258000000';
 const sim = new EdgeLifecycle();
 
-sim.flip({ rth: true, beforeClose: true, setupId: first, side: 'LONG' });
-sim.flip({ rth: false, beforeClose: true, setupId: second, side: 'SHORT' });
-assert.deepStrictEqual(sim.alerts, [['PENDING_SETUP', first]], 'RTH emits one pending; overnight emits none');
+sim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: first,
+  side: 'LONG',
+  htf1H: 'BULLISH',
+  htf4H: 'BEARISH',
+});
+assert.strictEqual(sim.pending.size, 0, 'primary flip without aligned 1H + 4H creates no Pending');
+
+sim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: first,
+  side: 'LONG',
+  htf1H: 'BULLISH',
+  htf4H: 'BULLISH',
+});
+assert.deepStrictEqual(sim.alerts, [['PENDING_SETUP', first]], 'aligned primary + 1H + 4H creates Pending');
+
+sim.updateHtf({ htf1H: 'BEARISH', htf4H: 'BULLISH' });
+assert.strictEqual(sim.pending.size, 0, 'loss of 1H confirmation permanently cancels Pending');
+sim.updateHtf({ htf1H: 'BULLISH', htf4H: 'BULLISH' });
+assert.strictEqual(sim.pending.size, 0, 'canceled setup cannot reactivate when 1H bias returns');
+
+sim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: first,
+  side: 'LONG',
+  htf1H: 'BULLISH',
+  htf4H: 'BULLISH',
+});
+sim.updateHtf({ htf1H: 'BULLISH', htf4H: 'BEARISH' });
+assert.strictEqual(sim.pending.size, 0, 'loss of 4H confirmation permanently cancels Pending');
+
+sim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: first,
+  side: 'LONG',
+  htf1H: 'BULLISH',
+  htf4H: 'BULLISH',
+});
+sim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: second,
+  side: 'SHORT',
+  htf1H: 'BEARISH',
+  htf4H: 'BEARISH',
+});
+assert.strictEqual(sim.pending.has(first), false, 'opposite primary flip cancels the old setup');
+assert.strictEqual(sim.pending.has(second), true, 'aligned opposite primary flip creates a new setup_id');
 
 sim.eod();
 assert.strictEqual(sim.pending.size, 0, 'EOD clears unfilled pending');
 assert.strictEqual(
-  sim.alerts.filter(([event]) => event === 'CANCEL').length,
+  sim.alerts.filter(([event, , reason]) =>
+    event === 'CANCEL' && reason === 'UNFILLED_BY_MARKET_CLOSE').length,
   1,
   'EOD emits exactly one cancel'
 );
+const alertCountAfterEod = sim.alerts.length;
 sim.eod();
-assert.strictEqual(sim.alerts.length, 2, 'cleared pending does not reappear next day');
+assert.strictEqual(sim.alerts.length, alertCountAfterEod, 'EOD cancel is idempotent');
 assert.strictEqual(sim.closed.length, 0, 'pending cancel creates no closed trade');
 
-sim.flip({ rth: true, beforeClose: true, setupId: second, side: 'SHORT' });
+for (const [timeframeMinutes, barStartMinutes] of [
+  [15, 15 * 60 + 45],
+  [30, 15 * 60 + 30],
+  [45, 15 * 60 + 30],
+  [60, 15 * 60],
+]) {
+  const timeframeSim = new EdgeLifecycle();
+  const setupId = `VIXALE_EDGE:TEST:${timeframeMinutes}:LONG:${timeframeMinutes}`;
+  timeframeSim.flip({
+    rth: true,
+    beforeClose: true,
+    setupId,
+    side: 'LONG',
+    htf1H: 'BULLISH',
+    htf4H: 'BULLISH',
+  });
+  timeframeSim.eod({ timeframeMinutes, barStartMinutes });
+  timeframeSim.eod({ timeframeMinutes, barStartMinutes });
+  assert.strictEqual(timeframeSim.pending.size, 0, `${timeframeMinutes}m final RTH bar clears Pending`);
+  assert.strictEqual(
+    timeframeSim.alerts.filter(([event]) => event === 'CANCEL').length,
+    1,
+    `${timeframeMinutes}m final RTH bar emits exactly one CANCEL`
+  );
+}
+
+const staleSim = new EdgeLifecycle();
+staleSim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: first,
+  side: 'LONG',
+  htf1H: 'BULLISH',
+  htf4H: 'BULLISH',
+});
+staleSim.nextSession();
+assert.strictEqual(staleSim.pending.size, 0, 'no stale Pending survives into the next RTH session');
+assert.deepStrictEqual(
+  staleSim.alerts.at(-1),
+  ['CANCEL', first, 'STALE_PRIOR_SESSION'],
+  'next-session fallback publishes one exact stale-session CANCEL'
+);
+
+sim.flip({
+  rth: true,
+  beforeClose: true,
+  setupId: second,
+  side: 'SHORT',
+  htf1H: 'BEARISH',
+  htf4H: 'BEARISH',
+});
 sim.submit(second);
 assert.strictEqual(sim.pending.has(second), true, 'SETUP submission preserves Pending');
 sim.fill(second);
@@ -135,6 +280,21 @@ assert.deepStrictEqual(
 
 assert.match(app, /PENDING_SETUP: 'PENDING_SETUP'/, 'app recognizes PENDING_SETUP');
 assert.match(app, /event === 'PENDING_SETUP' \|\| isVixaleEdgePendingCancel\(row\)/, 'pending events cannot reach bridge');
+assert.match(
+  app,
+  /row\.event === 'PENDING_SETUP'[\s\S]{0,120}isVixaleEdgePendingLifecycleRow\(row\)[\s\S]{0,80}return true/,
+  'Edge PENDING_SETUP is always Telegram-silent'
+);
+assert.match(
+  app,
+  /if \(finalRow\.skip_telegram\)[\s\S]{0,300}else if \(!shouldSuppressTelegram\(finalRow\)\)/,
+  'Telegram routing applies the persistent Edge pending suppression'
+);
+assert.doesNotMatch(
+  app,
+  /isVixaleEdgePendingCancel\(finalRow\)[\s\S]{0,120}UNFILLED_BY_MARKET_CLOSE/,
+  'EOD pending CANCEL no longer has a Telegram exception'
+);
 assert.match(app, /row\.setup_id \|\| row\.trade_id/, 'fill prefers exact setup_id');
 assert.match(app, /raw\.startsWith\('VIXALE_EDGE:'\)\) return raw/, 'setup_id matching remains exact');
 assert.match(app, /event === 'SETUP'[\s\S]{0,160}row\.setup_id[\s\S]{0,160}isVixaleEdgePendingLifecycleRow/, 'identified SETUP is execution-first');
@@ -151,6 +311,39 @@ assert.match(pine, /stAtrPeriod = input\.int\(\s*10,/);
 assert.match(pine, /stFactor = input\.float\(\s*3\.0,/);
 assert.match(pine, /options=\["Flip Close", "Broken STL"\]/);
 assert.match(pine, /request\.security\([\s\S]*?"60"[\s\S]*?request\.security\([\s\S]*?"240"/);
+assert.match(
+  pine,
+  /f_htf_allows\(_direction\) =>\s*useHtfBias and[\s\S]{0,160}\(_direction == 1 and htfLongAligned\) or\s*\(_direction == -1 and htfShortAligned\)/,
+  'completed 1H + 4H alignment is mandatory'
+);
+assert.doesNotMatch(
+  pine,
+  /f_htf_allows\(_direction\) =>\s*not useHtfBias/,
+  'legacy HTF input cannot bypass required confirmation'
+);
+assert.match(
+  pine,
+  /if canCreateSetup and pendingDirection == 0 and f_htf_allows\(1\)/,
+  'LONG Pending requires aligned completed HTF bias and no conflicting setup'
+);
+assert.match(
+  pine,
+  /if canCreateSetup and pendingDirection == 0 and f_htf_allows\(-1\)/,
+  'SHORT Pending requires aligned completed HTF bias and no conflicting setup'
+);
+assert.match(pine, /HTF_1H_CONFIRMATION_LOST/);
+assert.match(pine, /HTF_4H_CONFIRMATION_LOST/);
+assert.match(pine, /STALE_PRIOR_SESSION/);
+assert.match(
+  pine,
+  /pendingCancelReason[\s\S]*?strategy\.cancel\("Long Limit"\)[\s\S]*?strategy\.cancel\("Short Limit"\)[\s\S]*?strategy\.cancel\("Long ATR Target"\)[\s\S]*?strategy\.cancel\("Short ATR Target"\)[\s\S]*?"CANCEL"[\s\S]*?pendingDirection := 0[\s\S]*?pendingSessionDate := ""/,
+  'every invalidation cancels virtual entry/target, emits CANCEL, and clears all pending state'
+);
+assert.match(
+  pine,
+  /timeframe\.multiplier == 15[\s\S]*?timeframe\.multiplier == 30[\s\S]*?timeframe\.multiplier == 45[\s\S]*?timeframe\.multiplier == 60[\s\S]*?time >= eodTimestamp - int\(timeframe\.in_seconds\(\) \* 1000\)/,
+  '15m, 30m, 45m, and 60m final bars use duration-based RTH expiration'
+);
 assert.match(pine, /payload_version\\":2/);
 assert.match(pine, /system_id\\":\\"VIXALE_EDGE/);
 assert.match(pine, /eod_policy\\":\\"NO_EOD_CLOSE/);
