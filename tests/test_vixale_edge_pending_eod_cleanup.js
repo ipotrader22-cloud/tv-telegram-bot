@@ -37,6 +37,7 @@ const {
   cleanupStaleVixaleEdgePendingRows,
   runEdgePendingEodCleanup,
   isCompletedEdgePendingSession,
+  processLedger,
 } = require('../app.js').__test;
 Module._load = originalLoad;
 
@@ -49,10 +50,10 @@ function edgePending(setupId, flipBarTime, symbol = 'AAPL') {
     variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
     event: 'PENDING_SETUP',
     setup_id: setupId,
-    flip_bar_time: flipBarTime,
     symbol,
     side: 'LONG',
   };
+  if (flipBarTime !== undefined) raw.flip_bar_time = flipBarTime;
   return [
     setupId,
     'mutable row timestamp',
@@ -87,7 +88,15 @@ function primePending() {
   ];
 }
 
-function createMockSheets(pendingRows) {
+function createDeferred() {
+  let resolve;
+  const promise = new Promise(done => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function createMockSheets(pendingRows, options = {}) {
   const rows = {
     Pending: [
       ['Trade ID', 'Timestamp', 'Symbol', 'Side', 'Status', 'Entry', 'Size', 'Target', 'Stop', 'Raw JSON'],
@@ -106,7 +115,10 @@ function createMockSheets(pendingRows) {
   const namesById = Object.fromEntries(
     Object.entries(sheetIds).map(([name, id]) => [id, name])
   );
-  const calls = { reads: [], deletes: [] };
+  const calls = { reads: [], deletes: [], appends: [], updates: [] };
+  const initialReadReached = createDeferred();
+  const resumeInitialRead = createDeferred();
+  let pauseInitialPendingRead = Boolean(options.pauseInitialPendingRead);
 
   const spreadsheets = {
     async get() {
@@ -135,16 +147,72 @@ function createMockSheets(pendingRows) {
       async get({ range }) {
         const sheetName = range.split('!')[0];
         calls.reads.push(sheetName);
+        const snapshot = rows[sheetName].map(row => [...row]);
+        if (sheetName === 'Pending' && pauseInitialPendingRead) {
+          pauseInitialPendingRead = false;
+          initialReadReached.resolve();
+          await resumeInitialRead.promise;
+        }
         return {
           data: {
-            values: rows[sheetName].map(row => [...row]),
+            values: snapshot,
           },
         };
+      },
+      async append({ range, requestBody }) {
+        const sheetName = range.split('!')[0];
+        calls.appends.push(sheetName);
+        for (const row of requestBody.values || []) {
+          rows[sheetName].push([...row]);
+        }
+        return { data: {} };
+      },
+      async update({ range, requestBody }) {
+        const [sheetName, cells] = range.split('!');
+        const rowNumber = Number(cells.match(/\d+/)?.[0] || 0);
+        calls.updates.push(sheetName);
+        rows[sheetName][rowNumber - 1] = [...requestBody.values[0]];
+        return { data: {} };
       },
     },
   };
 
-  return { spreadsheets, rows, calls };
+  return {
+    spreadsheets,
+    rows,
+    calls,
+    initialReadReached: initialReadReached.promise,
+    resumeInitialRead: resumeInitialRead.resolve,
+  };
+}
+
+function edgeLifecycleRow(event, setupId, flipBarTime, symbol = 'AAPL') {
+  const raw = {
+    source: 'TradingView',
+    payload_version: 2,
+    system_id: 'VIXALE_EDGE',
+    strategy: 'VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1',
+    variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+    event,
+    setup_id: setupId,
+    flip_bar_time: flipBarTime,
+    symbol,
+    side: 'LONG',
+    planned_limit_entry: 100,
+    target: 102,
+    stop: 98,
+    qty: 1,
+    cancel_scope: event === 'CANCEL' ? 'PENDING_ONLY' : '',
+  };
+  return {
+    ...raw,
+    trade_id: setupId,
+    timestamp: '2026-07-30 15:30:00',
+    entry: 100,
+    size: 1,
+    status: event === 'CANCEL' ? 'canceled' : 'pending',
+    raw: JSON.stringify(raw),
+  };
 }
 
 async function run() {
@@ -245,6 +313,111 @@ async function run() {
       restartSheets.rows.Pending.slice(1).map(row => row[0]),
       [newSessionSetupId],
       'startup/catch-up removes only the completed prior session'
+    );
+
+    const fallbackTimestamp = Date.parse('2026-07-29T15:00:00-04:00');
+    const fallbackSetupId =
+      `VIXALE_EDGE:QQQ:45:SHORT:${fallbackTimestamp}`;
+    const fallbackSheets = createMockSheets([
+      edgePending(fallbackSetupId, undefined, 'QQQ'),
+    ]);
+    const fallbackResult = await cleanupStaleVixaleEdgePendingRows({
+      sheets: fallbackSheets,
+      now: new Date('2026-07-30T10:10:00-04:00'),
+    });
+    assert.deepStrictEqual(
+      fallbackResult.removed_setup_ids,
+      [fallbackSetupId],
+      'exact setup_id timestamp is used when raw flip_bar_time is missing'
+    );
+
+    const concurrentStaleId =
+      `VIXALE_EDGE:SPY:15:LONG:${Date.parse('2026-07-29T15:45:00-04:00')}`;
+    const concurrentCurrentId =
+      `VIXALE_EDGE:IWM:15:LONG:${Date.parse('2026-07-30T10:00:00-04:00')}`;
+    const concurrentlyAddedId =
+      `VIXALE_EDGE:DIA:15:LONG:${Date.parse('2026-07-30T11:00:00-04:00')}`;
+    const concurrentSheets = createMockSheets(
+      [
+        edgePending(
+          concurrentStaleId,
+          Date.parse('2026-07-29T15:45:00-04:00'),
+          'SPY'
+        ),
+        primePending(),
+        edgePending(
+          concurrentCurrentId,
+          Date.parse('2026-07-30T10:00:00-04:00'),
+          'IWM'
+        ),
+      ],
+      { pauseInitialPendingRead: true }
+    );
+
+    const cleanupPromise = cleanupStaleVixaleEdgePendingRows({
+      sheets: concurrentSheets,
+      now: new Date('2026-07-30T10:15:00-04:00'),
+    });
+    await concurrentSheets.initialReadReached;
+
+    let cancelFinished = false;
+    let upsertFinished = false;
+    const cancelPromise = processLedger(
+      edgeLifecycleRow(
+        'CANCEL',
+        concurrentStaleId,
+        Date.parse('2026-07-29T15:45:00-04:00'),
+        'SPY'
+      ),
+      { sheets: concurrentSheets }
+    ).then(result => {
+      cancelFinished = true;
+      return result;
+    });
+    const upsertPromise = processLedger(
+      edgeLifecycleRow(
+        'PENDING_SETUP',
+        concurrentlyAddedId,
+        Date.parse('2026-07-30T11:00:00-04:00'),
+        'DIA'
+      ),
+      { sheets: concurrentSheets }
+    ).then(result => {
+      upsertFinished = true;
+      return result;
+    });
+
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(cancelFinished, false, 'exact CANCEL waits for cleanup lock');
+    assert.strictEqual(upsertFinished, false, 'PENDING_SETUP upsert waits for cleanup lock');
+
+    concurrentSheets.resumeInitialRead();
+    const concurrentResults = await Promise.race([
+      Promise.all([cleanupPromise, cancelPromise, upsertPromise]),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Pending mutation lock deadlocked')), 1000)
+      ),
+    ]);
+    assert.strictEqual(concurrentResults[0].removed, 1);
+
+    const survivingIds = concurrentSheets.rows.Pending
+      .slice(1)
+      .map(row => row[0]);
+    assert.deepStrictEqual(
+      survivingIds,
+      ['MSFT_LONG', concurrentCurrentId, concurrentlyAddedId],
+      'serialized row shifts preserve Prime, current-session Edge, and concurrent new Pending rows'
+    );
+
+    const repeatedConcurrentCleanup = await cleanupStaleVixaleEdgePendingRows({
+      sheets: concurrentSheets,
+      now: new Date('2026-07-30T10:16:00-04:00'),
+    });
+    assert.strictEqual(repeatedConcurrentCleanup.removed, 0);
+    assert.deepStrictEqual(
+      concurrentSheets.rows.Pending.slice(1).map(row => row[0]),
+      survivingIds,
+      'repeated serialized cleanup remains idempotent'
     );
 
     assert.strictEqual(networkRequests, 0, 'cleanup makes no Telegram or bridge/TWS request');

@@ -112,6 +112,7 @@ const BROKER_EOD_CALLBACKS = createBrokerEodCallbackRegistry();
 const EDGE_ENTRY_FILL_IN_FLIGHT = new Map();
 const EDGE_EXTERNAL_CLOSE_IN_FLIGHT = new Map();
 const EDGE_BROKER_EXIT_IN_FLIGHT = new Map();
+let pendingSheetMutationTail = Promise.resolve();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1636,7 +1637,13 @@ async function deleteSheetRow(sheets, sheetName, rowNumber) {
   console.log(`Deleted row ${rowNumber} from ${sheetName}`);
 }
 
-async function removeRowByTradeId(sheets, sheetName, tradeId) {
+function withPendingSheetMutationLock(mutation) {
+  const current = pendingSheetMutationTail.then(mutation, mutation);
+  pendingSheetMutationTail = current.catch(() => {});
+  return current;
+}
+
+async function removeRowByTradeIdUnlocked(sheets, sheetName, tradeId) {
   const values = await readSheet(sheets, sheetName);
   const rowNumber = findRowIndexByTradeId(values, tradeId);
 
@@ -1648,20 +1655,44 @@ async function removeRowByTradeId(sheets, sheetName, tradeId) {
   return existing;
 }
 
-async function cleanupStaleVixaleEdgePendingRows({
-  sheets: suppliedSheets = null,
-  now = new Date(),
-} = {}) {
-  const sheets = suppliedSheets || await getSheetsClient();
-  if (!sheets) {
-    return {
-      status: 'sheets_unavailable',
-      scanned: 0,
-      removed: 0,
-      removed_setup_ids: [],
-    };
+function removeRowByTradeId(sheets, sheetName, tradeId) {
+  if (sheetName === PENDING_SHEET) {
+    return withPendingSheetMutationLock(() =>
+      removeRowByTradeIdUnlocked(sheets, sheetName, tradeId)
+    );
   }
+  return removeRowByTradeIdUnlocked(sheets, sheetName, tradeId);
+}
 
+function findPendingRowIndexByExactSetupId(values, setupId) {
+  const wanted = String(setupId || '').trim();
+  if (!wanted) return -1;
+
+  for (let index = 1; index < values.length; index++) {
+    if (String(values[index]?.[0] || '').trim() === wanted) {
+      return index + 1;
+    }
+  }
+  return -1;
+}
+
+async function removePendingRowByExactSetupIdUnlocked(sheets, setupId) {
+  const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
+  const rowNumber = findPendingRowIndexByExactSetupId(values, setupId);
+  if (rowNumber < 0) return null;
+
+  const existing = values[rowNumber - 1];
+  await deleteSheetRow(sheets, PENDING_SHEET, rowNumber);
+  return existing;
+}
+
+function removePendingRowByExactSetupId(sheets, setupId) {
+  return withPendingSheetMutationLock(() =>
+    removePendingRowByExactSetupIdUnlocked(sheets, setupId)
+  );
+}
+
+async function cleanupStaleVixaleEdgePendingRowsUnlocked(sheets, now) {
   const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
   const staleSetupIds = new Set();
 
@@ -1719,6 +1750,25 @@ async function cleanupStaleVixaleEdgePendingRows({
   };
 }
 
+async function cleanupStaleVixaleEdgePendingRows({
+  sheets: suppliedSheets = null,
+  now = new Date(),
+} = {}) {
+  const sheets = suppliedSheets || await getSheetsClient();
+  if (!sheets) {
+    return {
+      status: 'sheets_unavailable',
+      scanned: 0,
+      removed: 0,
+      removed_setup_ids: [],
+    };
+  }
+
+  return withPendingSheetMutationLock(() =>
+    cleanupStaleVixaleEdgePendingRowsUnlocked(sheets, now)
+  );
+}
+
 let edgePendingEodCleanupInFlight = null;
 
 function runEdgePendingEodCleanup(options = {}) {
@@ -1753,7 +1803,7 @@ function startEdgePendingEodCleanupScheduler() {
   return timer;
 }
 
-async function removePendingRowsBySymbol(sheets, symbol) {
+async function removePendingRowsBySymbolUnlocked(sheets, symbol) {
   const wantedSymbol = normalizeSymbol(symbol);
   if (!wantedSymbol) return 0;
 
@@ -1774,7 +1824,13 @@ async function removePendingRowsBySymbol(sheets, symbol) {
   return removedCount;
 }
 
-async function removePendingRowsBySymbolAndSide(sheets, symbol, side) {
+function removePendingRowsBySymbol(sheets, symbol) {
+  return withPendingSheetMutationLock(() =>
+    removePendingRowsBySymbolUnlocked(sheets, symbol)
+  );
+}
+
+async function removePendingRowsBySymbolAndSideUnlocked(sheets, symbol, side) {
   const wantedSymbol = normalizeSymbol(symbol);
   const wantedSide = String(side || '').trim().toUpperCase();
 
@@ -1796,6 +1852,12 @@ async function removePendingRowsBySymbolAndSide(sheets, symbol, side) {
 
   console.log(`Pending rows removed by symbol/side ${wantedSymbol}/${wantedSide}: ${removedCount}`);
   return removedCount;
+}
+
+function removePendingRowsBySymbolAndSide(sheets, symbol, side) {
+  return withPendingSheetMutationLock(() =>
+    removePendingRowsBySymbolAndSideUnlocked(sheets, symbol, side)
+  );
 }
 
 async function appendToTradesSheet(sheets, row) {
@@ -1838,7 +1900,7 @@ async function appendToTradesSheet(sheets, row) {
   console.log('Trades row appended:', row.symbol, row.side, eventForSheet);
 }
 
-async function upsertPending(sheets, row) {
+async function upsertPendingUnlocked(sheets, row) {
   if (!row.trade_id) return { created: false };
 
   const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
@@ -1879,6 +1941,12 @@ async function upsertPending(sheets, row) {
   }
 
   return { created: sheetRow < 0 };
+}
+
+function upsertPending(sheets, row) {
+  return withPendingSheetMutationLock(() =>
+    upsertPendingUnlocked(sheets, row)
+  );
 }
 
 async function upsertOpenPosition(sheets, row, pendingRow = null) {
@@ -2616,10 +2684,9 @@ async function processLedger(row, dependencies = {}) {
         };
       }
 
-      const pendingRow = await removeRowByTradeId(
+      const pendingRow = await removePendingRowByExactSetupId(
         sheets,
-        PENDING_SHEET,
-        row.setup_id || row.trade_id
+        row.setup_id
       );
 
       if (!publicationState.open_exists) {
@@ -2661,7 +2728,7 @@ async function processLedger(row, dependencies = {}) {
     let removedCount = 0;
 
     if (isVixaleEdgePendingCancel(row)) {
-      removedPending = await removeRowByTradeId(sheets, PENDING_SHEET, row.setup_id);
+      removedPending = await removePendingRowByExactSetupId(sheets, row.setup_id);
       removedCount = removedPending ? 1 : 0;
       console.log('Vixale Edge exact pending cleanup:', row.setup_id, 'removed:', removedCount);
       return {

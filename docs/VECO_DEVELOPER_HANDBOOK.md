@@ -206,11 +206,18 @@ deleted by exact `setup_id`.
 This cleanup does not synthesize a `CANCEL` webhook or run `processLedger`.
 Consequently it sends no Telegram message, forwards nothing to the bridge,
 performs no IB/TWS action, and does not read or mutate Trades, Open Positions,
-Closed Trades, Prime/Shrek state, or active GTC targets. An in-flight guard
-prevents overlapping scheduler passes; deleting an already-removed
-`setup_id` is a harmless no-op. The immediate startup pass supplies restart
-and after-close catch-up even when the TradingView alert is stopped or its
-snapshot never executes the Pine final-bar logic.
+Closed Trades, Prime/Shrek state, or active GTC targets. One process-wide
+Pending-sheet mutation serializer covers the cleanup's complete
+read/classify/re-read/validate/delete transaction and every existing Pending
+upsert, exact setup removal, and symbol/side cleanup. Cleanup uses internal
+unlocked helpers while it owns that serializer, preventing nested-lock
+deadlocks. A webhook cannot shift Pending row numbers between cleanup
+validation and deletion; unrelated Open Positions and Closed Trades operations
+are not locked. The scheduler's separate in-flight guard still prevents
+overlapping cleanup passes, and deleting an already-removed `setup_id` remains
+a harmless no-op. The immediate startup pass supplies restart and after-close
+catch-up even when the TradingView alert is stopped or its snapshot never
+executes the Pine final-bar logic.
 
 An already-open Edge position is not closed at EOD. Its attached ATR target uses
 `GTC`, remains active overnight, and the payload declares
@@ -1711,6 +1718,7 @@ Edge unfilled Pending emits one final-bar CANCEL on 15m, 30m, 45m, and 60m
 Final-bar detection uses the explicit 09:30-16:00 New York custom-session close
 Regular- and extended-hours chart alignment does not change that custom close
 Render startup and interval cleanup remove exact stale Edge setup_id rows
+All Pending upserts/removals and EOD cleanup share one mutation serializer
 Render cleanup sends no Telegram or bridge/TWS request
 Render cleanup leaves Prime, Open Positions, Closed Trades, and GTC targets unchanged
 Edge Pending state and orange line are cleared before the next session
@@ -1851,7 +1859,11 @@ the mutable row timestamp. Current-date rows remain until 16:00 ET; prior-date
 rows are catch-up eligible on restart. Cleanup revalidates and deletes only
 exact Edge identities and never publishes Telegram, forwards to the bridge,
 touches execution-backed position/close sheets, or changes broker/GTC-target
-state.
+state. Its complete read-through-delete sequence shares one Pending-only
+mutation serializer with `PENDING_SETUP`, exact Edge `CANCEL`, `ENTRY_FILL`
+Pending removal, and legacy symbol/side cleanup. This prevents concurrent row
+deletions or appends from invalidating a validated row number without
+serializing unrelated Open Positions or Closed Trades work.
 **Reason:** Keep unfilled intent session-bounded while preserving the strategy's
 overnight-position design and execution-first public ledger. Permanent
 invalidation prevents an obsolete virtual order from silently reactivating
