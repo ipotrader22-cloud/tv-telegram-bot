@@ -192,6 +192,26 @@ untouched. A stored New York session date provides a fail-closed next-session
 fallback: missing-date or prior-date pending state is canceled before it can
 work in a later session.
 
+Render provides an independent fail-safe for the same virtual Pending state.
+On process startup and every five minutes thereafter, `app.js` reads only the
+`Pending` worksheet. It classifies Edge rows with the existing lifecycle
+helpers and derives their New York session date from immutable
+`flip_bar_time`, falling back to the timestamp embedded in the exact
+`setup_id`. It never uses the mutable worksheet update timestamp as the sole
+staleness source. A row from the current New York date is eligible only at or
+after 16:00 ET; a row from an earlier date is eligible immediately because its
+session is already complete. Eligible rows are re-read, revalidated, and
+deleted by exact `setup_id`.
+
+This cleanup does not synthesize a `CANCEL` webhook or run `processLedger`.
+Consequently it sends no Telegram message, forwards nothing to the bridge,
+performs no IB/TWS action, and does not read or mutate Trades, Open Positions,
+Closed Trades, Prime/Shrek state, or active GTC targets. An in-flight guard
+prevents overlapping scheduler passes; deleting an already-removed
+`setup_id` is a harmless no-op. The immediate startup pass supplies restart
+and after-close catch-up even when the TradingView alert is stopped or its
+snapshot never executes the Pine final-bar logic.
+
 An already-open Edge position is not closed at EOD. Its attached ATR target uses
 `GTC`, remains active overnight, and the payload declares
 `eod_policy=NO_EOD_CLOSE`. There is no Edge Pine EOD-close option or next-day
@@ -1323,6 +1343,13 @@ emulator may fill an order on that same closing tick or waits for the next
 available bar. It remains required for the queued next-RTH Strategy Tester
 behavior.
 
+The server-side safety layer is independent of TradingView execution. Render
+runs an immediate startup/catch-up pass and a five-minute interval pass over
+the `Pending` worksheet. It removes only exact, classified Edge `setup_id`
+rows whose immutable flip/session identity proves that the associated New York
+RTH session has completed. No alert runtime, bridge connection, broker
+position, or synthetic lifecycle callback is required.
+
 ### 13.3 TradingView quantity
 
 The Pine scripts derive quantity from TradingView Strategy Properties. FAM currently does not manage the Properties tab, so defaults such as `2% of equity` remain unless the Pine default or FAM is changed.
@@ -1683,6 +1710,9 @@ No duplicate Pine close is published later
 Edge unfilled Pending emits one final-bar CANCEL on 15m, 30m, 45m, and 60m
 Final-bar detection uses the explicit 09:30-16:00 New York custom-session close
 Regular- and extended-hours chart alignment does not change that custom close
+Render startup and interval cleanup remove exact stale Edge setup_id rows
+Render cleanup sends no Telegram or bridge/TWS request
+Render cleanup leaves Prime, Open Positions, Closed Trades, and GTC targets unchanged
 Edge Pending state and orange line are cleared before the next session
 Missing-date or prior-date Pending fails closed on the next session
 Edge open positions and active GTC targets remain untouched overnight
@@ -1813,10 +1843,22 @@ creation-time source/settings/interval, but it is not established as the
 incident root cause. `process_orders_on_close=false` controls simulated
 same-tick fills, not whether the confirmed-bar strategy calculation can execute
 a direct `alert()` call.
+
+Render independently scans the existing `Pending` worksheet at startup and
+every five minutes. It uses the existing Edge classifier plus immutable
+`flip_bar_time` or the timestamp embedded in the exact `setup_id`, never only
+the mutable row timestamp. Current-date rows remain until 16:00 ET; prior-date
+rows are catch-up eligible on restart. Cleanup revalidates and deletes only
+exact Edge identities and never publishes Telegram, forwards to the bridge,
+touches execution-backed position/close sheets, or changes broker/GTC-target
+state.
 **Reason:** Keep unfilled intent session-bounded while preserving the strategy's
 overnight-position design and execution-first public ledger. Permanent
 invalidation prevents an obsolete virtual order from silently reactivating
-after its confirming market structure has disappeared.
+after its confirming market structure has disappeared. The independent Render
+cleanup prevents an active, stopped, or divergent TradingView alert snapshot
+from leaving virtual Pending rows indefinitely without creating a second
+execution lifecycle.
 
 **Deployment dependency:** This Part 2 source and server support must not be
 activated in TradingView until the unfinished Part 3 migration is completed and

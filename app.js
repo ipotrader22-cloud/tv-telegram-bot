@@ -100,6 +100,7 @@ const OPTION_TRADE_TYPES = ['Credit', 'Debit'];
 const OPTION_STATUSES = ['Open', 'Closed', 'Cancelled'];
 
 const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UPDATE']);
+const EDGE_PENDING_EOD_CLEANUP_INTERVAL_MS = 300_000;
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LIVE QUOTE CACHE — updated by local TWS/IB bridge
@@ -334,6 +335,83 @@ function nowNy() {
   const get = type => parts.find(p => p.type === type)?.value || '';
 
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+function newYorkClockParts(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = type => parts.find(part => part.type === type)?.value || '';
+  const hour = Number(get('hour'));
+  const minute = Number(get('minute'));
+  const second = Number(get('second'));
+
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    minutesAfterMidnight: hour * 60 + minute + second / 60,
+  };
+}
+
+function newYorkDateFromTimestamp(value) {
+  let timestampMs = Number(value);
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+    timestampMs = Date.parse(String(value || ''));
+  } else if (timestampMs < 10_000_000_000) {
+    timestampMs *= 1000;
+  }
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return '';
+  return newYorkClockParts(new Date(timestampMs))?.date || '';
+}
+
+function setupTimestampFromIdentity(setupId) {
+  const parts = String(setupId || '').trim().split(':');
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+function edgePendingCleanupIdentity(sheetRow) {
+  const sheetSetupId = String(sheetRow?.[0] || '').trim();
+  const rawText = String(sheetRow?.[9] || '');
+  const raw = parseRawJsonSafe(rawText);
+  const rawSetupId = String(raw.setup_id || '').trim();
+  const setupId = rawSetupId || sheetSetupId;
+
+  if (!setupId || !sheetSetupId || (rawSetupId && rawSetupId !== sheetSetupId)) {
+    return null;
+  }
+
+  const lifecycleRow = {
+    ...raw,
+    setup_id: setupId,
+    trade_id: sheetSetupId,
+    raw: rawText,
+  };
+  if (!isVixaleEdgePendingLifecycleRow(lifecycleRow)) return null;
+
+  const sessionDate =
+    newYorkDateFromTimestamp(raw.flip_bar_time) ||
+    newYorkDateFromTimestamp(setupTimestampFromIdentity(setupId));
+  if (!sessionDate) return null;
+
+  return { setupId, sessionDate };
+}
+
+function isCompletedEdgePendingSession(sessionDate, now = new Date()) {
+  const clock = newYorkClockParts(now);
+  if (!clock || !sessionDate) return false;
+  if (sessionDate < clock.date) return true;
+  if (sessionDate > clock.date) return false;
+  return clock.minutesAfterMidnight >= 16 * 60;
 }
 
 function formatNyTimeFromMs(ms) {
@@ -1568,6 +1646,111 @@ async function removeRowByTradeId(sheets, sheetName, tradeId) {
   await deleteSheetRow(sheets, sheetName, rowNumber);
 
   return existing;
+}
+
+async function cleanupStaleVixaleEdgePendingRows({
+  sheets: suppliedSheets = null,
+  now = new Date(),
+} = {}) {
+  const sheets = suppliedSheets || await getSheetsClient();
+  if (!sheets) {
+    return {
+      status: 'sheets_unavailable',
+      scanned: 0,
+      removed: 0,
+      removed_setup_ids: [],
+    };
+  }
+
+  const values = await readSheet(sheets, PENDING_SHEET, 'A:J');
+  const staleSetupIds = new Set();
+
+  for (let index = 1; index < values.length; index++) {
+    const identity = edgePendingCleanupIdentity(values[index]);
+    if (
+      identity &&
+      isCompletedEdgePendingSession(identity.sessionDate, now)
+    ) {
+      staleSetupIds.add(identity.setupId);
+    }
+  }
+
+  if (!staleSetupIds.size) {
+    return {
+      status: 'completed',
+      scanned: Math.max(0, values.length - 1),
+      removed: 0,
+      removed_setup_ids: [],
+    };
+  }
+
+  const refreshed = await readSheet(sheets, PENDING_SHEET, 'A:J');
+  const removedSetupIds = [];
+  for (let index = refreshed.length - 1; index >= 1; index--) {
+    const setupId = String(refreshed[index]?.[0] || '').trim();
+    if (!staleSetupIds.has(setupId)) continue;
+
+    const identity = edgePendingCleanupIdentity(refreshed[index]);
+    if (
+      !identity ||
+      identity.setupId !== setupId ||
+      !isCompletedEdgePendingSession(identity.sessionDate, now)
+    ) {
+      continue;
+    }
+
+    await deleteSheetRow(sheets, PENDING_SHEET, index + 1);
+    removedSetupIds.push(setupId);
+  }
+
+  if (removedSetupIds.length) {
+    console.log(
+      'Vixale Edge server EOD Pending cleanup:',
+      removedSetupIds.length,
+      removedSetupIds.join(', ')
+    );
+  }
+
+  return {
+    status: 'completed',
+    scanned: Math.max(0, values.length - 1),
+    removed: removedSetupIds.length,
+    removed_setup_ids: removedSetupIds,
+  };
+}
+
+let edgePendingEodCleanupInFlight = null;
+
+function runEdgePendingEodCleanup(options = {}) {
+  if (edgePendingEodCleanupInFlight) return edgePendingEodCleanupInFlight;
+
+  edgePendingEodCleanupInFlight = cleanupStaleVixaleEdgePendingRows(options)
+    .catch(err => {
+      console.error('Vixale Edge server EOD Pending cleanup failed:', err);
+      return {
+        status: 'failed',
+        scanned: 0,
+        removed: 0,
+        removed_setup_ids: [],
+      };
+    })
+    .finally(() => {
+      edgePendingEodCleanupInFlight = null;
+    });
+
+  return edgePendingEodCleanupInFlight;
+}
+
+function startEdgePendingEodCleanupScheduler() {
+  setImmediate(() => {
+    void runEdgePendingEodCleanup();
+  });
+
+  const timer = setInterval(() => {
+    void runEdgePendingEodCleanup();
+  }, EDGE_PENDING_EOD_CLEANUP_INTERVAL_MS);
+  timer.unref?.();
+  return timer;
 }
 
 async function removePendingRowsBySymbol(sheets, symbol) {
@@ -9801,6 +9984,7 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+  startEdgePendingEodCleanupScheduler();
 }
 
 module.exports.__test = {
@@ -9812,4 +9996,7 @@ module.exports.__test = {
   shouldForwardToBridge,
   publicExitLabel,
   closedTradeExitDisplay,
+  cleanupStaleVixaleEdgePendingRows,
+  runEdgePendingEodCleanup,
+  isCompletedEdgePendingSession,
 };
