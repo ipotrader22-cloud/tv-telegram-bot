@@ -26,10 +26,11 @@ class EdgeLifecycle {
     return htf1H === required && htf4H === required;
   }
 
-  static isFinalRthBar(timeframeMinutes, barStartMinutes) {
-    return [15, 30, 45, 60].includes(timeframeMinutes) &&
-      barStartMinutes < 16 * 60 &&
-      barStartMinutes >= 16 * 60 - timeframeMinutes;
+  static isFinalCustomRthBar({ confirmed, customRthOpen, customRthClose, eod }) {
+    return confirmed &&
+      Number.isFinite(customRthOpen) &&
+      Number.isFinite(customRthClose) &&
+      customRthClose === eod;
   }
 
   flip({ rth, beforeClose, setupId, side, htf1H, htf4H }) {
@@ -80,8 +81,18 @@ class EdgeLifecycle {
     this.alerts.push(['OPEN', setupId]);
   }
 
-  eod({ timeframeMinutes = 60, barStartMinutes = 15 * 60 } = {}) {
-    if (!EdgeLifecycle.isFinalRthBar(timeframeMinutes, barStartMinutes)) return;
+  eod({
+    confirmed = true,
+    customRthOpen = 15 * 60 + 30,
+    customRthClose = 16 * 60,
+    eod = 16 * 60,
+  } = {}) {
+    if (!EdgeLifecycle.isFinalCustomRthBar({
+      confirmed,
+      customRthOpen,
+      customRthClose,
+      eod,
+    })) return;
     for (const setupId of [...this.pending.keys()]) {
       this.cancel(setupId, 'UNFILLED_BY_MARKET_CLOSE');
     }
@@ -166,14 +177,59 @@ sim.eod();
 assert.strictEqual(sim.alerts.length, alertCountAfterEod, 'EOD cancel is idempotent');
 assert.strictEqual(sim.closed.length, 0, 'pending cancel creates no closed trade');
 
-for (const [timeframeMinutes, barStartMinutes] of [
-  [15, 15 * 60 + 45],
-  [30, 15 * 60 + 30],
-  [45, 15 * 60 + 30],
-  [60, 15 * 60],
-]) {
+const finalCustomRthCases = [
+  { timeframeMinutes: 15, chartSession: 'regular', chartOpen: 15 * 60 + 45, chartClose: 16 * 60, customRthOpen: 15 * 60 + 45 },
+  { timeframeMinutes: 15, chartSession: 'extended', chartOpen: 15 * 60 + 45, chartClose: 16 * 60, customRthOpen: 15 * 60 + 45 },
+  { timeframeMinutes: 30, chartSession: 'regular', chartOpen: 15 * 60 + 30, chartClose: 16 * 60, customRthOpen: 15 * 60 + 30 },
+  { timeframeMinutes: 30, chartSession: 'extended', chartOpen: 15 * 60 + 30, chartClose: 16 * 60, customRthOpen: 15 * 60 + 30 },
+  { timeframeMinutes: 45, chartSession: 'regular', chartOpen: 15 * 60 + 30, chartClose: 16 * 60 + 15, customRthOpen: 15 * 60 + 30 },
+  { timeframeMinutes: 45, chartSession: 'extended', chartOpen: 15 * 60 + 45, chartClose: 16 * 60 + 30, customRthOpen: 15 * 60 + 30 },
+  { timeframeMinutes: 60, chartSession: 'regular', chartOpen: 15 * 60 + 30, chartClose: 16 * 60 + 30, customRthOpen: 15 * 60 + 30 },
+  { timeframeMinutes: 60, chartSession: 'extended', chartOpen: 15 * 60, chartClose: 16 * 60, customRthOpen: 15 * 60 + 30 },
+];
+
+function legacyClosingPredicate({
+  confirmed,
+  inRth,
+  chartOpen,
+  chartClose,
+  timeframeMinutes,
+  eod,
+}) {
+  return confirmed &&
+    inRth &&
+    chartOpen < eod &&
+    (
+      chartClose >= eod ||
+      (
+        [15, 30, 45, 60].includes(timeframeMinutes) &&
+        chartOpen >= eod - timeframeMinutes
+      )
+    );
+}
+
+assert(
+  finalCustomRthCases.every((testCase) =>
+    legacyClosingPredicate({
+      confirmed: true,
+      inRth: true,
+      chartOpen: testCase.chartOpen,
+      chartClose: testCase.chartClose,
+      timeframeMinutes: testCase.timeframeMinutes,
+      eod: 16 * 60,
+    })),
+  'the July 30 miss is not reproduced from the legacy predicate under modeled final-bar alignments alone'
+);
+
+for (const {
+  timeframeMinutes,
+  chartSession,
+  chartOpen,
+  chartClose,
+  customRthOpen,
+} of finalCustomRthCases) {
   const timeframeSim = new EdgeLifecycle();
-  const setupId = `VIXALE_EDGE:TEST:${timeframeMinutes}:LONG:${timeframeMinutes}`;
+  const setupId = `VIXALE_EDGE:TEST:${timeframeMinutes}:LONG:${chartSession}`;
   timeframeSim.flip({
     rth: true,
     beforeClose: true,
@@ -182,15 +238,52 @@ for (const [timeframeMinutes, barStartMinutes] of [
     htf1H: 'BULLISH',
     htf4H: 'BULLISH',
   });
-  timeframeSim.eod({ timeframeMinutes, barStartMinutes });
-  timeframeSim.eod({ timeframeMinutes, barStartMinutes });
-  assert.strictEqual(timeframeSim.pending.size, 0, `${timeframeMinutes}m final RTH bar clears Pending`);
+  timeframeSim.eod({
+    customRthOpen,
+    customRthClose: 16 * 60,
+    eod: 16 * 60,
+  });
+  timeframeSim.eod({
+    customRthOpen,
+    customRthClose: 16 * 60,
+    eod: 16 * 60,
+  });
+  assert.strictEqual(
+    timeframeSim.pending.size,
+    0,
+    `${timeframeMinutes}m ${chartSession} chart clears Pending from the final custom RTH bar`
+  );
   assert.strictEqual(
     timeframeSim.alerts.filter(([event]) => event === 'CANCEL').length,
     1,
-    `${timeframeMinutes}m final RTH bar emits exactly one CANCEL`
+    `${timeframeMinutes}m ${chartSession} chart emits exactly one final-custom-RTH CANCEL`
+  );
+  assert(
+    Number.isFinite(chartOpen) && Number.isFinite(chartClose),
+    'chart alignment is explicit but does not participate in final-custom-RTH detection'
   );
 }
+
+assert.strictEqual(
+  EdgeLifecycle.isFinalCustomRthBar({
+    confirmed: false,
+    customRthOpen: 15 * 60 + 30,
+    customRthClose: 16 * 60,
+    eod: 16 * 60,
+  }),
+  false,
+  'an unconfirmed final custom RTH bar cannot expire Pending'
+);
+assert.strictEqual(
+  EdgeLifecycle.isFinalCustomRthBar({
+    confirmed: true,
+    customRthOpen: 15 * 60,
+    customRthClose: 15 * 60 + 30,
+    eod: 16 * 60,
+  }),
+  false,
+  'an earlier custom RTH bar cannot expire Pending'
+);
 
 const staleSim = new EdgeLifecycle();
 staleSim.flip({
@@ -207,6 +300,36 @@ assert.deepStrictEqual(
   staleSim.alerts.at(-1),
   ['CANCEL', first, 'STALE_PRIOR_SESSION'],
   'next-session fallback publishes one exact stale-session CANCEL'
+);
+
+const isStalePending = ({ pending, storedSessionDate, currentSessionDate }) =>
+  pending && (!storedSessionDate || storedSessionDate !== currentSessionDate);
+assert.strictEqual(
+  isStalePending({
+    pending: true,
+    storedSessionDate: '',
+    currentSessionDate: '2026-07-31',
+  }),
+  true,
+  'missing stored session identity also fails closed as stale Pending'
+);
+assert.strictEqual(
+  isStalePending({
+    pending: true,
+    storedSessionDate: '2026-07-30',
+    currentSessionDate: '2026-07-31',
+  }),
+  true,
+  'a Pending setup from the prior New York date fails closed'
+);
+assert.strictEqual(
+  isStalePending({
+    pending: true,
+    storedSessionDate: '2026-07-31',
+    currentSessionDate: '2026-07-31',
+  }),
+  false,
+  'current-session Pending remains eligible for normal lifecycle checks'
 );
 
 sim.flip({
@@ -336,13 +459,39 @@ assert.match(pine, /HTF_4H_CONFIRMATION_LOST/);
 assert.match(pine, /STALE_PRIOR_SESSION/);
 assert.match(
   pine,
+  /pendingFromPriorSession =\s*pendingDirection != 0 and\s*\(\s*str\.length\(pendingSessionDate\) == 0 or\s*pendingSessionDate != currentSessionDate\s*\)/,
+  'next-session guard fails closed for a missing or different stored session date'
+);
+assert.match(
+  pine,
   /pendingCancelReason[\s\S]*?strategy\.cancel\("Long Limit"\)[\s\S]*?strategy\.cancel\("Short Limit"\)[\s\S]*?strategy\.cancel\("Long ATR Target"\)[\s\S]*?strategy\.cancel\("Short ATR Target"\)[\s\S]*?"CANCEL"[\s\S]*?pendingDirection := 0[\s\S]*?pendingSessionDate := ""/,
   'every invalidation cancels virtual entry/target, emits CANCEL, and clears all pending state'
 );
 assert.match(
   pine,
-  /timeframe\.multiplier == 15[\s\S]*?timeframe\.multiplier == 30[\s\S]*?timeframe\.multiplier == 45[\s\S]*?timeframe\.multiplier == 60[\s\S]*?time >= eodTimestamp - int\(timeframe\.in_seconds\(\) \* 1000\)/,
-  '15m, 30m, 45m, and 60m final bars use duration-based RTH expiration'
+  /rthBarOpenTimestamp = time\(\s*timeframe\.period,\s*rthSession,\s*sessionTimezone\)/,
+  'RTH membership uses the explicit custom New York session bar'
+);
+assert.match(
+  pine,
+  /rthBarCloseTimestamp = time_close\(\s*timeframe\.period,\s*rthSession,\s*sessionTimezone\)/,
+  'RTH close detection uses the custom-session time_close representation'
+);
+assert.match(
+  pine,
+  /isFinalCustomRthBar =\s*barstate\.isconfirmed and\s*inRth and\s*not na\(rthBarCloseTimestamp\) and\s*rthBarCloseTimestamp == eodTimestamp/,
+  'only the confirmed custom RTH bar ending exactly at 16:00 expires Pending'
+);
+assert.match(
+  pine,
+  /isBeforeFinalCustomRthBar =[\s\S]{0,160}rthBarCloseTimestamp < eodTimestamp/,
+  'setup creation and virtual-order work stop before the final custom RTH bar'
+);
+assert.doesNotMatch(pine, /time_close >= eodTimestamp/, 'chart time_close no longer drives RTH expiry');
+assert.doesNotMatch(
+  pine,
+  /eodTimestamp - int\(timeframe\.in_seconds\(\) \* 1000\)/,
+  'timeframe-duration heuristic no longer drives RTH expiry'
 );
 assert.match(pine, /payload_version\\":2/);
 assert.match(pine, /system_id\\":\\"VIXALE_EDGE/);

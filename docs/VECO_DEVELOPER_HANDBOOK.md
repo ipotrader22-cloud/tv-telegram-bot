@@ -181,12 +181,16 @@ for UAM/settings compatibility; disabling it fails closed by preventing new
 pending setups and never bypasses confirmation.
 
 For 15-, 30-, 45-, and 60-minute charts, Pine identifies the deterministic
-final RTH bar using the bar's New York open time plus its timeframe duration,
-not only `time_close` reaching 16:00. It publishes
+final custom RTH bar from `time()` and `time_close()` calls that explicitly use
+the `09:30-16:00` session and `America/New_York`. TradingView constructs that
+custom-session bar representation independently of the chart's regular- or
+extended-hours alignment, so the final custom bar closes exactly at the
+session's 16:00 boundary. The detector does not use the chart `time_close`
+variable or infer the final bar from timeframe duration. It publishes
 `UNFILLED_BY_MARKET_CLOSE` once and leaves open positions and their GTC targets
 untouched. A stored New York session date provides a fail-closed next-session
-fallback: stale pending state is canceled before it can work in a later
-session.
+fallback: missing-date or prior-date pending state is canceled before it can
+work in a later session.
 
 An already-open Edge position is not closed at EOD. Its attached ATR target uses
 `GTC`, remains active overnight, and the payload declares
@@ -562,11 +566,12 @@ Expiration: Open-ended
 ```
 
 Important: TradingView alerts store a snapshot of the strategy and its settings
-at creation time. Changing chart settings later does not update an existing
-alert. The alert must be recreated. Existing Vixale Edge alerts must be
-recreated after the current-SuperTrend pending-stop/chart update and again
-after the mandatory-HTF/permanent-invalidation/EOD-expiry update so they use
-the corrected Pine lifecycle.
+at creation time. Changing chart source, settings, symbol, or interval later
+does not update an existing alert. An alert may therefore remain active while
+its server-side snapshot differs from the visible chart instance. This is a
+possible diagnostic branch, not proof of any specific missed alert. Recreate
+the alert after every approved Pine lifecycle deployment so the active
+snapshot uses the reviewed source and settings.
 
 ---
 
@@ -1282,10 +1287,41 @@ Shrek and Fiona share a generic Opposite Flip strategy identifier. Always classi
 ### 13.2 TradingView alert snapshots
 
 Changing strategy settings or Pine source on the chart does not alter existing
-alerts. Recreate the alert. In particular, existing Vixale Edge alert instances
-retain the old pending `stop`, HTF eligibility, invalidation, and final-bar
-expiry semantics. Recreate every Edge alert after deploying a Pine lifecycle
-change.
+alerts. Recreate the alert after an approved Pine deployment. An alert can
+remain enabled and executing while retaining an older source/settings/interval
+snapshot; “active” does not prove that it matches the chart instance. Snapshot
+divergence must be verified from the alert configuration/logs rather than
+assumed from a missed event.
+
+### 13.2.1 July 30, 2026 Edge Pending expiry incident
+
+Eight active Edge Pending setups remained after 16:00 ET and no `CANCEL`
+appeared in the TradingView Alert Log. The alerts were not deleted, paused, or
+recreated before the close, so deletion is not a valid explanation. The local
+bridge's 15:59 `managed_symbols_checked=0` is also expected: Edge Pending
+setups are virtual TradingView/Render records, while the broker watchdog is
+intentionally restricted to managed Prime/Shrek positions.
+
+The legacy `isRthClosingBar` predicate was evaluated against modeled final bars
+for 15, 30, 45, and 60 minutes under both regular- and extended-hours chart
+alignments. Those modeled cases satisfied the predicate. Therefore the
+production miss was not reproduced from the predicate alone, and no single
+root cause is claimed without the exact server-side alert snapshot and runtime
+evidence.
+
+The hardened detector no longer mixes custom-session membership with the
+chart's `time` / `time_close` alignment. It compares the confirmed bar's
+explicit custom-session `time_close()` value directly with the New York 16:00
+timestamp. TradingView documents that these session-filtered functions create
+their own bar representations; a final custom bar can end at the session
+boundary even when its chart bar ends later.
+
+`process_orders_on_close=false` is not an explanation for a missing direct
+`alert()` call. With default strategy calculation settings, Pine still executes
+once on the confirmed bar's closing tick; the flag controls whether the broker
+emulator may fill an order on that same closing tick or waits for the next
+available bar. It remains required for the queued next-RTH Strategy Tester
+behavior.
 
 ### 13.3 TradingView quantity
 
@@ -1645,7 +1681,10 @@ Render receives confirmed close
 Dashboard and Sheets clear open rows
 No duplicate Pine close is published later
 Edge unfilled Pending emits one final-bar CANCEL on 15m, 30m, 45m, and 60m
+Final-bar detection uses the explicit 09:30-16:00 New York custom-session close
+Regular- and extended-hours chart alignment does not change that custom close
 Edge Pending state and orange line are cleared before the next session
+Missing-date or prior-date Pending fails closed on the next session
 Edge open positions and active GTC targets remain untouched overnight
 ```
 
@@ -1751,16 +1790,29 @@ flip, or RTH expiry. Cancellation removes the virtual entry and planned target,
 emits one publication-only `PENDING_ONLY` event, and clears the setup so later
 HTF realignment cannot reactivate it.
 
-The final RTH bar for 15-, 30-, 45-, and 60-minute alerts is recognized by New
-York cutoff and timeframe duration, with a stored-session fallback that
-prevents prior-session state from working the next day. Filled Edge positions
-are never closed at EOD; their ATR targets remain GTC overnight. `app.js`
-publishes Pending/CANCEL state to Sheets/site without Telegram, keeps
-pre-broker `SETUP` execution-first, and publishes Telegram/Open only after
-broker-confirmed `ENTRY_FILL`. A new pending setup publishes the current
-primary SuperTrend `stLine` as `stop`, while preserving the frozen prior level
-separately as `broken_stl`; broker-confirmed Telegram OPEN copy renders that
-threshold as `Close Under` for LONG and `Close Over` for SHORT.
+The final RTH bar for 15-, 30-, 45-, and 60-minute alerts is recognized only
+when the confirmed bar's explicit `09:30-16:00`
+`America/New_York` custom-session `time_close()` equals 16:00. The
+session-filtered `time()` / `time_close()` representation is independent of
+regular- versus extended-hours chart-bar alignment; the chart `time_close`
+variable and a timeframe-duration heuristic are not used. A stored-session
+fallback treats a missing or different New York date as stale and prevents
+prior-session state from working the next day. Filled Edge positions are never
+closed at EOD; their ATR targets remain GTC overnight. `app.js` publishes
+Pending/CANCEL state to Sheets/site without Telegram, keeps pre-broker `SETUP`
+execution-first, and publishes Telegram/Open only after broker-confirmed
+`ENTRY_FILL`. A new pending setup publishes the current primary SuperTrend
+`stLine` as `stop`, while preserving the frozen prior level separately as
+`broken_stl`; broker-confirmed Telegram OPEN copy renders that threshold as
+`Close Under` for LONG and `Close Over` for SHORT.
+
+The July 30, 2026 miss was not reproduced by applying the legacy predicate to
+modeled 15/30/45/60 final bars under regular and extended alignment. Alert
+snapshot divergence remains possible because TradingView alerts retain their
+creation-time source/settings/interval, but it is not established as the
+incident root cause. `process_orders_on_close=false` controls simulated
+same-tick fills, not whether the confirmed-bar strategy calculation can execute
+a direct `alert()` call.
 **Reason:** Keep unfilled intent session-bounded while preserving the strategy's
 overnight-position design and execution-first public ledger. Permanent
 invalidation prevents an obsolete virtual order from silently reactivating

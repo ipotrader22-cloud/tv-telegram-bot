@@ -286,10 +286,17 @@ f_htf_allows(_direction) =>
 //────────────────────────────────────────────────────────────
 // Session / Date Logic
 //────────────────────────────────────────────────────────────
-inRth = not na(time(
+rthBarOpenTimestamp = time(
      timeframe.period,
      rthSession,
-     sessionTimezone))
+     sessionTimezone)
+
+rthBarCloseTimestamp = time_close(
+     timeframe.period,
+     rthSession,
+     sessionTimezone)
+
+inRth = not na(rthBarOpenTimestamp)
 
 inDateRange =
      not useDateRange or
@@ -303,23 +310,19 @@ eodTimestamp = timestamp(
      16,
      0)
 
-isRthClosingBar =
+// time()/time_close() build bars from the explicit 09:30-16:00 New York
+// session. The final custom-session bar therefore closes at 16:00 even when
+// the chart's regular/extended-hours bars use a different alignment.
+isFinalCustomRthBar =
      barstate.isconfirmed and
      inRth and
-     time < eodTimestamp and
-     (
-         time_close >= eodTimestamp or
-         (
-             timeframe.isminutes and
-             (
-                 timeframe.multiplier == 15 or
-                 timeframe.multiplier == 30 or
-                 timeframe.multiplier == 45 or
-                 timeframe.multiplier == 60
-             ) and
-             time >= eodTimestamp - int(timeframe.in_seconds() * 1000)
-         )
-     )
+     not na(rthBarCloseTimestamp) and
+     rthBarCloseTimestamp == eodTimestamp
+
+isBeforeFinalCustomRthBar =
+     inRth and
+     not na(rthBarCloseTimestamp) and
+     rthBarCloseTimestamp < eodTimestamp
 
 currentSessionDate =
      str.format_time(time, "yyyy-MM-dd", sessionTimezone)
@@ -327,16 +330,14 @@ currentSessionDate =
 canCreateSetup =
      barstate.isconfirmed and
      inDateRange and
-     inRth and
-     time < eodTimestamp and
-     not isRthClosingBar and
+     isBeforeFinalCustomRthBar and
      strategy.position_size == 0
 
 canWorkEntryOrder =
      inDateRange and
      (
          not useRthOnly or
-         (inRth and time < eodTimestamp and not isRthClosingBar)
+         isBeforeFinalCustomRthBar
      )
 
 //────────────────────────────────────────────────────────────
@@ -659,12 +660,14 @@ pendingOppositePrimaryFlip =
 
 pendingFromPriorSession =
      pendingDirection != 0 and
-     str.length(pendingSessionDate) > 0 and
-     pendingSessionDate != currentSessionDate
+     (
+         str.length(pendingSessionDate) == 0 or
+         pendingSessionDate != currentSessionDate
+     )
 
 pendingCancelReason =
      pendingDirection == 0 ? "" :
-     isRthClosingBar ? "UNFILLED_BY_MARKET_CLOSE" :
+     isFinalCustomRthBar ? "UNFILLED_BY_MARKET_CLOSE" :
      pendingFromPriorSession ? "STALE_PRIOR_SESSION" :
      pendingOppositePrimaryFlip ? "REPLACED_BY_OPPOSITE_RTH_SIGNAL" :
      pendingLost1HConfirmation ? "HTF_1H_CONFIRMATION_LOST" :
@@ -707,7 +710,7 @@ if barstate.isconfirmed and str.length(pendingCancelReason) > 0 and strategy.pos
 // - Cancels/replaces any old pending limit setup.
 // - Creates a new frozen limit setup from the current flip.
 //────────────────────────────────────────────────────────────
-if bullFlip and inRth and time < eodTimestamp and not isRthClosingBar
+if bullFlip and isBeforeFinalCustomRthBar
     strategy.cancel("Long Limit")
     strategy.cancel("Short Limit")
     strategy.cancel("Long ATR Target")
@@ -759,7 +762,7 @@ if bullFlip and inRth and time < eodTimestamp and not isRthClosingBar
              setupFlipClose,
              setupLimitEntry))
 
-if bearFlip and inRth and time < eodTimestamp and not isRthClosingBar
+if bearFlip and isBeforeFinalCustomRthBar
     strategy.cancel("Long Limit")
     strategy.cancel("Short Limit")
     strategy.cancel("Long ATR Target")
@@ -822,12 +825,12 @@ if bearFlip and inRth and time < eodTimestamp and not isRthClosingBar
 //==================================================================================================
 queuedLongClose =
      bearFlip and
-     isRthClosingBar and
+     isFinalCustomRthBar and
      strategy.position_size > 0
 
 queuedShortClose =
      bullFlip and
-     isRthClosingBar and
+     isFinalCustomRthBar and
      strategy.position_size < 0
 
 queuedCloseSetupId =
