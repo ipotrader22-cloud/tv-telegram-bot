@@ -2,6 +2,7 @@ const express = require('express');
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const {
   createBrokerEodCallbackRegistry,
   runBrokerEodCallback,
@@ -25,8 +26,11 @@ const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
 const DASHBOARD_KEY = process.env.DASHBOARD_KEY || '';
 
-// Owner-only live dashboard. Must be different from the public DASHBOARD_KEY.
+// Single owner/master password. ADMIN_DASHBOARD_KEY is the preferred Render variable.
+// DASHBOARD_KEY remains only as a legacy fallback so existing deployments do not lock out the owner.
+// When ADMIN_DASHBOARD_KEY is configured, the old DASHBOARD_KEY is ignored for login.
 const ADMIN_DASHBOARD_KEY = process.env.ADMIN_DASHBOARD_KEY || '';
+const OWNER_DASHBOARD_KEY = ADMIN_DASHBOARD_KEY || DASHBOARD_KEY;
 
 // Shared secret used only by the local TWS bridge when pushing quote snapshots.
 // The bridge may send it in X-Vixale-Quote-Key or as ?key=... in RENDER_QUOTE_URL.
@@ -104,7 +108,13 @@ const OPTION_JOURNAL_HEADERS = ['ID', 'Trade Date', 'Entry Time', 'Symbol', 'Str
 const OPTION_PROOFS_SHEET = 'Option Proofs';
 const OPTION_PROOFS_HEADERS = ['ID', 'Trade ID', 'Storage Key', 'File Name', 'Mime Type', 'Size Bytes', 'Uploaded At'];
 const DASHBOARD_ACCESS_REQUESTS_SHEET = 'Dashboard Access Requests';
-const DASHBOARD_ACCESS_REQUESTS_HEADERS = ['ID', 'Requested At', 'Name', 'Email', 'Telegram', 'Source', 'Status'];
+const DASHBOARD_ACCESS_REQUESTS_HEADERS = ['ID', 'Requested At', 'Name', 'Email', 'Telegram', 'Source', 'Status', 'Code ID', 'Reviewed At'];
+const DASHBOARD_ACCESS_CODES_SHEET = 'Dashboard Access Codes';
+const DASHBOARD_ACCESS_CODES_HEADERS = ['ID', 'Code', 'Name', 'Email', 'Created At', 'Expires At', 'Status', 'Last Login At', 'Source Request ID', 'Telegram'];
+const DASHBOARD_VIEWER_DEFAULT_DAYS = Math.max(1, Math.min(365, Math.floor(envNumber('DASHBOARD_VIEWER_DEFAULT_DAYS', 30))));
+const DASHBOARD_SESSION_HOURS = Math.max(1, Math.min(168, Math.floor(envNumber('DASHBOARD_SESSION_HOURS', 12))));
+const DASHBOARD_ACCESS_CACHE_MS = Math.max(5_000, Math.min(300_000, Math.floor(envNumber('DASHBOARD_ACCESS_CACHE_MS', 30_000))));
+let dashboardAccessCodeCache = { loadedAt: 0, codes: [] };
 const OPTION_PROOFS_DIR = String(process.env.OPTION_PROOFS_DIR || '').trim();
 const OPTION_PROOF_MAX_FILES = 3;
 const OPTION_PROOF_MAX_BYTES = 1_400_000;
@@ -890,23 +900,121 @@ function parseCookies(req) {
   }, {});
 }
 
-function isDashboardAuthorized(req) {
-  const keyFromQuery = String(req.query.key || '').trim();
-  const cookies = parseCookies(req);
-  const keyFromCookie = String(cookies.vixale_dashboard_key || '').trim();
-  const dashboardKey = String(DASHBOARD_KEY || '').trim();
-
-  return Boolean(dashboardKey) && (keyFromQuery === dashboardKey || keyFromCookie === dashboardKey);
+function safeSecretEquals(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
 }
 
+function base64UrlEncode(value) {
+  return Buffer.from(String(value || ''), 'utf8')
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+  return Buffer.from(normalized + padding, 'base64').toString('utf8');
+}
+
+function dashboardSessionSecret() {
+  return String(OWNER_DASHBOARD_KEY || '').trim();
+}
+
+function createDashboardSession(role, subject, expiresAtMs) {
+  const secret = dashboardSessionSecret();
+  if (!secret) return '';
+  const payload = base64UrlEncode(JSON.stringify({
+    v: 1,
+    role: String(role || ''),
+    sub: String(subject || ''),
+    exp: Math.floor(Number(expiresAtMs || 0) / 1000),
+  }));
+  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64')
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${payload}.${signature}`;
+}
+
+function readDashboardSession(req) {
+  const cookies = parseCookies(req);
+  const token = String(cookies.vixale_dashboard_session || '').trim();
+  const secret = dashboardSessionSecret();
+  if (!token || !secret || !token.includes('.')) return null;
+
+  const [payload, signature] = token.split('.', 2);
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('base64')
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  if (!safeSecretEquals(signature, expected)) return null;
+
+  try {
+    const parsed = JSON.parse(base64UrlDecode(payload));
+    if (!parsed || parsed.v !== 1 || !parsed.role || !parsed.exp) return null;
+    if (Number(parsed.exp) * 1000 <= Date.now()) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setDashboardSessionCookie(res, role, subject, expiresAtMs) {
+  const token = createDashboardSession(role, subject, expiresAtMs);
+  if (!token) return;
+  const maxAge = Math.max(60_000, Number(expiresAtMs) - Date.now());
+  res.cookie('vixale_dashboard_session', token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge,
+  });
+}
+
+function clearDashboardSessionCookie(res) {
+  res.clearCookie('vixale_dashboard_session', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+  });
+  // Remove the legacy shared-password cookie as part of the migration.
+  res.clearCookie('vixale_dashboard_key', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+  });
+}
 
 function isAdminAuthorized(req) {
   const keyFromQuery = String(req.query.key || '').trim();
   const cookies = parseCookies(req);
   const keyFromCookie = String(cookies.vixale_admin_key || '').trim();
-  const adminKey = String(ADMIN_DASHBOARD_KEY || '').trim();
+  const adminKey = String(OWNER_DASHBOARD_KEY || '').trim();
 
-  return Boolean(adminKey) && (keyFromQuery === adminKey || keyFromCookie === adminKey);
+  return Boolean(adminKey) && (safeSecretEquals(keyFromQuery, adminKey) || safeSecretEquals(keyFromCookie, adminKey));
+}
+
+async function getDashboardAuthorization(req) {
+  const ownerKey = String(OWNER_DASHBOARD_KEY || '').trim();
+  const cookies = parseCookies(req);
+  const adminCookie = String(cookies.vixale_admin_key || '').trim();
+  if (ownerKey && safeSecretEquals(adminCookie, ownerKey)) {
+    return { authorized: true, role: 'owner', subject: 'owner' };
+  }
+
+  const session = readDashboardSession(req);
+  if (!session) return { authorized: false, role: '', subject: '' };
+  if (session.role === 'owner') return { authorized: true, role: 'owner', subject: 'owner' };
+  if (session.role !== 'viewer' || !session.sub) return { authorized: false, role: '', subject: '' };
+
+  try {
+    const code = await findDashboardAccessCodeById(session.sub);
+    if (!isDashboardAccessCodeActive(code)) return { authorized: false, role: '', subject: '' };
+    return { authorized: true, role: 'viewer', subject: code.id, viewer: code };
+  } catch (error) {
+    console.error('Dashboard viewer authorization error:', error);
+    return { authorized: false, role: '', subject: '' };
+  }
 }
 
 function isQuoteBridgeAuthorized(req) {
@@ -3129,7 +3237,7 @@ function renderAccessRequestOwnerEmailHtml({ name = '', email = '', telegram = '
           <div style="font-size:14px;line-height:1.9;color:#4d5a55;"><strong style="color:#101413;">Requested:</strong> ${safeRequestedAt}</div>
         </div>
         <a href="mailto:${safeEmail}" style="display:inline-block;background:#101413;color:#ffffff;text-decoration:none;border-radius:14px;padding:14px 20px;font-size:15px;font-weight:600;margin:2px 0 16px;">Reply to applicant</a>
-        <p style="font-size:13px;line-height:1.6;color:#8b9691;margin:0;">Access is not granted automatically. Send the current dashboard password only after you approve the request.</p>
+        <p style="font-size:13px;line-height:1.6;color:#8b9691;margin:0;">Access is not granted automatically. Approve the request in /admin/live, create a personal viewer code, and send that code to the applicant.</p>
       </div>
     </div>
   </div>`;
@@ -3146,31 +3254,37 @@ function renderAccessRequestOwnerEmailText({ name = '', email = '', telegram = '
     `Requested: ${requested_at || new Date().toISOString()}`,
     '',
     'Reply to this email to respond directly to the applicant.',
-    'Access is not granted automatically.',
+    'Access is not granted automatically. Approve the request in /admin/live and send the applicant a personal viewer code.',
   ].join('\n');
+}
+
+async function ensureSheetWithHeaders(sheets, sheetName, headers) {
+  const metadata = await sheets.spreadsheets.get({ spreadsheetId: GOOGLE_SHEET_ID });
+  if (!metadata.data.sheets.some(sheet => sheet.properties.title === sheetName)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] },
+    });
+  }
+
+  const endColumn = String.fromCharCode(64 + Math.min(26, headers.length));
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `'${sheetName}'!A1:${endColumn}1`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [headers] },
+  });
 }
 
 async function logDashboardAccessRequest(request) {
   const sheets = await getSheetsClient();
   if (!sheets) return false;
 
-  const metadata = await sheets.spreadsheets.get({ spreadsheetId: GOOGLE_SHEET_ID });
-  if (!metadata.data.sheets.some(sheet => sheet.properties.title === DASHBOARD_ACCESS_REQUESTS_SHEET)) {
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      requestBody: { requests: [{ addSheet: { properties: { title: DASHBOARD_ACCESS_REQUESTS_SHEET } } }] },
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: `'${DASHBOARD_ACCESS_REQUESTS_SHEET}'!A1:G1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [DASHBOARD_ACCESS_REQUESTS_HEADERS] },
-    });
-  }
+  await ensureSheetWithHeaders(sheets, DASHBOARD_ACCESS_REQUESTS_SHEET, DASHBOARD_ACCESS_REQUESTS_HEADERS);
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: GOOGLE_SHEET_ID,
-    range: `'${DASHBOARD_ACCESS_REQUESTS_SHEET}'!A:G`,
+    range: `'${DASHBOARD_ACCESS_REQUESTS_SHEET}'!A:I`,
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
@@ -3182,11 +3296,207 @@ async function logDashboardAccessRequest(request) {
         request.telegram,
         request.source,
         request.status,
+        '',
+        '',
       ]],
     },
   });
 
   return true;
+}
+
+function normalizeDashboardAccessCode(value) {
+  return String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function generateDashboardAccessCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(8);
+  let body = '';
+  for (let i = 0; i < 8; i++) body += alphabet[bytes[i] % alphabet.length];
+  return `VX-${body.slice(0, 4)}-${body.slice(4)}`;
+}
+
+function parseDashboardAccessRequestRow(row, rowNumber) {
+  return {
+    id: String(row[0] || ''),
+    requested_at: String(row[1] || ''),
+    name: String(row[2] || ''),
+    email: String(row[3] || ''),
+    telegram: String(row[4] || ''),
+    source: String(row[5] || ''),
+    status: String(row[6] || 'Pending'),
+    code_id: String(row[7] || ''),
+    reviewed_at: String(row[8] || ''),
+    row_number: rowNumber,
+  };
+}
+
+function parseDashboardAccessCodeRow(row, rowNumber) {
+  return {
+    id: String(row[0] || ''),
+    code: normalizeDashboardAccessCode(row[1] || ''),
+    name: String(row[2] || ''),
+    email: String(row[3] || ''),
+    created_at: String(row[4] || ''),
+    expires_at: String(row[5] || ''),
+    status: String(row[6] || ''),
+    last_login_at: String(row[7] || ''),
+    source_request_id: String(row[8] || ''),
+    telegram: String(row[9] || ''),
+    row_number: rowNumber,
+  };
+}
+
+function isDashboardAccessCodeActive(code, nowMs = Date.now()) {
+  if (!code || String(code.status || '').toUpperCase() !== 'ACTIVE') return false;
+  const expiresAt = Date.parse(code.expires_at || '');
+  return Number.isFinite(expiresAt) && expiresAt > nowMs;
+}
+
+function invalidateDashboardAccessCodeCache() {
+  dashboardAccessCodeCache = { loadedAt: 0, codes: [] };
+}
+
+async function loadDashboardAccessCodes(force = false) {
+  if (!force && dashboardAccessCodeCache.loadedAt && Date.now() - dashboardAccessCodeCache.loadedAt < DASHBOARD_ACCESS_CACHE_MS) {
+    return dashboardAccessCodeCache.codes;
+  }
+
+  const sheets = await getSheetsClient();
+  if (!sheets) return [];
+  await ensureSheetWithHeaders(sheets, DASHBOARD_ACCESS_CODES_SHEET, DASHBOARD_ACCESS_CODES_HEADERS);
+  const values = await readSheet(sheets, DASHBOARD_ACCESS_CODES_SHEET, 'A:J');
+  const codes = values.slice(1).filter(row => row[0]).map((row, index) => parseDashboardAccessCodeRow(row, index + 2));
+  dashboardAccessCodeCache = { loadedAt: Date.now(), codes };
+  return codes;
+}
+
+async function findDashboardAccessCodeById(id) {
+  const wanted = String(id || '').trim();
+  if (!wanted) return null;
+  const codes = await loadDashboardAccessCodes();
+  return codes.find(code => code.id === wanted) || null;
+}
+
+async function findDashboardAccessCodeByCode(value) {
+  const wanted = normalizeDashboardAccessCode(value);
+  if (!wanted) return null;
+  const codes = await loadDashboardAccessCodes(true);
+  return codes.find(code => code.code === wanted) || null;
+}
+
+async function dashboardAccessAdminData() {
+  const sheets = await getSheetsClient();
+  if (!sheets) return { requests: [], codes: [], configured: false };
+
+  await ensureSheetWithHeaders(sheets, DASHBOARD_ACCESS_REQUESTS_SHEET, DASHBOARD_ACCESS_REQUESTS_HEADERS);
+  await ensureSheetWithHeaders(sheets, DASHBOARD_ACCESS_CODES_SHEET, DASHBOARD_ACCESS_CODES_HEADERS);
+  const [requestValues, codeValues] = await Promise.all([
+    readSheet(sheets, DASHBOARD_ACCESS_REQUESTS_SHEET, 'A:I'),
+    readSheet(sheets, DASHBOARD_ACCESS_CODES_SHEET, 'A:J'),
+  ]);
+
+  const requests = requestValues.slice(1).filter(row => row[0]).map((row, index) => parseDashboardAccessRequestRow(row, index + 2));
+  const codes = codeValues.slice(1).filter(row => row[0]).map((row, index) => parseDashboardAccessCodeRow(row, index + 2));
+  codes.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  requests.sort((a, b) => String(b.requested_at).localeCompare(String(a.requested_at)));
+  dashboardAccessCodeCache = { loadedAt: Date.now(), codes };
+  return { requests, codes, configured: true };
+}
+
+async function updateDashboardAccessRequest(request, fields = {}) {
+  if (!request || !request.row_number) return false;
+  const sheets = await getSheetsClient();
+  if (!sheets) return false;
+  const status = fields.status ?? request.status;
+  const codeId = fields.code_id ?? request.code_id;
+  const reviewedAt = fields.reviewed_at ?? request.reviewed_at;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `'${DASHBOARD_ACCESS_REQUESTS_SHEET}'!G${request.row_number}:I${request.row_number}`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [[status, codeId, reviewedAt]] },
+  });
+  return true;
+}
+
+async function createDashboardViewerCode({ name = '', email = '', telegram = '', sourceRequestId = '', days = DASHBOARD_VIEWER_DEFAULT_DAYS } = {}) {
+  const sheets = await getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets is not configured.');
+  await ensureSheetWithHeaders(sheets, DASHBOARD_ACCESS_CODES_SHEET, DASHBOARD_ACCESS_CODES_HEADERS);
+
+  const safeDays = Math.max(1, Math.min(365, Math.floor(Number(days) || DASHBOARD_VIEWER_DEFAULT_DAYS)));
+  const existingCodes = await loadDashboardAccessCodes(true);
+  let code = '';
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = generateDashboardAccessCode();
+    if (!existingCodes.some(item => item.code === candidate)) { code = candidate; break; }
+  }
+  if (!code) throw new Error('Unable to generate a unique viewer code.');
+
+  const now = new Date();
+  const expires = new Date(now.getTime() + safeDays * 24 * 60 * 60 * 1000);
+  const record = {
+    id: crypto.randomUUID(),
+    code,
+    name: String(name || '').trim().slice(0, 100),
+    email: String(email || '').trim().toLowerCase().slice(0, 200),
+    created_at: now.toISOString(),
+    expires_at: expires.toISOString(),
+    status: 'ACTIVE',
+    last_login_at: '',
+    source_request_id: String(sourceRequestId || '').trim(),
+    telegram: String(telegram || '').trim().slice(0, 100),
+  };
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `'${DASHBOARD_ACCESS_CODES_SHEET}'!A:J`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: [[
+      record.id, record.code, record.name, record.email, record.created_at,
+      record.expires_at, record.status, record.last_login_at,
+      record.source_request_id, record.telegram,
+    ]] },
+  });
+  invalidateDashboardAccessCodeCache();
+  return record;
+}
+
+async function updateDashboardViewerCode(codeRecord, fields = {}) {
+  if (!codeRecord || !codeRecord.row_number) return false;
+  const sheets = await getSheetsClient();
+  if (!sheets) return false;
+  const values = [[
+    fields.id ?? codeRecord.id,
+    fields.code ?? codeRecord.code,
+    fields.name ?? codeRecord.name,
+    fields.email ?? codeRecord.email,
+    fields.created_at ?? codeRecord.created_at,
+    fields.expires_at ?? codeRecord.expires_at,
+    fields.status ?? codeRecord.status,
+    fields.last_login_at ?? codeRecord.last_login_at,
+    fields.source_request_id ?? codeRecord.source_request_id,
+    fields.telegram ?? codeRecord.telegram,
+  ]];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `'${DASHBOARD_ACCESS_CODES_SHEET}'!A${codeRecord.row_number}:J${codeRecord.row_number}`,
+    valueInputOption: 'RAW',
+    requestBody: { values },
+  });
+  invalidateDashboardAccessCodeCache();
+  return true;
+}
+
+async function touchDashboardViewerCodeLogin(codeRecord) {
+  try {
+    await updateDashboardViewerCode(codeRecord, { last_login_at: new Date().toISOString() });
+  } catch (error) {
+    console.error('Dashboard viewer last-login update failed:', error);
+  }
 }
 
 
@@ -4666,7 +4976,7 @@ function renderLandingHtml() {
           <a class="btn" href="/login">Dashboard Login</a>
         </div>
         <p class="hero-note">
-          The live dashboard is password-protected. Access requests are reviewed manually, so you can watch the systems before deciding what comes next.
+          The live dashboard is access-controlled. Approved viewers receive an individual code for the read-only dashboard.
         </p>
       </div>
 
@@ -4730,7 +5040,7 @@ function renderLandingHtml() {
           <div class="badge"><span class="dot"></span><span>Private dashboard access</span></div>
           <h2>Request access to the live dashboard.</h2>
           <p>
-            Send a short access request. Every request is reviewed manually before the dashboard password is provided.
+            Send a short access request. Every request is reviewed manually before an individual dashboard code is created.
           </p>
           <p>
             Once approved, you will receive a reply by email with the login instructions.
@@ -4738,7 +5048,7 @@ function renderLandingHtml() {
           <div class="soft-list">
             <div><strong>Reviewed.</strong> Access is never granted automatically.</div>
             <div><strong>Direct.</strong> The approval response goes to your email.</div>
-            <div><strong>Private.</strong> The dashboard remains password-protected.</div>
+            <div><strong>Private.</strong> Every approved viewer receives an individual access code.</div>
           </div>
         </div>
 
@@ -4906,7 +5216,7 @@ function renderLandingHtml() {
               <select id="appointment_type" name="request_type">
                 <option value="Automate trades with TWS / IBKR">Automate trades with TWS / IBKR</option>
                 <option value="Help me set everything up">Help me set everything up</option>
-                <option value="Request dashboard password">Request dashboard password</option>
+                <option value="Request dashboard access">Request dashboard access</option>
                 <option value="Not sure yet">Not sure yet</option>
               </select>
             </div>
@@ -5112,7 +5422,7 @@ function renderLandingHtml() {
         <div>
           <h2>Start by watching the live system.</h2>
           <p>
-            The live dashboard is password-protected. Request access, watch the systems, and decide your next step when you are ready.
+            The live dashboard is access-controlled. Request a personal viewer code, watch the systems, and decide your next step when you are ready.
           </p>
           <div class="small">The dashboard is for transparency, tracking, and education. Trading always involves risk.</div>
         </div>
@@ -5153,7 +5463,7 @@ function renderLandingHtmlRu() {
     ['Vixale live dashboard', 'Live Dashboard Vixale'],
     ['See the signals. See the trades. See the results.', 'Видите сигналы. Видите сделки. Видите результаты.'],
     ['Follow live signals, open trades, and recorded results in one private dashboard.', 'Следите за сигналами, открытыми сделками и зафиксированными результатами в одном приватном dashboard.'],
-    ['The live dashboard is password-protected. Access requests are reviewed manually, so you can watch the systems before deciding what comes next.', 'Live Dashboard защищен паролем. Заявки рассматриваются вручную, чтобы вы могли сначала посмотреть системы и только потом решить, что делать дальше.'],
+    ['The live dashboard is access-controlled. Approved viewers receive an individual code for the read-only dashboard.', 'Доступ к Live Dashboard контролируется. Одобренные зрители получают индивидуальный код для просмотра dashboard.'],
     ['Request Dashboard Access', 'Запросить доступ к dashboard'],
     ['Get Telegram Signals', 'Получать сигналы в Telegram'],
     ['Dashboard Login', 'Войти в dashboard'],
@@ -5174,14 +5484,14 @@ function renderLandingHtmlRu() {
 
     ['Private dashboard access', 'Доступ к приватному dashboard'],
     ['Request access to the live dashboard.', 'Запросите доступ к live dashboard.'],
-    ['Send a short access request. Every request is reviewed manually before the dashboard password is provided.', 'Отправьте короткую заявку. Каждая заявка рассматривается вручную до выдачи пароля от dashboard.'],
+    ['Send a short access request. Every request is reviewed manually before an individual dashboard code is created.', 'Отправьте короткую заявку. Каждая заявка рассматривается вручную до создания индивидуального кода доступа.'],
     ['Once approved, you will receive a reply by email with the login instructions.', 'После одобрения вы получите на email ответ с инструкциями для входа.'],
     ['Reviewed.', 'Проверяется.'],
     ['Access is never granted automatically.', 'Доступ никогда не выдается автоматически.'],
     ['Direct.', 'Напрямую.'],
     ['The approval response goes to your email.', 'Ответ об одобрении придет на ваш email.'],
     ['Private.', 'Закрыто.'],
-    ['The dashboard remains password-protected.', 'Dashboard остается защищенным паролем.'],
+    ['The dashboard remains password-protected.', 'Каждый одобренный зритель получает индивидуальный код доступа.'],
     ['Your name', 'Ваше имя'],
     ['Email', 'Email'],
     ['Telegram username <span style="color:var(--muted-2);font-weight:400;">(optional)</span>', 'Telegram username <span style="color:var(--muted-2);font-weight:400;">(необязательно)</span>'],
@@ -5348,7 +5658,7 @@ function renderAccessRequestReceivedHtml(email = '', name = '', lang = 'en') {
     body: 'Доступ рассматривается вручную. После одобрения вы получите ответ на email с инструкциями для входа.',
     dashboard: 'Страница входа',
     systems: 'Торговые системы',
-    note: 'Пароль не показывается и не отправляется автоматически. Торговля связана с риском, результаты не гарантированы.',
+    note: 'Код доступа не создается и не отправляется автоматически. Торговля связана с риском, результаты не гарантированы.',
   } : {
     title: 'Vixale | Access Request Received',
     badge: 'Access request received',
@@ -5357,7 +5667,7 @@ function renderAccessRequestReceivedHtml(email = '', name = '', lang = 'en') {
     body: 'Access is reviewed manually. Once approved, you will receive an email reply with the login instructions.',
     dashboard: 'Dashboard Login',
     systems: 'Trading Systems',
-    note: 'The password is not displayed or sent automatically. Trading involves risk and results are not guaranteed.',
+    note: 'An access code is not created or sent automatically. Trading involves risk and results are not guaranteed.',
   };
 
   return `<!DOCTYPE html>
@@ -7382,10 +7692,10 @@ function renderLoginHtml(errorMessage = '') {
   <div class="card">
     <div class="logo">Vixale<span>.</span></div>
     <h1>Dashboard access</h1>
-    <p>Enter the dashboard password. If you do not have access yet, submit a request from the home page.</p>
+    <p>Enter your personal viewer code or the owner password. Viewer codes open the read-only dashboard only.</p>
     <form method="POST" action="/dashboard-login">
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
+      <label for="password">Password or access code</label>
+      <input id="password" name="password" type="password" autocomplete="one-time-code" autofocus />
       <button type="submit">Open Dashboard</button>
     </form>
     ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
@@ -8180,10 +8490,10 @@ function renderAdminLoginHtml(errorMessage = '') {
   <div class="card">
     <div class="eyebrow">Owner-only access</div>
     <h1>Vixale Live Quotes</h1>
-    <p>This login is separate from the public dashboard password.</p>
+    <p>Use your single owner password here. Viewer codes never open owner pages.</p>
     ${error}
     <form method="POST" action="/admin-login">
-      <label for="admin_password">Admin password</label>
+      <label for="admin_password">Owner password</label>
       <input id="admin_password" name="password" type="password" autocomplete="current-password" required autofocus />
       <button type="submit">Open Owner Dashboard</button>
     </form>
@@ -8198,6 +8508,37 @@ function renderOwnerLiveDashboardHtml(data) {
   const s = data.summary || {};
   const q = data.quote_status || {};
   const optionJournal = data.option_journal || {};
+  const dashboardAccess = data.dashboard_access || { requests: [], codes: [], configured: false };
+  const pendingAccessRequests = (dashboardAccess.requests || []).filter(request => String(request.status || '').toUpperCase() === 'PENDING');
+  const accessRequestRows = pendingAccessRequests.map(request => `<tr>
+    <td>${escapeHtml(safeDateText(request.requested_at))}</td>
+    <td>${escapeHtml(request.name || '—')}</td>
+    <td>${escapeHtml(request.email)}</td>
+    <td>${escapeHtml(request.telegram || '—')}</td>
+    <td>${escapeHtml(request.source || 'Website')}</td>
+    <td><div class="access-row-actions">
+      <form method="post" action="/admin/access/requests/${encodeURIComponent(request.id)}/approve"><input type="hidden" name="days" value="${DASHBOARD_VIEWER_DEFAULT_DAYS}"><button class="table-action access-approve" type="submit">Create ${DASHBOARD_VIEWER_DEFAULT_DAYS}-Day Code</button></form>
+      <form method="post" action="/admin/access/requests/${encodeURIComponent(request.id)}/reject" onsubmit="return confirm('Reject this dashboard access request?')"><button class="table-action" type="submit">Reject</button></form>
+    </div></td>
+  </tr>`).join('');
+  const viewerCodeRows = (dashboardAccess.codes || []).map(code => {
+    const active = isDashboardAccessCodeActive(code);
+    const status = active ? 'ACTIVE' : (String(code.status || '').toUpperCase() === 'DISABLED' ? 'DISABLED' : 'EXPIRED');
+    return `<tr>
+      <td><code class="viewer-code">${escapeHtml(code.code)}</code><button class="copy-code" type="button" data-copy-code="${escapeHtml(code.code)}">Copy</button></td>
+      <td>${escapeHtml(code.name || '—')}</td>
+      <td>${escapeHtml(code.email || '—')}</td>
+      <td>${escapeHtml(safeDateText(code.expires_at))}</td>
+      <td><span class="access-status ${status.toLowerCase()}">${status}</span></td>
+      <td>${code.last_login_at ? escapeHtml(safeDateText(code.last_login_at)) : 'Never'}</td>
+      <td><div class="access-row-actions">
+        <form method="post" action="/admin/access/codes/${encodeURIComponent(code.id)}/extend"><input type="hidden" name="days" value="30"><button class="table-action" type="submit">+30 Days</button></form>
+        ${status === 'DISABLED'
+          ? `<form method="post" action="/admin/access/codes/${encodeURIComponent(code.id)}/enable"><button class="table-action access-approve" type="submit">Enable</button></form>`
+          : `<form method="post" action="/admin/access/codes/${encodeURIComponent(code.id)}/disable" onsubmit="return confirm('Disable this viewer code?')"><button class="table-action access-disable" type="submit">Disable</button></form>`}
+      </div></td>
+    </tr>`;
+  }).join('');
 
   const openRows = (data.open_positions || []).map(row => `
     <tr class="quote-row"
@@ -8321,7 +8662,28 @@ function renderOwnerLiveDashboardHtml(data) {
     .proof-upload-status.error { color:var(--red); }
     .journal-warning { margin:14px 17px; padding:12px 14px; border:1px solid #ecd49b; border-radius:14px; color:#76500a; background:#fff9e8; font-size:12px; }
     .owner-note { margin-top:16px; padding:13px 15px; border:1px solid #ecd49b; border-radius:15px; color:#76500a; background:#fff9e8; font-size:12px; line-height:1.5; }
-    @media(max-width:900px){ .cards{grid-template-columns:repeat(2,1fr)} .wrap{padding:12px} }
+    .access-manager { padding:17px; display:grid; gap:18px; }
+    .access-manager-grid { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr); gap:16px; }
+    .access-panel { border:1px solid var(--line); border-radius:18px; padding:16px; background:#fbfefd; }
+    .access-panel h3 { margin:0 0 7px; font-size:15px; font-weight:550; }
+    .access-panel p { margin:0 0 13px; color:var(--muted); font-size:12px; line-height:1.5; }
+    .access-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .access-form-grid label { display:block; color:var(--muted2); font-size:10px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px; }
+    .access-form-grid input { width:100%; border:1px solid var(--line); border-radius:11px; padding:10px 11px; background:#fff; color:var(--text); }
+    .access-form-grid .full { grid-column:1/-1; }
+    .access-row-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+    .access-row-actions form { margin:0; }
+    .access-approve { color:var(--green); border-color:#bfe9d2; background:var(--green-soft); }
+    .access-disable { color:var(--red); }
+    .viewer-code { display:inline-block; padding:6px 8px; border:1px solid var(--line); border-radius:9px; background:#f4f7f5; font-size:12px; letter-spacing:.04em; }
+    .copy-code { margin-left:6px; border:0; background:transparent; color:var(--green); cursor:pointer; font-size:11px; }
+    .access-status { display:inline-flex; padding:5px 8px; border-radius:999px; font-size:10px; border:1px solid var(--line); }
+    .access-status.active { color:var(--green); background:var(--green-soft); border-color:#bfe9d2; }
+    .access-status.disabled { color:var(--red); background:#fff1f2; border-color:#f1c4c9; }
+    .access-status.expired { color:var(--amber); background:#fff7df; border-color:#ecd49b; }
+    .access-table table { min-width:980px; }
+    .access-table th,.access-table td { text-align:left; }
+    @media(max-width:900px){ .cards{grid-template-columns:repeat(2,1fr)} .wrap{padding:12px} .access-manager-grid{grid-template-columns:1fr} .access-form-grid{grid-template-columns:1fr} .access-form-grid .full{grid-column:auto} }
   </style>
 </head>
 <body>
@@ -8385,6 +8747,45 @@ function renderOwnerLiveDashboardHtml(data) {
           <tbody>${pendingRows}</tbody>
         </table>` : `<div class="empty">No pending / working orders.</div>`}
       </div>
+    </div>
+
+    <div class="section" id="dashboard-access">
+      <div class="section-head">
+        <div><h2>Dashboard Access</h2><span>One owner password · individual viewer codes · read-only dashboard access.</span></div>
+        <span>${pendingAccessRequests.length} pending · ${(dashboardAccess.codes || []).filter(code => isDashboardAccessCodeActive(code)).length} active</span>
+      </div>
+      ${dashboardAccess.configured === false ? `<div class="journal-warning">Google Sheets is not configured, so viewer codes cannot be created.</div>` : `
+      <div class="access-manager">
+        <div class="access-manager-grid">
+          <div class="access-panel">
+            <h3>Pending requests</h3>
+            <p>Approve a request to generate a unique ${DASHBOARD_VIEWER_DEFAULT_DAYS}-day code. The code opens <code>/dashboard</code> only and never grants access to owner pages.</p>
+            <div class="table-wrap access-table">
+              ${accessRequestRows ? `<table><thead><tr><th>Requested</th><th>Name</th><th>Email</th><th>Telegram</th><th>Source</th><th>Action</th></tr></thead><tbody>${accessRequestRows}</tbody></table>` : `<div class="empty">No pending dashboard requests.</div>`}
+            </div>
+          </div>
+          <div class="access-panel">
+            <h3>Create a viewer code</h3>
+            <p>Create a code manually for a person who contacted you outside the website.</p>
+            <form method="post" action="/admin/access/codes/create">
+              <div class="access-form-grid">
+                <div><label>Name</label><input name="name" maxlength="100" required></div>
+                <div><label>Email</label><input name="email" type="email" maxlength="200"></div>
+                <div><label>Telegram</label><input name="telegram" maxlength="100" placeholder="@username"></div>
+                <div><label>Access days</label><input name="days" type="number" min="1" max="365" value="${DASHBOARD_VIEWER_DEFAULT_DAYS}" required></div>
+                <div class="full"><button class="btn primary" type="submit">Create Viewer Code</button></div>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="access-panel">
+          <h3>Viewer codes</h3>
+          <p>Codes can be copied, extended, disabled, or enabled individually. Your owner password remains only in Render Environment and is never written to Google Sheets.</p>
+          <div class="table-wrap access-table">
+            ${viewerCodeRows ? `<table><thead><tr><th>Code</th><th>Name</th><th>Email</th><th>Expires</th><th>Status</th><th>Last Login</th><th>Action</th></tr></thead><tbody>${viewerCodeRows}</tbody></table>` : `<div class="empty">No viewer codes created yet.</div>`}
+          </div>
+        </div>
+      </div>`}
     </div>
 
     <div class="section" id="option-journal">
@@ -8597,6 +8998,20 @@ function renderOwnerLiveDashboardHtml(data) {
           proofUploadActive = false;
           if (button) button.disabled = false;
           input.value = '';
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-copy-code]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const code = String(button.dataset.copyCode || '');
+        try {
+          await navigator.clipboard.writeText(code);
+          const original = button.textContent;
+          button.textContent = 'Copied';
+          window.setTimeout(() => { button.textContent = original; }, 1200);
+        } catch (_) {
+          window.prompt('Copy viewer code:', code);
         }
       });
     });
@@ -9954,7 +10369,7 @@ async function streamOptionProof(req, res, audience) {
     setPrivateNoStoreHeaders(res);
     if (!isAdminAuthorized(req)) return res.redirect('/admin/login');
   } else {
-    if (!isDashboardAuthorized(req)) return res.redirect('/login');
+    if (!(await getDashboardAuthorization(req)).authorized) return res.redirect('/login');
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   }
 
@@ -10016,7 +10431,7 @@ function renderOptionJournal(trades,f) {
 
 function optionAdmin(req,res) {
   setPrivateNoStoreHeaders(res);
-  if (!ADMIN_DASHBOARD_KEY) { res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.'); return false; }
+  if (!OWNER_DASHBOARD_KEY) { res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.'); return false; }
   if (!isAdminAuthorized(req)) { res.redirect('/admin/login'); return false; }
   return true;
 }
@@ -10031,7 +10446,7 @@ app.post('/admin/options/:id/delete',async(req,res)=>{try{if(!optionAdmin(req,re
 app.post('/admin/options/:id/proofs', async (req, res) => {
   try {
     setPrivateNoStoreHeaders(res);
-    if (!ADMIN_DASHBOARD_KEY) return res.status(500).json({ ok: false, error: 'ADMIN_DASHBOARD_KEY is not configured.' });
+    if (!OWNER_DASHBOARD_KEY) return res.status(500).json({ ok: false, error: 'ADMIN_DASHBOARD_KEY (owner password) is not configured.' });
     if (!isAdminAuthorized(req)) return res.status(401).json({ ok: false, error: 'Owner login required.' });
     if (!optionSameOrigin(req)) return res.status(403).json({ ok: false, error: 'Invalid request origin.' });
     if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid trade ID.' });
@@ -10091,7 +10506,10 @@ app.get('/risk-management', (req, res) => {
   res.status(200).send(renderRiskManagementHtml());
 });
 
-app.get('/login', (req, res) => {
+app.get('/login', async (req, res) => {
+  setPrivateNoStoreHeaders(res);
+  const authorization = await getDashboardAuthorization(req);
+  if (authorization.authorized) return res.redirect('/dashboard');
   res.status(200).send(renderLoginHtml());
 });
 
@@ -10368,8 +10786,8 @@ app.post('/bridge/quotes', handleBridgeQuoteUpdate);
 app.get('/admin/login', (req, res) => {
   setPrivateNoStoreHeaders(res);
 
-  if (!ADMIN_DASHBOARD_KEY) {
-    return res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.');
+  if (!OWNER_DASHBOARD_KEY) {
+    return res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.');
   }
 
   if (isAdminAuthorized(req)) {
@@ -10382,23 +10800,25 @@ app.get('/admin/login', (req, res) => {
 app.post('/admin-login', (req, res) => {
   setPrivateNoStoreHeaders(res);
 
-  if (!ADMIN_DASHBOARD_KEY) {
-    return res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.');
+  if (!OWNER_DASHBOARD_KEY) {
+    return res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.');
   }
 
   const password = String(req.body.password || '').trim();
-  const adminKey = String(ADMIN_DASHBOARD_KEY || '').trim();
+  const adminKey = String(OWNER_DASHBOARD_KEY || '').trim();
 
   if (password !== adminKey) {
     return res.status(401).send(renderAdminLoginHtml('Incorrect owner password.'));
   }
 
+  const expiresAt = Date.now() + DASHBOARD_SESSION_HOURS * 60 * 60 * 1000;
   res.cookie('vixale_admin_key', adminKey, {
     httpOnly: true,
     secure: true,
     sameSite: 'strict',
-    maxAge: 1000 * 60 * 60 * 8,
+    maxAge: DASHBOARD_SESSION_HOURS * 60 * 60 * 1000,
   });
+  setDashboardSessionCookie(res, 'owner', 'owner', expiresAt);
 
   return res.redirect('/admin/live');
 });
@@ -10407,19 +10827,19 @@ app.get('/admin/live', async (req, res) => {
   try {
     setPrivateNoStoreHeaders(res);
 
-    if (!ADMIN_DASHBOARD_KEY) {
-      return res.status(500).send('ADMIN_DASHBOARD_KEY is not configured.');
+    if (!OWNER_DASHBOARD_KEY) {
+      return res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.');
     }
 
     const keyFromQuery = String(req.query.key || '').trim();
-    const adminKey = String(ADMIN_DASHBOARD_KEY || '').trim();
+    const adminKey = String(OWNER_DASHBOARD_KEY || '').trim();
 
     if (keyFromQuery === adminKey) {
       res.cookie('vixale_admin_key', adminKey, {
         httpOnly: true,
         secure: true,
         sameSite: 'strict',
-        maxAge: 1000 * 60 * 60 * 8,
+        maxAge: DASHBOARD_SESSION_HOURS * 60 * 60 * 1000,
       });
 
       return res.redirect('/admin/live');
@@ -10431,6 +10851,14 @@ app.get('/admin/live', async (req, res) => {
 
     const data = await getOwnerDashboardData();
     data.option_journal = { trades: [], error: false };
+    data.dashboard_access = { requests: [], codes: [], configured: false, error: false };
+
+    try {
+      data.dashboard_access = { ...(await dashboardAccessAdminData()), error: false };
+    } catch (accessError) {
+      console.error('Owner dashboard access manager error:', accessError);
+      data.dashboard_access.error = true;
+    }
 
     try {
       const journal = await optionJournalDataWithProofs();
@@ -10465,54 +10893,187 @@ app.get('/admin/logout', (req, res) => {
     secure: true,
     sameSite: 'strict',
   });
+  clearDashboardSessionCookie(res);
 
   return res.redirect('/admin/login');
 });
 
 
-app.post('/dashboard-login', (req, res) => {
-  if (!DASHBOARD_KEY) {
-    return res.status(500).send('Dashboard key is not configured.');
+function adminAccessRequestAllowed(req, res) {
+  setPrivateNoStoreHeaders(res);
+  if (!OWNER_DASHBOARD_KEY) { res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.'); return false; }
+  if (!isAdminAuthorized(req)) { res.redirect('/admin/login'); return false; }
+  if (!optionSameOrigin(req)) { res.status(403).send('Invalid request origin.'); return false; }
+  return true;
+}
+
+app.post('/admin/access/requests/:id/approve', async (req, res) => {
+  try {
+    if (!adminAccessRequestAllowed(req, res)) return;
+    const access = await dashboardAccessAdminData();
+    const request = access.requests.find(item => item.id === String(req.params.id || ''));
+    if (!request) return res.status(404).send('Dashboard access request not found.');
+    if (String(request.status || '').toUpperCase() !== 'PENDING') return res.redirect('/admin/live#dashboard-access');
+
+    const code = await createDashboardViewerCode({
+      name: request.name,
+      email: request.email,
+      telegram: request.telegram,
+      sourceRequestId: request.id,
+      days: req.body.days,
+    });
+    await updateDashboardAccessRequest(request, { status: 'Approved', code_id: code.id, reviewed_at: new Date().toISOString() });
+    return res.redirect('/admin/live#dashboard-access');
+  } catch (error) {
+    console.error('Dashboard access approval error:', error);
+    return res.status(500).send('Unable to approve dashboard access request.');
+  }
+});
+
+app.post('/admin/access/requests/:id/reject', async (req, res) => {
+  try {
+    if (!adminAccessRequestAllowed(req, res)) return;
+    const access = await dashboardAccessAdminData();
+    const request = access.requests.find(item => item.id === String(req.params.id || ''));
+    if (!request) return res.status(404).send('Dashboard access request not found.');
+    await updateDashboardAccessRequest(request, { status: 'Rejected', reviewed_at: new Date().toISOString() });
+    return res.redirect('/admin/live#dashboard-access');
+  } catch (error) {
+    console.error('Dashboard access rejection error:', error);
+    return res.status(500).send('Unable to reject dashboard access request.');
+  }
+});
+
+app.post('/admin/access/codes/create', async (req, res) => {
+  try {
+    if (!adminAccessRequestAllowed(req, res)) return;
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!name) return res.status(400).send('Name is required.');
+    if (email && !isValidEmail(email)) return res.status(400).send('Email is invalid.');
+    await createDashboardViewerCode({ name, email, telegram: req.body.telegram, days: req.body.days });
+    return res.redirect('/admin/live#dashboard-access');
+  } catch (error) {
+    console.error('Manual dashboard code creation error:', error);
+    return res.status(500).send('Unable to create viewer code.');
+  }
+});
+
+app.post('/admin/access/codes/:id/disable', async (req, res) => {
+  try {
+    if (!adminAccessRequestAllowed(req, res)) return;
+    const codes = await loadDashboardAccessCodes(true);
+    const code = codes.find(item => item.id === String(req.params.id || ''));
+    if (!code) return res.status(404).send('Viewer code not found.');
+    await updateDashboardViewerCode(code, { status: 'DISABLED' });
+    return res.redirect('/admin/live#dashboard-access');
+  } catch (error) {
+    console.error('Dashboard code disable error:', error);
+    return res.status(500).send('Unable to disable viewer code.');
+  }
+});
+
+app.post('/admin/access/codes/:id/enable', async (req, res) => {
+  try {
+    if (!adminAccessRequestAllowed(req, res)) return;
+    const codes = await loadDashboardAccessCodes(true);
+    const code = codes.find(item => item.id === String(req.params.id || ''));
+    if (!code) return res.status(404).send('Viewer code not found.');
+    const expiresAt = Date.parse(code.expires_at || '');
+    const nextExpiry = Number.isFinite(expiresAt) && expiresAt > Date.now()
+      ? code.expires_at
+      : new Date(Date.now() + DASHBOARD_VIEWER_DEFAULT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await updateDashboardViewerCode(code, { status: 'ACTIVE', expires_at: nextExpiry });
+    return res.redirect('/admin/live#dashboard-access');
+  } catch (error) {
+    console.error('Dashboard code enable error:', error);
+    return res.status(500).send('Unable to enable viewer code.');
+  }
+});
+
+app.post('/admin/access/codes/:id/extend', async (req, res) => {
+  try {
+    if (!adminAccessRequestAllowed(req, res)) return;
+    const codes = await loadDashboardAccessCodes(true);
+    const code = codes.find(item => item.id === String(req.params.id || ''));
+    if (!code) return res.status(404).send('Viewer code not found.');
+    const days = Math.max(1, Math.min(365, Math.floor(Number(req.body.days) || 30)));
+    const currentExpiry = Date.parse(code.expires_at || '');
+    const base = Number.isFinite(currentExpiry) && currentExpiry > Date.now() ? currentExpiry : Date.now();
+    await updateDashboardViewerCode(code, {
+      expires_at: new Date(base + days * 24 * 60 * 60 * 1000).toISOString(),
+      status: 'ACTIVE',
+    });
+    return res.redirect('/admin/live#dashboard-access');
+  } catch (error) {
+    console.error('Dashboard code extension error:', error);
+    return res.status(500).send('Unable to extend viewer code.');
+  }
+});
+
+
+app.post('/dashboard-login', async (req, res) => {
+  setPrivateNoStoreHeaders(res);
+  if (!OWNER_DASHBOARD_KEY) {
+    return res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.');
   }
 
   const password = String(req.body.password || '').trim();
-  const dashboardKey = String(DASHBOARD_KEY || '').trim();
+  const ownerKey = String(OWNER_DASHBOARD_KEY || '').trim();
 
-  if (password !== dashboardKey) {
-    return res.status(401).send(renderLoginHtml('Incorrect password. Please try again.'));
+  if (safeSecretEquals(password, ownerKey)) {
+    const expiresAt = Date.now() + DASHBOARD_SESSION_HOURS * 60 * 60 * 1000;
+    setDashboardSessionCookie(res, 'owner', 'owner', expiresAt);
+    res.cookie('vixale_admin_key', ownerKey, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: DASHBOARD_SESSION_HOURS * 60 * 60 * 1000,
+    });
+    return res.redirect('/dashboard');
   }
 
-  res.cookie('vixale_dashboard_key', String(DASHBOARD_KEY || '').trim(), {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    maxAge: 1000 * 60 * 60 * 12,
-  });
+  try {
+    const viewerCode = await findDashboardAccessCodeByCode(password);
+    if (!isDashboardAccessCodeActive(viewerCode)) {
+      return res.status(401).send(renderLoginHtml('Incorrect, disabled, or expired access code.'));
+    }
 
-  return res.redirect('/dashboard');
+    const codeExpiresAt = Date.parse(viewerCode.expires_at);
+    const sessionExpiresAt = Math.min(codeExpiresAt, Date.now() + DASHBOARD_SESSION_HOURS * 60 * 60 * 1000);
+    setDashboardSessionCookie(res, 'viewer', viewerCode.id, sessionExpiresAt);
+    void touchDashboardViewerCodeLogin(viewerCode);
+    return res.redirect('/dashboard');
+  } catch (error) {
+    console.error('Dashboard viewer login error:', error);
+    return res.status(503).send(renderLoginHtml('Viewer-code login is temporarily unavailable. Please try again.'));
+  }
 });
 
 app.get('/dashboard', async (req, res) => {
   try {
-    if (!DASHBOARD_KEY) {
-      return res.status(500).send('Dashboard key is not configured.');
+    if (!OWNER_DASHBOARD_KEY) {
+      return res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.');
     }
 
     const keyFromQuery = String(req.query.key || '').trim();
-    const dashboardKey = String(DASHBOARD_KEY || '').trim();
+    const ownerKey = String(OWNER_DASHBOARD_KEY || '').trim();
 
-    if (keyFromQuery === dashboardKey) {
-      res.cookie('vixale_dashboard_key', String(DASHBOARD_KEY || '').trim(), {
+    if (keyFromQuery && safeSecretEquals(keyFromQuery, ownerKey)) {
+      const expiresAt = Date.now() + DASHBOARD_SESSION_HOURS * 60 * 60 * 1000;
+      setDashboardSessionCookie(res, 'owner', 'owner', expiresAt);
+      res.cookie('vixale_admin_key', ownerKey, {
         httpOnly: true,
         secure: true,
-        sameSite: 'lax',
-        maxAge: 1000 * 60 * 60 * 12,
+        sameSite: 'strict',
+        maxAge: DASHBOARD_SESSION_HOURS * 60 * 60 * 1000,
       });
-
       return res.redirect('/dashboard');
     }
 
-    if (!isDashboardAuthorized(req)) {
+    const authorization = await getDashboardAuthorization(req);
+    if (!authorization.authorized) {
+      clearDashboardSessionCookie(res);
       return res.redirect('/login');
     }
 
@@ -10535,13 +11096,8 @@ app.get('/dashboard', async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  res.clearCookie('vixale_dashboard_key', {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-  });
-
-  return res.redirect('/');
+  clearDashboardSessionCookie(res);
+  return res.redirect('/login');
 });
 
 app.get('/health', (req, res) => {
@@ -10576,4 +11132,10 @@ module.exports.__test = {
   attachOptionProofs,
   optionProofMagicMatches,
   decodeOptionProofPayload,
+  normalizeDashboardAccessCode,
+  generateDashboardAccessCode,
+  isDashboardAccessCodeActive,
+  createDashboardSession,
+  readDashboardSession,
+  getDashboardAuthorization,
 };
