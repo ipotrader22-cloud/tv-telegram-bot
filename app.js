@@ -7536,9 +7536,29 @@ function renderMoney(value) {
   return formatMoney(n);
 }
 
-function renderDashboardHtml(data) {
+function renderDashboardHtml(data, locale = 'en') {
   const s = data.summary;
   const optionJournal = data.option_journal || {};
+  const isRu = String(locale || '').toLowerCase() === 'ru';
+  const optionJournalCopy = isRu
+    ? {
+        title: 'Опционный журнал',
+        subtitle: 'Последние 20 опционных сделок · скриншоты предоставлены владельцем и могут быть обрезаны или скрывать личные данные',
+        noteTitle: 'Почему IBKR может показывать BUY',
+        noteText: 'Vixale продает стрэддлы с получением премии. IBKR может отображать открытие combo-позиции как BUY по отрицательной цене: минус означает полученный кредит, а не расход. Последующая операция SELL закрывает combo-позицию.',
+        noteExample: 'BUY -48.50 = получение премии · SELL -38.65 = закрытие позиции',
+        unavailable: 'Опционный журнал временно недоступен',
+        empty: 'Опционных сделок пока нет.',
+      }
+    : {
+        title: 'Option Journal',
+        subtitle: 'Latest 20 option trades · screenshots are owner-provided and may be cropped or redacted',
+        noteTitle: 'Why IBKR may show BUY',
+        noteText: 'Vixale sells straddles for a credit. IBKR may display the opening combo as BUY at a negative price: the negative value is the credit received, not a debit. The later SELL transaction closes the combo.',
+        noteExample: 'BUY -48.50 = credit received · SELL -38.65 = closing transaction',
+        unavailable: 'Option Journal is temporarily unavailable',
+        empty: 'No option trades yet.',
+      };
 
   // Public open positions intentionally show only confirmed trade facts.
   // No current quote, running P&L, quote source, or distance calculations are rendered here.
@@ -7609,12 +7629,12 @@ function renderDashboardHtml(data) {
   }).join('');
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${isRu ? 'ru' : 'en'}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="refresh" content="30" />
-  <title>Vixale Live Strategy Dashboard</title>
+  <title>${isRu ? 'Vixale | Живой торговый дашборд' : 'Vixale Live Strategy Dashboard'}</title>
   <link rel="icon" type="image/png" href="${VIXALE_FAVICON_IMAGE}" />
   <style>
     :root {
@@ -7861,6 +7881,44 @@ function renderDashboardHtml(data) {
       font-weight: 400;
     }
 
+    .option-journal-head {
+      align-items: stretch;
+    }
+
+    .option-journal-title {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      min-width: 250px;
+    }
+
+    .ibkr-combo-note {
+      max-width: 610px;
+      padding: 12px 14px;
+      border: 1px solid #cfe6d9;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(233,255,243,.88), rgba(255,255,255,.94));
+      color: #334039;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .ibkr-combo-note strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #101713;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .ibkr-combo-example {
+      display: block;
+      margin-top: 5px;
+      color: var(--green);
+      font-variant-numeric: tabular-nums;
+    }
+
     .table-wrap { overflow-x: auto; }
 
     table {
@@ -8020,6 +8078,8 @@ function renderDashboardHtml(data) {
 
     @media (max-width: 720px) {
       .wrap { padding: 14px; }
+      .option-journal-head { flex-direction: column; align-items: stretch; }
+      .ibkr-combo-note { max-width: none; }
       .brand h1 { font-size: 25px; }
       .cards { grid-template-columns: repeat(2, 1fr); }
       .card { min-height: 90px; }
@@ -8172,12 +8232,19 @@ function renderDashboardHtml(data) {
     </div>
 
     <div class="section" id="option-journal">
-      <div class="section-header">
-        <h2>Option Journal</h2>
-        <span>Latest 20 option trades · screenshots are owner-provided and may be cropped or redacted</span>
+      <div class="section-header option-journal-head">
+        <div class="option-journal-title">
+          <h2>${optionJournalCopy.title}</h2>
+          <span>${optionJournalCopy.subtitle}</span>
+        </div>
+        <div class="ibkr-combo-note">
+          <strong>${optionJournalCopy.noteTitle}</strong>
+          ${optionJournalCopy.noteText}
+          <span class="ibkr-combo-example">${optionJournalCopy.noteExample}</span>
+        </div>
       </div>
       ${optionJournal.error
-        ? `<div class="journal-warning">Option Journal is temporarily unavailable</div>`
+        ? `<div class="journal-warning">${optionJournalCopy.unavailable}</div>`
         : `<div class="table-wrap">
           ${optionRows ? `
           <table style="min-width:1230px">
@@ -8189,7 +8256,7 @@ function renderDashboardHtml(data) {
               </tr>
             </thead>
             <tbody>${optionRows}</tbody>
-          </table>` : `<div class="empty">No option trades yet.</div>`}
+          </table>` : `<div class="empty">${optionJournalCopy.empty}</div>`}
         </div>`}
     </div>
 
@@ -10574,7 +10641,7 @@ app.get('/dashboard', async (req, res) => {
       data.option_journal.error = true;
     }
 
-    res.status(200).send(renderDashboardHtml(data));
+    res.status(200).send(renderDashboardHtml(data, isRussianRequest(req) ? 'ru' : 'en'));
   } catch (err) {
     console.error('Dashboard error:', err);
     res.status(500).send('Dashboard error');
