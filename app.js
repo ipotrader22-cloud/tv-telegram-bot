@@ -5561,7 +5561,7 @@ function renderTradingSystemsHtml() {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vixale | Trading Systems</title>
   <link rel="icon" type="image/png" href="${VIXALE_FAVICON_IMAGE}" />
-  <meta name="description" content="Explore Vixale Prime and Vixale Edge, compare their execution styles, and preview Vixale Ratio, Vixale Pairs, and Vixale Options Desk." />
+  <meta name="description" content="Explore Vixale systems for stocks, futures, and options, including Vixale Prime, Vixale Edge, Vixale Pairs, Vixale Futures, and the live Vixale Options Desk." />
   <style>
     :root {
       --bg: #fbfcfb;
@@ -5575,27 +5575,26 @@ function renderTradingSystemsHtml() {
       --green: #0bcf74;
       --green-dark: #078f51;
       --green-soft: #e9fff4;
+      --blue-soft: #eef4ff;
+      --blue-line: #d5e1ff;
+      --blue-ink: #315fac;
       --purple-soft: #f2ecff;
       --purple-line: #ded0ff;
       --purple-ink: #6b3fc7;
+      --graphite-soft: #f1f4f3;
+      --graphite-line: #d9e0dc;
       --shadow: 0 24px 70px rgba(16, 20, 19, 0.08);
       --shadow-soft: 0 14px 40px rgba(16, 20, 19, 0.06);
     }
 
-    * {
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     b, strong { font-weight: 500; }
     button, a, input, td, th, div, p, span, h1, h2, h3 {
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
-    html {
-      scroll-behavior: smooth;
-    }
-
+    html { scroll-behavior: smooth; }
     body {
       margin: 0;
       color: var(--ink);
@@ -5604,14 +5603,11 @@ function renderTradingSystemsHtml() {
         radial-gradient(circle at 86% 8%, rgba(11, 207, 116, 0.10), transparent 28%),
         linear-gradient(180deg, #fbfcfb 0%, #f6f9f6 58%, #ffffff 100%);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
+    a { color: inherit; text-decoration: none; }
+    section[id] { scroll-margin-top: 142px; }
 
     .nav {
       position: sticky;
@@ -5632,13 +5628,7 @@ function renderTradingSystemsHtml() {
       gap: 22px;
     }
 
-    .brand-lockup {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      color: var(--ink);
-    }
-
+    .brand-lockup { display: inline-flex; align-items: center; gap: 12px; color: var(--ink); }
     .brand-mark {
       position: relative;
       width: 34px;
@@ -5648,9 +5638,7 @@ function renderTradingSystemsHtml() {
       box-shadow: 0 10px 26px rgba(16, 20, 19, 0.10);
       overflow: hidden;
     }
-
-    .brand-mark::before,
-    .brand-mark::after {
+    .brand-mark::before, .brand-mark::after {
       content: "";
       position: absolute;
       bottom: 8px;
@@ -5660,37 +5648,11 @@ function renderTradingSystemsHtml() {
       border-radius: 99px;
       transform-origin: bottom center;
     }
-
-    .brand-mark::before {
-      left: 10px;
-      transform: rotate(-24deg);
-    }
-
-    .brand-mark::after {
-      right: 10px;
-      transform: rotate(24deg);
-      background: var(--green);
-    }
-
-    .brand-word {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      line-height: 1;
-    }
-
-    .brand-name {
-      font-size: 18px;
-      font-weight: 500;
-      letter-spacing: 0.16em;
-    }
-
-    .brand-tagline {
-      color: var(--muted-2);
-      font-size: 11px;
-      font-weight: 420;
-      letter-spacing: 0.02em;
-    }
+    .brand-mark::before { left: 10px; transform: rotate(-24deg); }
+    .brand-mark::after { right: 10px; transform: rotate(24deg); background: var(--green); }
+    .brand-word { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
+    .brand-name { font-size: 18px; font-weight: 500; letter-spacing: 0.16em; }
+    .brand-tagline { color: var(--muted-2); font-size: 11px; font-weight: 420; letter-spacing: 0.02em; }
 
     .nav-links {
       display: flex;
@@ -5700,11 +5662,7 @@ function renderTradingSystemsHtml() {
       font-size: 14px;
       font-weight: 480;
     }
-
-    .nav-links a:hover {
-      color: var(--ink);
-    }
-
+    .nav-links a:hover { color: var(--ink); }
     .nav-cta {
       padding: 10px 15px;
       border: 1px solid var(--line-2);
@@ -5714,16 +5672,8 @@ function renderTradingSystemsHtml() {
       box-shadow: 0 8px 24px rgba(16, 20, 19, 0.04);
     }
 
-    .wrap {
-      max-width: 1160px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    .page-hero {
-      padding: 54px 0 24px;
-    }
-
+    .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+    .page-hero { padding: 54px 0 18px; }
     .page-hero-inner {
       background: rgba(255,255,255,0.78);
       border: 1px solid var(--line);
@@ -5731,7 +5681,7 @@ function renderTradingSystemsHtml() {
       padding: 34px;
       box-shadow: var(--shadow);
       display: grid;
-      grid-template-columns: 1.05fr .95fr;
+      grid-template-columns: 1.06fr .94fr;
       gap: 28px;
       align-items: center;
       backdrop-filter: blur(18px);
@@ -5753,7 +5703,6 @@ function renderTradingSystemsHtml() {
       margin-bottom: 16px;
       overflow: hidden;
     }
-
     .dot {
       width: 10px;
       height: 10px;
@@ -5764,13 +5713,12 @@ function renderTradingSystemsHtml() {
 
     h1 {
       margin: 0;
-      max-width: 760px;
+      max-width: 790px;
       font-size: clamp(34px, 4.45vw, 54px);
       line-height: 1.04;
       letter-spacing: -1.75px;
       font-weight: 440;
     }
-
     h2 {
       margin: 0 0 10px;
       font-size: clamp(24px, 2.45vw, 32px);
@@ -5778,32 +5726,10 @@ function renderTradingSystemsHtml() {
       letter-spacing: -0.85px;
       font-weight: 450;
     }
-
-    h3 {
-      margin: 0 0 10px;
-      font-size: 21px;
-      letter-spacing: -0.45px;
-      font-weight: 450;
-    }
-
-    .accent {
-      color: var(--green-dark);
-    }
-
-    .lead {
-      margin: 16px 0 0;
-      color: #2f3b37;
-      font-size: 18px;
-      line-height: 1.65;
-      font-weight: 420;
-    }
-
-    .small-note {
-      margin-top: 14px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.55;
-    }
+    h3 { margin: 0 0 10px; font-size: 21px; letter-spacing: -0.45px; font-weight: 450; }
+    .accent { color: var(--green-dark); }
+    .lead { margin: 16px 0 0; color: #2f3b37; font-size: 18px; line-height: 1.65; font-weight: 420; }
+    .small-note { margin-top: 14px; color: var(--muted); font-size: 14px; line-height: 1.55; }
 
     .actions {
       display: grid;
@@ -5812,7 +5738,6 @@ function renderTradingSystemsHtml() {
       max-width: 470px;
       margin-top: 22px;
     }
-
     .btn {
       display: inline-flex;
       align-items: center;
@@ -5830,30 +5755,11 @@ function renderTradingSystemsHtml() {
       transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
       white-space: nowrap;
     }
-
-    .btn:hover {
-      transform: translateY(-1px);
-      border-color: #c7d4cc;
-      box-shadow: 0 16px 40px rgba(16, 20, 19, 0.07);
-      background: #fff;
-    }
-
-    .btn-primary {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: #fff;
-    }
-
-    .btn-primary:hover {
-      background: #000;
-      border-color: #000;
-    }
-
-    .btn-green {
-      background: var(--green-soft);
-      border-color: #bfead5;
-      color: #075f39;
-    }
+    .btn:hover { transform: translateY(-1px); border-color: #c7d4cc; box-shadow: 0 16px 40px rgba(16,20,19,.07); background: #fff; }
+    .btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+    .btn-primary:hover { background: #000; border-color: #000; }
+    .btn-green { background: var(--green-soft); border-color: #bfead5; color: #075f39; }
+    .btn-purple { background: var(--purple-soft); border-color: var(--purple-line); color: var(--purple-ink); }
 
     .hero-panel {
       background: linear-gradient(135deg, rgba(233,255,244,0.90), rgba(255,255,255,0.96));
@@ -5862,54 +5768,89 @@ function renderTradingSystemsHtml() {
       padding: 24px;
       box-shadow: 0 18px 50px rgba(16,20,19,0.06);
     }
-
-    .difference {
+    .system-map { display: grid; gap: 10px; }
+    .system-map-row {
       display: grid;
+      grid-template-columns: 86px 1fr auto;
       gap: 12px;
-    }
-
-    .difference-row {
-      display: grid;
-      grid-template-columns: 96px 1fr;
-      gap: 12px;
-      align-items: start;
+      align-items: center;
       padding: 13px;
       border: 1px solid var(--line);
       border-radius: 18px;
-      background: rgba(255,255,255,0.72);
+      background: rgba(255,255,255,0.74);
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.45;
+      font-size: 13.5px;
+      line-height: 1.4;
     }
+    .system-map-row > span:first-child { color: var(--ink); font-weight: 500; }
 
-    .difference-row span {
-      color: var(--ink);
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid #bfead5;
+      background: var(--green-soft);
+      color: var(--green-dark);
+      font-size: 11px;
+      line-height: 1.15;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: .055em;
+      white-space: nowrap;
     }
+    .status-pill.soon { border-color: var(--graphite-line); background: var(--graphite-soft); color: var(--muted); }
+    .status-pill.options { border-color: var(--purple-line); background: var(--purple-soft); color: var(--purple-ink); }
 
-    .section {
-      padding: 24px 0;
+    .market-nav-shell {
+      position: sticky;
+      top: 69px;
+      z-index: 20;
+      padding: 10px 0 4px;
+      background: linear-gradient(180deg, rgba(251,252,251,.96), rgba(251,252,251,.82), rgba(251,252,251,0));
+      backdrop-filter: blur(12px);
     }
-
-    .section-head {
-      max-width: 720px;
-      margin-bottom: 16px;
-    }
-
-    .section-head .lead {
-      color: var(--muted);
-      font-size: 15.5px;
-      line-height: 1.58;
-      margin-top: 0;
-    }
-
-    .system-grid {
+    .market-nav {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      align-items: stretch;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,.86);
+      box-shadow: 0 14px 42px rgba(16,20,19,.06);
     }
+    .market-link {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid transparent;
+      border-radius: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      transition: .16s ease;
+    }
+    .market-link:hover { color: var(--ink); border-color: var(--line); background: #fff; }
+    .market-link strong { color: var(--ink); font-size: 14px; font-weight: 500; }
+    .market-link em { font-style: normal; color: var(--muted-2); white-space: nowrap; }
+    .market-link.options em { color: var(--purple-ink); }
 
+    .section { padding: 30px 0; }
+    .market-section {
+      position: relative;
+      border-top: 1px solid rgba(215,225,219,.72);
+      padding-top: 34px;
+    }
+    .section-head { max-width: 760px; margin-bottom: 18px; }
+    .section-head .lead { color: var(--muted); font-size: 15.5px; line-height: 1.58; margin-top: 0; }
+    .market-kicker { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .market-label { color: var(--muted-2); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; font-weight: 500; }
+
+    .system-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; }
     .system-card {
       background: rgba(255,255,255,0.76);
       border: 1px solid var(--line);
@@ -5920,22 +5861,8 @@ function renderTradingSystemsHtml() {
       flex-direction: column;
       min-height: 100%;
     }
-
-    .system-top {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 20px;
-    }
-
-    .system-name {
-      font-size: 31px;
-      line-height: 1;
-      letter-spacing: -0.9px;
-      font-weight: 450;
-    }
-
+    .system-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
+    .system-name { font-size: 31px; line-height: 1; letter-spacing: -0.9px; font-weight: 450; }
     .system-pill {
       border-radius: 999px;
       padding: 8px 11px;
@@ -5947,24 +5874,9 @@ function renderTradingSystemsHtml() {
       font-weight: 500;
       white-space: nowrap;
     }
-
-    .system-card.edge .system-pill {
-      border-color: var(--purple-line);
-      background: var(--purple-soft);
-      color: var(--purple-ink);
-    }
-
-    .system-card p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.65;
-    }
-
-    .system-summary {
-      min-height: 104px;
-    }
-
+    .system-card.edge .system-pill { border-color: var(--purple-line); background: var(--purple-soft); color: var(--purple-ink); }
+    .system-card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+    .system-summary { min-height: 104px; }
     .equity-visual {
       margin-top: 20px;
       border: 1px solid var(--line);
@@ -5973,35 +5885,8 @@ function renderTradingSystemsHtml() {
       background: #ffffff;
       box-shadow: 0 12px 34px rgba(16,20,19,0.045);
     }
-
-    .equity-visual img {
-      display: block;
-      width: 100%;
-      height: auto;
-      aspect-ratio: 4 / 3;
-      object-fit: cover;
-    }
-
-    .curve-cta-wrap {
-      display: flex;
-      justify-content: center;
-      margin-top: 18px;
-    }
-
-    .btn-wide {
-      width: min(100%, 520px);
-      padding: 15px 20px;
-      line-height: 1.35;
-      white-space: normal;
-      text-align: center;
-    }
-
-    .system-list {
-      display: grid;
-      gap: 10px;
-      margin-top: 20px;
-    }
-
+    .equity-visual img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; }
+    .system-list { display: grid; gap: 10px; margin-top: 20px; }
     .system-list div {
       border: 1px solid var(--line);
       border-radius: 16px;
@@ -6011,178 +5896,163 @@ function renderTradingSystemsHtml() {
       line-height: 1.45;
       padding: 12px 13px;
     }
+    .system-list strong { color: var(--ink); font-weight: 500; }
 
-    .system-list strong {
-      color: var(--ink);
+    .curve-cta-wrap { display: flex; justify-content: center; margin-top: 18px; }
+    .btn-wide { width: min(100%, 520px); padding: 15px 20px; line-height: 1.35; white-space: normal; text-align: center; }
+
+    .product-card {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1.04fr .96fr;
+      gap: 28px;
+      align-items: center;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background: rgba(255,255,255,.8);
+      box-shadow: var(--shadow-soft);
+    }
+    .product-card::after {
+      content: "";
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      border-radius: 999px;
+      right: -120px;
+      top: -130px;
+      pointer-events: none;
+    }
+    .product-card.pairs::after { background: radial-gradient(circle, rgba(49,95,172,.13), transparent 68%); }
+    .product-card.futures::after { background: radial-gradient(circle, rgba(88,104,97,.12), transparent 68%); }
+    .product-card.options::after { background: radial-gradient(circle, rgba(107,63,199,.14), transparent 68%); }
+    .product-copy, .product-visual { position: relative; z-index: 1; }
+    .product-title { margin: 0; font-size: clamp(26px, 3vw, 36px); line-height: 1.05; letter-spacing: -1px; font-weight: 450; }
+    .product-subtitle { margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .product-copy p { margin: 16px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+    .feature-chips { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 18px; }
+    .feature-chip {
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.78);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .concept-chart {
+      border: 1px solid var(--blue-line);
+      background: linear-gradient(180deg, #fbfdff, var(--blue-soft));
+      border-radius: 24px;
+      padding: 18px;
+      min-height: 210px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .concept-chart-top { display: flex; justify-content: space-between; gap: 12px; color: var(--blue-ink); font-size: 12px; }
+    .concept-chart svg { width: 100%; height: 130px; display: block; }
+    .concept-caption { color: var(--muted-2); font-size: 11.5px; line-height: 1.45; }
+
+    .future-visual {
+      border: 1px solid var(--graphite-line);
+      background: linear-gradient(180deg, #fff, var(--graphite-soft));
+      border-radius: 24px;
+      padding: 20px;
+      display: grid;
+      gap: 12px;
+    }
+    .future-row {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,.8);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .future-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1px solid var(--graphite-line);
+      color: #4d5a54;
+      font-size: 12px;
       font-weight: 500;
+    }
+    .future-row strong { display: block; color: var(--ink); font-weight: 500; margin-bottom: 2px; }
+    .future-row span:last-child { color: var(--muted-2); font-size: 11px; white-space: nowrap; }
+
+    .options-card {
+      border-color: var(--purple-line);
+      background: linear-gradient(135deg, rgba(255,255,255,.9), rgba(242,236,255,.72));
+    }
+    .options-points { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-top: 20px; }
+    .options-point {
+      padding: 14px;
+      border: 1px solid rgba(222,208,255,.9);
+      border-radius: 17px;
+      background: rgba(255,255,255,.72);
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.48;
+    }
+    .options-point strong { display: block; color: var(--ink); margin-bottom: 4px; font-weight: 500; }
+    .options-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+    .desk-preview {
+      border: 1px solid var(--purple-line);
+      border-radius: 24px;
+      padding: 18px;
+      background: rgba(255,255,255,.78);
+      box-shadow: 0 16px 44px rgba(107,63,199,.07);
+    }
+    .desk-preview-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
+    .desk-preview-head span:first-child { color: var(--ink); font-size: 14px; font-weight: 500; }
+    .desk-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid #eee8fb;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .desk-row:last-child { border-bottom: 0; }
+    .desk-row strong { color: var(--ink); display: block; margin-bottom: 2px; font-weight: 500; }
+    .desk-row span:last-child { color: var(--purple-ink); white-space: nowrap; font-size: 12px; }
+    .ibkr-note {
+      margin-top: 14px;
+      padding: 12px 13px;
+      border: 1px solid var(--purple-line);
+      border-radius: 15px;
+      background: var(--purple-soft);
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.5;
     }
 
     .comparison {
+      margin-top: 18px;
       background: rgba(255,255,255,0.78);
       border: 1px solid var(--line);
       border-radius: 30px;
       box-shadow: var(--shadow-soft);
       overflow: hidden;
     }
-
-    .future-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 16px;
-      align-items: stretch;
-    }
-
-    .future-card {
-      position: relative;
-      overflow: hidden;
-      background: rgba(255,255,255,0.78);
-      border: 1px solid var(--line);
-      border-radius: 28px;
-      padding: 24px;
-      box-shadow: var(--shadow-soft);
-      min-height: 290px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .future-card::after {
-      content: "";
-      position: absolute;
-      width: 150px;
-      height: 150px;
-      right: -64px;
-      top: -72px;
-      border-radius: 999px;
-      background: radial-gradient(circle, rgba(11,207,116,0.13), transparent 68%);
-      pointer-events: none;
-    }
-
-    .future-card.pairs::after {
-      background: radial-gradient(circle, rgba(55,115,255,0.12), transparent 68%);
-    }
-
-    .future-card.options::after {
-      background: radial-gradient(circle, rgba(107,63,199,0.12), transparent 68%);
-    }
-
-    .future-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 22px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .future-mark {
-      width: 42px;
-      height: 42px;
-      border-radius: 14px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--green-soft);
-      border: 1px solid #bfead5;
-      color: var(--green-dark);
-      font-size: 15px;
-      font-weight: 500;
-      letter-spacing: -0.02em;
-    }
-
-    .future-card.pairs .future-mark {
-      background: #eef4ff;
-      border-color: #d5e1ff;
-      color: #315fac;
-    }
-
-    .future-card.options .future-mark {
-      background: var(--purple-soft);
-      border-color: var(--purple-line);
-      color: var(--purple-ink);
-    }
-
-    .coming-pill {
-      border-radius: 999px;
-      padding: 7px 10px;
-      border: 1px solid var(--line-2);
-      background: rgba(255,255,255,0.82);
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.2;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      white-space: nowrap;
-    }
-
-    .future-title {
-      margin: 0;
-      font-size: 25px;
-      line-height: 1.08;
-      letter-spacing: -0.7px;
-      font-weight: 450;
-      position: relative;
-      z-index: 1;
-    }
-
-    .future-subtitle {
-      margin-top: 8px;
-      color: var(--green-dark);
-      font-size: 13px;
-      line-height: 1.4;
-      font-weight: 500;
-      position: relative;
-      z-index: 1;
-    }
-
-    .future-card.pairs .future-subtitle {
-      color: #315fac;
-    }
-
-    .future-card.options .future-subtitle {
-      color: var(--purple-ink);
-    }
-
-    .future-card p {
-      margin: 16px 0 0;
-      color: var(--muted);
-      font-size: 14.5px;
-      line-height: 1.62;
-      position: relative;
-      z-index: 1;
-    }
-
-    .future-note {
-      margin-top: auto;
-      padding-top: 20px;
-      color: var(--muted-2);
-      font-size: 12px;
-      line-height: 1.4;
-      position: relative;
-      z-index: 1;
-    }
-
-    .table-wrap {
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 760px;
-      background: rgba(255,255,255,0.84);
-    }
-
-    th, td {
-      padding: 16px 18px;
-      border-bottom: 1px solid #eef4f1;
-      text-align: left;
-      vertical-align: top;
-      font-size: 14px;
-      line-height: 1.45;
-    }
-
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; background: rgba(255,255,255,0.84); }
+    th, td { padding: 16px 18px; border-bottom: 1px solid #eef4f1; text-align: left; vertical-align: top; font-size: 14px; line-height: 1.45; }
     th {
       color: var(--muted-2);
       font-size: 11px;
@@ -6192,21 +6062,9 @@ function renderTradingSystemsHtml() {
       background: #fbfefd;
       font-weight: 500;
     }
-
-    td {
-      color: var(--muted);
-      font-weight: 400;
-    }
-
-    td:first-child {
-      color: var(--ink);
-      font-weight: 500;
-      width: 22%;
-    }
-
-    tr:last-child td {
-      border-bottom: 0;
-    }
+    td { color: var(--muted); font-weight: 400; }
+    td:first-child { color: var(--ink); font-weight: 500; width: 22%; }
+    tr:last-child td { border-bottom: 0; }
 
     .validation-box {
       background: linear-gradient(135deg, rgba(255,255,255,0.86), rgba(233,255,244,0.72));
@@ -6219,12 +6077,7 @@ function renderTradingSystemsHtml() {
       align-items: start;
       box-shadow: 0 24px 80px rgba(16,20,19,0.08);
     }
-
-    .validation-list {
-      display: grid;
-      gap: 10px;
-    }
-
+    .validation-list { display: grid; gap: 10px; }
     .validation-item {
       display: grid;
       grid-template-columns: 34px 1fr;
@@ -6238,7 +6091,6 @@ function renderTradingSystemsHtml() {
       font-size: 14px;
       line-height: 1.45;
     }
-
     .validation-item span {
       width: 34px;
       height: 34px;
@@ -6251,16 +6103,10 @@ function renderTradingSystemsHtml() {
       font-size: 13px;
       font-weight: 500;
     }
-
-    .validation-item strong {
-      display: block;
-      color: var(--ink);
-      margin-bottom: 2px;
-      font-weight: 500;
-    }
+    .validation-item strong { display: block; color: var(--ink); margin-bottom: 2px; font-weight: 500; }
 
     .access {
-      background: linear-gradient(135deg, rgba(233, 255, 244, 0.92), rgba(255, 255, 255, 0.96));
+      background: linear-gradient(135deg, rgba(233,255,244,.92), rgba(255,255,255,.96));
       color: var(--ink);
       border: 1px solid #cfe9dc;
       border-radius: 34px;
@@ -6271,84 +6117,35 @@ function renderTradingSystemsHtml() {
       align-items: center;
       box-shadow: 0 28px 80px rgba(16,20,19,.08);
     }
-
-    .access p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1.56;
-      max-width: 690px;
-    }
-
-    .access-actions {
-      display: grid;
-      gap: 12px;
-    }
-
-    .footer {
-      padding: 30px 0 38px;
-      color: var(--muted);
-      border-top: 1px solid var(--line);
-      font-size: 11.5px;
-      line-height: 1.65;
-    }
-
-    .footer strong {
-      color: var(--ink);
-      font-weight: 500;
-    }
+    .access p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.56; max-width: 690px; }
+    .access-actions { display: grid; gap: 12px; }
+    .footer { padding: 30px 0 38px; color: var(--muted); border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.65; }
+    .footer strong { color: var(--ink); font-weight: 500; }
 
     @media (max-width: 980px) {
-      .page-hero-inner,
+      .page-hero-inner, .system-grid, .product-card, .validation-box, .access { grid-template-columns: 1fr; }
       .system-summary { min-height: auto; }
+      .nav-links a:not(.nav-cta) { display: none; }
+      .actions { grid-template-columns: 1fr; }
+      .options-points { grid-template-columns: 1fr; }
+    }
 
-      .system-grid,
-      .future-grid,
-      .validation-box,
-      .access {
-        grid-template-columns: 1fr;
-      }
-
-      .nav-links a:not(.nav-cta) {
-        display: none;
-      }
-
-      .actions {
-        grid-template-columns: 1fr;
-      }
+    @media (max-width: 700px) {
+      .market-nav-shell { top: 68px; overflow-x: auto; }
+      .market-nav { min-width: 620px; }
+      .system-map-row { grid-template-columns: 76px 1fr; }
+      .system-map-row .status-pill { grid-column: 1 / -1; justify-self: start; }
     }
 
     @media (max-width: 560px) {
-      .wrap,
-      .nav-inner {
-        padding-left: 16px;
-        padding-right: 16px;
-      }
-
-      .page-hero {
-        padding-top: 34px;
-      }
-
-      .page-hero-inner,
-      .system-card,
-      .validation-box,
-      .access {
-        padding: 22px;
-        border-radius: 26px;
-      }
-
-      h1 {
-        font-size: 38px;
-        letter-spacing: -1.7px;
-      }
-
-      .difference-row {
-        grid-template-columns: 1fr;
-      }
-
-      .system-top {
-        flex-direction: column;
-      }
+      .wrap, .nav-inner { padding-left: 16px; padding-right: 16px; }
+      .page-hero { padding-top: 34px; }
+      .page-hero-inner, .system-card, .product-card, .validation-box, .access { padding: 22px; border-radius: 26px; }
+      h1 { font-size: 38px; letter-spacing: -1.7px; }
+      .system-top { flex-direction: column; }
+      .product-card { gap: 20px; }
+      .options-actions { display: grid; }
+      .options-actions .btn { width: 100%; }
     }
   </style>
 </head>
@@ -6377,10 +6174,10 @@ function renderTradingSystemsHtml() {
     <section class="wrap page-hero">
       <div class="page-hero-inner">
         <div>
-          <div class="badge"><span class="dot"></span><span>Vixale systems</span></div>
-          <h1>Two execution styles. <span class="accent">One live dashboard.</span></h1>
+          <div class="badge"><span class="dot"></span><span>Vixale system directory</span></div>
+          <h1>Multiple markets. <span class="accent">One transparent system hub.</span></h1>
           <p class="lead">
-            Vixale currently tracks two live system styles: Vixale Prime and Vixale Edge. Both are designed to identify structured market opportunities, send alerts, and track results inside the live dashboard.
+            Explore Vixale systems for stocks, futures, and options — from automated strategy tracking to human-directed options signals.
           </p>
           <div class="actions">
             <a class="btn btn-primary" href="/login">Open Dashboard</a>
@@ -6389,22 +6186,32 @@ function renderTradingSystemsHtml() {
         </div>
 
         <div class="hero-panel">
-          <h3>Main difference</h3>
-          <div class="difference">
-            <div class="difference-row"><span>Prime</span><div>Prioritizes confirmation. It waits for a confirmed trend-change signal and opens with a market order.</div></div>
-            <div class="difference-row"><span>Edge</span><div>Prioritizes entry price. It waits for a selected pullback and attempts to open with a limit order.</div></div>
+          <h3>System map</h3>
+          <div class="system-map">
+            <div class="system-map-row"><span>Stocks</span><div>Prime and Edge are live. Vixale Pairs is in development.</div><span class="status-pill">2 Live</span></div>
+            <div class="system-map-row"><span>Futures</span><div>Contract-specific systematic workflows are being developed separately.</div><span class="status-pill soon">Coming Soon</span></div>
+            <div class="system-map-row"><span>Options</span><div>Human-directed swing and intraday signals with a structured journal.</div><span class="status-pill options">Live</span></div>
           </div>
-          <div class="small-note">Both systems are tracked as live forward-test / paper-trading systems. Trading involves risk and results are not guaranteed.</div>
+          <div class="small-note">Each market uses its own execution, tracking, and risk framework rather than forcing every strategy into one model.</div>
         </div>
       </div>
     </section>
 
-    <section class="wrap section">
+    <div class="market-nav-shell">
+      <div class="wrap">
+        <nav class="market-nav" aria-label="Trading system categories">
+          <a class="market-link" href="#stocks"><strong>Stocks</strong><em>2 Live · 1 Soon</em></a>
+          <a class="market-link" href="#futures"><strong>Futures</strong><em>In Development</em></a>
+          <a class="market-link options" href="#options"><strong>Options</strong><em>Live Desk</em></a>
+        </nav>
+      </div>
+    </div>
+
+    <section class="wrap section market-section" id="stocks">
       <div class="section-head">
-        <h2>Vixale Prime and Vixale Edge</h2>
-        <p class="lead">
-          The systems are intentionally different. Vixale Prime is built around confirmation. Vixale Edge is built around pullback execution.
-        </p>
+        <div class="market-kicker"><span class="market-label">Stocks</span><span class="status-pill">2 Live Systems</span><span class="status-pill soon">1 Coming Soon</span></div>
+        <h2>Two execution styles for stocks.</h2>
+        <p class="lead">Vixale Prime prioritizes confirmation. Vixale Edge prioritizes entry price. Both are tracked inside the same live dashboard.</p>
       </div>
 
       <div class="system-grid">
@@ -6448,140 +6255,131 @@ function renderTradingSystemsHtml() {
       </div>
 
       <div class="curve-cta-wrap">
-        <a class="btn btn-green btn-wide" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Get Telegram signals for both systems for Free for 30 days</a>
+        <a class="btn btn-green btn-wide" href="${TELEGRAM_CHANNEL_URL}" target="_blank" rel="noopener noreferrer">Get Telegram signals for both stock systems for Free for 30 days</a>
       </div>
-    </section>
 
-    <section class="wrap section">
-      <div class="section-head">
-        <h2>System comparison</h2>
-        <p class="lead">
-          Same dashboard, different execution behavior. This is why Vixale Prime and Vixale Edge can show different open orders, fills, and trade timing.
-        </p>
+      <div class="product-card pairs" style="margin-top:18px;">
+        <div class="product-copy">
+          <div class="market-kicker"><span class="status-pill soon">Coming Soon</span></div>
+          <h3 class="product-title">Vixale Pairs</h3>
+          <div class="product-subtitle">AI pair-trading / VECO system</div>
+          <p>An automated relative-value system designed to identify and manage opportunities between related instruments instead of relying only on overall market direction.</p>
+          <div class="feature-chips">
+            <span class="feature-chip">Relative value</span>
+            <span class="feature-chip">Coordinated monitoring</span>
+            <span class="feature-chip">Paired execution</span>
+            <span class="feature-chip">Automated VECO workflow</span>
+          </div>
+        </div>
+        <div class="product-visual concept-chart" aria-label="Conceptual pair-trading illustration">
+          <div class="concept-chart-top"><span>Relative movement</span><span>Conceptual illustration</span></div>
+          <svg viewBox="0 0 520 150" role="img" aria-label="Two related price lines diverging and converging">
+            <g stroke="#dbe5f7" stroke-width="1">
+              <line x1="0" y1="25" x2="520" y2="25"/><line x1="0" y1="75" x2="520" y2="75"/><line x1="0" y1="125" x2="520" y2="125"/>
+            </g>
+            <path d="M0 104 C48 94 82 88 122 91 C165 95 193 75 229 63 C270 49 303 55 344 72 C389 91 427 79 520 42" fill="none" stroke="#315fac" stroke-width="4" stroke-linecap="round"/>
+            <path d="M0 97 C48 91 82 93 122 87 C165 80 193 88 229 91 C270 95 303 86 344 77 C389 68 427 72 520 49" fill="none" stroke="#0bcf74" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="229" cy="63" r="5" fill="#315fac"/><circle cx="229" cy="91" r="5" fill="#0bcf74"/>
+            <line x1="229" y1="63" x2="229" y2="91" stroke="#9fb4de" stroke-width="2" stroke-dasharray="5 5"/>
+          </svg>
+          <div class="concept-caption">The visual represents relative divergence and convergence only. It is not a performance chart or a live signal.</div>
+        </div>
       </div>
 
       <div class="comparison">
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>Vixale Prime</th>
-                <th>Vixale Edge</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Feature</th><th>Vixale Prime</th><th>Vixale Edge</th></tr></thead>
             <tbody>
-              <tr>
-                <td>Order type</td>
-                <td>Market order</td>
-                <td>Limit order</td>
-              </tr>
-              <tr>
-                <td>Entry style</td>
-                <td>Trend confirmation</td>
-                <td>Trend pullback</td>
-              </tr>
-              <tr>
-                <td>Timing</td>
-                <td>After the trend-change signal is confirmed</td>
-                <td>When price reaches the selected pullback level</td>
-              </tr>
-              <tr>
-                <td>Main goal</td>
-                <td>Confirm that the trend change is active</td>
-                <td>Attempt to improve the entry price</td>
-              </tr>
-              <tr>
-                <td>Personality</td>
-                <td>More conservative</td>
-                <td>More aggressive</td>
-              </tr>
-              <tr>
-                <td>Trade-off</td>
-                <td>Can enter later than the first move</td>
-                <td>Can miss trades if the pullback does not fill</td>
-              </tr>
-              <tr>
-                <td>Dashboard behavior</td>
-                <td>Usually appears as an opened position after confirmation</td>
-                <td>Can appear as a pending / working order before fill</td>
-              </tr>
+              <tr><td>Order type</td><td>Market order</td><td>Limit order</td></tr>
+              <tr><td>Entry style</td><td>Trend confirmation</td><td>Trend pullback</td></tr>
+              <tr><td>Timing</td><td>After the trend-change signal is confirmed</td><td>When price reaches the selected pullback level</td></tr>
+              <tr><td>Main goal</td><td>Confirm that the trend change is active</td><td>Attempt to improve the entry price</td></tr>
+              <tr><td>Personality</td><td>More conservative</td><td>More aggressive</td></tr>
+              <tr><td>Trade-off</td><td>Can enter later than the first move</td><td>Can miss trades if the pullback does not fill</td></tr>
+              <tr><td>Dashboard behavior</td><td>Usually appears as an opened position after confirmation</td><td>Can appear as a pending / working order before fill</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
-    <section class="wrap section">
+    <section class="wrap section market-section" id="futures">
       <div class="section-head">
-        <div class="badge"><span class="dot"></span><span>Coming soon</span></div>
-        <h2>The Vixale system lineup is expanding.</h2>
-        <p class="lead">
-          Three additional products are currently in development. Each one will use its own execution and input model instead of forcing every market into the same workflow.
-        </p>
+        <div class="market-kicker"><span class="market-label">Futures</span><span class="status-pill soon">In Development</span></div>
+        <h2>A separate framework for futures markets.</h2>
+        <p class="lead">Futures require contract-specific execution, overnight behavior, margin awareness, and risk controls. They will not be forced into the stock-system workflow.</p>
       </div>
 
-      <div class="future-grid">
-        <article class="future-card ratio">
-          <div class="future-top">
-            <div class="future-mark">R</div>
-            <div class="coming-pill">Coming Soon</div>
+      <div class="product-card futures">
+        <div class="product-copy">
+          <div class="market-kicker"><span class="status-pill soon">Coming Soon</span></div>
+          <h3 class="product-title">Vixale Futures</h3>
+          <div class="product-subtitle">Systematic futures strategies</div>
+          <p>A developing group of futures systems designed around the mechanics of futures contracts and their distinct intraday and overnight behavior.</p>
+          <div class="feature-chips">
+            <span class="feature-chip">Contract-aware execution</span>
+            <span class="feature-chip">Intraday workflows</span>
+            <span class="feature-chip">Overnight workflows</span>
+            <span class="feature-chip">Futures-specific risk</span>
           </div>
-          <h3 class="future-title">Vixale Ratio</h3>
-          <div class="future-subtitle">Fibonacci structure system</div>
-          <p>
-            A developing system built around Fibonacci market structure and selected retracement relationships, with its own rules for context, confirmation, and execution.
-          </p>
-          <div class="future-note">In development · Automated system</div>
-        </article>
-
-        <article class="future-card pairs">
-          <div class="future-top">
-            <div class="future-mark">P</div>
-            <div class="coming-pill">Coming Soon</div>
-          </div>
-          <h3 class="future-title">Vixale Pairs</h3>
-          <div class="future-subtitle">AI pair-trading / VECO system</div>
-          <p>
-            An automated VECO workflow designed for relative-value opportunities between two instruments, with coordinated monitoring, paired entries, and position tracking.
-          </p>
-          <div class="future-note">In development · Automated paired execution</div>
-        </article>
-
-        <article class="future-card options">
-          <div class="future-top">
-            <div class="future-mark">O</div>
-            <div class="coming-pill">Coming Soon</div>
-          </div>
-          <h3 class="future-title">Vixale Options Desk</h3>
-          <div class="future-subtitle">Options Signals · Swing and Intraday</div>
-          <p>
-            A human-input options signals service for structured swing and intraday ideas, with clear position details and lifecycle updates from entry through close.
-          </p>
-          <div class="future-note">In development · Human-input service</div>
-        </article>
+        </div>
+        <div class="product-visual future-visual">
+          <div class="future-row"><span class="future-icon">01</span><div><strong>Execution</strong>Contract-specific order handling and lifecycle.</div><span>Planned</span></div>
+          <div class="future-row"><span class="future-icon">02</span><div><strong>Sessions</strong>Intraday and overnight behavior treated separately.</div><span>Planned</span></div>
+          <div class="future-row"><span class="future-icon">03</span><div><strong>Risk</strong>Margin and contract value incorporated into sizing.</div><span>Planned</span></div>
+        </div>
       </div>
     </section>
 
-    <section class="wrap section">
-      <div class="validation-box">
-        <div>
-          <div class="badge"><span class="dot"></span><span>Research process</span></div>
-          <h2>Selected for stability, not curve-fit perfection.</h2>
-          <p class="lead">
-            Before a system appears on the Vixale dashboard, it goes through tuning, optimization, walk-forward testing, out-of-sample testing, and live forward tracking.
-          </p>
-          <p class="small-note">
-            The goal is not to fit the past perfectly. The goal is to select setups that remain more stable across different market periods.
-          </p>
+    <section class="wrap section market-section" id="options">
+      <div class="section-head">
+        <div class="market-kicker"><span class="market-label">Options</span><span class="status-pill options">Live</span></div>
+        <h2>Human-directed options signals with a transparent journal.</h2>
+        <p class="lead">Vixale Options Desk tracks swing and intraday options ideas from entry through close, using a dedicated workflow rather than an automated stock-style signal engine.</p>
+      </div>
+
+      <div class="product-card options options-card">
+        <div class="product-copy">
+          <div class="market-kicker"><span class="status-pill options">Live Service</span></div>
+          <h3 class="product-title">Vixale Options Desk</h3>
+          <div class="product-subtitle">Options Signals · Swing and Intraday</div>
+          <p>Human-directed options strategies and signals are entered into the Vixale Option Journal with position structure, expiration, entry, exit, lifecycle updates, and recorded P&amp;L.</p>
+          <div class="options-points">
+            <div class="options-point"><strong>Human Input</strong>Trades are selected and entered by the operator.</div>
+            <div class="options-point"><strong>Structured Journal</strong>Strategy, legs, expiration, credit/debit, entry, exit, and P&amp;L.</div>
+            <div class="options-point"><strong>Brokerage Proof</strong>Selected trades may include cropped or redacted brokerage screenshots.</div>
+          </div>
+          <div class="options-actions">
+            <a class="btn btn-purple" href="/dashboard#option-journal">View Option Journal</a>
+            <a class="btn btn-primary" href="/login">Dashboard Login</a>
+          </div>
         </div>
 
+        <div class="product-visual desk-preview">
+          <div class="desk-preview-head"><span>Options Desk workflow</span><span class="status-pill options">Live</span></div>
+          <div class="desk-row"><div><strong>Trade structure</strong>Strategy, option legs, expiration, contracts, credit or debit.</div><span>Recorded</span></div>
+          <div class="desk-row"><div><strong>Lifecycle</strong>Entry, open status, exit, fees, and P&amp;L updates.</div><span>Tracked</span></div>
+          <div class="desk-row"><div><strong>Broker evidence</strong>Cropped or redacted account screenshots can be attached to a trade.</div><span>Available</span></div>
+          <div class="ibkr-note"><strong>IBKR display note:</strong> an opening credit combo may appear as BUY at a negative price. The negative value represents credit received, not a debit. The journal explains this beside the trades.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section market-section">
+      <div class="validation-box">
+        <div>
+          <div class="badge"><span class="dot"></span><span>Research and transparency</span></div>
+          <h2>Different markets use different validation.</h2>
+          <p class="lead">Automated systems such as Vixale Prime and Vixale Edge go through tuning, optimization, walk-forward testing, out-of-sample testing, and live forward tracking.</p>
+          <p class="small-note">The human-directed Options Desk is documented through a structured journal, trade lifecycle updates, recorded results, and selected brokerage proof instead of being presented as an automated model.</p>
+        </div>
         <div class="validation-list">
-          <div class="validation-item"><span>1</span><div><strong>Tuning</strong>Clean up the system behavior and remove obvious noise.</div></div>
+          <div class="validation-item"><span>1</span><div><strong>Tuning</strong>Clean up automated system behavior and remove obvious noise.</div></div>
           <div class="validation-item"><span>2</span><div><strong>Optimization</strong>Test practical parameter variations without relying on one perfect setting.</div></div>
-          <div class="validation-item"><span>3</span><div><strong>Walk-forward testing</strong>Check whether the logic remains usable across time segments.</div></div>
+          <div class="validation-item"><span>3</span><div><strong>Walk-forward testing</strong>Check whether automated logic remains usable across time segments.</div></div>
           <div class="validation-item"><span>4</span><div><strong>Out-of-sample testing</strong>Review behavior on data that was not used for selection.</div></div>
-          <div class="validation-item"><span>5</span><div><strong>Live forward tracking</strong>Track current behavior inside the dashboard as signals, orders, and results appear.</div></div>
+          <div class="validation-item"><span>5</span><div><strong>Live tracking</strong>Track automated signals and human-directed options trades in their appropriate dashboards and journals.</div></div>
         </div>
       </div>
     </section>
@@ -6589,10 +6387,8 @@ function renderTradingSystemsHtml() {
     <section class="wrap section">
       <div class="access">
         <div>
-          <h2>Watch the systems live.</h2>
-          <p>
-            The live dashboard shows open positions, working orders, closed trades, and recorded results. Start by watching before making any decision.
-          </p>
+          <h2>Watch Vixale systems live.</h2>
+          <p>The live dashboard brings stock signals, working orders, closed trades, and the Option Journal into one transparent viewing experience.</p>
           <div class="small-note">Trading involves risk. The dashboard is for transparency, tracking, research, and education.</div>
         </div>
         <div class="access-actions">
@@ -6604,13 +6400,14 @@ function renderTradingSystemsHtml() {
     </section>
   </main>
 
-  <footer class="wrap footer">
-    <strong>Important Risk Disclosure:</strong> Vixale is not a registered investment adviser, broker-dealer, commodity trading adviser, fiduciary, law firm, accounting firm, or tax adviser. All website content, Telegram messages, alerts, dashboards, spreadsheets, trade examples, strategy references, performance figures, and related materials are provided strictly for educational, research, and informational purposes only. Nothing presented by Vixale is personalized financial, investment, trading, legal, tax, or accounting advice, and nothing should be interpreted as an offer, solicitation, recommendation, endorsement, instruction, or invitation to buy, sell, short, hold, or trade any security, option, futures contract, cryptocurrency, derivative, or other financial instrument. Results may be backtested, hypothetical, simulated, paper-traded, forward-tested, delayed, incomplete, based on assumptions, affected by data errors, and materially different from live brokerage execution. Past performance, win rate, P&L, examples, charts, alerts, or strategy history are not guarantees, promises, projections, or reliable indicators of future results. Trading and investing involve substantial risk, including the possible loss of some or all capital. You alone are responsible for all trading decisions, position sizing, risk controls, broker selection, order execution, taxes, and compliance with applicable laws and regulations. Consult properly licensed professionals before making any financial decisions. By using this website, dashboard, Telegram channel, spreadsheets, or related materials, you agree that Vixale and its operators are not liable for any losses, damages, missed profits, execution differences, delays, outages, data inaccuracies, or reliance on any information provided.
+  <footer class="footer">
+    <div class="wrap">
+      <strong>Important disclosure:</strong> Vixale provides software, alerts, dashboards, research tools, and educational information. It is not a broker, investment adviser, or fiduciary. No content is personalized investment advice or a promise of future results. Hypothetical, simulated, paper-trading, and live-forward results have material limitations. Trading stocks, futures, and options involves risk, including the possible loss of principal.
+    </div>
   </footer>
 </body>
 </html>`;
 }
-
 
 
 function renderRiskManagementHtml() {
