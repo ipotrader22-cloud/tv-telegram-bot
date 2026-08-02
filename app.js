@@ -8577,7 +8577,7 @@ function renderOwnerLiveDashboardHtml(data) {
     }
 
     async function compressProofScreenshot(file) {
-      if (!file || !/^image\/(png|jpeg|webp)$/i.test(String(file.type || ''))) {
+      if (!file || !/^image\\/(png|jpeg|webp)$/i.test(String(file.type || ''))) {
         throw new Error('Choose a PNG, JPG, or WebP screenshot.');
       }
       if (file.size > 20 * 1024 * 1024) throw new Error('The original screenshot is too large.');
