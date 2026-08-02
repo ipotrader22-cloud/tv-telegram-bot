@@ -1,5 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
 const {
   createBrokerEodCallbackRegistry,
   runBrokerEodCallback,
@@ -95,6 +97,12 @@ const CLOSED_TRADES_SHEET = 'Closed Trades';
 const LEGACY_POSITIONS_SHEET = 'Positions';
 const OPTION_JOURNAL_SHEET = 'Option Journal';
 const OPTION_JOURNAL_HEADERS = ['ID', 'Trade Date', 'Entry Time', 'Symbol', 'Strategy', 'Legs', 'Expiration', 'Contracts', 'Multiplier', 'Trade Type', 'Entry Price', 'Exit Date', 'Exit Time', 'Exit Price', 'Fees', 'Status', 'Notes', 'Created At', 'Updated At'];
+const OPTION_PROOFS_SHEET = 'Option Proofs';
+const OPTION_PROOFS_HEADERS = ['ID', 'Trade ID', 'Storage Key', 'File Name', 'Mime Type', 'Size Bytes', 'Uploaded At'];
+const OPTION_PROOFS_DIR = String(process.env.OPTION_PROOFS_DIR || '').trim();
+const OPTION_PROOF_MAX_FILES = 3;
+const OPTION_PROOF_MAX_BYTES = 1_400_000;
+const OPTION_PROOF_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const OPTION_STRATEGIES = ['Straddle', 'Strangle', 'Vertical Spread', 'Iron Condor', 'Butterfly', 'Calendar', 'Single Call', 'Single Put', 'Custom'];
 const OPTION_TRADE_TYPES = ['Credit', 'Debit'];
 const OPTION_STATUSES = ['Open', 'Closed', 'Cancelled'];
@@ -7596,6 +7604,7 @@ function renderDashboardHtml(data) {
       <td>${t.exit_price === '' ? '—' : num(t.exit_price)}</td>
       <td>${escapeHtml(t.status)}</td>
       <td>${pnl == null ? 'Open' : `<span class="${pnl >= 0 ? 'positive' : 'negative'}">${formatMoney(pnl)}</span>`}</td>
+      <td>${optionProofLinks(t, 'dashboard')}</td>
     </tr>`;
   }).join('');
 
@@ -7938,6 +7947,31 @@ function renderDashboardHtml(data) {
       line-height: 1.45;
     }
 
+    .proof-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-width: 92px;
+    }
+
+    .proof-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 9px;
+      border: 1px solid #bfe9d2;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: var(--green);
+      text-decoration: none;
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .proof-link:hover { background: #dcf9e9; }
+
     .cell-note {
       margin-top: 3px;
       color: var(--muted2);
@@ -8140,18 +8174,18 @@ function renderDashboardHtml(data) {
     <div class="section" id="option-journal">
       <div class="section-header">
         <h2>Option Journal</h2>
-        <span>Latest 20 option trades</span>
+        <span>Latest 20 option trades · screenshots are owner-provided and may be cropped or redacted</span>
       </div>
       ${optionJournal.error
         ? `<div class="journal-warning">Option Journal is temporarily unavailable</div>`
         : `<div class="table-wrap">
           ${optionRows ? `
-          <table style="min-width:1120px">
+          <table style="min-width:1230px">
             <thead>
               <tr>
                 <th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th>
                 <th>Expiration</th><th>Contracts</th><th>Credit/Debit</th>
-                <th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th>
+                <th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th><th>Broker Proof</th>
               </tr>
             </thead>
             <tbody>${optionRows}</tbody>
@@ -8281,6 +8315,7 @@ function renderOwnerLiveDashboardHtml(data) {
       <td>${escapeHtml(t.status)}</td>
       <td>${pnl == null ? 'Open' : `<span class="${pnl >= 0 ? 'positive' : 'negative'}">${formatMoney(pnl)}</span>`}</td>
       <td class="notes-cell">${escapeHtml(t.notes)}</td>
+      <td>${optionProofAdminCell(t)}</td>
       <td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td>
       <td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button class="table-action" type="submit">Delete</button></form></td>
     </tr>`;
@@ -8292,7 +8327,6 @@ function renderOwnerLiveDashboardHtml(data) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex,nofollow,noarchive" />
-  <meta http-equiv="refresh" content="30" />
   <title>Vixale Owner Live Quotes</title>
   <link rel="icon" type="image/png" href="${VIXALE_FAVICON_IMAGE}" />
   <style>
@@ -8337,6 +8371,15 @@ function renderOwnerLiveDashboardHtml(data) {
     .option-leg { line-height:1.25; white-space:normal; }
     .legs-cell,.notes-cell { text-align:left; white-space:normal; max-width:260px; }
     .table-action { padding:5px 9px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--text); cursor:pointer; }
+    .proof-admin-cell { display:flex; flex-direction:column; align-items:flex-start; gap:8px; min-width:145px; white-space:normal; }
+    .proof-admin-list { display:flex; flex-direction:column; gap:6px; }
+    .proof-admin-item { display:flex; align-items:center; gap:6px; }
+    .proof-admin-item form { margin:0; }
+    .proof-link { display:inline-flex; align-items:center; justify-content:center; padding:6px 9px; border:1px solid #bfe9d2; border-radius:999px; background:var(--green-soft); color:var(--green); text-decoration:none; font-size:11px; line-height:1.2; }
+    .proof-delete { border:0; background:transparent; color:var(--red); padding:4px; cursor:pointer; font-size:11px; }
+    .proof-upload-wrap { display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
+    .proof-upload-status,.proof-config-note { color:var(--muted2); font-size:10px; line-height:1.3; max-width:150px; }
+    .proof-upload-status.error { color:var(--red); }
     .journal-warning { margin:14px 17px; padding:12px 14px; border:1px solid #ecd49b; border-radius:14px; color:#76500a; background:#fff9e8; font-size:12px; }
     .owner-note { margin-top:16px; padding:13px 15px; border:1px solid #ecd49b; border-radius:15px; color:#76500a; background:#fff9e8; font-size:12px; line-height:1.5; }
     @media(max-width:900px){ .cards{grid-template-columns:repeat(2,1fr)} .wrap{padding:12px} }
@@ -8359,7 +8402,7 @@ function renderOwnerLiveDashboardHtml(data) {
 
     <div class="hero">
       <h1>Vixale Owner Live Quotes</h1>
-      <div class="subtitle">Owner-only IBKR/TWS quote layer. Public dashboard remains unchanged.</div>
+      <div class="subtitle">Owner-only IBKR/TWS quote layer. Public dashboard shows read-only proof links without owner controls or brokerage credentials.</div>
       <div class="updated">
         Positions refresh from Sheets every 30 seconds. Quotes update in place every 2 seconds.
         · TWS fresh: <span id="fresh-count">${escapeHtml(q.live_count || 0)}</span>/<span id="total-count">${escapeHtml(q.total_count || 0)}</span>
@@ -8405,9 +8448,9 @@ function renderOwnerLiveDashboardHtml(data) {
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" id="option-journal">
       <div class="section-head">
-        <h2>Option Journal</h2>
+        <div><h2>Option Journal</h2><span>Upload up to 3 cropped or redacted brokerage screenshots per trade.</span></div>
         <div class="section-actions">
           <a class="btn primary" href="/admin/options/new">New Option Trade</a>
           <a class="btn" href="/admin/options">View Full Journal</a>
@@ -8417,8 +8460,8 @@ function renderOwnerLiveDashboardHtml(data) {
         ? `<div class="journal-warning">Option Journal is temporarily unavailable. Existing Live Dashboard data is unaffected.</div>`
         : `<div class="table-wrap">
           ${optionRows ? `
-          <table style="min-width:1450px">
-            <thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Edit</th><th>Delete</th></tr></thead>
+          <table style="min-width:1620px">
+            <thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Proof</th><th>Edit</th><th>Delete</th></tr></thead>
             <tbody>${optionRows}</tbody>
           </table>` : `<div class="empty">No option trades yet.</div>`}
         </div>`}
@@ -8495,6 +8538,130 @@ function renderOwnerLiveDashboardHtml(data) {
       }
     }
 
+    let proofUploadActive = false;
+
+    function fileAsImage(file) {
+      return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(image);
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('The selected file could not be read as an image.'));
+        };
+        image.src = objectUrl;
+      });
+    }
+
+    function canvasBlob(canvas, quality) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Screenshot compression failed.')), 'image/jpeg', quality);
+      });
+    }
+
+    function blobBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const value = String(reader.result || '');
+          const comma = value.indexOf(',');
+          if (comma < 0) reject(new Error('Screenshot encoding failed.'));
+          else resolve(value.slice(comma + 1));
+        };
+        reader.onerror = () => reject(new Error('Screenshot encoding failed.'));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function compressProofScreenshot(file) {
+      if (!file || !/^image\/(png|jpeg|webp)$/i.test(String(file.type || ''))) {
+        throw new Error('Choose a PNG, JPG, or WebP screenshot.');
+      }
+      if (file.size > 20 * 1024 * 1024) throw new Error('The original screenshot is too large.');
+
+      const image = await fileAsImage(file);
+      const attempts = [
+        { max: 1800, quality: 0.88 },
+        { max: 1600, quality: 0.82 },
+        { max: 1400, quality: 0.76 },
+        { max: 1200, quality: 0.70 },
+      ];
+
+      for (const attempt of attempts) {
+        const scale = Math.min(1, attempt.max / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+        const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+        const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d', { alpha: false });
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        const blob = await canvasBlob(canvas, attempt.quality);
+        if (blob.size <= 1400000) {
+          return { mimeType: 'image/jpeg', base64: await blobBase64(blob), size: blob.size };
+        }
+      }
+
+      throw new Error('Screenshot could not be compressed below 1.4 MB. Crop it and try again.');
+    }
+
+    document.querySelectorAll('.proof-upload-button').forEach(button => {
+      button.addEventListener('click', () => {
+        const input = document.getElementById(button.dataset.inputId || '');
+        if (input) input.click();
+      });
+    });
+
+    document.querySelectorAll('.proof-upload-input').forEach(input => {
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const wrap = input.closest('.proof-upload-wrap');
+        const button = wrap ? wrap.querySelector('.proof-upload-button') : null;
+        const status = wrap ? wrap.querySelector('.proof-upload-status') : null;
+        const tradeId = String(input.dataset.tradeId || '');
+        proofUploadActive = true;
+        if (button) button.disabled = true;
+        if (status) {
+          status.classList.remove('error');
+          status.textContent = 'Preparing screenshot…';
+        }
+
+        try {
+          const compressed = await compressProofScreenshot(file);
+          if (status) status.textContent = 'Uploading proof…';
+          const response = await fetch('/admin/options/' + encodeURIComponent(tradeId) + '/proofs', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+              file_name: file.name || 'brokerage-proof.jpg',
+              mime_type: compressed.mimeType,
+              data_base64: compressed.base64,
+            }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || 'Proof upload failed.');
+          if (status) status.textContent = 'Uploaded.';
+          window.setTimeout(() => window.location.reload(), 350);
+        } catch (error) {
+          if (status) {
+            status.classList.add('error');
+            status.textContent = error && error.message ? error.message : 'Proof upload failed.';
+          }
+          proofUploadActive = false;
+          if (button) button.disabled = false;
+          input.value = '';
+        }
+      });
+    });
+
     async function refreshQuotes() {
       try {
         const response = await fetch('/admin/live-quotes.json', {
@@ -8555,6 +8722,9 @@ function renderOwnerLiveDashboardHtml(data) {
 
     refreshQuotes();
     setInterval(refreshQuotes, 2000);
+    setInterval(() => {
+      if (!proofUploadActive) window.location.reload();
+    }, 30000);
   </script>
 </body>
 </html>`;
@@ -9509,6 +9679,13 @@ async function replaceOptionTrade(id, values) {
 async function removeOptionTrade(id) {
   const found = await locateOptionTrade(id);
   if (!found.trade) return false;
+
+  try {
+    await removeAllOptionProofsForTrade(id);
+  } catch (error) {
+    console.error('Option proof cleanup during trade delete failed:', error);
+  }
+
   const sheetId = await getSheetIdByName(found.sheets, OPTION_JOURNAL_SHEET);
   await found.sheets.spreadsheets.batchUpdate({spreadsheetId:GOOGLE_SHEET_ID,requestBody:{requests:[{deleteDimension:{range:{sheetId,dimension:'ROWS',startIndex:found.index+1,endIndex:found.index+2}}}]}});
   return true;
@@ -9546,10 +9723,336 @@ function newestOptionTrades(trades, limit = 20) {
     .slice(0, limit);
 }
 
+function optionProofFromRow(row = []) {
+  return {
+    id: String(row[0] || ''),
+    trade_id: String(row[1] || ''),
+    storage_key: String(row[2] || ''),
+    file_name: String(row[3] || ''),
+    mime_type: String(row[4] || ''),
+    size_bytes: Number(row[5] || 0),
+    uploaded_at: String(row[6] || ''),
+  };
+}
+
+function optionProofRow(proof) {
+  return [
+    proof.id,
+    proof.trade_id,
+    proof.storage_key,
+    proof.file_name,
+    proof.mime_type,
+    proof.size_bytes,
+    proof.uploaded_at,
+  ];
+}
+
+async function optionProofSheetData() {
+  const sheets = await getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets client is not configured.');
+
+  const metadata = await sheets.spreadsheets.get({ spreadsheetId: GOOGLE_SHEET_ID });
+  if (!metadata.data.sheets.some(sheet => sheet.properties.title === OPTION_PROOFS_SHEET)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: OPTION_PROOFS_SHEET } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `'${OPTION_PROOFS_SHEET}'!A1:G1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [OPTION_PROOFS_HEADERS] },
+    });
+  }
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `'${OPTION_PROOFS_SHEET}'!A2:G`,
+  });
+
+  return {
+    sheets,
+    proofs: (response.data.values || []).map(optionProofFromRow).filter(proof => proof.id && proof.trade_id && proof.storage_key),
+  };
+}
+
+function attachOptionProofs(trades, proofs) {
+  const byTrade = new Map();
+  for (const proof of proofs || []) {
+    const list = byTrade.get(proof.trade_id) || [];
+    list.push(proof);
+    byTrade.set(proof.trade_id, list);
+  }
+
+  return (trades || []).map(trade => ({
+    ...trade,
+    proofs: (byTrade.get(trade.id) || []).sort((a, b) => String(a.uploaded_at).localeCompare(String(b.uploaded_at))),
+  }));
+}
+
+async function optionJournalDataWithProofs() {
+  const journal = await optionSheetData();
+  try {
+    const proofData = await optionProofSheetData();
+    return {
+      ...journal,
+      proofs: proofData.proofs,
+      trades: attachOptionProofs(journal.trades, proofData.proofs),
+      proof_error: false,
+    };
+  } catch (error) {
+    console.error('Option proof metadata read error:', error);
+    return {
+      ...journal,
+      proofs: [],
+      trades: attachOptionProofs(journal.trades, []),
+      proof_error: true,
+    };
+  }
+}
+
+function optionProofExtension(mimeType) {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'jpg';
+}
+
+function optionProofMagicMatches(buffer, mimeType) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+  if (mimeType === 'image/jpeg') return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (mimeType === 'image/png') return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (mimeType === 'image/webp') return buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+  return false;
+}
+
+function decodeOptionProofPayload(body = {}) {
+  const fileName = optionText(body.file_name, 'File Name', 180, true);
+  const mimeType = optionText(body.mime_type, 'Mime Type', 40, true).toLowerCase();
+  if (!OPTION_PROOF_ALLOWED_MIME_TYPES.has(mimeType)) throw new Error('Only PNG, JPG, and WebP screenshots are allowed.');
+
+  let encoded = String(body.data_base64 || '').trim();
+  const dataUrlMatch = encoded.match(/^data:([^;]+);base64,(.+)$/s);
+  if (dataUrlMatch) {
+    if (String(dataUrlMatch[1]).toLowerCase() !== mimeType) throw new Error('Screenshot type does not match its content.');
+    encoded = dataUrlMatch[2];
+  }
+
+  if (!encoded || !/^[A-Za-z0-9+/=\s]+$/.test(encoded)) throw new Error('Screenshot data is invalid.');
+  const buffer = Buffer.from(encoded.replace(/\s+/g, ''), 'base64');
+  if (!buffer.length || buffer.length > OPTION_PROOF_MAX_BYTES) {
+    throw new Error(`Screenshot must be ${Math.floor(OPTION_PROOF_MAX_BYTES / 1000)} KB or smaller after compression.`);
+  }
+  if (!optionProofMagicMatches(buffer, mimeType)) throw new Error('Screenshot file signature is invalid.');
+
+  return { fileName, mimeType, buffer };
+}
+
+async function locateOptionProof(tradeId, proofId) {
+  const data = await optionProofSheetData();
+  const index = data.proofs.findIndex(proof => proof.id === proofId && proof.trade_id === tradeId);
+  return { ...data, index, proof: index < 0 ? null : data.proofs[index] };
+}
+
+async function optionProofStoragePath(storageKey) {
+  if (!OPTION_PROOFS_DIR) throw new Error('OPTION_PROOFS_DIR is not configured.');
+  if (!/^[0-9a-f-]{36}\.(jpg|png|webp)$/i.test(String(storageKey || ''))) throw new Error('Proof storage key is invalid.');
+
+  const root = path.resolve(OPTION_PROOFS_DIR);
+  const fullPath = path.resolve(root, storageKey);
+  if (!fullPath.startsWith(`${root}${path.sep}`)) throw new Error('Proof storage path is invalid.');
+  return { root, fullPath };
+}
+
+async function saveOptionProof(trade, payload) {
+  if (!OPTION_PROOFS_DIR) throw new Error('OPTION_PROOFS_DIR is not configured.');
+
+  const proofData = await optionProofSheetData();
+  const existing = proofData.proofs.filter(proof => proof.trade_id === trade.id);
+  if (existing.length >= OPTION_PROOF_MAX_FILES) throw new Error(`A maximum of ${OPTION_PROOF_MAX_FILES} screenshots is allowed per option trade.`);
+
+  const now = new Date().toISOString();
+  const extension = optionProofExtension(payload.mimeType);
+  const storageKey = `${require('crypto').randomUUID()}.${extension}`;
+  const storage = await optionProofStoragePath(storageKey);
+  await fs.promises.mkdir(storage.root, { recursive: true, mode: 0o700 });
+
+  try {
+    await fs.promises.writeFile(storage.fullPath, payload.buffer, { flag: 'wx', mode: 0o600 });
+
+    const proof = {
+      id: require('crypto').randomUUID(),
+      trade_id: trade.id,
+      storage_key: storageKey,
+      file_name: payload.fileName,
+      mime_type: payload.mimeType,
+      size_bytes: payload.buffer.length,
+      uploaded_at: now,
+    };
+
+    await proofData.sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `'${OPTION_PROOFS_SHEET}'!A:G`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [optionProofRow(proof)] },
+    });
+
+    return proof;
+  } catch (error) {
+    try {
+      await fs.promises.unlink(storage.fullPath);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') console.error('Option proof disk rollback failed:', cleanupError);
+    }
+    throw error;
+  }
+}
+
+async function removeOptionProof(tradeId, proofId) {
+  const found = await locateOptionProof(tradeId, proofId);
+  if (!found.proof) return false;
+
+  const storage = await optionProofStoragePath(found.proof.storage_key);
+  try {
+    await fs.promises.unlink(storage.fullPath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  const sheetId = await getSheetIdByName(found.sheets, OPTION_PROOFS_SHEET);
+  await found.sheets.spreadsheets.batchUpdate({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: 'ROWS',
+            startIndex: found.index + 1,
+            endIndex: found.index + 2,
+          },
+        },
+      }],
+    },
+  });
+  return true;
+}
+
+async function removeAllOptionProofsForTrade(tradeId) {
+  const data = await optionProofSheetData();
+  const matches = data.proofs
+    .map((proof, index) => ({ proof, index }))
+    .filter(item => item.proof.trade_id === tradeId);
+  if (!matches.length) return;
+
+  for (const item of matches) {
+    try {
+      const storage = await optionProofStoragePath(item.proof.storage_key);
+      await fs.promises.unlink(storage.fullPath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') console.error('Option proof disk cleanup failed:', error);
+    }
+  }
+
+  const sheetId = await getSheetIdByName(data.sheets, OPTION_PROOFS_SHEET);
+  const requests = matches
+    .sort((a, b) => b.index - a.index)
+    .map(item => ({
+      deleteDimension: {
+        range: {
+          sheetId,
+          dimension: 'ROWS',
+          startIndex: item.index + 1,
+          endIndex: item.index + 2,
+        },
+      },
+    }));
+
+  await data.sheets.spreadsheets.batchUpdate({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    requestBody: { requests },
+  });
+}
+
+function optionProofLinks(trade, audience = 'dashboard') {
+  const proofs = Array.isArray(trade.proofs) ? trade.proofs : [];
+  if (!proofs.length) return '<span class="muted-dash">—</span>';
+
+  const prefix = audience === 'admin' ? '/admin' : '/dashboard';
+  return `<div class="proof-links">${proofs.map((proof, index) => `
+    <a class="proof-link" href="${prefix}/options/${encodeURIComponent(trade.id)}/proofs/${encodeURIComponent(proof.id)}" target="_blank" rel="noopener noreferrer">${proofs.length === 1 ? 'View Proof' : `Proof ${index + 1}`}</a>
+  `).join('')}</div>`;
+}
+
+function optionProofAdminCell(trade) {
+  const proofs = Array.isArray(trade.proofs) ? trade.proofs : [];
+  const existing = proofs.length
+    ? `<div class="proof-admin-list">${proofs.map((proof, index) => `
+        <div class="proof-admin-item">
+          <a class="proof-link" href="/admin/options/${encodeURIComponent(trade.id)}/proofs/${encodeURIComponent(proof.id)}" target="_blank" rel="noopener noreferrer">${proofs.length === 1 ? 'View Proof' : `Proof ${index + 1}`}</a>
+          <form method="post" action="/admin/options/${encodeURIComponent(trade.id)}/proofs/${encodeURIComponent(proof.id)}/delete" onsubmit="return confirm('Delete this proof screenshot?')">
+            <button class="proof-delete" type="submit">Delete</button>
+          </form>
+        </div>
+      `).join('')}</div>`
+    : '<span class="muted-dash">No proof uploaded</span>';
+
+  const uploader = proofs.length < OPTION_PROOF_MAX_FILES
+    ? OPTION_PROOFS_DIR
+      ? `<div class="proof-upload-wrap">
+          <input class="proof-upload-input" id="proof-file-${escapeHtml(trade.id)}" type="file" accept="image/png,image/jpeg,image/webp" data-trade-id="${escapeHtml(trade.id)}" hidden />
+          <button class="table-action proof-upload-button" type="button" data-input-id="proof-file-${escapeHtml(trade.id)}">${proofs.length ? 'Add Proof' : 'Upload Proof'}</button>
+          <span class="proof-upload-status" aria-live="polite"></span>
+        </div>`
+      : '<div class="proof-config-note">Storage not configured</div>'
+    : `<div class="proof-config-note">Maximum ${OPTION_PROOF_MAX_FILES} proofs</div>`;
+
+  return `<div class="proof-admin-cell">${existing}${uploader}</div>`;
+}
+
+async function streamOptionProof(req, res, audience) {
+  if (audience === 'admin') {
+    setPrivateNoStoreHeaders(res);
+    if (!isAdminAuthorized(req)) return res.redirect('/admin/login');
+  } else {
+    if (!isDashboardAuthorized(req)) return res.redirect('/login');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  }
+
+  const tradeId = String(req.params.id || '');
+  const proofId = String(req.params.proofId || '');
+  if (!/^[0-9a-f-]{36}$/i.test(tradeId) || !/^[0-9a-f-]{36}$/i.test(proofId)) return res.status(400).send('Invalid proof ID.');
+
+  const found = await locateOptionProof(tradeId, proofId);
+  if (!found.proof) return res.status(404).send('Proof screenshot not found.');
+
+  const storage = await optionProofStoragePath(found.proof.storage_key);
+  let fileStats;
+  try {
+    fileStats = await fs.promises.stat(storage.fullPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') return res.status(404).send('Proof screenshot file not found.');
+    throw error;
+  }
+
+  const safeName = String(found.proof.file_name || 'option-proof.jpg').replace(/[^\x20-\x7E]/g, '_').replace(/[\r\n"\\]/g, '_');
+  res.setHeader('Content-Type', found.proof.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Length', String(fileStats.size));
+  res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  const stream = fs.createReadStream(storage.fullPath);
+  stream.on('error', error => {
+    console.error('Option proof stream error:', error);
+    if (!res.headersSent) res.status(502).end('Unable to load proof screenshot.');
+    else res.destroy(error);
+  });
+  stream.pipe(res);
+}
+
 function optionShell(title, body, activePage = 'journal') {
   const activeClass = page => page === activePage ? ' primary' : '';
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} | Vixale</title><style>
-  :root{--bg:#f3faf6;--card:#fff;--ink:#121815;--muted:#63716a;--line:#dfe9e3;--green:#008f4a;--red:#d8424f}*{box-sizing:border-box}body,input,select,textarea,button{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{margin:0;background:linear-gradient(#f8fcfa,var(--bg),#fff);color:var(--ink)}b,strong,h1{font-weight:500}.wrap{max-width:1440px;margin:auto;padding:24px}.nav,.actions{display:flex;gap:10px;flex-wrap:wrap}.nav{margin-bottom:16px}.btn,button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}.primary{background:#101613;color:#fff}.card{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:0 18px 54px rgba(21,48,34,.08);margin-bottom:16px}h1{margin:0 0 8px}p{color:var(--muted)}.notice{background:#e9fff3;border:1px solid #bfe9d2;border-radius:16px;padding:14px;color:#087743}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.full{grid-column:1/-1}label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.helper-text{margin:6px 0 0;color:var(--muted);font-size:12px}input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}textarea{min-height:90px}.actions{margin-top:18px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1180px}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}th{color:var(--muted);font-weight:500}.positive{color:var(--green)}.negative{color:var(--red)}.option-legs{display:flex;flex-direction:column;gap:4px;min-width:150px}.option-leg{line-height:1.25}.empty{text-align:center;padding:40px;color:var(--muted)}@media(max-width:760px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}}</style></head><body><main class="wrap"><nav class="nav"><a class="btn${activeClass('live')}" href="/admin/live">Live Dashboard</a><a class="btn${activeClass('journal')}" href="/admin/options">Option Journal</a><a class="btn${activeClass('new')}" href="/admin/options/new">New Option Trade</a><a class="btn" href="/admin/logout">Log Out</a></nav>${body}</main></body></html>`;
+  :root{--bg:#f3faf6;--card:#fff;--ink:#121815;--muted:#63716a;--line:#dfe9e3;--green:#008f4a;--red:#d8424f}*{box-sizing:border-box}body,input,select,textarea,button{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{margin:0;background:linear-gradient(#f8fcfa,var(--bg),#fff);color:var(--ink)}b,strong,h1{font-weight:500}.wrap{max-width:1440px;margin:auto;padding:24px}.nav,.actions{display:flex;gap:10px;flex-wrap:wrap}.nav{margin-bottom:16px}.btn,button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}.primary{background:#101613;color:#fff}.card{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:0 18px 54px rgba(21,48,34,.08);margin-bottom:16px}h1{margin:0 0 8px}p{color:var(--muted)}.notice{background:#e9fff3;border:1px solid #bfe9d2;border-radius:16px;padding:14px;color:#087743}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.full{grid-column:1/-1}label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.helper-text{margin:6px 0 0;color:var(--muted);font-size:12px}input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}textarea{min-height:90px}.actions{margin-top:18px}.table{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1280px}th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}th{color:var(--muted);font-weight:500}.positive{color:var(--green)}.negative{color:var(--red)}.option-legs{display:flex;flex-direction:column;gap:4px;min-width:150px}.option-leg{line-height:1.25}.proof-links{display:flex;gap:6px;flex-wrap:wrap}.proof-link{display:inline-flex;padding:6px 9px;border:1px solid #bfe9d2;border-radius:999px;background:#e9fff3;color:var(--green);text-decoration:none;white-space:nowrap}.muted-dash{color:var(--muted)}.empty{text-align:center;padding:40px;color:var(--muted)}@media(max-width:760px){.wrap{padding:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}}</style></head><body><main class="wrap"><nav class="nav"><a class="btn${activeClass('live')}" href="/admin/live">Live Dashboard</a><a class="btn${activeClass('journal')}" href="/admin/options">Option Journal</a><a class="btn${activeClass('new')}" href="/admin/options/new">New Option Trade</a><a class="btn" href="/admin/logout">Log Out</a></nav>${body}</main></body></html>`;
 }
 
 function optionSelect(name, values, selected) {
@@ -9568,8 +10071,8 @@ function renderOptionForm(trade={}, error='') {
 }
 
 function renderOptionJournal(trades,f) {
-  const rows=trades.map(t=>{const pnl=optionPnl(t);return `<tr><td>${escapeHtml(t.trade_date)}</td><td>${escapeHtml(t.symbol)}</td><td>${escapeHtml(t.strategy)}</td><td>${renderOptionLegs(t.legs)}</td><td>${escapeHtml(t.expiration)}</td><td>${t.contracts}</td><td>${escapeHtml(t.trade_type)}</td><td>${num(t.entry_price)}</td><td>${t.exit_price===''?'—':num(t.exit_price)}</td><td>${num(t.fees)}</td><td>${escapeHtml(t.status)}</td><td>${pnl==null?'Open':`<span class="${pnl>=0?'positive':'negative'}">${formatMoney(pnl)}</span>`}</td><td>${escapeHtml(t.notes)}</td><td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td><td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button>Delete</button></form></td></tr>`}).join('');
-  return optionShell('Option Journal',`<section class="card"><h1>Option Journal</h1><form method="get"><div class="grid"><div><label>Date From</label><input type="date" name="date_from" value="${escapeHtml(f.date_from)}"></div><div><label>Date To</label><input type="date" name="date_to" value="${escapeHtml(f.date_to)}"></div><div><label>Symbol</label><input name="symbol" value="${escapeHtml(f.symbol)}"></div><div><label>Strategy</label><select name="strategy"><option value="">All</option>${OPTION_STRATEGIES.map(v=>`<option${v===f.strategy?' selected':''}>${v}</option>`).join('')}</select></div><div><label>Status</label><select name="status"><option value="">All</option>${OPTION_STATUSES.map(v=>`<option${v===f.status?' selected':''}>${v}</option>`).join('')}</select></div></div><div class="actions"><button class="primary">Apply Filters</button><a class="btn" href="/admin/options">Clear Filters</a><a class="btn" href="/admin/options/new">New Option Trade</a></div></form></section><section class="card table">${rows?`<table><thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Fees</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Edit</th><th>Delete</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No option trades match these filters.</div>'}</section>`);
+  const rows=trades.map(t=>{const pnl=optionPnl(t);return `<tr><td>${escapeHtml(t.trade_date)}</td><td>${escapeHtml(t.symbol)}</td><td>${escapeHtml(t.strategy)}</td><td>${renderOptionLegs(t.legs)}</td><td>${escapeHtml(t.expiration)}</td><td>${t.contracts}</td><td>${escapeHtml(t.trade_type)}</td><td>${num(t.entry_price)}</td><td>${t.exit_price===''?'—':num(t.exit_price)}</td><td>${num(t.fees)}</td><td>${escapeHtml(t.status)}</td><td>${pnl==null?'Open':`<span class="${pnl>=0?'positive':'negative'}">${formatMoney(pnl)}</span>`}</td><td>${escapeHtml(t.notes)}</td><td>${optionProofLinks(t, 'admin')}</td><td><a href="/admin/options/${encodeURIComponent(t.id)}/edit">Edit</a></td><td><form method="post" action="/admin/options/${encodeURIComponent(t.id)}/delete" onsubmit="return confirm('Delete this option trade?')"><button>Delete</button></form></td></tr>`}).join('');
+  return optionShell('Option Journal',`<section class="card"><h1>Option Journal</h1><form method="get"><div class="grid"><div><label>Date From</label><input type="date" name="date_from" value="${escapeHtml(f.date_from)}"></div><div><label>Date To</label><input type="date" name="date_to" value="${escapeHtml(f.date_to)}"></div><div><label>Symbol</label><input name="symbol" value="${escapeHtml(f.symbol)}"></div><div><label>Strategy</label><select name="strategy"><option value="">All</option>${OPTION_STRATEGIES.map(v=>`<option${v===f.strategy?' selected':''}>${v}</option>`).join('')}</select></div><div><label>Status</label><select name="status"><option value="">All</option>${OPTION_STATUSES.map(v=>`<option${v===f.status?' selected':''}>${v}</option>`).join('')}</select></div></div><div class="actions"><button class="primary">Apply Filters</button><a class="btn" href="/admin/options">Clear Filters</a><a class="btn" href="/admin/options/new">New Option Trade</a></div></form></section><section class="card table">${rows?`<table><thead><tr><th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th><th>Expiration</th><th>Contracts</th><th>Credit/Debit</th><th>Entry Price</th><th>Exit Price</th><th>Fees</th><th>Status</th><th>P&amp;L</th><th>Notes</th><th>Proof</th><th>Edit</th><th>Delete</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">No option trades match these filters.</div>'}</section>`);
 }
 
 function optionAdmin(req,res) {
@@ -9580,11 +10083,62 @@ function optionAdmin(req,res) {
 }
 
 app.get('/admin/options/new',(req,res)=>{if(optionAdmin(req,res))res.send(renderOptionForm({trade_date:new Date().toISOString().slice(0,10)}));});
-app.get('/admin/options',async(req,res)=>{try{if(!optionAdmin(req,res))return;const f={date_from:String(req.query.date_from||''),date_to:String(req.query.date_to||''),symbol:String(req.query.symbol||'').trim().toUpperCase(),strategy:String(req.query.strategy||''),status:String(req.query.status||'')};let {trades}=await optionSheetData();trades=trades.filter(t=>(!f.date_from||t.trade_date>=f.date_from)&&(!f.date_to||t.trade_date<=f.date_to)&&(!f.symbol||t.symbol.includes(f.symbol))&&(!f.strategy||t.strategy===f.strategy)&&(!f.status||t.status===f.status)).sort((a,b)=>b.trade_date.localeCompare(a.trade_date));res.send(renderOptionJournal(trades,f));}catch(e){console.error('Option journal error:',e);res.status(500).send('Option journal error');}});
+app.get('/admin/options',async(req,res)=>{try{if(!optionAdmin(req,res))return;const f={date_from:String(req.query.date_from||''),date_to:String(req.query.date_to||''),symbol:String(req.query.symbol||'').trim().toUpperCase(),strategy:String(req.query.strategy||''),status:String(req.query.status||'')};let {trades}=await optionJournalDataWithProofs();trades=trades.filter(t=>(!f.date_from||t.trade_date>=f.date_from)&&(!f.date_to||t.trade_date<=f.date_to)&&(!f.symbol||t.symbol.includes(f.symbol))&&(!f.strategy||t.strategy===f.strategy)&&(!f.status||t.status===f.status)).sort((a,b)=>b.trade_date.localeCompare(a.trade_date));res.send(renderOptionJournal(trades,f));}catch(e){console.error('Option journal error:',e);res.status(500).send('Option journal error');}});
 app.post('/admin/options',async(req,res)=>{try{if(!optionAdmin(req,res))return;if(!optionSameOrigin(req))return res.status(403).send('Invalid request origin.');await saveNewOptionTrade(normalizeOptionTrade(req.body));res.redirect('/admin/options');}catch(e){res.status(400).send(renderOptionForm(req.body||{},e.message));}});
 app.get('/admin/options/:id/edit',async(req,res)=>{try{if(!optionAdmin(req,res))return;const found=await locateOptionTrade(req.params.id);if(!found.trade)return res.status(404).send('Option trade not found.');res.send(renderOptionForm(found.trade));}catch(e){res.status(500).send('Option journal error');}});
 app.post('/admin/options/:id',async(req,res)=>{try{if(!optionAdmin(req,res))return;if(!optionSameOrigin(req))return res.status(403).send('Invalid request origin.');if(!/^[0-9a-f-]{36}$/i.test(req.params.id))return res.status(400).send('Invalid ID.');if(!await replaceOptionTrade(req.params.id,normalizeOptionTrade(req.body)))return res.status(404).send('Option trade not found.');res.redirect('/admin/options');}catch(e){res.status(400).send(renderOptionForm({...req.body,id:req.params.id},e.message));}});
 app.post('/admin/options/:id/delete',async(req,res)=>{try{if(!optionAdmin(req,res))return;if(!optionSameOrigin(req))return res.status(403).send('Invalid request origin.');if(!/^[0-9a-f-]{36}$/i.test(req.params.id))return res.status(400).send('Invalid ID.');if(!await removeOptionTrade(req.params.id))return res.status(404).send('Option trade not found.');res.redirect('/admin/options');}catch(e){res.status(500).send('Option journal error');}});
+
+app.post('/admin/options/:id/proofs', async (req, res) => {
+  try {
+    setPrivateNoStoreHeaders(res);
+    if (!ADMIN_DASHBOARD_KEY) return res.status(500).json({ ok: false, error: 'ADMIN_DASHBOARD_KEY is not configured.' });
+    if (!isAdminAuthorized(req)) return res.status(401).json({ ok: false, error: 'Owner login required.' });
+    if (!optionSameOrigin(req)) return res.status(403).json({ ok: false, error: 'Invalid request origin.' });
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ ok: false, error: 'Invalid trade ID.' });
+
+    const found = await locateOptionTrade(req.params.id);
+    if (!found.trade) return res.status(404).json({ ok: false, error: 'Option trade not found.' });
+
+    const payload = decodeOptionProofPayload(req.body || {});
+    const proof = await saveOptionProof(found.trade, payload);
+    return res.status(201).json({ ok: true, proof: { id: proof.id, file_name: proof.file_name } });
+  } catch (error) {
+    console.error('Option proof upload error:', error);
+    return res.status(400).json({ ok: false, error: error.message || 'Option proof upload failed.' });
+  }
+});
+
+app.get('/admin/options/:id/proofs/:proofId', async (req, res) => {
+  try {
+    await streamOptionProof(req, res, 'admin');
+  } catch (error) {
+    console.error('Admin option proof view error:', error);
+    if (!res.headersSent) res.status(500).send('Unable to load proof screenshot.');
+  }
+});
+
+app.get('/dashboard/options/:id/proofs/:proofId', async (req, res) => {
+  try {
+    await streamOptionProof(req, res, 'dashboard');
+  } catch (error) {
+    console.error('Dashboard option proof view error:', error);
+    if (!res.headersSent) res.status(500).send('Unable to load proof screenshot.');
+  }
+});
+
+app.post('/admin/options/:id/proofs/:proofId/delete', async (req, res) => {
+  try {
+    if (!optionAdmin(req, res)) return;
+    if (!optionSameOrigin(req)) return res.status(403).send('Invalid request origin.');
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id) || !/^[0-9a-f-]{36}$/i.test(req.params.proofId)) return res.status(400).send('Invalid proof ID.');
+    if (!await removeOptionProof(req.params.id, req.params.proofId)) return res.status(404).send('Proof screenshot not found.');
+    return res.redirect('/admin/live#option-journal');
+  } catch (error) {
+    console.error('Option proof delete error:', error);
+    return res.status(500).send('Option proof delete error');
+  }
+});
 
 app.get('/', (req, res) => {
   res.status(200).send(isRussianRequest(req) ? renderLandingHtmlRu() : renderLandingHtml());
@@ -9926,7 +10480,7 @@ app.get('/admin/live', async (req, res) => {
     data.option_journal = { trades: [], error: false };
 
     try {
-      const journal = await optionSheetData();
+      const journal = await optionJournalDataWithProofs();
       data.option_journal.trades = newestOptionTrades(journal.trades, 20);
     } catch (journalErr) {
       console.error('Owner live option journal error:', journalErr);
@@ -10013,7 +10567,7 @@ app.get('/dashboard', async (req, res) => {
     data.option_journal = { trades: [], error: false };
 
     try {
-      const journal = await optionSheetData();
+      const journal = await optionJournalDataWithProofs();
       data.option_journal.trades = newestOptionTrades(journal.trades, 20);
     } catch (journalErr) {
       console.error('Public dashboard option journal error:', journalErr);
@@ -10066,4 +10620,7 @@ module.exports.__test = {
   cleanupStaleVixaleEdgePendingRows,
   runEdgePendingEodCleanup,
   isCompletedEdgePendingSession,
+  attachOptionProofs,
+  optionProofMagicMatches,
+  decodeOptionProofPayload,
 };

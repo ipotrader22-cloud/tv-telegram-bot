@@ -522,6 +522,7 @@ SITE_BASE_URL
 RESEND_API_KEY
 EMAIL_FROM
 PASSWORD_REQUEST_BCC
+OPTION_PROOFS_DIR
 ```
 
 ### Bridge forwarding and safety
@@ -2077,6 +2078,47 @@ remove existing Fiona alerts.
 
 ---
 
+### ADR-015 — Private option proof storage with authenticated proxy delivery
+
+**Decision:** Option-trade brokerage screenshots are stored as private files
+beneath the server directory configured by `OPTION_PROOFS_DIR`. Production must
+mount that directory on a Render persistent disk; the recommended configuration
+is a disk mounted at `/var/data` with `OPTION_PROOFS_DIR=/var/data/option-proofs`.
+Generated storage keys and trade associations are stored in a separate
+`Option Proofs` worksheet. The disk directory is not exposed as a static public
+path, and raw storage keys are never rendered as public links.
+
+Owner uploads are accepted only from the authenticated `/admin/live` surface,
+validated by same-origin checks, compressed in the browser, revalidated by
+server-side MIME signature checks, and limited to three screenshots per option
+trade. The authenticated dashboard receives only application proxy links. The
+Node process streams a file only after validating the dashboard or owner cookie
+and the proof-to-trade relationship.
+
+**Reason:** Render's ordinary service filesystem is ephemeral across deploys and
+restarts. An attached persistent disk provides durable private screenshot bytes
+without adding a second cloud-storage identity, while the separate Sheets
+metadata preserves the existing Option Journal association model. Authenticated
+proxy routes avoid permanent public file URLs and preserve owner-only
+upload/delete controls.
+
+**Operational constraint:** A Render persistent disk is required before proof
+uploads are enabled. The web service must remain a single instance because the
+disk is attached to one service instance. Attaching the disk also changes deploy
+behavior: disk-backed services do not use zero-downtime deploys, so activation
+and later deploys should be scheduled outside live signal windows.
+
+**Execution impact:** None. Proof upload, view, and deletion do not call the IB
+bridge, TradingView handlers, Telegram, or the execution-backed trade ledger.
+
+**Rollback:** Revert the proof feature commit and redeploy the previous
+confirmed commit. Existing files under `OPTION_PROOFS_DIR` and the `Option
+Proofs` worksheet remain inert until explicitly deleted. Removing the Render
+disk is a separate infrastructure action and must not be part of an automatic
+code rollback.
+
+---
+
 ## 18. Open Documentation Items
 
 The following should be added when next inspected:
@@ -2108,13 +2150,18 @@ POST /admin/options
 GET  /admin/options/:id/edit
 POST /admin/options/:id
 POST /admin/options/:id/delete
+POST /admin/options/:id/proofs
+GET  /admin/options/:id/proofs/:proofId
+POST /admin/options/:id/proofs/:proofId/delete
+GET  /dashboard/options/:id/proofs/:proofId
 ```
 
 The owner-only `GET /admin/live` page includes an Option Journal preview below
 the existing Live Dashboard sections. It shows the latest 20 option records,
 newest first, without filters, and links to the existing create, full-journal,
-edit, and POST delete routes. Full filtering remains available only on
-`GET /admin/options`.
+edit, and POST delete routes. Each row also includes owner-only proof controls:
+view existing screenshots, upload another screenshot, or delete an individual
+proof. Full filtering remains available only on `GET /admin/options`.
 
 Legs are formatted for display only. Stored values remain unchanged. The
 journal tables split display text on line breaks, `/`, semicolons, commas, and
@@ -2131,6 +2178,34 @@ Multiplier, Trade Type, Entry Price, Exit Date, Exit Time, Exit Price, Fees,
 Status, Notes, Created At, Updated At
 ```
 
+Proof metadata is stored separately in an automatically created `Option Proofs`
+worksheet. Columns A:G are:
+
+```text
+ID, Trade ID, Storage Key, File Name, Mime Type, Size Bytes, Uploaded At
+```
+
+The actual screenshot bytes are stored beneath `OPTION_PROOFS_DIR`. Production
+must point this variable to an attached Render persistent disk; the recommended
+configuration is:
+
+```text
+Render disk mount path: /var/data
+OPTION_PROOFS_DIR=/var/data/option-proofs
+```
+
+The application creates the final directory when the first screenshot is saved.
+Files use generated UUID-based storage keys, restrictive directory/file modes,
+and are never served through Express static middleware. Authenticated routes
+proxy the bytes after checking the journal association and the appropriate
+owner or dashboard cookie.
+
+The browser accepts PNG, JPG, or WebP input, resizes/compresses it to JPEG when
+necessary, and submits at most 1.4 MB of decoded image data. The server validates
+base64 syntax, allowed MIME type, image magic bytes, owner authentication, same
+origin, option-trade existence, and the three-proof-per-trade limit before
+writing the file and appending its metadata row.
+
 P&L is derived only for closed records and is never entered manually:
 
 ```text
@@ -2145,24 +2220,28 @@ not read from or write to `Trades`, `Pending`, `Open Positions`,
 
 The authorized public `GET /dashboard` view displays only Trade Date, Symbol,
 Strategy, Legs, Expiration, Contracts, Credit/Debit, Entry Price, Exit Price,
-Status, and derived P&L. It shows the latest 20 records, newest first, without
-filters. It never renders Notes, edit/delete controls, create buttons, internal
-IDs, Created At, Updated At, owner-authentication details, worksheet
-credentials, or internal errors.
+Status, derived P&L, and authenticated brokerage-screenshot links. It shows the
+latest 20 records, newest first, without filters. It never renders Notes,
+owner upload/delete controls, create buttons, internal IDs, storage keys,
+Created At, Updated At, owner-authentication details, worksheet credentials, or
+internal errors. Screenshots are labeled as owner-provided and may be cropped or
+redacted; the application does not claim independent broker verification.
 
 Owner mutation surfaces remain protected by `ADMIN_DASHBOARD_KEY`. Option
 Journal records are not published through public APIs, Telegram, or VECO
-execution-backed Sheets. Journal read failures on either dashboard are caught
-and logged server-side without exposing internal details; existing dashboard
-content continues rendering with a restrained warning only in the journal
-section.
+execution-backed Sheets. Proof files remain private on the persistent disk and
+are streamed only after owner or dashboard-cookie authorization. Proof metadata read failure
+falls back to the normal journal without links; journal read failure on either
+dashboard is caught and logged server-side without exposing internal details,
+and existing dashboard content continues rendering with a restrained warning
+only in the journal section.
 
-Rollback: revert the applicable dashboard journal commit and redeploy the prior
-confirmed commit. Reverting the public-dashboard patch removes only the public
-read-only table; owner journal pages and the owner Live Dashboard preview remain
-available. Rollback does not change saved records or the worksheet schema. The
-isolated worksheet may remain as inert historical data; deleting it requires
-separate explicit approval.
+Rollback: revert the applicable dashboard journal/proof commit and redeploy the
+prior confirmed commit. Reverting the proof patch removes upload and screenshot
+links without changing saved Option Journal records. Existing files beneath
+`OPTION_PROOFS_DIR` and the `Option Proofs` worksheet remain inert historical
+data; deleting either requires separate explicit approval. Removing or resizing
+the Render disk is a separate infrastructure action.
 
 ---
 
