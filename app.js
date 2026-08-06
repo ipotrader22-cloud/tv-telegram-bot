@@ -137,6 +137,7 @@ const EDGE_ENTRY_FILL_IN_FLIGHT = new Map();
 const EDGE_EXTERNAL_CLOSE_IN_FLIGHT = new Map();
 const EDGE_BROKER_EXIT_IN_FLIGHT = new Map();
 let pendingSheetMutationTail = Promise.resolve();
+let ledgerSheetMutationTail = Promise.resolve();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1714,6 +1715,59 @@ async function readSheet(sheets, sheetName, range = 'A:Z') {
   return response.data.values || [];
 }
 
+function quotedSheetName(sheetName) {
+  return `'${String(sheetName || '').replace(/'/g, "''")}'`;
+}
+
+function sheetCellHasValue(value) {
+  return value !== undefined &&
+    value !== null &&
+    String(value).trim() !== '';
+}
+
+async function nextStrictSheetRow(
+  sheets,
+  sheetName,
+  scanRange = 'A:V'
+) {
+  const values = await readSheet(sheets, sheetName, scanRange);
+  let lastUsedRow = 0;
+
+  for (let index = 0; index < values.length; index++) {
+    if (Array.isArray(values[index]) && values[index].some(sheetCellHasValue)) {
+      lastUsedRow = index + 1;
+    }
+  }
+
+  // Row 1 is reserved for headers even if a sheet was accidentally created blank.
+  return Math.max(2, lastUsedRow + 1);
+}
+
+async function writeSheetRowStrict(
+  sheets,
+  sheetName,
+  startColumn,
+  endColumn,
+  rowValues,
+  scanRange = 'A:V',
+  valueInputOption = 'USER_ENTERED'
+) {
+  const rowNumber = await nextStrictSheetRow(
+    sheets,
+    sheetName,
+    scanRange
+  );
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${quotedSheetName(sheetName)}!${startColumn}${rowNumber}:${endColumn}${rowNumber}`,
+    valueInputOption,
+    requestBody: { values: [rowValues] },
+  });
+
+  return rowNumber;
+}
+
 function findRowIndexByTradeId(values, tradeId) {
   const wanted = normalizeTradeId(tradeId);
   if (!wanted) return -1;
@@ -1762,6 +1816,12 @@ async function deleteSheetRow(sheets, sheetName, rowNumber) {
 function withPendingSheetMutationLock(mutation) {
   const current = pendingSheetMutationTail.then(mutation, mutation);
   pendingSheetMutationTail = current.catch(() => {});
+  return current;
+}
+
+function withLedgerSheetMutationLock(mutation) {
+  const current = ledgerSheetMutationTail.then(mutation, mutation);
+  ledgerSheetMutationTail = current.catch(() => {});
   return current;
 }
 
@@ -1998,26 +2058,26 @@ async function appendToTradesSheet(sheets, row) {
       ? row.exit
       : row.target || row.exit;
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: GOOGLE_SHEET_ID,
-    range: `${TRADES_SHEET}!A:K`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: {
-      values: [[
-        row.timestamp,
-        row.symbol,
-        row.side,
-        eventForSheet,
-        row.entry,
-        row.size,
-        exitForSheet,
-        row.stop,
-        row.result,
-        row.status,
-        row.raw,
-      ]],
-    },
-  });
+  await writeSheetRowStrict(
+    sheets,
+    TRADES_SHEET,
+    'A',
+    'K',
+    [
+      row.timestamp,
+      row.symbol,
+      row.side,
+      eventForSheet,
+      row.entry,
+      row.size,
+      exitForSheet,
+      row.stop,
+      row.result,
+      row.status,
+      row.raw,
+    ],
+    'A:V'
+  );
 
   console.log('Trades row appended:', row.symbol, row.side, eventForSheet);
 }
@@ -2052,12 +2112,14 @@ async function upsertPendingUnlocked(sheets, row) {
 
     console.log('Pending updated:', row.trade_id);
   } else {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${PENDING_SHEET}!A:J`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [pendingRow] },
-    });
+    await writeSheetRowStrict(
+      sheets,
+      PENDING_SHEET,
+      'A',
+      'J',
+      pendingRow,
+      'A:V'
+    );
 
     console.log('Pending appended:', row.trade_id);
   }
@@ -2115,14 +2177,14 @@ async function upsertOpenPosition(sheets, row, pendingRow = null) {
     targetRowNumber = sheetRow;
     console.log('Open position updated:', row.trade_id);
   } else {
-    const appendResponse = await sheets.spreadsheets.values.append({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${OPEN_POSITIONS_SHEET}!A:L`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [openRowWithoutFormulas] },
-    });
-
-    targetRowNumber = parseUpdatedRowNumber(appendResponse.data.updates.updatedRange);
+    targetRowNumber = await writeSheetRowStrict(
+      sheets,
+      OPEN_POSITIONS_SHEET,
+      'A',
+      'L',
+      openRowWithoutFormulas,
+      'A:V'
+    );
     console.log('Open position appended:', row.trade_id, 'row', targetRowNumber);
   }
 
@@ -2260,14 +2322,93 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     closeRow.raw,
   ];
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: GOOGLE_SHEET_ID,
-    range: `${CLOSED_TRADES_SHEET}!A:L`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [closedRow] },
-  });
+  await writeSheetRowStrict(
+    sheets,
+    CLOSED_TRADES_SHEET,
+    'A',
+    'L',
+    closedRow,
+    'A:V'
+  );
 
   console.log('Closed trade appended:', closeRow.trade_id, eventForSheet, closeRow.result);
+}
+
+function rawBridgeDeliveryId(raw) {
+  const parsed = parseRawJsonSafe(raw);
+  return String(
+    parsed.bridge_delivery_id ||
+    parsed.render_delivery_id ||
+    ''
+  ).trim();
+}
+
+function findRawBridgeDeliveryRow(
+  rows,
+  rawColumns,
+  deliveryId
+) {
+  const wanted = String(deliveryId || '').trim();
+  if (!wanted) return null;
+
+  const columns = Array.isArray(rawColumns)
+    ? rawColumns
+    : [rawColumns];
+
+  for (let index = 1; index < rows.length; index++) {
+    for (const rawColumn of columns) {
+      if (rawBridgeDeliveryId(rows[index]?.[rawColumn]) === wanted) {
+        return {
+          row: rows[index],
+          row_number: index + 1,
+          raw: parseRawJsonSafe(rows[index]?.[rawColumn]),
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+async function getStandardBridgeClosePublicationState(
+  sheets,
+  row
+) {
+  const deliveryId = rawBridgeDeliveryId(row?.raw);
+  const [openRows, tradeRows, closedRows] = await Promise.all([
+    readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:V'),
+    readSheet(sheets, TRADES_SHEET, 'A:V'),
+    readSheet(sheets, CLOSED_TRADES_SHEET, 'A:V'),
+  ]);
+
+  const openRowNumber = findRowIndexByTradeId(
+    openRows,
+    row?.trade_id
+  );
+
+  return {
+    delivery_id: deliveryId,
+    open: openRowNumber > 0
+      ? {
+          row: openRows[openRowNumber - 1],
+          row_number: openRowNumber,
+        }
+      : null,
+    trade: deliveryId
+      ? findRawBridgeDeliveryRow(
+          tradeRows,
+          [10, 20],
+          deliveryId
+        )
+      : null,
+    closed: deliveryId
+      ? findRawBridgeDeliveryRow(
+          closedRows,
+          [11, 21],
+          deliveryId
+        )
+      : null,
+  };
 }
 
 async function cleanupLegacyPositionIfExists(sheets, tradeId) {
@@ -2734,7 +2875,7 @@ async function markEdgeBrokerExitPublicationComplete(
   );
 }
 
-async function processLedger(row, dependencies = {}) {
+async function processLedgerUnlocked(row, dependencies = {}) {
   const sheets = dependencies.sheets ||
     await (dependencies.getSheetsClient || getSheetsClient)();
 
@@ -3078,6 +3219,52 @@ async function processLedger(row, dependencies = {}) {
   if (row.event === 'TP' || row.event === 'SL' || row.event === 'EOD') {
     if (!row.trade_id) return row;
 
+    const bridgeDeliveryId = rawBridgeDeliveryId(row.raw);
+
+    if (bridgeDeliveryId) {
+      const state = await getStandardBridgeClosePublicationState(
+        sheets,
+        row
+      );
+      const openPosition = state.open
+        ? openPositionFromSheetRow(state.open.row)
+        : null;
+      const enrichedCloseRow = enrichCloseRowFromOpenPosition(
+        row,
+        openPosition
+      );
+
+      if (!state.trade) {
+        await appendToTradesSheet(sheets, enrichedCloseRow);
+      }
+      if (!state.closed) {
+        await appendClosedTrade(
+          sheets,
+          openPosition,
+          enrichedCloseRow
+        );
+      }
+      if (state.open) {
+        await removeOpenPosition(sheets, row.trade_id);
+      }
+
+      await cleanupLegacyPositionIfExists(
+        sheets,
+        row.trade_id
+      );
+
+      return {
+        ...enrichedCloseRow,
+        status: 'bridge_close_publication_complete',
+        bridge_close_publication_state: {
+          delivery_id: bridgeDeliveryId,
+          open_position_removed: true,
+          trades_close_written: true,
+          closed_trade_written: true,
+        },
+      };
+    }
+
     const openPosition = await removeOpenPosition(sheets, row.trade_id);
     await cleanupLegacyPositionIfExists(sheets, row.trade_id);
 
@@ -3104,6 +3291,12 @@ async function processLedger(row, dependencies = {}) {
   }
 
   return row;
+}
+
+function processLedger(row, dependencies = {}) {
+  return withLedgerSheetMutationLock(() =>
+    processLedgerUnlocked(row, dependencies)
+  );
 }
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -9569,12 +9762,20 @@ async function processRecognizedTradingViewWebhook(
     Boolean(parsedRow.reconciliation_id);
   const edgeBrokerExitCallback =
     isPersistentEdgeBrokerExitCallback(reqBody, parsedRow);
+  const durableBridgeCloseCallback =
+    bridgeCallback &&
+    ['TP', 'SL', 'EOD', 'EXTERNAL_CLOSE'].includes(
+      String(parsedRow?.event || '').toUpperCase()
+    );
 
   return processRecognizedTradingViewWebhookLifecycle(
     reqBody,
     parsedRow,
     message,
-    edgeEntryFillCallback || edgeExternalCloseCallback || edgeBrokerExitCallback,
+    durableBridgeCloseCallback ||
+      edgeEntryFillCallback ||
+      edgeExternalCloseCallback ||
+      edgeBrokerExitCallback,
     dependencies
   );
 }
@@ -9881,9 +10082,15 @@ async function handleTradingViewWebhookWithDependencies(
       isFionaLimitPullbackRow(parsedRow);
     const edgeBrokerExitCallback =
       isPersistentEdgeBrokerExitCallback(reqBody, parsedRow);
+    const durableBridgeCloseCallback =
+      isBridgeExecutionCallback(reqBody) &&
+      ['TP', 'SL', 'EOD', 'EXTERNAL_CLOSE'].includes(
+        String(parsedRow?.event || '').toUpperCase()
+      );
 
     if (
       (reqBody && reqBody.broker_eod_watchdog) ||
+      durableBridgeCloseCallback ||
       edgeEntryFillCallback ||
       edgeExternalCloseCallback ||
       edgeBrokerExitCallback
