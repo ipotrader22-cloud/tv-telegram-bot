@@ -9873,10 +9873,20 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
     isEdgeBrokerExitShape(parsedRow) &&
     !isPersistentEdgeBrokerExitCallback(reqBody, parsedRow)
   ) {
-    console.log(
-      'Ignored unconfirmed or incomplete Edge broker-exit callback:',
-      bridgeLogPrefix(parsedRow)
-    );
+    const messageText =
+      'Unconfirmed or incomplete Edge broker-exit callback: ' +
+      bridgeLogPrefix(parsedRow);
+
+    // A broker callback must never receive HTTP 200 when its public close was
+    // not actually persisted. Throwing here makes /tv answer 503 RETRY, so the
+    // bridge durable outbox retains the close instead of silently losing it.
+    if (bridgeCallback) {
+      const error = new Error(messageText);
+      error.retryable = true;
+      throw error;
+    }
+
+    console.log('Ignored ' + messageText);
     return;
   }
 
