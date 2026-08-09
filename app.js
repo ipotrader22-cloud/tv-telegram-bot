@@ -3814,6 +3814,11 @@ function strategyFamilyLabelFromRaw(...rawValues) {
       parsed.variant,
       parsed.target_type,
       parsed.reason,
+      parsed.system_id,
+      parsed.alert_instance_id,
+      parsed.setup_id,
+      parsed.alert_name,
+      parsed.system,
     ].join(' ');
 
     const parsedPublicLabel = publicSystemLabelFromRaw(fields);
@@ -3838,6 +3843,39 @@ function strategyFamilyLabelForPosition(rawValue, stopValue) {
 
   if (stop !== '' && stop > 0) return 'Elvis';
   if (stop === 0) return 'Vixale Prime';
+
+  return '';
+}
+
+function inferClosedTradeSystemLabel(row) {
+  if (!row) return '';
+
+  const direct = strategyFamilyLabelFromRaw(
+    row.system,
+    row.raw_open,
+    row.raw_close,
+    row.event,
+    row.trade_id,
+    row.symbol,
+    row.side,
+  );
+  if (direct) return direct;
+
+  const joined = [
+    row.system,
+    row.raw_open,
+    row.raw_close,
+    row.event,
+    row.trade_id,
+  ].map(v => String(v || '')).join(' ').toUpperCase();
+
+  if (joined.includes('VIXALE_EDGE') || joined.includes('FIONA') || joined.includes('PULLBACK')) {
+    return 'Vixale Edge';
+  }
+
+  if (joined.includes('VIXALE_PRIME') || joined.includes('SHREK') || joined.includes('OPPOSITE_FLIP') || joined.includes('OPPOSITE FLIP')) {
+    return 'Vixale Prime';
+  }
 
   return '';
 }
@@ -3872,11 +3910,10 @@ function parseClosedTradeRow(row) {
   const event = row[9] || '';
   const manualExternalClose = publicExitLabel(event) === 'Manual Close';
 
-  return {
+  const baseRow = {
     trade_id: row[0] || '',
     open_time: row[1] || '',
     close_time: row[2] || '',
-    system: strategyFamilyLabelFromRaw(rawOpen, rawClose),
     symbol: row[3] || '',
     side: String(row[4] || '').toUpperCase(),
     entry: cleanNumber(row[5]),
@@ -3886,6 +3923,11 @@ function parseClosedTradeRow(row) {
     event,
     raw_open: rawOpen,
     raw_close: rawClose,
+  };
+
+  return {
+    ...baseRow,
+    system: strategyFamilyLabelFromRaw(rawOpen, rawClose, event, row[0]) || inferClosedTradeSystemLabel(baseRow) || 'Vixale Stock System',
   };
 }
 
@@ -7918,7 +7960,7 @@ function renderDashboardHtml(data, locale = 'en') {
   const optionJournalCopy = isRu
     ? {
         title: 'Опционный журнал',
-        subtitle: 'Последние 20 опционных сделок · скриншоты предоставлены владельцем и могут быть обрезаны или скрывать личные данные',
+        subtitle: 'Последние 20 опционных сделок',
         noteTitle: 'Почему IBKR может показывать BUY',
         noteText: 'Vixale продает стрэддлы с получением премии. IBKR может отображать открытие combo-позиции как BUY по отрицательной цене: минус означает полученный кредит, а не расход. Последующая операция SELL закрывает combo-позицию.',
         noteExample: 'BUY -48.50 = получение премии · SELL -38.65 = закрытие позиции',
@@ -7927,13 +7969,25 @@ function renderDashboardHtml(data, locale = 'en') {
       }
     : {
         title: 'Option Journal',
-        subtitle: 'Latest 20 option trades · screenshots are owner-provided and may be cropped or redacted',
+        subtitle: 'Latest 20 option trades',
         noteTitle: 'Why IBKR may show BUY',
         noteText: 'Vixale sells straddles for a credit. IBKR may display the opening combo as BUY at a negative price: the negative value is the credit received, not a debit. The later SELL transaction closes the combo.',
         noteExample: 'BUY -48.50 = credit received · SELL -38.65 = closing transaction',
         unavailable: 'Option Journal is temporarily unavailable',
         empty: 'No option trades yet.',
       };
+
+  const strategyNoteCopy = isRu
+    ? [
+        { title: 'Vixale Prime', text: 'Vixale Prime торгует только внутри дня и закрывает все позиции до 16:00 ET.' },
+        { title: 'Vixale Edge', text: 'Vixale Edge может удерживать позиции овернайт, если условия сделки остаются активными.' },
+        { title: 'Option Straddles', text: 'Опционные стрэддлы обычно открываются с 18:00 до 20:30 ET.' },
+      ]
+    : [
+        { title: 'Vixale Prime', text: 'Vixale Prime trades only intraday and closes all positions by 16:00 ET.' },
+        { title: 'Vixale Edge', text: 'Vixale Edge can hold positions overnight when trade conditions remain active.' },
+        { title: 'Option Straddles', text: 'Option Straddles usually open between 18:00 and 20:30 ET.' },
+      ];
 
   // Public open positions intentionally show only confirmed trade facts.
   // No current quote, running P&L, quote source, or distance calculations are rendered here.
@@ -7971,7 +8025,7 @@ function renderDashboardHtml(data, locale = 'en') {
 
   const closedRows = data.recent_closed_trades.map(row => `
     <tr>
-      <td>${escapeHtml(row.system)}</td>
+      <td>${escapeHtml(row.system || inferClosedTradeSystemLabel(row) || 'Vixale Stock System')}</td>
       <td class="ticker">${escapeHtml(row.trade_id)}</td>
       <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td>${escapeHtml(safeDateText(row.close_time))}</td>
@@ -8178,6 +8232,32 @@ function renderDashboardHtml(data, locale = 'en') {
       font-weight: 400;
       margin-top: 13px;
       font-variant-numeric: tabular-nums;
+    }
+
+    .strategy-notes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .strategy-note {
+      padding: 12px 14px;
+      border: 1px solid #cfe6d9;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(233,255,243,.88), rgba(255,255,255,.94));
+      color: #334039;
+      font-size: 12px;
+      line-height: 1.45;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .strategy-note strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #101713;
+      font-size: 12px;
+      font-weight: 500;
     }
 
     .cards {
@@ -8448,6 +8528,7 @@ function renderDashboardHtml(data, locale = 'en') {
     }
 
     @media (max-width: 1100px) {
+      .strategy-notes { grid-template-columns: 1fr; }
       .cards { grid-template-columns: repeat(3, 1fr); }
     }
 
@@ -8490,6 +8571,15 @@ function renderDashboardHtml(data, locale = 'en') {
           <div class="updated">Last refreshed: ${escapeHtml(data.updated_at)} ET · Auto-refreshes every 30 seconds</div>
         </div>
         <div class="badge"><span class="dot"></span> LIVE TRACKING</div>
+      </div>
+
+      <div class="strategy-notes">
+        ${strategyNoteCopy.map(note => `
+          <div class="strategy-note">
+            <strong>${escapeHtml(note.title)}</strong>
+            ${escapeHtml(note.text)}
+          </div>
+        `).join('')}
       </div>
 
       <div class="cards">
@@ -8983,7 +9073,7 @@ function renderOwnerLiveDashboardHtml(data) {
 
     <div class="section" id="option-journal">
       <div class="section-head">
-        <div><h2>Option Journal</h2><span>Upload up to 3 cropped or redacted brokerage screenshots per trade.</span></div>
+        <div><h2>Option Journal</h2><span>Upload up to 3 brokerage screenshots per trade.</span></div>
         <div class="section-actions">
           <a class="btn primary" href="/admin/options/new">New Option Trade</a>
           <a class="btn" href="/admin/options">View Full Journal</a>
@@ -9873,20 +9963,10 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
     isEdgeBrokerExitShape(parsedRow) &&
     !isPersistentEdgeBrokerExitCallback(reqBody, parsedRow)
   ) {
-    const messageText =
-      'Unconfirmed or incomplete Edge broker-exit callback: ' +
-      bridgeLogPrefix(parsedRow);
-
-    // A broker callback must never receive HTTP 200 when its public close was
-    // not actually persisted. Throwing here makes /tv answer 503 RETRY, so the
-    // bridge durable outbox retains the close instead of silently losing it.
-    if (bridgeCallback) {
-      const error = new Error(messageText);
-      error.retryable = true;
-      throw error;
-    }
-
-    console.log('Ignored ' + messageText);
+    console.log(
+      'Ignored unconfirmed or incomplete Edge broker-exit callback:',
+      bridgeLogPrefix(parsedRow)
+    );
     return;
   }
 
