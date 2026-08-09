@@ -259,17 +259,35 @@ function isOppositeFlipRow(row) {
 
 function publicSystemLabelFromRaw(...rawValues) {
   const joined = rawValues.map(value => String(value || '')).join('\n');
+  const upper = joined.toUpperCase();
 
-  // Public naming must preserve the same precedence as internal classification:
-  // Fiona-specific markers are checked before generic Opposite Flip / Shrek markers.
-  if (isFionaLimitPullbackName(joined)) return 'Vixale Edge';
+  // Prefer explicit public-system identity over shared strategy-family names.
+  // Vixale Edge and Prime can both contain "OPPOSITE_FLIP" markers, so those
+  // generic markers must never be evaluated before VIXALE_EDGE / FIONA LIMIT.
   if (
-    isOppositeFlipName(joined) ||
-    joined.toUpperCase().includes('FIONA_PULLBACK_HTF_ATR_TARGET') ||
-    /\bSHREK\b/i.test(joined)
+    upper.includes('VIXALE_EDGE') ||
+    upper.includes('FIONA_LIMIT_PULLBACK_ATR_TARGET') ||
+    upper.includes('VX_FIONA_LIMIT_PULLBACK_LIVE') ||
+    upper.includes('FIONA_LONG_LIMIT_PULLBACK') ||
+    upper.includes('FIONA_SHORT_LIMIT_PULLBACK') ||
+    upper.includes('_FIONA_LIMIT')
+  ) {
+    return 'Vixale Edge';
+  }
+
+  if (
+    upper.includes('VIXALE_PRIME') ||
+    upper.includes('PRIME_') ||
+    upper.includes('SHREK_1_4') ||
+    /\bSHREK\b/i.test(joined) ||
+    upper.includes('FIONA_PULLBACK_HTF_ATR_TARGET')
   ) {
     return 'Vixale Prime';
   }
+
+  // Legacy fallback only after explicit Edge/Prime markers were exhausted.
+  if (isFionaLimitPullbackName(joined)) return 'Vixale Edge';
+  if (isOppositeFlipName(joined)) return 'Vixale Prime';
   if (/\bFIONA\b/i.test(joined)) return 'Vixale Edge';
 
   return '';
@@ -3927,7 +3945,7 @@ function parseClosedTradeRow(row) {
 
   return {
     ...baseRow,
-    system: strategyFamilyLabelFromRaw(rawOpen, rawClose, event, row[0]) || inferClosedTradeSystemLabel(baseRow) || 'Vixale Stock System',
+    system: strategyFamilyLabelFromRaw(rawOpen, rawClose, event, row[0]) || inferClosedTradeSystemLabel(baseRow) || '',
   };
 }
 
@@ -8025,7 +8043,7 @@ function renderDashboardHtml(data, locale = 'en') {
 
   const closedRows = data.recent_closed_trades.map(row => `
     <tr>
-      <td>${escapeHtml(row.system || inferClosedTradeSystemLabel(row) || 'Vixale Stock System')}</td>
+      <td>${escapeHtml(row.system || inferClosedTradeSystemLabel(row) || '—')}</td>
       <td class="ticker">${escapeHtml(row.trade_id)}</td>
       <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td>${escapeHtml(safeDateText(row.close_time))}</td>
