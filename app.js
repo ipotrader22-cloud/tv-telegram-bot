@@ -102,6 +102,24 @@ const TRADES_SHEET = 'Trades';
 const PENDING_SHEET = 'Pending';
 const OPEN_POSITIONS_SHEET = 'Open Positions';
 const CLOSED_TRADES_SHEET = 'Closed Trades';
+const TRADE_METADATA_SHEET = 'Trade Metadata';
+const TRADE_METADATA_HEADERS = [
+  'Metadata ID',
+  'Trade ID',
+  'System',
+  'Symbol',
+  'Side',
+  'Open Time',
+  'Close Time',
+  'Event',
+  'Setup ID',
+  'Alert Instance ID',
+  'Strategy',
+  'Variant',
+  'Raw Open JSON',
+  'Raw Close JSON',
+  'Recorded At',
+];
 const LEGACY_POSITIONS_SHEET = 'Positions';
 const OPTION_JOURNAL_SHEET = 'Option Journal';
 const OPTION_JOURNAL_HEADERS = ['ID', 'Trade Date', 'Entry Time', 'Symbol', 'Strategy', 'Legs', 'Expiration', 'Contracts', 'Multiplier', 'Trade Type', 'Entry Price', 'Exit Date', 'Exit Time', 'Exit Price', 'Fees', 'Status', 'Notes', 'Created At', 'Updated At'];
@@ -138,6 +156,7 @@ const EDGE_EXTERNAL_CLOSE_IN_FLIGHT = new Map();
 const EDGE_BROKER_EXIT_IN_FLIGHT = new Map();
 let pendingSheetMutationTail = Promise.resolve();
 let ledgerSheetMutationTail = Promise.resolve();
+let tradeMetadataSheetReadyPromise = null;
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2325,6 +2344,11 @@ async function removeOpenRowsBySymbol(sheets, symbol) {
 async function appendClosedTrade(sheets, openPosition, closeRow) {
   const eventForSheet = sheetEventLabel(closeRow);
 
+  // Keep the human-facing Closed Trades sheet compact. All large raw payloads
+  // and the canonical Prime/Edge system identity are stored separately in
+  // Trade Metadata and joined back into the dashboard by trade/time identity.
+  await upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet);
+
   const closedRow = [
     closeRow.trade_id,
     openPosition?.open_time || '',
@@ -2336,17 +2360,15 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     closeRow.size || openPosition?.size || '',
     closeRow.result,
     eventForSheet,
-    openPosition?.raw_open || '',
-    closeRow.raw,
   ];
 
   await writeSheetRowStrict(
     sheets,
     CLOSED_TRADES_SHEET,
     'A',
-    'L',
+    'J',
     closedRow,
-    'A:V'
+    'A:J'
   );
 
   console.log('Closed trade appended:', closeRow.trade_id, eventForSheet, closeRow.result);
@@ -3487,6 +3509,211 @@ async function ensureSheetWithHeaders(sheets, sheetName, headers) {
   });
 }
 
+async function ensureTradeMetadataSheet(sheets) {
+  if (!tradeMetadataSheetReadyPromise) {
+    tradeMetadataSheetReadyPromise = ensureSheetWithHeaders(
+      sheets,
+      TRADE_METADATA_SHEET,
+      TRADE_METADATA_HEADERS
+    ).catch(error => {
+      tradeMetadataSheetReadyPromise = null;
+      throw error;
+    });
+  }
+
+  return tradeMetadataSheetReadyPromise;
+}
+
+function parsedTradeMetadata(rawOpen, rawClose) {
+  const open = parseRawJsonSafe(rawOpen);
+  const close = parseRawJsonSafe(rawClose);
+
+  const first = (...values) => {
+    for (const value of values) {
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  return {
+    setup_id: first(close.setup_id, open.setup_id),
+    alert_instance_id: first(close.alert_instance_id, open.alert_instance_id),
+    strategy: first(close.strategy, open.strategy, close.strategy_name, open.strategy_name),
+    variant: first(close.variant, open.variant),
+    system_id: first(close.system_id, open.system_id),
+  };
+}
+
+function tradeMetadataCompositeKey(tradeId, openTime, closeTime) {
+  return [tradeId, openTime, closeTime]
+    .map(value => String(value || '').trim().toUpperCase())
+    .join('|');
+}
+
+function buildTradeMetadataId(openPosition, closeRow) {
+  const rawOpen = openPosition?.raw_open || '';
+  const rawClose = closeRow?.raw || '';
+  const parsed = parsedTradeMetadata(rawOpen, rawClose);
+
+  if (parsed.setup_id) return parsed.setup_id;
+
+  return tradeMetadataCompositeKey(
+    closeRow?.trade_id || openPosition?.trade_id || '',
+    openPosition?.open_time || '',
+    closeRow?.timestamp || ''
+  );
+}
+
+async function upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet) {
+  await ensureTradeMetadataSheet(sheets);
+
+  const rawOpen = openPosition?.raw_open || '';
+  const rawClose = closeRow?.raw || '';
+  const parsed = parsedTradeMetadata(rawOpen, rawClose);
+  const tradeId = closeRow?.trade_id || openPosition?.trade_id || '';
+  const openTime = openPosition?.open_time || '';
+  const closeTime = closeRow?.timestamp || '';
+  const symbol = closeRow?.symbol || openPosition?.symbol || '';
+  const side = closeRow?.side || openPosition?.side || '';
+  const system = strategyFamilyLabelFromRaw(
+    rawOpen,
+    rawClose,
+    parsed.system_id,
+    parsed.strategy,
+    parsed.variant,
+    parsed.alert_instance_id,
+    parsed.setup_id
+  ) || inferClosedTradeSystemLabel({
+    trade_id: tradeId,
+    symbol,
+    side,
+    event: eventForSheet,
+    raw_open: rawOpen,
+    raw_close: rawClose,
+  });
+
+  const metadataId = buildTradeMetadataId(openPosition, closeRow);
+  const rowValues = [
+    metadataId,
+    tradeId,
+    system,
+    symbol,
+    side,
+    openTime,
+    closeTime,
+    eventForSheet,
+    parsed.setup_id,
+    parsed.alert_instance_id,
+    parsed.strategy,
+    parsed.variant,
+    rawOpen,
+    rawClose,
+    new Date().toISOString(),
+  ];
+
+  const values = await readSheet(sheets, TRADE_METADATA_SHEET, 'A:O');
+  const wantedMetadataId = String(metadataId || '').trim();
+  const wantedComposite = tradeMetadataCompositeKey(tradeId, openTime, closeTime);
+  let existingRowNumber = -1;
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i] || [];
+    const rowMetadataId = String(row[0] || '').trim();
+    const rowComposite = tradeMetadataCompositeKey(row[1], row[5], row[6]);
+
+    if (
+      (wantedMetadataId && rowMetadataId === wantedMetadataId) ||
+      (wantedComposite && rowComposite === wantedComposite)
+    ) {
+      existingRowNumber = i + 1;
+      break;
+    }
+  }
+
+  if (existingRowNumber > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${quotedSheetName(TRADE_METADATA_SHEET)}!A${existingRowNumber}:O${existingRowNumber}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [rowValues] },
+    });
+    return existingRowNumber;
+  }
+
+  return writeSheetRowStrict(
+    sheets,
+    TRADE_METADATA_SHEET,
+    'A',
+    'O',
+    rowValues,
+    'A:O',
+    'RAW'
+  );
+}
+
+function parseTradeMetadataRow(row) {
+  return {
+    metadata_id: row[0] || '',
+    trade_id: row[1] || '',
+    system: row[2] || '',
+    symbol: row[3] || '',
+    side: String(row[4] || '').toUpperCase(),
+    open_time: row[5] || '',
+    close_time: row[6] || '',
+    event: row[7] || '',
+    setup_id: row[8] || '',
+    alert_instance_id: row[9] || '',
+    strategy: row[10] || '',
+    variant: row[11] || '',
+    raw_open: row[12] || '',
+    raw_close: row[13] || '',
+    recorded_at: row[14] || '',
+  };
+}
+
+function buildTradeMetadataIndex(rows) {
+  const byComposite = new Map();
+  const byTradeAndOpen = new Map();
+
+  for (const row of rows || []) {
+    const metadata = parseTradeMetadataRow(row);
+    if (!metadata.trade_id) continue;
+
+    const composite = tradeMetadataCompositeKey(
+      metadata.trade_id,
+      metadata.open_time,
+      metadata.close_time
+    );
+    if (composite) byComposite.set(composite, metadata);
+
+    const tradeAndOpen = [metadata.trade_id, metadata.open_time]
+      .map(value => String(value || '').trim().toUpperCase())
+      .join('|');
+    if (tradeAndOpen !== '|') byTradeAndOpen.set(tradeAndOpen, metadata);
+  }
+
+  return { byComposite, byTradeAndOpen };
+}
+
+function metadataForClosedTrade(row, metadataIndex) {
+  if (!row || !metadataIndex) return null;
+
+  const composite = tradeMetadataCompositeKey(
+    row.trade_id,
+    row.open_time,
+    row.close_time
+  );
+  const exact = metadataIndex.byComposite.get(composite);
+  if (exact) return exact;
+
+  const tradeAndOpen = [row.trade_id, row.open_time]
+    .map(value => String(value || '').trim().toUpperCase())
+    .join('|');
+  return metadataIndex.byTradeAndOpen.get(tradeAndOpen) || null;
+}
+
 async function logDashboardAccessRequest(request) {
   const sheets = await getSheetsClient();
   if (!sheets) return false;
@@ -3967,10 +4194,13 @@ async function getDashboardData() {
     throw new Error('Google Sheets client is not configured.');
   }
 
-  const [openValues, pendingValues, closedValues] = await Promise.all([
+  await ensureTradeMetadataSheet(sheets);
+
+  const [openValues, pendingValues, closedValues, tradeMetadataValues] = await Promise.all([
     readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
     readSheet(sheets, PENDING_SHEET, 'A:J'),
     readSheet(sheets, CLOSED_TRADES_SHEET, 'A:L'),
+    readSheet(sheets, TRADE_METADATA_SHEET, 'A:O'),
   ]);
 
   let openPositions = openValues
@@ -3988,10 +4218,25 @@ async function getDashboardData() {
   const workingExitOrders = buildWorkingExitOrders(openPositions);
   const workingOrders = [...pendingOrders, ...workingExitOrders];
 
+  const tradeMetadataIndex = buildTradeMetadataIndex(tradeMetadataValues.slice(1));
+
   const closedTradesAll = closedValues
     .slice(1)
     .filter(row => row[0])
     .map(parseClosedTradeRow)
+    .map(row => {
+      const metadata = metadataForClosedTrade(row, tradeMetadataIndex);
+      if (!metadata) return row;
+
+      return {
+        ...row,
+        system: metadata.system || row.system || '',
+        raw_open: metadata.raw_open || row.raw_open || '',
+        raw_close: metadata.raw_close || row.raw_close || '',
+        setup_id: metadata.setup_id || '',
+        alert_instance_id: metadata.alert_instance_id || '',
+      };
+    })
     .filter(row =>
       isManualExternalClosedTrade(row) ||
       (row.result !== '' && row.entry !== '' && row.exit !== '' && row.size !== '')
