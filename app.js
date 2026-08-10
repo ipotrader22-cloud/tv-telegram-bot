@@ -119,6 +119,16 @@ const TRADE_METADATA_HEADERS = [
   'Raw Open JSON',
   'Raw Close JSON',
   'Recorded At',
+  'System ID',
+  'Reconciliation ID',
+  'Bridge Delivery ID',
+  'Exit Execution ID',
+  'Broker Confirmed Flat',
+  'Position After Close',
+  'Closed Trade Written',
+  'Telegram Edge Exit Published',
+  'Edge Exit Publication Complete',
+  'Publication Completed At',
 ];
 const LEGACY_POSITIONS_SHEET = 'Positions';
 const OPTION_JOURNAL_SHEET = 'Option Journal';
@@ -2347,7 +2357,9 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
   // Keep the human-facing Closed Trades sheet compact. All large raw payloads
   // and the canonical Prime/Edge system identity are stored separately in
   // Trade Metadata and joined back into the dashboard by trade/time identity.
-  await upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet);
+  await upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet, {
+    closed_trade_written: false,
+  });
 
   const closedRow = [
     closeRow.trade_id,
@@ -2370,6 +2382,10 @@ async function appendClosedTrade(sheets, openPosition, closeRow) {
     closedRow,
     'A:J'
   );
+
+  await upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet, {
+    closed_trade_written: true,
+  });
 
   console.log('Closed trade appended:', closeRow.trade_id, eventForSheet, closeRow.result);
 }
@@ -2602,17 +2618,22 @@ async function getEdgeExternalClosePublicationState(sheets, setupId, reconciliat
     };
   }
 
-  const [openRows, tradeRows, closedRows] = await Promise.all([
+  await ensureTradeMetadataSheet(sheets);
+  const [openRows, tradeRows, closedRows, metadataRows] = await Promise.all([
     readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
     readSheet(sheets, TRADES_SHEET, 'A:K'),
     readSheet(sheets, CLOSED_TRADES_SHEET, 'A:L'),
+    readSheet(sheets, TRADE_METADATA_SHEET, 'A:Y'),
   ]);
   const open = findRawSetupRow(openRows, 11, wantedSetup);
   const trade = findRawReconciliationRow(tradeRows, 10, wantedReconciliation);
-  const closed = findRawReconciliationRow(closedRows, 11, wantedReconciliation);
+  const legacyClosed = findRawReconciliationRow(closedRows, 11, wantedReconciliation);
+  const metadata = findTradeMetadataByReconciliation(metadataRows, wantedSetup, wantedReconciliation);
+  const closed = (metadata && findCompactClosedTradeRow(closedRows, metadata.metadata)) || legacyClosed;
   const telegramPublished = Boolean(
+    metadata?.metadata?.telegram_edge_exit_published ||
     trade?.raw?.telegram_manual_close_published ||
-    closed?.raw?.telegram_manual_close_published
+    legacyClosed?.raw?.telegram_manual_close_published
   );
 
   return {
@@ -2625,11 +2646,14 @@ async function getEdgeExternalClosePublicationState(sheets, setupId, reconciliat
       trade &&
       closed &&
       telegramPublished &&
-      (trade.raw.external_close_publication_complete || closed.raw.external_close_publication_complete)
+      (metadata?.metadata?.edge_exit_publication_complete ||
+        trade.raw.external_close_publication_complete ||
+        legacyClosed?.raw?.external_close_publication_complete)
     ),
     open,
     trade,
     closed,
+    metadata,
   };
 }
 
@@ -2654,29 +2678,21 @@ async function markEdgeExternalClosePublicationComplete(sheets, setupId, reconci
     external_close_publication_complete: true,
     external_close_publication_completed_at: publishedAt,
   }, null, 2);
-  const closedRaw = JSON.stringify({
-    ...state.closed.raw,
-    telegram_manual_close_published: true,
-    external_close_publication_complete: true,
-    external_close_publication_completed_at: publishedAt,
-  }, null, 2);
-
-  await sheets.spreadsheets.values.batchUpdate({
+  await sheets.spreadsheets.values.update({
     spreadsheetId: GOOGLE_SHEET_ID,
-    requestBody: {
-      valueInputOption: 'USER_ENTERED',
-      data: [
-        {
-          range: `${TRADES_SHEET}!K${state.trade.row_number}`,
-          values: [[tradeRaw]],
-        },
-        {
-          range: `${CLOSED_TRADES_SHEET}!L${state.closed.row_number}`,
-          values: [[closedRaw]],
-        },
-      ],
-    },
+    range: `${TRADES_SHEET}!K${state.trade.row_number}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[tradeRaw]] },
   });
+  if (state.metadata) {
+    await updateTradeMetadataRow(sheets, state.metadata.row_number, {
+      ...state.metadata.metadata,
+      closed_trade_written: true,
+      telegram_edge_exit_published: true,
+      edge_exit_publication_complete: true,
+      publication_completed_at: publishedAt,
+    });
+  }
 
   return {
     open_exists: false,
@@ -2768,10 +2784,12 @@ async function getEdgeBrokerExitPublicationState(
     };
   }
 
-  const [openRows, tradeRows, closedRows] = await Promise.all([
+  await ensureTradeMetadataSheet(sheets);
+  const [openRows, tradeRows, closedRows, metadataRows] = await Promise.all([
     readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:L'),
     readSheet(sheets, TRADES_SHEET, 'A:K'),
     readSheet(sheets, CLOSED_TRADES_SHEET, 'A:L'),
+    readSheet(sheets, TRADE_METADATA_SHEET, 'A:Y'),
   ]);
   const open = findRawSetupRow(openRows, 11, wantedSetup);
   const trade = findRawReconciliationEventRow(
@@ -2780,30 +2798,44 @@ async function getEdgeBrokerExitPublicationState(
     wantedReconciliation,
     wantedEvent
   );
-  const closed = findRawReconciliationEventRow(
+  const legacyClosed = findRawReconciliationEventRow(
     closedRows,
     11,
     wantedReconciliation,
     wantedEvent
   );
+  const metadata = findEdgeExitMetadataRow(
+    metadataRows,
+    wantedSetup,
+    wantedReconciliation,
+    wantedEvent
+  );
+  const compactClosed = metadata
+    ? findCompactClosedTradeRow(closedRows, metadata.metadata)
+    : null;
+  const closed = compactClosed || legacyClosed;
   const telegramPublished = Boolean(
+    metadata?.metadata?.telegram_edge_exit_published ||
     trade?.raw?.telegram_edge_exit_published ||
-    closed?.raw?.telegram_edge_exit_published
+    legacyClosed?.raw?.telegram_edge_exit_published
   );
   const completeMarker = Boolean(
+    metadata?.metadata?.edge_exit_publication_complete ||
     trade?.raw?.edge_exit_publication_complete ||
-    closed?.raw?.edge_exit_publication_complete
+    legacyClosed?.raw?.edge_exit_publication_complete
   );
 
   return {
     open_position_removed: !open,
     trades_exit_written: Boolean(trade),
-    closed_trade_written: Boolean(closed),
+    closed_trade_written: Boolean(
+      metadata?.metadata?.closed_trade_written || closed
+    ),
     telegram_exit_published: telegramPublished,
     publication_complete: Boolean(
       !open &&
       trade &&
-      closed &&
+      (metadata?.metadata?.closed_trade_written || closed) &&
       telegramPublished &&
       completeMarker
     ),
@@ -2811,6 +2843,7 @@ async function getEdgeBrokerExitPublicationState(
     open,
     trade,
     closed,
+    metadata,
   };
 }
 
@@ -2838,42 +2871,24 @@ async function persistEdgeBrokerExitPublicationState(
     ...overrides,
     exit_event: state.exit_event,
   };
-  const tradeRaw = edgeBrokerExitRaw(
-    { event: state.exit_event, raw: JSON.stringify(state.trade.raw) },
-    componentState
-  );
-  const closedRaw = edgeBrokerExitRaw(
-    { event: state.exit_event, raw: JSON.stringify(state.closed.raw) },
-    componentState
-  );
+  if (!state.metadata) {
+    throw new Error(
+      `Cannot persist Edge broker-exit state without Trade Metadata: ${reconciliationId}`
+    );
+  }
 
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: GOOGLE_SHEET_ID,
-    requestBody: {
-      valueInputOption: 'USER_ENTERED',
-      data: [
-        {
-          range: `${TRADES_SHEET}!K${state.trade.row_number}`,
-          values: [[tradeRaw]],
-        },
-        {
-          range: `${CLOSED_TRADES_SHEET}!L${state.closed.row_number}`,
-          values: [[closedRaw]],
-        },
-      ],
-    },
-  });
+  const metadata = {
+    ...state.metadata.metadata,
+    closed_trade_written: componentState.closed_trade_written === true,
+    telegram_edge_exit_published: componentState.telegram_exit_published === true,
+    edge_exit_publication_complete: componentState.publication_complete === true,
+    publication_completed_at: componentState.publication_completed_at || '',
+  };
+  await updateTradeMetadataRow(sheets, state.metadata.row_number, metadata);
 
   return {
     ...componentState,
-    trade: {
-      ...state.trade,
-      raw: parseRawJsonSafe(tradeRaw),
-    },
-    closed: {
-      ...state.closed,
-      raw: parseRawJsonSafe(closedRaw),
-    },
+    metadata: { ...state.metadata, metadata },
   };
 }
 
@@ -3566,7 +3581,13 @@ function buildTradeMetadataId(openPosition, closeRow) {
   );
 }
 
-async function upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet) {
+async function upsertTradeMetadata(
+  sheets,
+  openPosition,
+  closeRow,
+  eventForSheet,
+  publicationState = {}
+) {
   await ensureTradeMetadataSheet(sheets);
 
   const rawOpen = openPosition?.raw_open || '';
@@ -3595,6 +3616,7 @@ async function upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet
   });
 
   const metadataId = buildTradeMetadataId(openPosition, closeRow);
+  const closeRaw = parseRawJsonSafe(rawClose);
   const rowValues = [
     metadataId,
     tradeId,
@@ -3611,9 +3633,19 @@ async function upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet
     rawOpen,
     rawClose,
     new Date().toISOString(),
+    parsed.system_id,
+    closeRaw.reconciliation_id || '',
+    closeRaw.bridge_delivery_id || closeRaw.delivery_id || closeRaw.render_delivery_id || '',
+    closeRaw.exit_execution_id || '',
+    closeRaw.broker_confirmed_flat === true,
+    closeRaw.position_after_close ?? '',
+    publicationState.closed_trade_written === true,
+    publicationState.telegram_edge_exit_published === true,
+    publicationState.edge_exit_publication_complete === true,
+    publicationState.publication_completed_at || '',
   ];
 
-  const values = await readSheet(sheets, TRADE_METADATA_SHEET, 'A:O');
+  const values = await readSheet(sheets, TRADE_METADATA_SHEET, 'A:Y');
   const wantedMetadataId = String(metadataId || '').trim();
   const wantedComposite = tradeMetadataCompositeKey(tradeId, openTime, closeTime);
   let existingRowNumber = -1;
@@ -3633,9 +3665,22 @@ async function upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet
   }
 
   if (existingRowNumber > 0) {
+    const existing = parseTradeMetadataRow(values[existingRowNumber - 1] || []);
+    rowValues[21] = publicationState.closed_trade_written === undefined
+      ? existing.closed_trade_written
+      : publicationState.closed_trade_written === true;
+    rowValues[22] = publicationState.telegram_edge_exit_published === undefined
+      ? existing.telegram_edge_exit_published
+      : publicationState.telegram_edge_exit_published === true;
+    rowValues[23] = publicationState.edge_exit_publication_complete === undefined
+      ? existing.edge_exit_publication_complete
+      : publicationState.edge_exit_publication_complete === true;
+    rowValues[24] = publicationState.publication_completed_at === undefined
+      ? existing.publication_completed_at
+      : publicationState.publication_completed_at || '';
     await sheets.spreadsheets.values.update({
       spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${quotedSheetName(TRADE_METADATA_SHEET)}!A${existingRowNumber}:O${existingRowNumber}`,
+      range: `${quotedSheetName(TRADE_METADATA_SHEET)}!A${existingRowNumber}:Y${existingRowNumber}`,
       valueInputOption: 'RAW',
       requestBody: { values: [rowValues] },
     });
@@ -3646,14 +3691,15 @@ async function upsertTradeMetadata(sheets, openPosition, closeRow, eventForSheet
     sheets,
     TRADE_METADATA_SHEET,
     'A',
-    'O',
+    'Y',
     rowValues,
-    'A:O',
+    'A:Y',
     'RAW'
   );
 }
 
 function parseTradeMetadataRow(row) {
+  const bool = value => value === true || String(value || '').trim().toLowerCase() === 'true';
   return {
     metadata_id: row[0] || '',
     trade_id: row[1] || '',
@@ -3670,7 +3716,106 @@ function parseTradeMetadataRow(row) {
     raw_open: row[12] || '',
     raw_close: row[13] || '',
     recorded_at: row[14] || '',
+    system_id: row[15] || '',
+    reconciliation_id: row[16] || '',
+    bridge_delivery_id: row[17] || '',
+    exit_execution_id: row[18] || '',
+    broker_confirmed_flat: bool(row[19]),
+    position_after_close: row[20] ?? '',
+    closed_trade_written: bool(row[21]),
+    telegram_edge_exit_published: bool(row[22]),
+    edge_exit_publication_complete: bool(row[23]),
+    publication_completed_at: row[24] || '',
   };
+}
+
+function tradeMetadataRowValues(metadata) {
+  return [
+    metadata.metadata_id, metadata.trade_id, metadata.system, metadata.symbol,
+    metadata.side, metadata.open_time, metadata.close_time, metadata.event,
+    metadata.setup_id, metadata.alert_instance_id, metadata.strategy,
+    metadata.variant, metadata.raw_open, metadata.raw_close, metadata.recorded_at,
+    metadata.system_id, metadata.reconciliation_id, metadata.bridge_delivery_id,
+    metadata.exit_execution_id, metadata.broker_confirmed_flat,
+    metadata.position_after_close, metadata.closed_trade_written,
+    metadata.telegram_edge_exit_published,
+    metadata.edge_exit_publication_complete, metadata.publication_completed_at,
+  ];
+}
+
+async function updateTradeMetadataRow(sheets, rowNumber, metadata) {
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${quotedSheetName(TRADE_METADATA_SHEET)}!A${rowNumber}:Y${rowNumber}`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [tradeMetadataRowValues(metadata)] },
+  });
+}
+
+function findEdgeExitMetadataRow(rows, setupId, reconciliationId, exitEvent) {
+  for (let index = 1; index < rows.length; index++) {
+    const storedMetadata = parseTradeMetadataRow(rows[index] || []);
+    const rawClose = parseRawJsonSafe(storedMetadata.raw_close);
+    const metadata = {
+      ...storedMetadata,
+      system_id: storedMetadata.system_id || rawClose.system_id || '',
+      reconciliation_id: storedMetadata.reconciliation_id || rawClose.reconciliation_id || '',
+      bridge_delivery_id: storedMetadata.bridge_delivery_id || rawClose.bridge_delivery_id || rawClose.delivery_id || rawClose.render_delivery_id || '',
+      exit_execution_id: storedMetadata.exit_execution_id || rawClose.exit_execution_id || '',
+      broker_confirmed_flat: storedMetadata.broker_confirmed_flat || rawClose.broker_confirmed_flat === true,
+      position_after_close: storedMetadata.position_after_close === ''
+        ? (rawClose.position_after_close ?? '')
+        : storedMetadata.position_after_close,
+    };
+    const rowReconciliation = metadata.reconciliation_id || rawClose.reconciliation_id || '';
+    const rowEvent = normalizedEdgeBrokerExitEvent(metadata.event) || rawEdgeBrokerExitEvent(metadata.raw_close);
+    if (
+      String(metadata.setup_id || rawClose.setup_id || '').trim() === setupId &&
+      String(rowReconciliation).trim() === reconciliationId &&
+      rowEvent === exitEvent
+    ) {
+      return { row: rows[index], row_number: index + 1, metadata };
+    }
+  }
+  return null;
+}
+
+function findCompactClosedTradeRow(rows, metadata) {
+  for (let index = 1; index < rows.length; index++) {
+    const row = rows[index] || [];
+    if (
+      String(row[0] || '').trim() === String(metadata.trade_id || '').trim() &&
+      String(row[2] || '').trim() === String(metadata.close_time || '').trim() &&
+      normalizedEdgeBrokerExitEvent(row[9]) === normalizedEdgeBrokerExitEvent(metadata.event)
+    ) {
+      return { row, row_number: index + 1 };
+    }
+  }
+  return null;
+}
+
+function findTradeMetadataByReconciliation(rows, setupId, reconciliationId) {
+  for (let index = 1; index < rows.length; index++) {
+    const storedMetadata = parseTradeMetadataRow(rows[index] || []);
+    const rawClose = parseRawJsonSafe(storedMetadata.raw_close);
+    const metadata = {
+      ...storedMetadata,
+      reconciliation_id: storedMetadata.reconciliation_id || rawClose.reconciliation_id || '',
+      bridge_delivery_id: storedMetadata.bridge_delivery_id || rawClose.bridge_delivery_id || rawClose.delivery_id || rawClose.render_delivery_id || '',
+      exit_execution_id: storedMetadata.exit_execution_id || rawClose.exit_execution_id || '',
+      broker_confirmed_flat: storedMetadata.broker_confirmed_flat || rawClose.broker_confirmed_flat === true,
+      position_after_close: storedMetadata.position_after_close === ''
+        ? (rawClose.position_after_close ?? '')
+        : storedMetadata.position_after_close,
+    };
+    if (
+      String(metadata.setup_id || rawClose.setup_id || '').trim() === setupId &&
+      String(metadata.reconciliation_id || rawClose.reconciliation_id || '').trim() === reconciliationId
+    ) {
+      return { row: rows[index], row_number: index + 1, metadata };
+    }
+  }
+  return null;
 }
 
 function buildTradeMetadataIndex(rows) {
