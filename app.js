@@ -4277,6 +4277,12 @@ function exitActionForOpenPosition(side) {
   return 'EXIT';
 }
 
+function displayTradeId(row) {
+  const symbol = normalizeSymbol(row?.symbol);
+  const side = String(row?.side || '').trim().toUpperCase();
+  return symbol && side ? `${symbol}_${side}` : String(row?.trade_id || '');
+}
+
 function buildWorkingExitOrders(openPositions) {
   return openPositions
     .filter(row => row && row.target !== '' && row.size !== '')
@@ -8403,7 +8409,7 @@ function renderDashboardHtml(data, locale = 'en') {
   const openRows = data.open_positions.map(row => `
     <tr>
       <td>${escapeHtml(row.system)}</td>
-      <td class="ticker">${escapeHtml(row.trade_id)}</td>
+      <td class="ticker">${escapeHtml(displayTradeId(row))}</td>
       <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td class="muted-dash">—</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
@@ -8427,14 +8433,14 @@ function renderDashboardHtml(data, locale = 'en') {
       <td>${num(row.qty, 0)}</td>
       <td>${escapeHtml(row.status)}</td>
       <td>${escapeHtml(safeDateText(row.timestamp))}</td>
-      <td>${escapeHtml(row.trade_id)}</td>
+      <td>${escapeHtml(displayTradeId(row))}</td>
     </tr>
   `).join('');
 
   const closedRows = data.recent_closed_trades.map(row => `
     <tr>
       <td>${escapeHtml(row.system || inferClosedTradeSystemLabel(row) || '—')}</td>
-      <td class="ticker">${escapeHtml(row.trade_id)}</td>
+      <td class="ticker">${escapeHtml(displayTradeId(row))}</td>
       <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td>${escapeHtml(safeDateText(row.close_time))}</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
@@ -11843,4 +11849,9 @@ module.exports.__test = {
   createDashboardSession,
   readDashboardSession,
   getDashboardAuthorization,
+  displayTradeId,
+  parsePendingRow,
+  parseOpenPositionRow,
+  buildWorkingExitOrders,
+  renderDashboardHtml,
 };
