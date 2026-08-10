@@ -46,6 +46,11 @@ const {
   shouldForwardToBridge,
   publicExitLabel,
   closedTradeExitDisplay,
+  displayTradeId,
+  parsePendingRow,
+  parseOpenPositionRow,
+  buildWorkingExitOrders,
+  renderDashboardHtml,
 } = require('../app.js').__test;
 Module._load = originalLoad;
 
@@ -229,6 +234,56 @@ function createMockResponse() {
 }
 
 async function run() {
+  const edgeSetupId = 'VIXALE_EDGE:TLT:15:SHORT:1786368600000';
+  const edgeRaw = JSON.stringify({
+    system_id: 'VIXALE_EDGE',
+    setup_id: edgeSetupId,
+    strategy: 'VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1',
+    variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+  });
+  const edgePending = parsePendingRow([
+    edgeSetupId, '2026-08-10 10:00:00', 'TLT', 'SHORT', 'pending',
+    88.5, 10, 87, 89.5, edgeRaw,
+  ]);
+  const edgeOpen = parseOpenPositionRow([
+    edgeSetupId, '2026-08-10 10:05:00', 'TLT', 'SHORT', 'open',
+    88.5, 10, 87, 89.5, '', '', edgeRaw,
+  ]);
+  const primeOpen = parseOpenPositionRow([
+    'RTX_LONG', '2026-08-10 10:10:00', 'RTX', 'LONG', 'open',
+    150, 5, 152, 0, '', '', JSON.stringify({ strategy: 'SHREK_1_4' }),
+  ]);
+  const targetOrders = buildWorkingExitOrders([edgeOpen, primeOpen]);
+
+  assert.strictEqual(edgePending.trade_id, edgeSetupId, 'Edge Pending retains canonical setup identity');
+  assert.strictEqual(JSON.parse(edgePending.raw).setup_id, edgeSetupId, 'Edge raw setup_id remains unchanged');
+  assert.strictEqual(displayTradeId(edgePending), 'TLT_SHORT');
+  assert.strictEqual(targetOrders[0].trade_id, edgeSetupId, 'Edge target retains canonical setup identity');
+  assert.strictEqual(displayTradeId(targetOrders[0]), 'TLT_SHORT');
+  assert.strictEqual(displayTradeId(targetOrders[1]), 'RTX_LONG');
+
+  const displayHtml = renderDashboardHtml({
+    summary: {},
+    open_positions: [edgeOpen, primeOpen],
+    working_orders: [edgePending, ...targetOrders],
+    recent_closed_trades: [{
+      trade_id: 'CSCO_LONG', system: 'Vixale Edge', symbol: 'CSCO', side: 'LONG',
+      open_time: '', close_time: '', entry: 1, exit: 2, size: 1, result: 1, event: 'TP',
+    }],
+  });
+  assert.ok(displayHtml.includes('TLT_SHORT'), 'dashboard displays short Edge Trade ID');
+  assert.ok(displayHtml.includes('RTX_LONG'), 'dashboard displays short Prime Trade ID');
+  assert.ok(displayHtml.includes('CSCO_LONG'), 'dashboard displays short closed Trade ID');
+  assert.ok(!displayHtml.includes(edgeSetupId), 'dashboard never renders canonical Edge setup_id');
+  const displayHtmlRu = renderDashboardHtml({
+    summary: {},
+    open_positions: [edgeOpen],
+    working_orders: [edgePending, targetOrders[0]],
+    recent_closed_trades: [],
+  }, 'ru');
+  assert.ok(displayHtmlRu.includes('TLT_SHORT'), 'Russian dashboard uses the same short Trade ID');
+  assert.ok(!displayHtmlRu.includes(edgeSetupId), 'Russian dashboard never renders canonical Edge setup_id');
+
   const sheets = createMockSheets();
   const telegram = [];
   const bridgeNetwork = [];
