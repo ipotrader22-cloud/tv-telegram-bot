@@ -59,6 +59,7 @@ function createMockSheets() {
     Pending: [['Trade ID', 'Timestamp', 'Symbol', 'Side']],
     'Open Positions': [['Trade ID', 'Timestamp', 'Symbol', 'Side']],
     'Closed Trades': [['Trade ID', 'Open Time', 'Close Time']],
+    'Trade Metadata': [['Metadata ID', 'Trade ID', 'System']],
     Positions: [['Trade ID']],
   };
   const ids = Object.fromEntries(Object.keys(rows).map((name, index) => [name, index + 1]));
@@ -66,7 +67,8 @@ function createMockSheets() {
   const controls = { fail_trades_append: 0, fail_closed_append: 0 };
 
   function parseRange(range) {
-    const [sheetName, cells = 'A:Z'] = range.split('!');
+    const [rawSheetName, cells = 'A:Z'] = range.split('!');
+    const sheetName = rawSheetName.replace(/^'|'$/g, '');
     const match = cells.match(/^([A-Z]+)(\d+)?/);
     return {
       sheetName,
@@ -114,6 +116,14 @@ function createMockSheets() {
       },
       async update({ range, requestBody }) {
         const { sheetName, startColumn, rowNumber } = parseRange(range);
+        if (sheetName === 'Trades' && controls.fail_trades_append > 0) {
+          controls.fail_trades_append--;
+          throw new Error('mock Trades append failure');
+        }
+        if (sheetName === 'Closed Trades' && controls.fail_closed_append > 0) {
+          controls.fail_closed_append--;
+          throw new Error('mock Closed Trades append failure');
+        }
         while (rows[sheetName].length < rowNumber) rows[sheetName].push([]);
         const target = rows[sheetName][rowNumber - 1];
         requestBody.values[0].forEach((value, index) => {
@@ -179,6 +189,14 @@ function countRowsByReconciliation(rows, rawColumn, reconciliationId, event) {
         String(raw.event || '').toUpperCase() === normalizedEvent;
     })
     .length;
+}
+
+function countMetadataRowsByReconciliation(rows, reconciliationId, event) {
+  const normalizedEvent = event === 'CLOSE_STOP' ? 'SL' : event;
+  return rows.slice(1).filter(row =>
+    String(row[16] || '').trim() === reconciliationId &&
+    String(row[7] || '').trim().toUpperCase() === normalizedEvent
+  ).length;
 }
 
 function countRowsBySetupEvent(rows, rawColumn, setupId, event) {
@@ -686,10 +704,7 @@ async function run() {
     'duplicate EXTERNAL_CLOSE creates one Trades close row'
   );
   assert.strictEqual(
-    externalSheets.rows['Closed Trades']
-      .slice(1)
-      .filter(row => JSON.parse(row[11] || '{}').reconciliation_id === reconciliationId)
-      .length,
+    externalSheets.rows['Closed Trades'].length - 1,
     1,
     'duplicate EXTERNAL_CLOSE creates one Closed row'
   );
@@ -802,7 +817,8 @@ async function run() {
   assert.strictEqual(actualClosed[6], 130.25, 'actual exit price is preserved in Closed Trades');
   assert.strictEqual(actualClosed[7], 7, 'actual exit quantity is preserved in Closed Trades');
   assert.strictEqual(actualClosed[8], '', 'Closed Trades stores no Manual Close P&L');
-  const actualCloseRaw = JSON.parse(actualClosed[11] || '{}');
+  const actualMetadata = actualExternalSheets.rows['Trade Metadata'][1];
+  const actualCloseRaw = JSON.parse(actualMetadata[13] || '{}');
   assert.strictEqual(actualCloseRaw.result, '');
   assert.strictEqual(actualCloseRaw.result_pct, '');
   assert.strictEqual(actualCloseRaw.pnl, '');
@@ -902,10 +918,7 @@ async function run() {
     .slice(1)
     .find(row => JSON.parse(row[10] || '{}').reconciliation_id ===
       mixedManualReconciliationId);
-  const mixedManualClosed = mixedManualSheets.rows['Closed Trades']
-    .slice(1)
-    .find(row => JSON.parse(row[11] || '{}').reconciliation_id ===
-      mixedManualReconciliationId);
+  const mixedManualClosed = mixedManualSheets.rows['Closed Trades'][1];
   assert.strictEqual(mixedManualTrade[5], 10);
   assert.strictEqual(mixedManualTrade[6], 100.8);
   assert.strictEqual(mixedManualTrade[8], '');
@@ -984,6 +997,7 @@ async function run() {
     broker_confirmed_flat: true,
     position_after_close: 0,
     exit_execution_id: 'EXEC:TP-GOOG-1',
+    delivery_id: 'TP:GOOG:test-delivery',
     reconciliation_id: tpReconciliationId,
     reason: 'IB_TARGET_EXECUTION_CONFIRMED',
   });
@@ -1018,10 +1032,11 @@ async function run() {
     'TP Telegram failure writes one Trades exit'
   );
   assert.strictEqual(
-    countRowsByReconciliation(tpSheets.rows['Closed Trades'], 11, tpReconciliationId, 'TP'),
+    tpSheets.rows['Closed Trades'].length - 1,
     1,
     'TP Telegram failure writes one Closed Trade'
   );
+  tpSheets.rows['Trade Metadata'][1] = tpSheets.rows['Trade Metadata'][1].slice(0, 15);
   const recoveredTp = await tpLifecycle(tpExit);
   assert.strictEqual(recoveredTp.finalRow.status, 'edge_broker_exit_publication_complete');
   assert.strictEqual(
@@ -1035,7 +1050,7 @@ async function run() {
     'TP retry does not duplicate Trades'
   );
   assert.strictEqual(
-    countRowsByReconciliation(tpSheets.rows['Closed Trades'], 11, tpReconciliationId, 'TP'),
+    tpSheets.rows['Closed Trades'].length - 1,
     1,
     'TP retry does not duplicate Closed Trades'
   );
@@ -1051,6 +1066,21 @@ async function run() {
     1,
     'completed TP duplicate after lifecycle recreation is ignored'
   );
+  assert.strictEqual(
+    countMetadataRowsByReconciliation(tpSheets.rows['Trade Metadata'], tpReconciliationId, 'TP'),
+    1,
+    'TP retries keep one authoritative Trade Metadata row'
+  );
+  const tpMetadata = tpSheets.rows['Trade Metadata'].slice(1)
+    .find(row => row[16] === tpReconciliationId);
+  assert.strictEqual(tpMetadata[17], 'TP:GOOG:test-delivery');
+  assert.strictEqual(tpMetadata[18], 'EXEC:TP-GOOG-1');
+  assert.strictEqual(tpMetadata[19], true);
+  assert.strictEqual(tpMetadata[20], 0);
+  assert.strictEqual(tpMetadata[21], true);
+  assert.strictEqual(tpMetadata[22], true);
+  assert.strictEqual(tpMetadata[23], true);
+  assert.ok(tpMetadata[24], 'TP completion timestamp is durable in Trade Metadata');
   assert.strictEqual(
     tpBridge.filter(event => event === 'TP').length,
     0,
@@ -1119,12 +1149,7 @@ async function run() {
     'CLOSE_STOP partial failure preserves the already-written Trades exit'
   );
   assert.strictEqual(
-    countRowsByReconciliation(
-      stopSheets.rows['Closed Trades'],
-      11,
-      stopReconciliationId,
-      'CLOSE_STOP'
-    ),
+    stopSheets.rows['Closed Trades'].length - 1,
     0,
     'CLOSE_STOP partial failure leaves only the missing Closed Trade to repair'
   );
@@ -1141,12 +1166,7 @@ async function run() {
     'CLOSE_STOP retry writes one Trades exit'
   );
   assert.strictEqual(
-    countRowsByReconciliation(
-      stopSheets.rows['Closed Trades'],
-      11,
-      stopReconciliationId,
-      'CLOSE_STOP'
-    ),
+    stopSheets.rows['Closed Trades'].length - 1,
     1,
     'CLOSE_STOP retry writes one Closed Trade'
   );
@@ -1272,27 +1292,23 @@ async function run() {
     'mixed exit writes one final Trades CLOSE_STOP'
   );
   assert.strictEqual(
-    countRowsByReconciliation(
-      mixedSheets.rows['Closed Trades'],
-      11,
-      mixedReconciliationId,
-      'CLOSE_STOP'
-    ),
+    mixedSheets.rows['Closed Trades'].length - 1,
     1,
     'mixed exit writes one final Closed Trades CLOSE_STOP'
   );
   const mixedTradesClose = mixedSheets.rows.Trades
     .slice(1)
     .find(row => JSON.parse(row[10] || '{}').reconciliation_id === mixedReconciliationId);
-  const mixedClosed = mixedSheets.rows['Closed Trades']
+  const mixedClosed = mixedSheets.rows['Closed Trades'][1];
+  const mixedMetadata = mixedSheets.rows['Trade Metadata']
     .slice(1)
-    .find(row => JSON.parse(row[11] || '{}').reconciliation_id === mixedReconciliationId);
+    .find(row => row[16] === mixedReconciliationId);
   assert.strictEqual(mixedTradesClose[5], 10, 'mixed Trades close uses full original qty');
   assert.strictEqual(mixedTradesClose[6], 99.6, 'mixed Trades close uses weighted exit');
   assert.strictEqual(mixedClosed[7], 10, 'mixed Closed Trade uses full original qty');
   assert.strictEqual(mixedClosed[6], 99.6, 'mixed Closed Trade uses weighted exit');
   const mixedTradesRaw = JSON.parse(mixedTradesClose[10] || '{}');
-  const mixedClosedRaw = JSON.parse(mixedClosed[11] || '{}');
+  const mixedClosedRaw = JSON.parse(mixedMetadata[13] || '{}');
   for (const raw of [mixedTradesRaw, mixedClosedRaw]) {
     assert.deepStrictEqual(
       raw.target_partial_exec_ids,
@@ -1464,7 +1480,7 @@ async function run() {
     'concurrent Edge exit callbacks publish one Telegram message'
   );
   assert.strictEqual(
-    JSON.parse(routeSheets.rows.Trades.at(-1)[10]).edge_exit_publication_complete,
+    routeSheets.rows['Trade Metadata'].at(-1)[23],
     true,
     'route 200 follows persistent publication completion'
   );

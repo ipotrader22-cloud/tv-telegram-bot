@@ -1981,8 +1981,13 @@ remain blank.
 Broker-confirmed Edge TP and `CLOSE_STOP` callbacks use synchronous persistent
 Render publication keyed by `setup_id + reconciliation_id + event`. HTTP 200
 means exact Open removal, one Trades row, one Closed Trades row, Telegram, and
-raw-JSON completion markers all succeeded; retryable failures return HTTP 503
-and repair only missing components. Broker evidence prefers exact `permId`,
+Trade Metadata completion markers all succeeded; retryable failures return HTTP 503
+and repair only missing components. `Trade Metadata` is authoritative for Edge
+close identity, broker evidence, raw open/close payloads, ledger completion,
+Telegram completion, and publication completion. The human-facing `Closed Trades`
+sheet remains compact and is not used to reconstruct technical publication state;
+legacy raw JSON in older rows may be read only as a compatibility fallback.
+Broker evidence prefers exact `permId`,
 then exact `orderId`;
 legacy `orderRef` alone requires post-entry timestamped, quantity-complete,
 unambiguous evidence. External Manual Close price/quantity attribution also
@@ -1997,8 +2002,9 @@ enter Prime reversal handling, while flat-position reconciliation could
 fabricate a TP at the stored target without broker evidence. Explicit family
 isolation and durable execution identity keep TWS as the source of truth.
 
-**Schema impact:** None. Bridge identity remains in the managed-position JSON;
-Render component and completion markers remain in existing raw JSON cells.
+**Schema impact:** `Trade Metadata` extends through column Y with Edge close
+identity, broker confirmation, and publication-state columns. Bridge identity
+remains in the managed-position JSON; `Closed Trades` remains human-readable A:J.
 
 **Activation dependency:** Part 3A remains the broker-close foundation. Part
 3B implements the queued 16:00 Vixale Edge Stop Loss in source, but source
