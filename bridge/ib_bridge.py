@@ -234,6 +234,7 @@ RENDER_OUTBOX_FILE = os.getenv("RENDER_OUTBOX_FILE", "vixale_render_outbox.json"
 RENDER_OUTBOX_RETRY_SECONDS = env_float("RENDER_OUTBOX_RETRY_SECONDS", 5.0)
 RENDER_OUTBOX_BACKOFF_BASE_SECONDS = env_float("RENDER_OUTBOX_BACKOFF_BASE_SECONDS", 5.0)
 RENDER_OUTBOX_BACKOFF_MAX_SECONDS = env_float("RENDER_OUTBOX_BACKOFF_MAX_SECONDS", 900.0)
+RENDER_OUTBOX_MAX_CONCURRENCY = max(1, min(32, env_int("RENDER_OUTBOX_MAX_CONCURRENCY", 4)))
 
 # Live quote push for dashboard. The bridge subscribes to TWS market data for
 # currently managed/open stock positions and pushes a lightweight quote snapshot
@@ -243,6 +244,7 @@ RENDER_QUOTE_URL = os.getenv("RENDER_QUOTE_URL", "").strip()
 QUOTE_PUSH_POLL_SECONDS = env_float("QUOTE_PUSH_POLL_SECONDS", 5.0)
 QUOTE_MARKET_DATA_TYPE = env_int("QUOTE_MARKET_DATA_TYPE", 1)  # 1=live, 3=delayed
 QUOTE_ONLY_MANAGED_POSITIONS = env_bool("QUOTE_ONLY_MANAGED_POSITIONS", False)
+QUOTE_PUSH_LOG_SUCCESS = env_bool("QUOTE_PUSH_LOG_SUCCESS", False)
 
 
 # v4 safety cleanup:
@@ -274,8 +276,8 @@ RTH_END = os.getenv("RTH_END", "16:00").strip() or "16:00"
 # use the same Pine script while the bridge handles end-of-day execution safety.
 MANAGED_POSITIONS_FILE = os.getenv("MANAGED_POSITIONS_FILE", "vixale_managed_positions.json").strip() or "vixale_managed_positions.json"
 FORCE_EOD_FLATTEN_ENABLED = env_bool("FORCE_EOD_FLATTEN_ENABLED", True)
-FORCE_EOD_FLATTEN_TIME = "15:59"
-FORCE_EOD_FLATTEN_TIMEZONE = "America/New_York"
+FORCE_EOD_FLATTEN_TIME = os.getenv("FORCE_EOD_FLATTEN_TIME", "15:59").strip() or "15:59"
+FORCE_EOD_FLATTEN_TIMEZONE = os.getenv("FORCE_EOD_FLATTEN_TIMEZONE", "America/New_York").strip() or "America/New_York"
 FORCE_EOD_WEEKDAYS_ONLY = env_bool("FORCE_EOD_WEEKDAYS_ONLY", True)
 FORCE_EOD_BLOCK_NEW_STOCK_ENTRIES_AFTER = os.getenv("FORCE_EOD_BLOCK_NEW_STOCK_ENTRIES_AFTER", FORCE_EOD_FLATTEN_TIME).strip() or FORCE_EOD_FLATTEN_TIME
 FORCE_EOD_SCHEDULER_POLL_SECONDS = env_float("FORCE_EOD_SCHEDULER_POLL_SECONDS", 5.0)
@@ -465,6 +467,13 @@ def is_vixale_edge_managed_position(row: Dict[str, Any]) -> bool:
 
 def is_shrek_managed_position(row: Dict[str, Any]) -> bool:
     return managed_strategy_id(row) in SHREK_EOD_STRATEGY_IDS
+
+
+def managed_position_uses_no_eod_close(row: Dict[str, Any]) -> bool:
+    payload = managed_payload(row)
+    return str(
+        payload.get("eod_policy") or row.get("eod_policy") or ""
+    ).strip().upper() == "NO_EOD_CLOSE"
 
 
 def shrek_eod_idempotency_key(day_key: str, symbol: str, strategy: str) -> str:
@@ -1412,6 +1421,11 @@ def enqueue_render_outbox(
     return delivery_id, save_render_outbox(outbox)
 
 
+def get_render_outbox_item(delivery_id: str) -> Optional[Dict[str, Any]]:
+    item = load_render_outbox().get(str(delivery_id or "").strip())
+    return dict(item) if isinstance(item, dict) else None
+
+
 def update_render_outbox_item(delivery_id: str, **updates: Any) -> bool:
     outbox = load_render_outbox()
     item = outbox.get(delivery_id)
@@ -1429,6 +1443,16 @@ def remove_render_outbox_item(delivery_id: str) -> bool:
         return True
     outbox.pop(delivery_id, None)
     return save_render_outbox(outbox)
+
+
+def managed_row_has_pending_close_delivery(row: Dict[str, Any]) -> bool:
+    return bool(
+        isinstance(row, dict)
+        and (
+            row.get("pending_close_delivery")
+            or isinstance(row.get("pending_close_payload"), dict)
+        )
+    )
 
 
 async def claim_render_outbox_delivery(delivery_id: str) -> bool:
@@ -1603,7 +1627,7 @@ def recover_pending_managed_close_deliveries() -> int:
     managed = load_managed_positions()
     recovered = 0
     for symbol, row in list(managed.items()):
-        if not row.get("pending_close_delivery"):
+        if not managed_row_has_pending_close_delivery(row):
             continue
         payload = row.get("pending_close_payload")
         if not isinstance(payload, dict) or not payload:
@@ -1629,10 +1653,16 @@ async def retry_render_outbox_once() -> Dict[str, Any]:
         for delivery_id, item in outbox.items()
         if isinstance(item, dict) and render_outbox_item_due(item)
     ]
-    # Each item is attempted independently. One old 503/backoff item therefore
-    # cannot block newer due callbacks from being delivered.
+    # Each item is attempted independently, but the semaphore prevents a large
+    # backlog from creating an unbounded number of simultaneous Render calls.
+    semaphore = asyncio.Semaphore(RENDER_OUTBOX_MAX_CONCURRENCY)
+
+    async def attempt_bounded(delivery_id: str) -> Dict[str, Any]:
+        async with semaphore:
+            return await attempt_render_outbox_delivery(delivery_id)
+
     results = await asyncio.gather(
-        *(attempt_render_outbox_delivery(delivery_id) for delivery_id in due_ids),
+        *(attempt_bounded(delivery_id) for delivery_id in due_ids),
         return_exceptions=True,
     )
     details = []
@@ -1654,7 +1684,11 @@ async def retry_render_outbox_once() -> Dict[str, Any]:
 
 async def render_outbox_retry_loop() -> None:
     poll = max(RENDER_OUTBOX_RETRY_SECONDS, 1.0)
-    print(f"[RENDER OUTBOX START] enabled={ENABLE_RENDER_OUTBOX_RETRY} poll={poll}s")
+    print(
+        f"[RENDER OUTBOX START] enabled={ENABLE_RENDER_OUTBOX_RETRY} "
+        f"poll={poll}s max_concurrency={RENDER_OUTBOX_MAX_CONCURRENCY} "
+        f"file={render_outbox_path()}"
+    )
     while True:
         try:
             if ENABLE_RENDER_OUTBOX_RETRY:
@@ -7323,6 +7357,8 @@ def managed_quote_symbols() -> List[str]:
 
     managed = load_managed_positions()
     for symbol, row in managed.items():
+        if managed_row_has_pending_close_delivery(row):
+            continue
         sec_type = str(row.get('sec_type') or row.get('last_payload', {}).get('sec_type') or 'STK').upper()
         if sec_type == 'STK':
             clean = str(symbol or row.get('symbol') or '').upper().strip()
@@ -7397,7 +7433,8 @@ async def live_quote_push_loop() -> None:
                 payload = render_quote_payload(symbols)
                 if payload.get('quotes'):
                     result = await forward_quotes_to_render(payload)
-                    print(f"[QUOTE PUSH] symbols={len(payload.get('quotes', []))} result={result}")
+                    if QUOTE_PUSH_LOG_SUCCESS:
+                        print(f"[QUOTE PUSH] symbols={len(payload.get('quotes', []))} result={result}")
         except Exception as exc:
             print(f"[QUOTE PUSH ERROR] {exc}")
 
@@ -8878,7 +8915,7 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
         if not symbol:
             continue
 
-        if row.get("pending_close_delivery"):
+        if managed_row_has_pending_close_delivery(row):
             details.append({
                 "symbol": symbol,
                 "status": "render_outbox_handoff_pending",
@@ -9360,6 +9397,18 @@ async def force_eod_flatten_locked(reason: str = "SCHEDULED") -> Dict[str, Any]:
         symbol = str(symbol or row.get("symbol") or "").upper().strip()
         if not symbol:
             continue
+        if managed_row_has_pending_close_delivery(row):
+            rows.append({
+                "symbol": symbol,
+                "status": "pending_close_delivery_preserved",
+            })
+            continue
+        if managed_position_uses_no_eod_close(row):
+            rows.append({
+                "symbol": symbol,
+                "status": "skipped_no_eod_close_policy",
+            })
+            continue
         if not is_shrek_managed_position(row):
             rows.append({"symbol": symbol, "status": "skipped_unrelated_strategy", "strategy": managed_strategy_id(row)})
             continue
@@ -9369,7 +9418,12 @@ async def force_eod_flatten_locked(reason: str = "SCHEDULED") -> Dict[str, Any]:
         "ok": True,
         "reason": reason,
         "managed_symbols_checked": len(managed),
-        "shrek_symbols_checked": sum(1 for row in managed.values() if is_shrek_managed_position(row)),
+        "shrek_symbols_checked": sum(
+            1 for row in managed.values()
+            if is_shrek_managed_position(row)
+            and not managed_row_has_pending_close_delivery(row)
+            and not managed_position_uses_no_eod_close(row)
+        ),
         "details": rows,
     }
 
@@ -9422,7 +9476,8 @@ async def root():
     return {
         "ok": True,
         "service": "IB Bridge",
-        "mode": "v6_multi_tf_with_bridge_forced_eod_partial_fill_399_repair",
+        "mode": "v6_edge_exit_durable_v2",
+        "repository_mode": "v6_multi_tf_with_bridge_forced_eod_partial_fill_399_repair",
         "dry_run": DRY_RUN,
         "ib_connected": ib.isConnected(),
         "ib_host": IB_HOST,
@@ -9436,10 +9491,15 @@ async def root():
         "managed_target_reconcile_poll_seconds": MANAGED_TARGET_RECONCILE_POLL_SECONDS,
         "enable_render_outbox_retry": ENABLE_RENDER_OUTBOX_RETRY,
         "render_outbox_count": len(load_render_outbox()),
+        "render_outbox_file": render_outbox_path(),
+        "render_outbox_pending": len(load_render_outbox()),
+        "render_outbox_retry_seconds": RENDER_OUTBOX_RETRY_SECONDS,
+        "render_outbox_max_concurrency": RENDER_OUTBOX_MAX_CONCURRENCY,
         "enable_render_quote_push": ENABLE_RENDER_QUOTE_PUSH,
         "render_quote_url_configured": bool(render_quote_update_url()),
         "quote_push_poll_seconds": QUOTE_PUSH_POLL_SECONDS,
         "quote_market_data_type": QUOTE_MARKET_DATA_TYPE,
+        "quote_push_log_success": QUOTE_PUSH_LOG_SUCCESS,
         "entry_order_type_default": ENTRY_ORDER_TYPE_DEFAULT,
         "max_order_notional": MAX_ORDER_NOTIONAL,
         "max_share_qty": MAX_SHARE_QTY,
@@ -9637,6 +9697,50 @@ async def ib_managed_positions():
             "ok": False,
             "error": str(exc),
         }
+
+
+@app.get("/ib/render-outbox")
+async def ib_render_outbox():
+    try:
+        outbox = load_render_outbox()
+        return {
+            "ok": True,
+            "enabled": ENABLE_RENDER_OUTBOX_RETRY,
+            "count": len(outbox),
+            "render_outbox_file": render_outbox_path(),
+            "max_concurrency": RENDER_OUTBOX_MAX_CONCURRENCY,
+            "items": outbox,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/ib/retry-render-outbox-now")
+async def ib_retry_render_outbox_now():
+    try:
+        return await retry_render_outbox_once()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@app.delete("/ib/render-outbox/{delivery_id}")
+async def ib_discard_render_outbox(delivery_id: str):
+    clean_id = str(delivery_id or "").strip()
+    if not clean_id:
+        return {"ok": False, "removed": False, "reason": "missing_delivery_id"}
+    if not await claim_render_outbox_delivery(clean_id):
+        return {"ok": False, "removed": False, "reason": "delivery_in_progress"}
+    try:
+        existed = get_render_outbox_item(clean_id) is not None
+        removed = remove_render_outbox_item(clean_id)
+        return {
+            "ok": bool(removed),
+            "removed": bool(removed and existed),
+            "delivery_id": clean_id,
+            "reason": "operator_discarded" if existed and removed else "already_absent",
+        }
+    finally:
+        await release_render_outbox_delivery(clean_id)
 
 
 @app.post("/ib/force-eod-close-now")

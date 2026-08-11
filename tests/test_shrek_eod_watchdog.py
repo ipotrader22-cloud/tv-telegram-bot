@@ -84,6 +84,63 @@ class ShrekEodWatchdogTests(unittest.IsolatedAsyncioTestCase):
             {"QQQ", "IWM", "DIA"},
         )
 
+    async def test_explicit_no_eod_close_policy_is_never_flattened(self):
+        managed = {
+            "SPY": {
+                "strategy": "SHREK_1_4",
+                "last_payload": {
+                    "strategy": "SHREK_1_4",
+                    "eod_policy": "NO_EOD_CLOSE",
+                },
+            }
+        }
+        flatten = AsyncMock()
+
+        with (
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "load_managed_positions", return_value=managed),
+            patch.object(ib_bridge, "load_force_eod_state", return_value={}),
+            patch.object(ib_bridge, "flatten_one_shrek_position", flatten),
+            patch.object(ib_bridge, "is_us_stock_rth_now", return_value=True),
+        ):
+            result = await ib_bridge.force_eod_flatten_locked("TEST")
+
+        self.assertEqual(result["shrek_symbols_checked"], 0)
+        self.assertEqual(
+            result["details"],
+            [{"symbol": "SPY", "status": "skipped_no_eod_close_policy"}],
+        )
+        flatten.assert_not_awaited()
+
+    async def test_pending_durable_close_handoff_is_never_flattened_again(self):
+        managed = {
+            "SPY": {
+                "strategy": "SHREK_1_4",
+                "pending_close_payload": {
+                    "event": "EOD_CLOSE",
+                    "symbol": "SPY",
+                    "bridge_delivery_id": "EOD:SPY:pending",
+                },
+            }
+        }
+        flatten = AsyncMock()
+
+        with (
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "load_managed_positions", return_value=managed),
+            patch.object(ib_bridge, "load_force_eod_state", return_value={}),
+            patch.object(ib_bridge, "flatten_one_shrek_position", flatten),
+            patch.object(ib_bridge, "is_us_stock_rth_now", return_value=True),
+        ):
+            result = await ib_bridge.force_eod_flatten_locked("TEST")
+
+        self.assertEqual(result["shrek_symbols_checked"], 0)
+        self.assertEqual(
+            result["details"],
+            [{"symbol": "SPY", "status": "pending_close_delivery_preserved"}],
+        )
+        flatten.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

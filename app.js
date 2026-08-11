@@ -164,6 +164,7 @@ const WEBHOOK_INBOX_RETRY_INTERVAL_MS = Math.max(1_000, Math.floor(envNumber('WE
 const WEBHOOK_INBOX_BACKOFF_BASE_MS = Math.max(1_000, Math.floor(envNumber('WEBHOOK_INBOX_BACKOFF_BASE_MS', 5_000)));
 const WEBHOOK_INBOX_BACKOFF_MAX_MS = Math.max(WEBHOOK_INBOX_BACKOFF_BASE_MS, Math.floor(envNumber('WEBHOOK_INBOX_BACKOFF_MAX_MS', 300_000)));
 const WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS = Math.max(1, Math.floor(envNumber('WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS', 90)));
+const WEBHOOK_INBOX_MAX_CONCURRENCY = Math.max(1, Math.min(32, Math.floor(envNumber('WEBHOOK_INBOX_MAX_CONCURRENCY', 4))));
 const WEBHOOK_INBOX_SPOOL_FILE = String(
   process.env.WEBHOOK_INBOX_SPOOL_FILE || path.join(os.tmpdir(), 'vixale_webhook_inbox_spool.json')
 ).trim();
@@ -2470,10 +2471,15 @@ async function getStandardBridgeClosePublicationState(
     readSheet(sheets, TRADE_METADATA_SHEET, 'A:Y'),
   ]);
 
-  const openRowNumber = findRowIndexByTradeId(
-    openRows,
-    row?.trade_id
-  );
+  const wantedSetup = String(row?.setup_id || '').trim();
+  const exactSetupOpen = wantedSetup
+    ? findRawSetupRow(openRows, 11, wantedSetup)
+    : null;
+  const openRowNumber = exactSetupOpen
+    ? exactSetupOpen.row_number
+    : wantedSetup
+      ? 0
+      : findRowIndexByTradeId(openRows, row?.trade_id);
   let metadata = null;
   if (deliveryId) {
     for (let index = 1; index < metadataRows.length; index++) {
@@ -2497,20 +2503,27 @@ async function getStandardBridgeClosePublicationState(
   const closed = legacyClosed || (
     metadata && findCompactClosedTradeRow(closedRows, metadata.metadata)
   );
+  const previouslyClosed = findPreviouslyClosedLifecycleEvidence(
+    closedRows,
+    metadataRows,
+    row?.setup_id,
+    row?.trade_id
+  );
 
   return {
     delivery_id: deliveryId,
-    open: openRowNumber > 0
+    open: exactSetupOpen || (openRowNumber > 0
       ? {
           row: openRows[openRowNumber - 1],
           row_number: openRowNumber,
         }
-      : null,
+      : null),
     trade,
     closed,
     metadata,
     telegram_published: Boolean(metadata?.metadata?.telegram_edge_exit_published),
     publication_complete: Boolean(metadata?.metadata?.edge_exit_publication_complete),
+    previously_closed: previouslyClosed,
   };
 }
 
@@ -2699,6 +2712,12 @@ async function getEdgeExternalClosePublicationState(sheets, setupId, reconciliat
   const legacyClosed = findRawReconciliationRow(closedRows, 11, wantedReconciliation);
   const metadata = findTradeMetadataByReconciliation(metadataRows, wantedSetup, wantedReconciliation);
   const closed = (metadata && findCompactClosedTradeRow(closedRows, metadata.metadata)) || legacyClosed;
+  const previouslyClosed = findPreviouslyClosedLifecycleEvidence(
+    closedRows,
+    metadataRows,
+    wantedSetup,
+    metadata?.metadata?.trade_id || ''
+  );
   const telegramPublished = Boolean(
     metadata?.metadata?.telegram_edge_exit_published ||
     trade?.raw?.telegram_manual_close_published ||
@@ -2723,6 +2742,7 @@ async function getEdgeExternalClosePublicationState(sheets, setupId, reconciliat
     trade,
     closed,
     metadata,
+    previously_closed: previouslyClosed,
   };
 }
 
@@ -2883,6 +2903,12 @@ async function getEdgeBrokerExitPublicationState(
     ? findCompactClosedTradeRow(closedRows, metadata.metadata)
     : null;
   const closed = compactClosed || legacyClosed;
+  const previouslyClosed = findPreviouslyClosedLifecycleEvidence(
+    closedRows,
+    metadataRows,
+    wantedSetup,
+    metadata?.metadata?.trade_id || ''
+  );
   const telegramPublished = Boolean(
     metadata?.metadata?.telegram_edge_exit_published ||
     trade?.raw?.telegram_edge_exit_published ||
@@ -2913,6 +2939,7 @@ async function getEdgeBrokerExitPublicationState(
     trade,
     closed,
     metadata,
+    previously_closed: previouslyClosed,
   };
 }
 
@@ -3215,16 +3242,23 @@ async function processLedgerUnlocked(row, dependencies = {}) {
       !state.closed_trade_exists &&
       !state.metadata
     ) {
-      return {
-        ...row,
-        status: 'terminal_orphan_already_removed_broker_exit',
-        skip_telegram: true,
-        external_close_publication_state: {
-          ...state,
-          publication_complete: true,
-          terminal_orphan: true,
-        },
-      };
+      if (state.previously_closed) {
+        return {
+          ...row,
+          status: 'terminal_orphan_already_removed_broker_exit',
+          skip_telegram: true,
+          external_close_publication_state: {
+            ...state,
+            publication_complete: true,
+            terminal_orphan: true,
+          },
+        };
+      }
+      const error = new Error(
+        `EXTERNAL_CLOSE is waiting for matching Open or prior close evidence: ${row.setup_id}`
+      );
+      error.retryable = true;
+      throw error;
     }
     if (!state.closed_trade_exists && !openPosition) {
       const error = new Error(
@@ -3294,16 +3328,23 @@ async function processLedgerUnlocked(row, dependencies = {}) {
       !state.closed &&
       !state.metadata
     ) {
-      return {
-        ...row,
-        status: 'terminal_orphan_already_removed_broker_exit',
-        skip_telegram: true,
-        edge_exit_publication_state: {
-          ...state,
-          publication_complete: true,
-          terminal_orphan: true,
-        },
-      };
+      if (state.previously_closed) {
+        return {
+          ...row,
+          status: 'terminal_orphan_already_removed_broker_exit',
+          skip_telegram: true,
+          edge_exit_publication_state: {
+            ...state,
+            publication_complete: true,
+            terminal_orphan: true,
+          },
+        };
+      }
+      const error = new Error(
+        `Edge broker exit is waiting for matching Open or prior close evidence: ${row.setup_id}`
+      );
+      error.retryable = true;
+      throw error;
     }
     if (!state.closed_trade_written && !openPosition) {
       const error = new Error(
@@ -3395,16 +3436,24 @@ async function processLedgerUnlocked(row, dependencies = {}) {
         ? openPositionFromSheetRow(state.open.row)
         : null;
       if (!openPosition && !state.trade && !state.closed && !state.metadata) {
-        return {
-          ...row,
-          status: 'terminal_orphan_already_removed_broker_exit',
-          skip_telegram: true,
-          bridge_close_publication_state: {
-            delivery_id: bridgeDeliveryId,
-            publication_complete: true,
-            terminal_orphan: true,
-          },
-        };
+        if (state.previously_closed) {
+          return {
+            ...row,
+            status: 'terminal_orphan_already_removed_broker_exit',
+            skip_telegram: true,
+            bridge_close_publication_state: {
+              delivery_id: bridgeDeliveryId,
+              publication_complete: true,
+              terminal_orphan: true,
+              previously_closed: state.previously_closed,
+            },
+          };
+        }
+        const error = new Error(
+          `Durable broker close is waiting for matching Open or prior close evidence: ${row.setup_id || row.trade_id}`
+        );
+        error.retryable = true;
+        throw error;
       }
       const enrichedCloseRow = enrichCloseRowFromOpenPosition(
         row,
@@ -4102,6 +4151,67 @@ function findCompactClosedTradeRow(rows, metadata) {
       return { row, row_number: index + 1 };
     }
   }
+  return null;
+}
+
+function findPreviouslyClosedLifecycleEvidence(
+  closedRows,
+  metadataRows,
+  setupId,
+  tradeId = ''
+) {
+  const wantedSetup = String(setupId || '').trim();
+  if (!wantedSetup) return null;
+
+  for (let index = 1; index < metadataRows.length; index++) {
+    const metadata = parseTradeMetadataRow(metadataRows[index] || []);
+    const rawOpen = parseRawJsonSafe(metadata.raw_open);
+    const rawClose = parseRawJsonSafe(metadata.raw_close);
+    const storedSetup = String(
+      metadata.setup_id || rawClose.setup_id || rawOpen.setup_id || ''
+    ).trim();
+    if (storedSetup !== wantedSetup) continue;
+
+    const compactClosed = findCompactClosedTradeRow(closedRows, metadata);
+    if (
+      metadata.edge_exit_publication_complete ||
+      (metadata.closed_trade_written && compactClosed)
+    ) {
+      return {
+        source: metadata.edge_exit_publication_complete
+          ? 'trade_metadata_publication_complete'
+          : 'trade_metadata_closed_trade',
+        setup_id: wantedSetup,
+        trade_id: metadata.trade_id || tradeId || '',
+        reconciliation_id: metadata.reconciliation_id || rawClose.reconciliation_id || '',
+        event: metadata.event || rawClose.event || '',
+        row_number: index + 1,
+      };
+    }
+  }
+
+  // Compatibility only: older Closed Trades rows may still carry raw JSON in
+  // K:L. Compact A:J rows cannot prove setup identity by themselves.
+  for (let index = 1; index < closedRows.length; index++) {
+    const rawCandidates = [
+      parseRawJsonSafe(closedRows[index]?.[11]),
+      parseRawJsonSafe(closedRows[index]?.[10]),
+    ];
+    const raw = rawCandidates.find(candidate =>
+      String(candidate.setup_id || '').trim() === wantedSetup
+    );
+    if (raw) {
+      return {
+        source: 'legacy_closed_trade_raw_json',
+        setup_id: wantedSetup,
+        trade_id: closedRows[index]?.[0] || tradeId || '',
+        reconciliation_id: raw.reconciliation_id || '',
+        event: raw.event || closedRows[index]?.[9] || '',
+        row_number: index + 1,
+      };
+    }
+  }
+
   return null;
 }
 
@@ -10925,6 +11035,72 @@ function webhookInboxBackoffMs(attempts) {
   );
 }
 
+function parseWebhookTimestampMs(value) {
+  if (value === null || value === undefined || value === '') return NaN;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  }
+  return Date.parse(String(value));
+}
+
+function webhookSetupExecutionReference(reqBody, receivedAt) {
+  const raw = reqBody && typeof reqBody === 'object' ? reqBody : {};
+  // Setup-origin flip/bar-start values are intentionally excluded. An Edge
+  // virtual limit can fill much later, so those fields identify the setup but
+  // do not reliably timestamp the broker-execution request.
+  const reliablePayloadFields = [
+    'alert_timestamp_ms',
+    'alert_timestamp',
+    'alert_time',
+    'sent_at',
+    'generated_at',
+    'signal_timestamp',
+    'signal_time',
+    'bar_close_time',
+    'signal_bar_close_time',
+    'time_close',
+  ];
+  for (const field of reliablePayloadFields) {
+    const timestampMs = parseWebhookTimestampMs(raw[field]);
+    if (Number.isFinite(timestampMs)) {
+      return { timestamp_ms: timestampMs, source: `payload.${field}` };
+    }
+  }
+  return {
+    timestamp_ms: parseWebhookTimestampMs(receivedAt),
+    source: 'webhook_inbox.received_at',
+  };
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const source = Array.isArray(items) ? items : [];
+  if (!source.length) return [];
+  const results = new Array(source.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(
+    source.length,
+    Math.max(1, Math.floor(Number(limit) || 1))
+  );
+  async function worker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= source.length) return;
+      try {
+        results[index] = await mapper(source[index], index);
+      } catch (error) {
+        results[index] = {
+          ...source[index],
+          status: 'WORKER_ERROR',
+          last_error: String(error?.message || error).slice(0, 500),
+        };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 function webhookInboxTerminalStatus(status) {
   return ['COMPLETE', 'STALE_EXECUTION_DROPPED'].includes(String(status || '').toUpperCase());
 }
@@ -10955,9 +11131,12 @@ async function processWebhookInboxItem(item, dependencies = {}) {
       const parsedRow = typeof reqBody === 'object' && reqBody !== null
         ? parseJsonTradingViewAlert(reqBody)
         : parseTradingViewMessage(message);
-      const receivedMs = Date.parse(current.received_at);
-      const setupAgeSeconds = Number.isFinite(receivedMs)
-        ? Math.max(0, (Date.now() - receivedMs) / 1000)
+      const executionReference = webhookSetupExecutionReference(
+        reqBody,
+        current.received_at
+      );
+      const setupAgeSeconds = Number.isFinite(executionReference.timestamp_ms)
+        ? Math.max(0, (Date.now() - executionReference.timestamp_ms) / 1000)
         : Number.POSITIVE_INFINITY;
 
       if (
@@ -10968,7 +11147,7 @@ async function processWebhookInboxItem(item, dependencies = {}) {
         if (parsedRow.setup_id) {
           await removePendingRowByExactSetupId(sheets, parsedRow.setup_id);
         }
-        return updateWebhookInboxItem(sheets, current, {
+        return await updateWebhookInboxItem(sheets, current, {
           status: 'STALE_EXECUTION_DROPPED', next_attempt_at: '', last_error: '',
           completed_at: new Date().toISOString(),
         });
@@ -10979,7 +11158,7 @@ async function processWebhookInboxItem(item, dependencies = {}) {
         sheets,
         failOnPublicationErrorOverride: true,
       });
-      return updateWebhookInboxItem(sheets, current, {
+      return await updateWebhookInboxItem(sheets, current, {
         status: 'COMPLETE', next_attempt_at: '', last_error: '',
         completed_at: new Date().toISOString(),
       });
@@ -11017,7 +11196,11 @@ async function processWebhookInboxDueItems(dependencies = {}) {
       const next = Date.parse(item.next_attempt_at || item.received_at || '');
       return !Number.isFinite(next) || next <= now;
     });
-    const results = await Promise.all(due.map(item => processWebhookInboxItem(item, { ...dependencies, sheets })));
+    const results = await mapWithConcurrency(
+      due,
+      WEBHOOK_INBOX_MAX_CONCURRENCY,
+      item => processWebhookInboxItem(item, { ...dependencies, sheets })
+    );
     return { processed: results.length, results };
   } finally {
     webhookInboxWorkerRunning = false;

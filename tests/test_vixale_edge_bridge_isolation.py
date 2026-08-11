@@ -29,6 +29,9 @@ def install_import_stubs():
             def post(self, _path):
                 return lambda fn: fn
 
+            def delete(self, _path):
+                return lambda fn: fn
+
             def on_event(self, _name):
                 return lambda fn: fn
 
@@ -6263,6 +6266,29 @@ class PrimeManualCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RenderOutboxIsolationTests(unittest.IsolatedAsyncioTestCase):
+    def test_edge_close_payload_keeps_v6_durable_identity_contract(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        close = ib_bridge.make_close_fill_payload(payload, {
+            "status": "submitted",
+            "order_id": 2224,
+            "close_status": "Filled",
+            "close_filled": True,
+            "close_fill_price": 99.25,
+            "close_filled_qty": 10,
+            "broker_confirmed_flat": True,
+            "position_after_close": 0,
+        })
+
+        self.assertEqual(close["source"], "IB_BRIDGE")
+        self.assertEqual(close["system_id"], "VIXALE_EDGE")
+        self.assertTrue(close["broker_confirmed_flat"])
+        self.assertEqual(close["position_after_close"], 0)
+        self.assertEqual(close["exit_execution_id"], "ORDER:2224")
+        self.assertEqual(
+            close["reconciliation_id"],
+            f"{payload['setup_id']}:ORDER:2224",
+        )
+
     async def test_poison_callback_backoff_does_not_block_newer_due_callback(self):
         now = datetime.now(timezone.utc).isoformat()
         outbox = {
@@ -6320,6 +6346,132 @@ class RenderOutboxIsolationTests(unittest.IsolatedAsyncioTestCase):
             datetime.fromisoformat(now),
         )
         self.assertEqual(second["due"], 0)
+
+    async def test_recovery_concurrency_is_bounded_without_global_serialization(self):
+        now = datetime.now(timezone.utc).isoformat()
+        outbox = {
+            f"TP:SYM{index}:due": {
+                "delivery_id": f"TP:SYM{index}:due",
+                "payload": {"event": "TP", "symbol": f"SYM{index}"},
+                "next_attempt_at": now,
+            }
+            for index in range(11)
+        }
+        active = 0
+        maximum_active = 0
+
+        async def attempt(delivery_id):
+            nonlocal active, maximum_active
+            active += 1
+            maximum_active = max(maximum_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            if delivery_id == "TP:SYM0:due":
+                raise RuntimeError("poison")
+            return {"delivered": True, "delivery_id": delivery_id}
+
+        with (
+            patch.object(ib_bridge, "load_render_outbox", return_value=copy.deepcopy(outbox)),
+            patch.object(ib_bridge, "recover_pending_managed_close_deliveries", return_value=0),
+            patch.object(ib_bridge, "attempt_render_outbox_delivery", side_effect=attempt),
+            patch.object(ib_bridge, "RENDER_OUTBOX_MAX_CONCURRENCY", 4),
+        ):
+            result = await ib_bridge.retry_render_outbox_once()
+
+        self.assertEqual(result["due"], 11)
+        self.assertEqual(len(result["details"]), 11)
+        self.assertGreater(maximum_active, 1)
+        self.assertLessEqual(maximum_active, 4)
+        self.assertEqual(
+            sum(detail["result"].get("delivered") is True for detail in result["details"]),
+            10,
+        )
+
+    async def test_deployed_outbox_diagnostics_retry_and_operator_discard_are_preserved(self):
+        delivery_id = "TP:FAS:production-item"
+        store = {
+            delivery_id: {
+                "delivery_id": delivery_id,
+                "payload": {"event": "TP", "symbol": "FAS"},
+            }
+        }
+
+        def load_outbox():
+            return copy.deepcopy(store)
+
+        def save_outbox(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(ib_bridge, "load_render_outbox", side_effect=load_outbox),
+            patch.object(ib_bridge, "save_render_outbox", side_effect=save_outbox),
+            patch.object(ib_bridge, "render_outbox_path", return_value="outbox.json"),
+            patch.object(ib_bridge, "retry_render_outbox_once", AsyncMock(return_value={"ok": True, "due": 1})),
+        ):
+            root = await ib_bridge.root()
+            diagnostics = await ib_bridge.ib_render_outbox()
+            retried = await ib_bridge.ib_retry_render_outbox_now()
+            discarded = await ib_bridge.ib_discard_render_outbox(delivery_id)
+
+        self.assertEqual(root["mode"], "v6_edge_exit_durable_v2")
+        self.assertEqual(root["render_outbox_pending"], 1)
+        self.assertEqual(root["render_outbox_max_concurrency"], 4)
+        self.assertFalse(root["quote_push_log_success"])
+        self.assertEqual(diagnostics["count"], 1)
+        self.assertEqual(retried["due"], 1)
+        self.assertTrue(discarded["removed"])
+        self.assertEqual(discarded["reason"], "operator_discarded")
+        self.assertEqual(store, {})
+
+    def test_payload_only_managed_handoff_recovers_and_is_not_quoted(self):
+        payload = {
+            "event": "TP",
+            "symbol": "FAS",
+            "bridge_delivery_id": "TP:FAS:payload-only",
+        }
+        managed = {
+            "FAS": {
+                "symbol": "FAS",
+                "sec_type": "STK",
+                "pending_close_payload": payload,
+            }
+        }
+        saved = []
+        with (
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(managed)),
+            patch.object(ib_bridge, "enqueue_render_outbox", return_value=("TP:FAS:payload-only", True)),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=lambda value: saved.append(copy.deepcopy(value)) or True),
+            patch.object(ib_bridge, "QUOTE_ONLY_MANAGED_POSITIONS", True),
+        ):
+            recovered = ib_bridge.recover_pending_managed_close_deliveries()
+            symbols = ib_bridge.managed_quote_symbols()
+
+        self.assertEqual(recovered, 1)
+        self.assertEqual(saved[-1], {})
+        self.assertEqual(symbols, [])
+
+    async def test_quote_success_logging_remains_opt_in(self):
+        sleep = AsyncMock(side_effect=[None, asyncio.CancelledError()])
+        with (
+            patch.object(ib_bridge, "ENABLE_RENDER_QUOTE_PUSH", True),
+            patch.object(ib_bridge, "QUOTE_PUSH_LOG_SUCCESS", False),
+            patch.object(ib_bridge, "managed_quote_symbols", return_value=["FAS"]),
+            patch.object(ib_bridge, "ensure_quote_subscriptions", AsyncMock()),
+            patch.object(ib_bridge, "render_quote_payload", return_value={"quotes": [{"symbol": "FAS"}]}),
+            patch.object(ib_bridge, "forward_quotes_to_render", AsyncMock(return_value={"forwarded": True})),
+            patch.object(ib_bridge.asyncio, "sleep", sleep),
+            patch("builtins.print") as printer,
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await ib_bridge.live_quote_push_loop()
+
+        success_lines = [
+            str(call.args[0]) for call in printer.call_args_list
+            if call.args and str(call.args[0]).startswith("[QUOTE PUSH]")
+        ]
+        self.assertEqual(success_lines, [])
 
 
 if __name__ == "__main__":
