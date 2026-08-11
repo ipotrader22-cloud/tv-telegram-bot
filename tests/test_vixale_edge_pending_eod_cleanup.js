@@ -169,9 +169,10 @@ function createMockSheets(pendingRows, options = {}) {
       },
       async update({ range, requestBody }) {
         const [sheetName, cells] = range.split('!');
+        const normalizedSheetName = sheetName.replace(/^'|'$/g, '');
         const rowNumber = Number(cells.match(/\d+/)?.[0] || 0);
-        calls.updates.push(sheetName);
-        rows[sheetName][rowNumber - 1] = [...requestBody.values[0]];
+        calls.updates.push(normalizedSheetName);
+        rows[normalizedSheetName][rowNumber - 1] = [...requestBody.values[0]];
         return { data: {} };
       },
     },

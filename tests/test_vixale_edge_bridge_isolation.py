@@ -29,6 +29,9 @@ def install_import_stubs():
             def post(self, _path):
                 return lambda fn: fn
 
+            def delete(self, _path):
+                return lambda fn: fn
+
             def on_event(self, _name):
                 return lambda fn: fn
 
@@ -4633,12 +4636,32 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             render_payloads.append(copy.deepcopy(payload))
             return {"forwarded": True, "status_code": 200 if render_ok else 503}
 
+        async def durable_delivery(symbol, payload, reconcile_payload=None):
+            render_payloads.append(copy.deepcopy(payload))
+            if persist_ok:
+                store.pop(symbol, None)
+            return {
+                "delivered": bool(render_ok and persist_ok),
+                "queued": bool(persist_ok),
+                "reason": "complete" if render_ok else "render_retry_scheduled",
+            }
+
         with (
             patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
             patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=0.0)),
             patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
             patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
             patch.object(ib_bridge, "forward_to_render", side_effect=forward),
+            patch.object(
+                ib_bridge,
+                "persist_and_deliver_managed_exit_callback",
+                side_effect=durable_delivery,
+            ),
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(return_value={"ok": True, "status": "target_cancelled"}),
+            ),
             patch.object(ib_bridge, "cleanup_orphan_targets_if_flat", AsyncMock(return_value={})),
             patch.object(ib_bridge.ib, "trades", return_value=trades or []),
             patch.object(ib_bridge.ib, "fills", return_value=fills or []),
@@ -4694,12 +4717,16 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             price=105.22,
             exec_id="HISTORICAL-TARGET-1",
         )
-        _result, _store, payloads = await self.classify_once(
+        result, store, payloads = await self.classify_once(
             managed_edge_row(),
             trades=[historical],
         )
-        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
-        self.assertNotEqual(payloads[0]["event"], "TP")
+        self.assertEqual(payloads, [])
+        self.assertIn("AAPL", store)
+        self.assertEqual(
+            result["details"][0]["status"],
+            "EDGE_FLAT_EXECUTION_EVIDENCE_PENDING",
+        )
 
     async def test_legacy_order_ref_only_requires_post_entry_execution_time(self):
         row = managed_edge_row()
@@ -4724,7 +4751,7 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             row,
             trades=[before_entry],
         )
-        self.assertEqual(before_payloads[0]["event"], "EXTERNAL_CLOSE")
+        self.assertEqual(before_payloads, [])
 
         after_entry = fake_trade(
             order_id=802,
@@ -4771,7 +4798,7 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             row,
             trades=matches,
         )
-        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
+        self.assertEqual(payloads, [])
 
     async def test_submitted_but_unfilled_edge_entry_is_not_reconciled_as_close(self):
         row = managed_edge_row()
@@ -4813,12 +4840,8 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             trades=[target],
             fills=[manual],
         )
-        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
-        self.assertEqual(payloads[0]["price"], "")
-        self.assertFalse(payloads[0]["exit_price_available"])
-        self.assertEqual(payloads[0]["qty"], "")
-        self.assertFalse(payloads[0]["exit_quantity_available"])
-        self.assertEqual(payloads[0]["reason"], "IB_POSITION_FLAT_EXTERNAL_EXECUTION")
+        self.assertEqual(payloads, [])
+        self.assertIn("AAPL", _store)
 
     async def test_post_entry_manual_execution_supplies_actual_price_and_qty(self):
         row = managed_edge_row()
@@ -4858,11 +4881,8 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
 
         _result, _store, payloads = await self.classify_once(row, fills=[manual])
 
-        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
-        self.assertEqual(payloads[0]["price"], "")
-        self.assertFalse(payloads[0]["exit_price_available"])
-        self.assertEqual(payloads[0]["qty"], "")
-        self.assertFalse(payloads[0]["exit_quantity_available"])
+        self.assertEqual(payloads, [])
+        self.assertIn("AAPL", _store)
 
     def test_zero_execution_ids_fall_through_to_valid_identity(self):
         self.assertEqual(
@@ -4899,9 +4919,12 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
             side="SLD",
             shares=10,
             price=99.5,
+            execution_time="2026-07-28T14:01:00Z",
         )
+        row = managed_edge_row()
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
         _result, _store, payloads = await self.classify_once(
-            managed_edge_row(),
+            row,
             trades=[target],
             fills=[manual],
         )
@@ -4909,12 +4932,13 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(payloads[0]["event"], "TP")
 
     async def test_ambiguous_flat_is_external_without_fabricated_price(self):
-        _result, _store, payloads = await self.classify_once(managed_edge_row())
-        self.assertEqual(payloads[0]["event"], "EXTERNAL_CLOSE")
-        self.assertEqual(payloads[0]["price"], "")
-        self.assertFalse(payloads[0]["exit_price_available"])
-        self.assertEqual(payloads[0]["qty"], "")
-        self.assertNotEqual(payloads[0].get("price"), 105)
+        result, store, payloads = await self.classify_once(managed_edge_row())
+        self.assertEqual(payloads, [])
+        self.assertIn("AAPL", store)
+        self.assertEqual(
+            result["details"][0]["status"],
+            "EDGE_FLAT_EXECUTION_EVIDENCE_PENDING",
+        )
 
     async def test_confirmed_bridge_stop_execution_has_stop_precedence(self):
         row = managed_edge_row()
@@ -5984,8 +6008,19 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_claim_persistence_failure_withholds_render_callback(self):
+        target = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.25,
+            exec_id="TARGET-PERSIST-FAIL",
+        )
         result, store, render_payloads = await self.classify_once(
             managed_edge_row(),
+            trades=[target],
             persist_ok=False,
         )
 
@@ -5996,46 +6031,447 @@ class EdgeReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(render_payloads, [])
         self.assertIn("AAPL", store)
 
-    async def test_failed_render_retains_claim_and_success_clears_once(self):
-        row = managed_edge_row()
+    async def test_failed_render_is_durably_queued_and_managed_state_clears(self):
+        target = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.25,
+            exec_id="TARGET-OUTBOX-1",
+        )
+        result, store, payloads = await self.classify_once(
+            managed_edge_row(),
+            trades=[target],
+            render_ok=False,
+        )
+        self.assertEqual(store, {})
+        self.assertEqual(result["details"][0]["status"], "render_delivery_queued_for_retry")
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["event"], "TP")
+
+
+class PrimeManualCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
+    def prime_row(self):
+        row = managed_edge_row("VIXALE_PRIME:AAPL:15:LONG:1")
+        row["system_id"] = "VIXALE_PRIME"
+        row["strategy"] = "SHREK_1_4"
+        row["variant"] = "ATR_LIMIT_OPPOSITE_FLIP"
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
+        row["last_payload"].update({
+            "system_id": "VIXALE_PRIME",
+            "strategy": "SHREK_1_4",
+            "variant": "ATR_LIMIT_OPPOSITE_FLIP",
+            "setup_id": row["setup_id"],
+        })
+        return row
+
+    async def test_prime_target_requires_exact_target_execution_and_uses_actual_fill(self):
+        target = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=105.61,
+            exec_id="PRIME-TARGET-1",
+        )
+        with (
+            patch.object(ib_bridge.ib, "trades", return_value=[target]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+        ):
+            payload, _reconciliation_id = ib_bridge.managed_flat_reconciliation_payload(
+                self.prime_row()
+            )
+        self.assertEqual(payload["event"], "TP")
+        self.assertEqual(payload["price"], 105.61)
+        self.assertEqual(payload["qty"], 10)
+
+    async def test_prime_flat_without_execution_evidence_publishes_nothing(self):
+        with (
+            patch.object(ib_bridge.ib, "trades", return_value=[]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+        ):
+            payload, status = ib_bridge.managed_flat_reconciliation_payload(
+                self.prime_row()
+            )
+        self.assertEqual(payload, {})
+        self.assertEqual(status, "MANAGED_FLAT_EXECUTION_EVIDENCE_PENDING")
+
+    async def test_prime_bridge_close_evidence_preserves_eod_lifecycle(self):
+        row = self.prime_row()
+        stored = {"AAPL": copy.deepcopy(row)}
+
+        def save_managed(value):
+            stored.clear()
+            stored.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(stored)),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
+        ):
+            persisted = ib_bridge.mark_managed_bridge_close(
+                {
+                    **row["last_payload"],
+                    "event": "EOD_CLOSE",
+                },
+                {
+                    "status": "submitted",
+                    "order_id": 300,
+                    "order_perm_id": 3300,
+                    "order_ref": "TVFVG_CLOSE_AAPL_PRIME_EOD",
+                    "close_status": "Filled",
+                    "close_filled": True,
+                    "close_filled_qty": 10,
+                    "close_fill_price": 103.44,
+                    "close_exec_ids": ["PRIME-EOD-CLOSE-1"],
+                    "broker_confirmed_flat": True,
+                    "position_after_close": 0,
+                },
+            )
+        self.assertTrue(persisted)
+        self.assertEqual(stored["AAPL"]["last_payload"]["event"], "EOD_CLOSE")
+
+        close_trade = fake_trade(
+            order_id=300,
+            perm_id=3300,
+            order_ref="TVFVG_CLOSE_AAPL_PRIME_EOD",
+            action="SELL",
+            status="Filled",
+            filled=10,
+            price=103.44,
+            exec_id="PRIME-EOD-CLOSE-1",
+        )
+        with (
+            patch.object(ib_bridge.ib, "trades", return_value=[close_trade]),
+            patch.object(ib_bridge.ib, "fills", return_value=[]),
+        ):
+            payload, _reconciliation_id = ib_bridge.managed_flat_reconciliation_payload(
+                stored["AAPL"]
+            )
+        self.assertEqual(payload["event"], "EOD_CLOSE")
+        self.assertEqual(payload["price"], 103.44)
+        self.assertEqual(payload["qty"], 10)
+
+    async def test_prime_manual_close_cancels_target_before_durable_actual_callback(self):
+        row = self.prime_row()
+        target = fake_trade(
+            order_id=200,
+            perm_id=2200,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+        manual = fake_fill(
+            order_id=990,
+            perm_id=9990,
+            exec_id="PRIME-MANUAL-1",
+            side="SLD",
+            shares=10,
+            price=102.37,
+            order_ref="MANUAL_TWS",
+            execution_time="2026-07-28T14:01:00Z",
+        )
         store = {"AAPL": copy.deepcopy(row)}
-        payloads = []
-        render_results = iter([503, 200])
+        call_order = []
+        callbacks = []
 
         def load_managed():
             return copy.deepcopy(store)
 
-        def save_managed(value):
-            store.clear()
-            store.update(copy.deepcopy(value))
-            return True
+        async def cancel_target(_row):
+            call_order.append("target_cancelled")
+            return {"ok": True, "status": "target_cancelled"}
 
-        async def forward(payload):
-            payloads.append(copy.deepcopy(payload))
-            return {"forwarded": True, "status_code": next(render_results)}
+        async def durable_callback(symbol, payload, reconcile_payload=None):
+            call_order.append("callback_queued")
+            callbacks.append(copy.deepcopy(payload))
+            store.pop(symbol, None)
+            return {"delivered": True, "queued": True}
 
         with (
             patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
             patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=0.0)),
             patch.object(ib_bridge, "load_managed_positions", side_effect=load_managed),
-            patch.object(ib_bridge, "save_managed_positions", side_effect=save_managed),
-            patch.object(ib_bridge, "forward_to_render", side_effect=forward),
-            patch.object(ib_bridge, "cleanup_orphan_targets_if_flat", AsyncMock(return_value={})),
-            patch.object(ib_bridge.ib, "trades", return_value=[]),
-            patch.object(ib_bridge.ib, "fills", return_value=[]),
+            patch.object(ib_bridge, "save_managed_positions", return_value=True),
+            patch.object(ib_bridge, "claim_target_report", AsyncMock(return_value=True)),
+            patch.object(ib_bridge, "release_target_report_claim", AsyncMock()),
+            patch.object(ib_bridge, "cancel_and_verify_edge_target", side_effect=cancel_target),
+            patch.object(
+                ib_bridge,
+                "persist_and_deliver_managed_exit_callback",
+                side_effect=durable_callback,
+            ),
+            patch.object(ib_bridge.ib, "trades", return_value=[target]),
+            patch.object(ib_bridge.ib, "fills", return_value=[manual]),
         ):
-            failed = await ib_bridge.reconcile_managed_target_fills_once()
-            self.assertIn("AAPL", store)
-            self.assertIn("reconciliation_claim", store["AAPL"])
-            succeeded = await ib_bridge.reconcile_managed_target_fills_once()
-            self.assertEqual(store, {})
-            third = await ib_bridge.reconcile_managed_target_fills_once()
+            result = await ib_bridge.reconcile_managed_target_fills_once()
 
-        self.assertEqual(failed["details"][0]["status"], "render_delivery_failed_retry_retained")
-        self.assertEqual(succeeded["reported"], 1)
-        self.assertEqual(third["checked"], 0)
-        self.assertEqual(len(payloads), 2)
-        self.assertEqual(payloads[0], payloads[1])
+        self.assertEqual(call_order, ["target_cancelled", "callback_queued"])
+        self.assertEqual(result["reported"], 1)
+        self.assertEqual(store, {})
+        self.assertEqual(callbacks[0]["event"], "EXTERNAL_CLOSE")
+        self.assertEqual(callbacks[0]["price"], 102.37)
+        self.assertEqual(callbacks[0]["qty"], 10)
+        self.assertEqual(callbacks[0]["exit_execution_id"], "EXEC:PRIME-MANUAL-1")
+
+    async def test_edge_manual_close_is_withheld_until_target_cancel_is_confirmed(self):
+        row = managed_edge_row()
+        row["entry_filled_at"] = "2026-07-28T10:00:00-04:00"
+        manual = fake_fill(
+            order_id=991,
+            perm_id=9991,
+            exec_id="EDGE-MANUAL-1",
+            side="SLD",
+            shares=10,
+            price=99.75,
+            order_ref="MANUAL_TWS",
+            execution_time="2026-07-28T14:01:00Z",
+        )
+        store = {"AAPL": copy.deepcopy(row)}
+        durable_callback = AsyncMock()
+        with (
+            patch.object(ib_bridge, "ensure_ib_connected", AsyncMock()),
+            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=0.0)),
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(store)),
+            patch.object(ib_bridge, "save_managed_positions", return_value=True),
+            patch.object(ib_bridge, "claim_target_report", AsyncMock(return_value=True)),
+            patch.object(ib_bridge, "release_target_report_claim", AsyncMock()),
+            patch.object(
+                ib_bridge,
+                "cancel_and_verify_edge_target",
+                AsyncMock(return_value={"ok": False, "status": "target_cancel_unconfirmed"}),
+            ),
+            patch.object(
+                ib_bridge,
+                "persist_and_deliver_managed_exit_callback",
+                durable_callback,
+            ),
+            patch.object(ib_bridge.ib, "trades", return_value=[]),
+            patch.object(ib_bridge.ib, "fills", return_value=[manual]),
+        ):
+            result = await ib_bridge.reconcile_managed_target_fills_once()
+        self.assertEqual(
+            result["details"][0]["status"],
+            "external_close_target_cancel_unconfirmed",
+        )
+        durable_callback.assert_not_awaited()
+        self.assertIn("AAPL", store)
+
+
+class RenderOutboxIsolationTests(unittest.IsolatedAsyncioTestCase):
+    def test_edge_close_payload_keeps_v6_durable_identity_contract(self):
+        payload = edge_payload(event="CLOSE_STOP")
+        close = ib_bridge.make_close_fill_payload(payload, {
+            "status": "submitted",
+            "order_id": 2224,
+            "close_status": "Filled",
+            "close_filled": True,
+            "close_fill_price": 99.25,
+            "close_filled_qty": 10,
+            "broker_confirmed_flat": True,
+            "position_after_close": 0,
+        })
+
+        self.assertEqual(close["source"], "IB_BRIDGE")
+        self.assertEqual(close["system_id"], "VIXALE_EDGE")
+        self.assertTrue(close["broker_confirmed_flat"])
+        self.assertEqual(close["position_after_close"], 0)
+        self.assertEqual(close["exit_execution_id"], "ORDER:2224")
+        self.assertEqual(
+            close["reconciliation_id"],
+            f"{payload['setup_id']}:ORDER:2224",
+        )
+
+    async def test_poison_callback_backoff_does_not_block_newer_due_callback(self):
+        now = datetime.now(timezone.utc).isoformat()
+        outbox = {
+            "TP:OLD:poison": {
+                "delivery_id": "TP:OLD:poison",
+                "payload": {"event": "TP", "symbol": "OLD"},
+                "reconcile_payload": None,
+                "primary_delivered": False,
+                "attempts": 4,
+                "next_attempt_at": now,
+            },
+            "EXTERNAL_CLOSE:NEW:fresh": {
+                "delivery_id": "EXTERNAL_CLOSE:NEW:fresh",
+                "payload": {"event": "EXTERNAL_CLOSE", "symbol": "NEW"},
+                "reconcile_payload": None,
+                "primary_delivered": False,
+                "attempts": 0,
+                "next_attempt_at": now,
+            },
+        }
+        delivered_symbols = []
+
+        def load_outbox():
+            return copy.deepcopy(outbox)
+
+        def save_outbox(value):
+            outbox.clear()
+            outbox.update(copy.deepcopy(value))
+            return True
+
+        async def forward(payload):
+            delivered_symbols.append(payload["symbol"])
+            return {
+                "forwarded": True,
+                "status_code": 503 if payload["symbol"] == "OLD" else 200,
+            }
+
+        with (
+            patch.object(ib_bridge, "load_render_outbox", side_effect=load_outbox),
+            patch.object(ib_bridge, "save_render_outbox", side_effect=save_outbox),
+            patch.object(ib_bridge, "forward_to_render", side_effect=forward),
+            patch.object(ib_bridge, "recover_pending_managed_close_deliveries", return_value=0),
+        ):
+            result = await ib_bridge.retry_render_outbox_once()
+            second = await ib_bridge.retry_render_outbox_once()
+
+        self.assertCountEqual(delivered_symbols, ["OLD", "NEW"])
+        self.assertEqual(result["due"], 2)
+        self.assertEqual(result["remaining"], 1)
+        self.assertIn("TP:OLD:poison", outbox)
+        self.assertNotIn("EXTERNAL_CLOSE:NEW:fresh", outbox)
+        self.assertEqual(outbox["TP:OLD:poison"]["attempts"], 5)
+        self.assertGreater(
+            datetime.fromisoformat(outbox["TP:OLD:poison"]["next_attempt_at"]),
+            datetime.fromisoformat(now),
+        )
+        self.assertEqual(second["due"], 0)
+
+    async def test_recovery_concurrency_is_bounded_without_global_serialization(self):
+        now = datetime.now(timezone.utc).isoformat()
+        outbox = {
+            f"TP:SYM{index}:due": {
+                "delivery_id": f"TP:SYM{index}:due",
+                "payload": {"event": "TP", "symbol": f"SYM{index}"},
+                "next_attempt_at": now,
+            }
+            for index in range(11)
+        }
+        active = 0
+        maximum_active = 0
+
+        async def attempt(delivery_id):
+            nonlocal active, maximum_active
+            active += 1
+            maximum_active = max(maximum_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            if delivery_id == "TP:SYM0:due":
+                raise RuntimeError("poison")
+            return {"delivered": True, "delivery_id": delivery_id}
+
+        with (
+            patch.object(ib_bridge, "load_render_outbox", return_value=copy.deepcopy(outbox)),
+            patch.object(ib_bridge, "recover_pending_managed_close_deliveries", return_value=0),
+            patch.object(ib_bridge, "attempt_render_outbox_delivery", side_effect=attempt),
+            patch.object(ib_bridge, "RENDER_OUTBOX_MAX_CONCURRENCY", 4),
+        ):
+            result = await ib_bridge.retry_render_outbox_once()
+
+        self.assertEqual(result["due"], 11)
+        self.assertEqual(len(result["details"]), 11)
+        self.assertGreater(maximum_active, 1)
+        self.assertLessEqual(maximum_active, 4)
+        self.assertEqual(
+            sum(detail["result"].get("delivered") is True for detail in result["details"]),
+            10,
+        )
+
+    async def test_deployed_outbox_diagnostics_retry_and_operator_discard_are_preserved(self):
+        delivery_id = "TP:FAS:production-item"
+        store = {
+            delivery_id: {
+                "delivery_id": delivery_id,
+                "payload": {"event": "TP", "symbol": "FAS"},
+            }
+        }
+
+        def load_outbox():
+            return copy.deepcopy(store)
+
+        def save_outbox(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        with (
+            patch.object(ib_bridge, "load_render_outbox", side_effect=load_outbox),
+            patch.object(ib_bridge, "save_render_outbox", side_effect=save_outbox),
+            patch.object(ib_bridge, "render_outbox_path", return_value="outbox.json"),
+            patch.object(ib_bridge, "retry_render_outbox_once", AsyncMock(return_value={"ok": True, "due": 1})),
+        ):
+            root = await ib_bridge.root()
+            diagnostics = await ib_bridge.ib_render_outbox()
+            retried = await ib_bridge.ib_retry_render_outbox_now()
+            discarded = await ib_bridge.ib_discard_render_outbox(delivery_id)
+
+        self.assertEqual(root["mode"], "v6_edge_exit_durable_v2")
+        self.assertEqual(root["render_outbox_pending"], 1)
+        self.assertEqual(root["render_outbox_max_concurrency"], 4)
+        self.assertFalse(root["quote_push_log_success"])
+        self.assertEqual(diagnostics["count"], 1)
+        self.assertEqual(retried["due"], 1)
+        self.assertTrue(discarded["removed"])
+        self.assertEqual(discarded["reason"], "operator_discarded")
+        self.assertEqual(store, {})
+
+    def test_payload_only_managed_handoff_recovers_and_is_not_quoted(self):
+        payload = {
+            "event": "TP",
+            "symbol": "FAS",
+            "bridge_delivery_id": "TP:FAS:payload-only",
+        }
+        managed = {
+            "FAS": {
+                "symbol": "FAS",
+                "sec_type": "STK",
+                "pending_close_payload": payload,
+            }
+        }
+        saved = []
+        with (
+            patch.object(ib_bridge, "load_managed_positions", return_value=copy.deepcopy(managed)),
+            patch.object(ib_bridge, "enqueue_render_outbox", return_value=("TP:FAS:payload-only", True)),
+            patch.object(ib_bridge, "save_managed_positions", side_effect=lambda value: saved.append(copy.deepcopy(value)) or True),
+            patch.object(ib_bridge, "QUOTE_ONLY_MANAGED_POSITIONS", True),
+        ):
+            recovered = ib_bridge.recover_pending_managed_close_deliveries()
+            symbols = ib_bridge.managed_quote_symbols()
+
+        self.assertEqual(recovered, 1)
+        self.assertEqual(saved[-1], {})
+        self.assertEqual(symbols, [])
+
+    async def test_quote_success_logging_remains_opt_in(self):
+        sleep = AsyncMock(side_effect=[None, asyncio.CancelledError()])
+        with (
+            patch.object(ib_bridge, "ENABLE_RENDER_QUOTE_PUSH", True),
+            patch.object(ib_bridge, "QUOTE_PUSH_LOG_SUCCESS", False),
+            patch.object(ib_bridge, "managed_quote_symbols", return_value=["FAS"]),
+            patch.object(ib_bridge, "ensure_quote_subscriptions", AsyncMock()),
+            patch.object(ib_bridge, "render_quote_payload", return_value={"quotes": [{"symbol": "FAS"}]}),
+            patch.object(ib_bridge, "forward_quotes_to_render", AsyncMock(return_value={"forwarded": True})),
+            patch.object(ib_bridge.asyncio, "sleep", sleep),
+            patch("builtins.print") as printer,
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await ib_bridge.live_quote_push_loop()
+
+        success_lines = [
+            str(call.args[0]) for call in printer.call_args_list
+            if call.args and str(call.args[0]).startswith("[QUOTE PUSH]")
+        ]
+        self.assertEqual(success_lines, [])
 
 
 if __name__ == "__main__":

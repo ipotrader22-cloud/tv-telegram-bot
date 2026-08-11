@@ -51,6 +51,10 @@ const {
   parseOpenPositionRow,
   buildWorkingExitOrders,
   renderDashboardHtml,
+  webhookInboundDeliveryId,
+  upsertWebhookInboxItem,
+  processWebhookInboxItem,
+  processWebhookInboxDueItems,
 } = require('../app.js').__test;
 Module._load = originalLoad;
 
@@ -65,11 +69,17 @@ function createMockSheets() {
     'Open Positions': [['Trade ID', 'Timestamp', 'Symbol', 'Side']],
     'Closed Trades': [['Trade ID', 'Open Time', 'Close Time']],
     'Trade Metadata': [['Metadata ID', 'Trade ID', 'System']],
+    'Webhook Inbox': [['Delivery ID', 'Received At', 'Event']],
     Positions: [['Trade ID']],
   };
   const ids = Object.fromEntries(Object.keys(rows).map((name, index) => [name, index + 1]));
   const namesById = Object.fromEntries(Object.entries(ids).map(([name, id]) => [id, name]));
-  const controls = { fail_trades_append: 0, fail_closed_append: 0 };
+  const controls = {
+    fail_trades_append: 0,
+    fail_closed_append: 0,
+    fail_pending_write: 0,
+    fail_webhook_complete_update: 0,
+  };
 
   function parseRange(range) {
     const [rawSheetName, cells = 'A:Z'] = range.split('!');
@@ -128,6 +138,18 @@ function createMockSheets() {
         if (sheetName === 'Closed Trades' && controls.fail_closed_append > 0) {
           controls.fail_closed_append--;
           throw new Error('mock Closed Trades append failure');
+        }
+        if (sheetName === 'Pending' && controls.fail_pending_write > 0) {
+          controls.fail_pending_write--;
+          throw new Error('mock Pending write failure');
+        }
+        if (
+          sheetName === 'Webhook Inbox' &&
+          controls.fail_webhook_complete_update > 0 &&
+          String(requestBody.values?.[0]?.[7] || '').toUpperCase() === 'COMPLETE'
+        ) {
+          controls.fail_webhook_complete_update--;
+          throw new Error('mock Webhook Inbox COMPLETE update failure');
         }
         while (rows[sheetName].length < rowNumber) rows[sheetName].push([]);
         const target = rows[sheetName][rowNumber - 1];
@@ -689,21 +711,21 @@ async function run() {
     entry_filled: true,
   }));
 
-  const reconciliationId = `${externalId}:FLAT_NO_EXECUTION_HISTORY`;
+  const reconciliationId = `${externalId}:EXEC:MANUAL-TSLA-1`;
   const externalClose = edgePayload('EXTERNAL_CLOSE', externalId, {
     source: 'IB_BRIDGE',
     symbol: 'TSLA',
     flip_bar_time: 1785280800000,
-    price: '',
-    qty: '',
+    price: 122.17,
+    qty: 10,
     render_forwarded_at: '2026-07-28T15:00:00-04:00',
     ib_status: 'position_flat_reconciled',
     broker_confirmed_flat: true,
     position_after_close: 0,
-    exit_execution_id: 'FLAT_NO_EXECUTION_HISTORY',
+    exit_execution_id: 'EXEC:MANUAL-TSLA-1',
     reconciliation_id: reconciliationId,
-    exit_price_available: false,
-    exit_quantity_available: false,
+    exit_price_available: true,
+    exit_quantity_available: true,
     reason: 'IB_POSITION_FLAT_EXTERNAL_EXECUTION',
   });
   await externalLifecycle({
@@ -764,7 +786,7 @@ async function run() {
     'duplicate EXTERNAL_CLOSE creates one Closed row'
   );
   const manualClosedRow = externalSheets.rows['Closed Trades'][1];
-  assert.strictEqual(manualClosedRow[6], '', 'price-unavailable manual close stores no exit price');
+  assert.strictEqual(manualClosedRow[6], 122.17, 'manual close stores the actual IB execution price');
   assert.strictEqual(manualClosedRow[8], '', 'manual close stores no invented P&L');
   assert.strictEqual(manualClosedRow[9], 'Manual Close');
   assert.strictEqual(publicExitLabel('EXTERNAL_CLOSE'), 'Manual Close');
@@ -778,8 +800,8 @@ async function run() {
     'duplicate EXTERNAL_CLOSE sends one manual-close Telegram'
   );
   assert.ok(
-    externalTelegram.some(message => message.includes('Manual Close — price unavailable')),
-    `price-unavailable manual close is explicit: ${JSON.stringify(externalTelegram)}`
+    externalTelegram.some(message => message.includes('Manual Close: <b>122.17</b>')),
+    `manual close publishes the actual execution price: ${JSON.stringify(externalTelegram)}`
   );
   assert.strictEqual(
     externalBridge.filter(event => event === 'EXTERNAL_CLOSE').length,
@@ -1538,6 +1560,546 @@ async function run() {
     routeSheets.rows['Trade Metadata'].at(-1)[23],
     true,
     'route 200 follows persistent publication completion'
+  );
+
+  // Ordinary TradingView delivery is acknowledged only after durable Inbox persistence.
+  const ackOrder = [];
+  const ackResponse = {
+    headersSent: false,
+    status(code) { this.statusCode = code; return this; },
+    send(body) { this.headersSent = true; this.body = body; ackOrder.push('ack'); return this; },
+  };
+  await handleTradingViewWebhookWithDependencies(
+    { body: edgePayload('SETUP', 'VIXALE_EDGE:TLT:15:SHORT:1786368600000', {
+      symbol: 'TLT', side: 'SHORT', timeframe: '15', flip_bar_time: 1786368600000,
+    }) },
+    ackResponse,
+    {
+      sheets: createMockSheets(),
+      upsertWebhookInboxItem: async () => {
+        ackOrder.push('persist_start');
+        await Promise.resolve();
+        ackOrder.push('persist_complete');
+        return { delivery_id: 'TV:SETUP:TLT:test', status: 'PENDING', row_number: 2 };
+      },
+      scheduleWebhookInboxWork: () => ackOrder.push('scheduled'),
+    }
+  );
+  assert.deepStrictEqual(ackOrder, ['persist_start', 'persist_complete', 'ack', 'scheduled']);
+  assert.strictEqual(ackResponse.statusCode, 200);
+
+  // A failed authoritative Inbox write returns 503; retry persists and publishes
+  // one Telegram-silent Pending row without sending anything to the bridge.
+  const pendingInboxSheets = createMockSheets();
+  const pendingInboxPayload = edgePayload(
+    'PENDING_SETUP',
+    'VIXALE_EDGE:SLB:15:LONG:1786368600000',
+    { symbol: 'SLB', timeframe: '15', flip_bar_time: 1786368600000 }
+  );
+  let rejectFirstInboxWrite = true;
+  let fallbackSpoolWrites = 0;
+  let pendingScheduledWork = null;
+  let pendingTelegramCalls = 0;
+  let pendingBridgeCalls = 0;
+  const pendingEndpointDependencies = {
+    sheets: pendingInboxSheets,
+    upsertWebhookInboxItem: async (...args) => {
+      if (rejectFirstInboxWrite) {
+        rejectFirstInboxWrite = false;
+        throw new Error('mock authoritative Inbox outage');
+      }
+      return upsertWebhookInboxItem(...args);
+    },
+    spoolWebhookInboxItem: () => { fallbackSpoolWrites++; return true; },
+    scheduleWebhookInboxWork: work => { pendingScheduledWork = work(); },
+    sendTelegram: async () => { pendingTelegramCalls++; return { ok: true }; },
+    forwardToBridge: async (raw, row) => {
+      if (shouldForwardToBridge(raw, row).ok) {
+        pendingBridgeCalls++;
+        return { forwarded: true };
+      }
+      return { forwarded: false, skipped: true };
+    },
+  };
+  const failedPendingResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: pendingInboxPayload },
+    failedPendingResponse,
+    pendingEndpointDependencies
+  );
+  assert.strictEqual(failedPendingResponse.statusCode, 503);
+  assert.strictEqual(fallbackSpoolWrites, 1);
+  assert.strictEqual(pendingInboxSheets.rows['Webhook Inbox'].length - 1, 0);
+
+  const retriedPendingResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: { ...pendingInboxPayload } },
+    retriedPendingResponse,
+    pendingEndpointDependencies
+  );
+  assert.strictEqual(retriedPendingResponse.statusCode, 200);
+  await pendingScheduledWork;
+  assert.strictEqual(pendingInboxSheets.rows['Webhook Inbox'].length - 1, 1);
+  assert.strictEqual(pendingInboxSheets.rows.Pending.length - 1, 1);
+  assert.strictEqual(pendingTelegramCalls, 0);
+  assert.strictEqual(pendingBridgeCalls, 0);
+
+  // Four duplicate identities share one Inbox row and one downstream execution.
+  const inboxSheets = createMockSheets();
+  const inboxPayload = edgePayload('SETUP', 'VIXALE_EDGE:TLT:15:SHORT:1786368600000', {
+    symbol: 'TLT', side: 'SHORT', timeframe: '15', flip_bar_time: 1786368600000,
+  });
+  const parsedInboxPayload = parseJsonTradingViewAlert(inboxPayload);
+  const duplicateDeliveries = [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    duplicateDeliveries.push(await upsertWebhookInboxItem(
+      inboxSheets,
+      { ...inboxPayload },
+      parseJsonTradingViewAlert({ ...inboxPayload }),
+      new Date().toISOString()
+    ));
+  }
+  const firstInbox = duplicateDeliveries[0];
+  assert.strictEqual(firstInbox.delivery_id, webhookInboundDeliveryId(inboxPayload, parsedInboxPayload));
+  assert.ok(duplicateDeliveries.every(item => item.delivery_id === firstInbox.delivery_id));
+  assert.strictEqual(inboxSheets.rows['Webhook Inbox'].length - 1, 1);
+  let inboxBridgeAttempts = 0;
+  const inboxDependencies = {
+    sheets: inboxSheets,
+    forwardToBridge: async () => {
+      inboxBridgeAttempts++;
+      return { forwarded: true };
+    },
+  };
+  for (const delivery of duplicateDeliveries) {
+    await processWebhookInboxItem(delivery, inboxDependencies);
+  }
+  assert.strictEqual(inboxBridgeAttempts, 1, 'duplicate Inbox work executes downstream once');
+  assert.strictEqual(inboxSheets.rows['Webhook Inbox'][1][7], 'COMPLETE');
+
+  // A downstream ledger write failure remains retryable and later produces one row.
+  const retrySheets = createMockSheets();
+  const retryPayload = edgePayload(
+    'PENDING_SETUP',
+    'VIXALE_EDGE:XLE:15:LONG:1786369500000',
+    { symbol: 'XLE', timeframe: '15', flip_bar_time: 1786369500000 }
+  );
+  const retryItem = await upsertWebhookInboxItem(
+    retrySheets,
+    retryPayload,
+    parseJsonTradingViewAlert(retryPayload),
+    new Date().toISOString()
+  );
+  retrySheets.controls.fail_pending_write = 1;
+  const retryDependencies = { sheets: retrySheets };
+  const retained = await processWebhookInboxItem(retryItem, retryDependencies);
+  assert.strictEqual(retained.status, 'RETRY');
+  assert.ok(retained.next_attempt_at);
+  assert.strictEqual(retrySheets.rows.Pending.length - 1, 0);
+  const completedRetry = await processWebhookInboxItem(retained, retryDependencies);
+  assert.strictEqual(completedRetry.status, 'COMPLETE');
+  assert.strictEqual(retrySheets.rows['Webhook Inbox'].length - 1, 1);
+  assert.strictEqual(retrySheets.rows.Pending.length - 1, 1);
+
+  // Stale entry setups fail closed, while old close-safety work never expires.
+  const staleSheets = createMockSheets();
+  const staleSetupId = 'VIXALE_EDGE:STALE:15:LONG:1786368600000';
+  const stalePayload = edgePayload('SETUP', staleSetupId, {
+    symbol: 'STALE', timeframe: '15', flip_bar_time: 1786368600000,
+  });
+  staleSheets.rows.Pending.push([staleSetupId, '', 'STALE', 'LONG']);
+  const staleItem = await upsertWebhookInboxItem(
+    staleSheets,
+    stalePayload,
+    parseJsonTradingViewAlert(stalePayload),
+    new Date(Date.now() - 10 * 60 * 1000).toISOString()
+  );
+  let staleBridgeCalls = 0;
+  const staleResult = await processWebhookInboxItem(staleItem, {
+    sheets: staleSheets,
+    forwardToBridge: async () => { staleBridgeCalls++; return { forwarded: true }; },
+  });
+  assert.strictEqual(staleResult.status, 'STALE_EXECUTION_DROPPED');
+  assert.strictEqual(staleBridgeCalls, 0);
+  assert.strictEqual(staleSheets.rows.Pending.length, 1);
+
+  const livePayload = edgePayload(
+    'SETUP',
+    'VIXALE_EDGE:LIVE:15:LONG:1786370400000',
+    { symbol: 'LIVE', timeframe: '15', flip_bar_time: 1786370400000 }
+  );
+  const liveItem = await upsertWebhookInboxItem(
+    staleSheets,
+    livePayload,
+    parseJsonTradingViewAlert(livePayload),
+    new Date().toISOString()
+  );
+  let liveBridgeCalls = 0;
+  const liveResult = await processWebhookInboxItem(liveItem, {
+    sheets: staleSheets,
+    forwardToBridge: async () => { liveBridgeCalls++; return { forwarded: true }; },
+  });
+  assert.strictEqual(liveResult.status, 'COMPLETE');
+  assert.strictEqual(liveBridgeCalls, 1, 'stale work does not block another symbol');
+
+  const safetyPayload = edgePayload('CLOSE_STOP', staleSetupId, {
+    symbol: 'STALE', timeframe: '15', flip_bar_time: 1786368600000,
+  });
+  const safetyItem = await upsertWebhookInboxItem(
+    staleSheets,
+    safetyPayload,
+    parseJsonTradingViewAlert(safetyPayload),
+    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  );
+  let safetyBridgeCalls = 0;
+  const safetyResult = await processWebhookInboxItem(safetyItem, {
+    sheets: staleSheets,
+    forwardToBridge: async () => { safetyBridgeCalls++; return { forwarded: true }; },
+  });
+  assert.strictEqual(safetyResult.status, 'COMPLETE');
+  assert.strictEqual(safetyBridgeCalls, 1);
+
+  // A payload emission timestamp takes precedence over a fresh Inbox receipt.
+  const lateSignalPayload = edgePayload(
+    'SETUP',
+    'VIXALE_EDGE:LATE:15:LONG:1786370700000',
+    {
+      symbol: 'LATE', timeframe: '15', flip_bar_time: 1786370700000,
+      alert_timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    }
+  );
+  const lateSignalItem = await upsertWebhookInboxItem(
+    staleSheets,
+    lateSignalPayload,
+    parseJsonTradingViewAlert(lateSignalPayload),
+    new Date().toISOString()
+  );
+  let lateSignalBridgeCalls = 0;
+  const lateSignalResult = await processWebhookInboxItem(lateSignalItem, {
+    sheets: staleSheets,
+    forwardToBridge: async () => { lateSignalBridgeCalls++; return { forwarded: true }; },
+  });
+  assert.strictEqual(lateSignalResult.status, 'STALE_EXECUTION_DROPPED');
+  assert.strictEqual(lateSignalBridgeCalls, 0);
+
+  // A post-side-effect COMPLETE-write failure retries without a second broker
+  // execution. The bridge request may repeat, but setup identity is idempotent.
+  const completionSheets = createMockSheets();
+  const completionPayload = edgePayload(
+    'SETUP',
+    'VIXALE_EDGE:COMPLETEFAIL:15:LONG:1786370800000',
+    {
+      symbol: 'COMPLETEFAIL', timeframe: '15', flip_bar_time: 1786370800000,
+      alert_timestamp: new Date().toISOString(),
+    }
+  );
+  const completionItem = await upsertWebhookInboxItem(
+    completionSheets,
+    completionPayload,
+    parseJsonTradingViewAlert(completionPayload),
+    new Date().toISOString()
+  );
+  completionSheets.controls.fail_webhook_complete_update = 1;
+  let completionBridgeRequests = 0;
+  let completionBrokerExecutions = 0;
+  let completionTelegramCalls = 0;
+  const acceptedSetups = new Set();
+  const completionDependencies = {
+    sheets: completionSheets,
+    sendTelegram: async () => { completionTelegramCalls++; return { ok: true }; },
+    forwardToBridge: async raw => {
+      completionBridgeRequests++;
+      if (!acceptedSetups.has(raw.setup_id)) {
+        acceptedSetups.add(raw.setup_id);
+        completionBrokerExecutions++;
+      }
+      return { forwarded: true };
+    },
+  };
+  const completionRetry = await processWebhookInboxItem(
+    completionItem,
+    completionDependencies
+  );
+  assert.strictEqual(completionRetry.status, 'RETRY');
+  const completionDone = await processWebhookInboxItem(
+    completionRetry,
+    completionDependencies
+  );
+  assert.strictEqual(completionDone.status, 'COMPLETE');
+  assert.strictEqual(completionBridgeRequests, 2);
+  assert.strictEqual(completionBrokerExecutions, 1);
+  assert.strictEqual(completionTelegramCalls, 0);
+  assert.strictEqual(completionSheets.rows.Pending.length - 1, 0);
+  assert.strictEqual(completionSheets.rows['Open Positions'].length - 1, 0);
+  assert.strictEqual(completionSheets.rows['Closed Trades'].length - 1, 0);
+  assert.strictEqual(completionSheets.rows.Trades.length - 1, 0);
+
+  const pendingCompletionSheets = createMockSheets();
+  const pendingCompletionPayload = edgePayload(
+    'PENDING_SETUP',
+    'VIXALE_EDGE:PENDINGCOMPLETE:15:LONG:1786370900000',
+    {
+      symbol: 'PENDINGCOMPLETE', timeframe: '15',
+      flip_bar_time: 1786370900000,
+    }
+  );
+  const pendingCompletionItem = await upsertWebhookInboxItem(
+    pendingCompletionSheets,
+    pendingCompletionPayload,
+    parseJsonTradingViewAlert(pendingCompletionPayload),
+    new Date().toISOString()
+  );
+  pendingCompletionSheets.controls.fail_webhook_complete_update = 1;
+  let pendingCompletionTelegram = 0;
+  let pendingCompletionBridge = 0;
+  const pendingCompletionDependencies = {
+    sheets: pendingCompletionSheets,
+    sendTelegram: async () => { pendingCompletionTelegram++; return { ok: true }; },
+    forwardToBridge: async (raw, row) => {
+      if (shouldForwardToBridge(raw, row).ok) {
+        pendingCompletionBridge++;
+        return { forwarded: true };
+      }
+      return { forwarded: false, skipped: true };
+    },
+  };
+  const pendingCompletionRetry = await processWebhookInboxItem(
+    pendingCompletionItem,
+    pendingCompletionDependencies
+  );
+  assert.strictEqual(pendingCompletionRetry.status, 'RETRY');
+  const pendingCompletionDone = await processWebhookInboxItem(
+    pendingCompletionRetry,
+    pendingCompletionDependencies
+  );
+  assert.strictEqual(pendingCompletionDone.status, 'COMPLETE');
+  assert.strictEqual(pendingCompletionSheets.rows.Pending.length - 1, 1);
+  assert.strictEqual(pendingCompletionSheets.rows['Open Positions'].length - 1, 0);
+  assert.strictEqual(pendingCompletionSheets.rows['Closed Trades'].length - 1, 0);
+  assert.strictEqual(pendingCompletionSheets.rows.Trades.length - 1, 0);
+  assert.strictEqual(pendingCompletionTelegram, 0);
+  assert.strictEqual(pendingCompletionBridge, 0);
+
+  // Recovery uses at most four simultaneous workers; one poison item retries
+  // without preventing the other due items from completing.
+  const backlogSheets = createMockSheets();
+  for (let index = 0; index < 9; index++) {
+    const payload = edgePayload(
+      'SETUP',
+      `VIXALE_EDGE:BACKLOG${index}:15:LONG:${1786371000000 + index}`,
+      {
+        symbol: `BACKLOG${index}`,
+        timeframe: '15',
+        flip_bar_time: 1786371000000 + index,
+        alert_timestamp: new Date().toISOString(),
+      }
+    );
+    await upsertWebhookInboxItem(
+      backlogSheets,
+      payload,
+      parseJsonTradingViewAlert(payload),
+      new Date().toISOString()
+    );
+  }
+  let activeBacklog = 0;
+  let maxActiveBacklog = 0;
+  const backlogResult = await processWebhookInboxDueItems({
+    sheets: backlogSheets,
+    forwardToBridge: async raw => {
+      activeBacklog++;
+      maxActiveBacklog = Math.max(maxActiveBacklog, activeBacklog);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      activeBacklog--;
+      return raw.symbol === 'BACKLOG0'
+        ? { forwarded: false, error: 'mock poison callback' }
+        : { forwarded: true };
+    },
+  });
+  assert.strictEqual(backlogResult.processed, 9);
+  assert.ok(maxActiveBacklog > 1, 'recovery is not globally serial');
+  assert.ok(maxActiveBacklog <= 4, `max concurrency was ${maxActiveBacklog}`);
+  const backlogStatuses = backlogSheets.rows['Webhook Inbox'].slice(1).map(row => row[7]);
+  assert.strictEqual(backlogStatuses.filter(status => status === 'COMPLETE').length, 8);
+  assert.strictEqual(backlogStatuses.filter(status => status === 'RETRY').length, 1);
+
+  // A close that beats ENTRY_FILL remains retryable. Once the real Open state
+  // appears, the same callback publishes one close and one Telegram message.
+  const orphanSheets = createMockSheets();
+  const orphanTelegram = [];
+  const orphanSetupId = 'VIXALE_EDGE:ORPHAN:15:LONG:1786368600000';
+  const orphanClosePayload = edgePayload('TP', orphanSetupId, {
+    source: 'IB_BRIDGE', symbol: 'ORPHAN', timeframe: '15',
+    price: 101.25, qty: 5, broker_confirmed_flat: true,
+    position_after_close: 0, exit_execution_id: 'EXEC:ORPHAN-1',
+    reconciliation_id: `${orphanSetupId}:EXEC:ORPHAN-1`,
+    bridge_delivery_id: 'TP:ORPHAN:test-terminal', ib_target_status: 'Filled',
+  });
+  const orphanResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: orphanClosePayload },
+    orphanResponse,
+    {
+      sheets: orphanSheets,
+      sendTelegram: async message => { orphanTelegram.push(message); return { ok: true }; },
+      forwardToBridge: async () => ({ forwarded: false, skipped: true }),
+    }
+  );
+  assert.strictEqual(orphanResponse.statusCode, 503);
+  assert.strictEqual(orphanSheets.rows.Trades.length - 1, 0);
+  assert.strictEqual(orphanSheets.rows['Closed Trades'].length - 1, 0);
+  assert.strictEqual(orphanTelegram.length, 0);
+
+  const orphanLifecycle = createLifecycleContext({
+    sheetStore: orphanSheets,
+    telegramStore: orphanTelegram,
+    bridgeStore: [],
+  });
+  await orphanLifecycle(edgePayload('ENTRY_FILL', orphanSetupId, {
+    source: 'IB_BRIDGE', symbol: 'ORPHAN', timeframe: '15', qty: 5,
+    entry: 100, target: 101.25, price: 100,
+    render_forwarded_at: '2026-08-10T10:00:00-04:00',
+    ib_status: 'FILLED', entry_filled: true, entry_fill_price: 100,
+  }));
+  const recoveredCloseResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: orphanClosePayload },
+    recoveredCloseResponse,
+    {
+      sheets: orphanSheets,
+      sendTelegram: async message => { orphanTelegram.push(message); return { ok: true }; },
+      forwardToBridge: async () => ({ forwarded: false, skipped: true }),
+    }
+  );
+  assert.strictEqual(recoveredCloseResponse.statusCode, 200);
+  const duplicateRecoveredCloseResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: orphanClosePayload },
+    duplicateRecoveredCloseResponse,
+    {
+      sheets: orphanSheets,
+      sendTelegram: async message => { orphanTelegram.push(message); return { ok: true }; },
+      forwardToBridge: async () => ({ forwarded: false, skipped: true }),
+    }
+  );
+  assert.strictEqual(duplicateRecoveredCloseResponse.statusCode, 200);
+  assert.strictEqual(orphanSheets.rows.Trades.length - 1, 2);
+  assert.strictEqual(orphanSheets.rows['Closed Trades'].length - 1, 1);
+  assert.strictEqual(
+    orphanTelegram.filter(message => message.includes('Vixale Edge hit target')).length,
+    1
+  );
+
+  // Prime uses the same durable manual-close publication contract and actual execution values.
+  const primeSheets = createMockSheets();
+  const primeTelegram = [];
+  const primeLifecycle = createLifecycleContext({
+    sheetStore: primeSheets,
+    telegramStore: primeTelegram,
+    bridgeStore: [],
+  });
+  const primeSetupId = 'VIXALE_PRIME:RTX:15:LONG:1786368600000';
+  const primeBase = {
+    source: 'TradingView', system_id: 'VIXALE_PRIME', strategy: 'SHREK_1_4',
+    variant: 'ATR_LIMIT_OPPOSITE_FLIP', setup_id: primeSetupId,
+    symbol: 'RTX', side: 'LONG', entry: 150, target: 152, stop: 0,
+    qty: 5, timeframe: '15', flip_bar_time: 1786368600000,
+  };
+  await primeLifecycle({
+    ...primeBase, event: 'ENTRY_FILL', source: 'IB_BRIDGE',
+    render_forwarded_at: '2026-08-10T10:00:00-04:00',
+    ib_status: 'FILLED', entry_filled: true,
+  });
+  const primeManual = {
+    ...primeBase, event: 'EXTERNAL_CLOSE', source: 'IB_BRIDGE',
+    render_forwarded_at: '2026-08-10T10:30:00-04:00',
+    ib_status: 'position_flat_execution_reconciled', price: 151.37, qty: 5,
+    broker_confirmed_flat: true, position_after_close: 0,
+    exit_execution_id: 'EXEC:PRIME-MANUAL-RTX-1',
+    reconciliation_id: `${primeSetupId}:EXEC:PRIME-MANUAL-RTX-1`,
+    bridge_delivery_id: 'EXTERNAL_CLOSE:RTX:test-prime-manual',
+    exit_price_available: true, exit_quantity_available: true,
+  };
+  const firstPrimeManual = await primeLifecycle(primeManual);
+  const duplicatePrimeManual = await primeLifecycle(primeManual);
+  assert.strictEqual(firstPrimeManual.finalRow.status, 'external_close_publication_complete');
+  assert.strictEqual(duplicatePrimeManual.finalRow.status, 'ignored_duplicate_external_close');
+  assert.strictEqual(primeSheets.rows.Trades.length - 1, 2, 'Prime has one fill and one manual close');
+  assert.strictEqual(primeSheets.rows['Closed Trades'].length - 1, 1);
+  assert.strictEqual(primeSheets.rows['Closed Trades'][1][6], 151.37);
+  assert.strictEqual(
+    primeTelegram.filter(message => message.includes('Vixale Prime closed manually')).length,
+    1
+  );
+  const unrelatedPrimeSetupId = 'VIXALE_PRIME:RTX:15:LONG:1786372200000';
+  primeSheets.rows['Open Positions'].push([
+    'RTX_LONG', '2026-08-10T10:31:00-04:00', 'RTX', 'LONG', 'open',
+    151.5, 5, 153, 0, '', '', JSON.stringify({
+      ...primeBase,
+      setup_id: unrelatedPrimeSetupId,
+      flip_bar_time: 1786372200000,
+    }),
+  ]);
+  const stalePrimeTargetAfterManual = await primeLifecycle({
+    ...primeBase, event: 'TP', source: 'IB_BRIDGE',
+    render_forwarded_at: '2026-08-10T10:31:00-04:00',
+    ib_status: 'position_flat_target_reconcile', ib_target_status: 'Filled',
+    price: 152, qty: 5, broker_confirmed_flat: true, position_after_close: 0,
+    exit_execution_id: 'EXEC:STALE-PRIME-TARGET-RTX-1',
+    reconciliation_id: `${primeSetupId}:EXEC:STALE-PRIME-TARGET-RTX-1`,
+    bridge_delivery_id: 'TP:RTX:test-stale-after-manual',
+  });
+  assert.strictEqual(
+    stalePrimeTargetAfterManual.finalRow.status,
+    'terminal_orphan_already_removed_broker_exit'
+  );
+  assert.strictEqual(primeSheets.rows['Closed Trades'].length - 1, 1);
+  assert.strictEqual(primeSheets.rows['Open Positions'].length - 1, 1);
+  assert.strictEqual(
+    JSON.parse(primeSheets.rows['Open Positions'][1][11]).setup_id,
+    unrelatedPrimeSetupId,
+    'stale prior-setup target must not remove a newer same-symbol Open row'
+  );
+  assert.strictEqual(primeTelegram.length, 2, 'one Prime open and one manual close only');
+
+  // A Prime target callback also completes through Trade Metadata and stays idempotent.
+  const primeTargetSheets = createMockSheets();
+  const primeTargetTelegram = [];
+  const primeTargetLifecycle = createLifecycleContext({
+    sheetStore: primeTargetSheets,
+    telegramStore: primeTargetTelegram,
+    bridgeStore: [],
+  });
+  const primeTargetSetupId = 'VIXALE_PRIME:CSCO:15:LONG:1786371300000';
+  const primeTargetBase = {
+    source: 'TradingView', system_id: 'VIXALE_PRIME', strategy: 'SHREK_1_4',
+    variant: 'ATR_LIMIT_OPPOSITE_FLIP', setup_id: primeTargetSetupId,
+    symbol: 'CSCO', side: 'LONG', entry: 70, target: 71.25, stop: 0,
+    qty: 8, timeframe: '15', flip_bar_time: 1786371300000,
+  };
+  await primeTargetLifecycle({
+    ...primeTargetBase, event: 'ENTRY_FILL', source: 'IB_BRIDGE',
+    render_forwarded_at: '2026-08-10T11:00:00-04:00',
+    ib_status: 'FILLED', entry_filled: true,
+  });
+  const primeTarget = {
+    ...primeTargetBase, event: 'TP', source: 'IB_BRIDGE',
+    render_forwarded_at: '2026-08-10T11:30:00-04:00',
+    ib_status: 'position_flat_target_reconcile', ib_target_status: 'Filled',
+    price: 71.31, qty: 8, broker_confirmed_flat: true, position_after_close: 0,
+    exit_execution_id: 'EXEC:PRIME-TARGET-CSCO-1',
+    reconciliation_id: `${primeTargetSetupId}:EXEC:PRIME-TARGET-CSCO-1`,
+    bridge_delivery_id: 'TP:CSCO:test-prime-target',
+  };
+  const firstPrimeTarget = await primeTargetLifecycle(primeTarget);
+  const duplicatePrimeTarget = await primeTargetLifecycle(primeTarget);
+  assert.strictEqual(firstPrimeTarget.finalRow.status, 'bridge_close_publication_complete');
+  assert.strictEqual(duplicatePrimeTarget.finalRow.status, 'ignored_duplicate_bridge_close');
+  assert.strictEqual(primeTargetSheets.rows['Closed Trades'].length - 1, 1);
+  assert.strictEqual(primeTargetSheets.rows['Trade Metadata'].length - 1, 1);
+  assert.strictEqual(primeTargetSheets.rows['Trade Metadata'][1][23], true);
+  assert.strictEqual(
+    primeTargetTelegram.filter(message => message.includes('Vixale Prime hit target')).length,
+    1
   );
 
   console.log('Vixale Edge app lifecycle integration: mocked Sheets, Telegram, and bridge checks passed');

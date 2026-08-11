@@ -535,6 +535,11 @@ BRIDGE_ALLOW_MANUAL_TESTS
 MAX_BRIDGE_QTY
 BRIDGE_DEFAULT_QTY
 BRIDGE_ALLOWED_SYMBOLS
+WEBHOOK_INBOX_RETRY_INTERVAL_MS
+WEBHOOK_INBOX_BACKOFF_BASE_MS
+WEBHOOK_INBOX_BACKOFF_MAX_MS
+WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS
+WEBHOOK_INBOX_SPOOL_FILE
 ```
 
 Never put secrets into this handbook.
@@ -580,6 +585,11 @@ ENABLE_MANAGED_TARGET_RECONCILE
 MANAGED_POSITIONS_FILE
 CANCEL_ORPHAN_TARGETS_AFTER_FLAT
 ENABLE_RENDER_FLAT_RECONCILE
+ENABLE_RENDER_OUTBOX_RETRY
+RENDER_OUTBOX_FILE
+RENDER_OUTBOX_RETRY_SECONDS
+RENDER_OUTBOX_BACKOFF_BASE_SECONDS
+RENDER_OUTBOX_BACKOFF_MAX_SECONDS
 ```
 
 ## 7.3 TradingView alert configuration
@@ -646,7 +656,7 @@ EOD_CLOSE          → EOD
 CANCEL              → CANCEL
 RECONCILE_FLAT      → silent reconciliation
 STOP_REF_UPDATE     → silent stop-reference update
-EXTERNAL_CLOSE      → broker-confirmed Vixale Edge Manual Close
+EXTERNAL_CLOSE      → broker-confirmed Vixale Edge or Prime Manual Close
 ```
 
 Vixale Edge payload version 2 uses `system_id=VIXALE_EDGE` and a deterministic
@@ -706,8 +716,11 @@ positive execution evidence:
    reason `IB_TARGET_EXECUTION_CONFIRMED`.
 2. Exact bridge Stop Loss close execution Filled → `CLOSE_STOP`, actual
    price/quantity, reason `IB_STOP_CLOSE_EXECUTION_CONFIRMED`.
-3. Neither execution is proven → `EXTERNAL_CLOSE`, public `Manual Close`,
-   reason `IB_POSITION_FLAT_EXTERNAL_EXECUTION`.
+3. One unambiguous post-entry, non-managed closing execution is proven →
+   `EXTERNAL_CLOSE`, public `Manual Close`, actual price/quantity, reason
+   `IB_POSITION_FLAT_EXTERNAL_EXECUTION`.
+4. None or more than one of those evidence classes is proven → no callback;
+   managed state remains for a later evidence refresh or manual review.
 
 A flat position, missing/non-working target, stored target price, or market
 touch is not TP evidence. Broker identity uses strongest-ID precedence:
@@ -1018,22 +1031,26 @@ store blank result and result percentage even when all actual component prices
 are available.
 
 When one matching external execution is available after a reliably timestamped
-managed entry, its actual price and quantity are published. External attribution
-requires `entry_filled_at` or `entry_order.filled_at`, a parseable execution
-time at or after that entry, matching symbol and closing action, and one
-unambiguous execution group. Without the managed entry timestamp, or for a
-pre-entry fill, the callback explicitly marks price and quantity unavailable
-and never attaches a historical execution. It never substitutes the target
-price. `EXTERNAL_CLOSE` always blanks result and result percentage, ignores
+managed entry, its actual price and quantity are published. Before that callback
+is made durable, the bridge cancels and verifies the exact attached target so it
+cannot later open an unintended reverse position. External attribution requires
+`entry_filled_at` or `entry_order.filled_at`, a parseable execution time at or
+after that entry, matching symbol and closing action, and one unambiguous
+execution group. Without the managed entry timestamp, for a pre-entry fill, or
+when target cancellation cannot be verified, no callback is sent and managed
+state is retained. The bridge never substitutes the target price.
+`EXTERNAL_CLOSE` always blanks result and result percentage, ignores
 supplied P&L aliases, and never invokes normal close P&L fallback—even when
 actual execution price and
 quantity are available.
 
 The managed-position JSON persists entry, target, and bridge-close broker
-identity plus timestamps. Before Render delivery, reconciliation persists a
-claim keyed by `setup_id + exit execution identity`. Failed delivery retains
-the claim and managed row for an identical retry. The row is cleared only after
-Render returns success.
+identity plus timestamps. Before Render delivery, reconciliation first persists
+the fixed callback on the managed row, then copies it into the local durable
+Render outbox keyed by `bridge_delivery_id`. Once the outbox write succeeds the
+managed row may be cleared; HTTP/network failure retains the callback in the
+outbox with per-item exponential `next_attempt_at` backoff. A poison item cannot
+block a newer due TP, Stop Loss, Manual Close, or `RECONCILE_FLAT` callback.
 
 `app.js` also treats broker-confirmed Edge `TP` and `CLOSE_STOP` as synchronous
 persistent callback lifecycles. Recognition requires
@@ -1041,19 +1058,20 @@ persistent callback lifecycles. Recognition requires
 `reconciliation_id`, `broker_confirmed_flat=true`, a zero
 `position_after_close`, and a valid broker execution identity. The HTTP route
 awaits exact Open removal, one Trades exit, one Closed Trade, Telegram
-publication, and raw-JSON completion markers. It returns HTTP 200 only after
+publication, and `Trade Metadata` completion markers. It returns HTTP 200 only after
 all components succeed and HTTP 503 `RETRY` after a retryable Sheets or
 Telegram failure.
 
 Retries repair only missing components. The in-flight key is
-`setup_id + reconciliation_id + exit event`; durable raw JSON markers make a
+`setup_id + reconciliation_id + exit event`; durable `Trade Metadata` markers make a
 completed duplicate harmless after Render restart. TP remains `Take Profit`,
 `CLOSE_STOP` remains publicly `Stop Loss`, actual execution price/quantity are
 preserved, and neither callback is forwarded back to the bridge. No Google
 Sheets columns are added.
 
-`app.js` processes `EXTERNAL_CLOSE` synchronously as a broker callback, never
-forwards it back to the bridge, removes the exact Edge Open row, stores
+`app.js` processes `EXTERNAL_CLOSE` synchronously as a broker callback for Edge
+and Prime, never forwards it back to the bridge, removes the exact setup-scoped
+Open row, stores
 `Manual Close` in the existing event column, and publishes:
 
 ```text
@@ -1061,12 +1079,12 @@ forwards it back to the bridge, removes the exact Edge Open row, stores
 Manual Close — price unavailable
 ```
 
-The second line is used only when no actual IB execution price is available.
-Persistent publication markers live inside the existing raw JSON cells, so
-duplicate callbacks do not create another Trades row, Closed row, or Telegram
-message. A callback without confirmed broker-flat state or valid `IB_BRIDGE`
-identity cannot close the public ledger. No Google Sheets column or worksheet
-schema changes.
+New manual-close callbacks require actual execution price and quantity; legacy
+rows may still render the price-unavailable copy. Persistent publication markers
+live in `Trade Metadata`, so duplicate callbacks do not create another Trades
+row, Closed row, or Telegram message. A callback without confirmed broker-flat
+state, a valid `IB_BRIDGE` execution identity, actual price/quantity, or exact
+setup/reconciliation identity cannot close the public ledger.
 
 ---
 
@@ -1136,7 +1154,7 @@ L Raw Open JSON
 
 ### 9.4 `Closed Trades`
 
-Columns A:L:
+Human-readable columns A:J:
 
 ```text
 A Trade ID
@@ -1149,11 +1167,51 @@ G Exit
 H Size
 I Result
 J Event
-K Raw Open JSON
-L Raw Close JSON
 ```
 
-### 9.5 `Positions`
+Technical identity, raw payloads, and publication state are not reconstructed
+from this sheet. Older K:L raw JSON cells may be read only as a compatibility
+fallback.
+
+### 9.5 `Trade Metadata`
+
+Columns A:Y are the authoritative technical companion to compact Closed Trades:
+
+```text
+Metadata ID, Trade ID, System, Symbol, Side, Open Time, Close Time, Event,
+Setup ID, Alert Instance ID, Strategy, Variant, Raw Open JSON, Raw Close JSON,
+Recorded At, System ID, Reconciliation ID, Bridge Delivery ID,
+Exit Execution ID, Broker Confirmed Flat, Position After Close,
+Closed Trade Written, Telegram Exit Published, Publication Complete,
+Publication Completed At
+```
+
+Durable close retries use setup/reconciliation/delivery identity and the final
+three completion fields. A human-facing Closed Trades row is never the source
+of technical publication truth.
+
+### 9.6 `Webhook Inbox`
+
+Columns A:M durably own recognized, non-broker TradingView deliveries before
+Render returns HTTP 200:
+
+```text
+Delivery ID, Received At, Event, System ID, Setup ID, Symbol, Side, Status,
+Attempts, Next Attempt At, Last Error, Raw JSON, Completed At
+```
+
+`delivery_id` is deterministic from stable lifecycle identity. Duplicate
+deliveries reuse one row. `SETUP` execution work older than
+`WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS` (default 90 seconds) is marked
+`STALE_EXECUTION_DROPPED`; reliable payload alert/signal/bar-close timestamps
+take precedence over Inbox receipt time, which is the fallback. Setup-origin
+`flip_bar_time` and bar-start identity are not execution-age evidence because a
+virtual Edge limit can fill later. Close/cancel safety work does not expire.
+Recovery processes at most `WEBHOOK_INBOX_MAX_CONCURRENCY` items concurrently
+(default 4). When Sheets is temporarily unavailable, Render writes a local JSON
+spool and returns HTTP 503 so TradingView retains retry ownership.
+
+### 9.7 `Positions`
 
 Legacy sheet. Current code cleans matching legacy rows when processing modern events.
 
@@ -1201,6 +1259,9 @@ GET  /ib/status
 GET  /ib/open-orders
 GET  /ib/positions
 GET  /ib/managed-positions
+GET  /ib/render-outbox
+POST /ib/retry-render-outbox-now
+DELETE /ib/render-outbox/{delivery_id}
 POST /ib/force-eod-close-now
 GET  /ib/cancel-orphan-targets
 POST /ib/qualify-contract
@@ -1427,9 +1488,10 @@ position.
 The in-memory target monitor and persistent managed-position reconciliation can detect the same target fill. `_target_report_claims` prevents duplicate reporting.
 
 For Vixale Edge, `_target_report_claims` is only the concurrent guard. The
-durable source is the managed-position reconciliation claim containing the
-fixed callback payload and `setup_id + exit execution identity`. Render failure
-must retain that record for retry.
+durable handoff is the managed-position reconciliation claim followed by the
+local Render outbox containing the fixed callback payload and
+`setup_id + exit execution identity`. Render failure retains the outbox item for
+retry even after the managed position has been cleared.
 
 ### 13.10 Orphan targets
 
@@ -1448,7 +1510,16 @@ A Pro workspace is not required for the current single-owner architecture.
 
 ### 13.12 Render outages and missed signals
 
-A TradingView webhook that receives HTTP 503 may be retried, but a signal can still be lost. Do not manually backfill a missed live signal without an explicit decision.
+Recognized non-broker TradingView deliveries are acknowledged only after the
+authoritative `Webhook Inbox` row exists. Downstream lifecycle work retries from
+that row with per-item backoff and bounded concurrency (default 4). If the Inbox
+cannot be written, Render returns HTTP 503 and also attempts a local fallback
+spool; it never sends a success ACK for memory-only work. A failed status update
+after a downstream side effect is caught and retried through the same durable
+delivery identity. Stale entry execution is suppressed after the configured
+maximum age, preferring a reliable payload emission/bar-close timestamp over
+Inbox receipt time, while close/cancel safety work remains eligible indefinitely.
+Do not manually backfill a missed live signal without an explicit decision.
 
 ### 13.13 Execution order during reversals
 
@@ -1992,10 +2063,12 @@ then exact `orderId`;
 legacy `orderRef` alone requires post-entry timestamped, quantity-complete,
 unambiguous evidence. External Manual Close price/quantity attribution also
 requires a reliable managed entry timestamp and a parseable, post-entry
-execution timestamp; without those timestamps it remains unavailable. Manual
-Close retains actual price/quantity when available but never calculates
-fallback P&L. The managed file persists order/execution identity and a stable
-reconciliation claim until Render confirms publication.
+execution timestamp. Manual Close is withheld without that evidence; when
+published it retains actual price/quantity but never calculates fallback P&L.
+The managed file persists
+order/execution identity and a stable reconciliation claim until the fixed
+callback is durable in the local Render outbox. The outbox then owns delivery
+until Render confirms publication.
 
 **Reason:** The shared Fiona/Prime strategy text previously allowed Edge to
 enter Prime reversal handling, while flat-position reconciliation could
@@ -2248,6 +2321,78 @@ links without changing saved Option Journal records. Existing files beneath
 `OPTION_PROOFS_DIR` and the `Option Proofs` worksheet remain inert historical
 data; deleting either requires separate explicit approval. Removing or resizing
 the Render disk is a separate infrastructure action.
+
+---
+
+### ADR-016 — Durable TradingView Inbox and evidence-only manual close
+
+**Decision:** Render persists every recognized non-broker TradingView lifecycle
+delivery to the Google Sheets `Webhook Inbox` before HTTP 200. A deterministic
+delivery ID deduplicates retries; the worker owns downstream retry state,
+per-item backoff, and bounded recovery concurrency through
+`WEBHOOK_INBOX_MAX_CONCURRENCY` (default 4). Entry `SETUP` work expires after 90
+seconds by default. A reliable payload alert/signal/bar-close timestamp is used
+when available, with Inbox `received_at` only as fallback; setup-origin
+`flip_bar_time` and bar-start identity do not age a later virtual-limit fill.
+Close/cancel safety work does not expire. A local JSON spool is only a fallback
+when the authoritative Inbox write fails, and that request still receives HTTP
+503. COMPLETE status persistence is awaited inside the retry boundary, so a
+post-side-effect status-write failure becomes RETRY rather than an escaped lost
+promise.
+
+The bridge durably queues TP, Stop Loss, Manual Close, and `RECONCILE_FLAT`
+callbacks before managed state is cleared. Each callback has its own
+`next_attempt_at`, and recovery is bounded by
+`RENDER_OUTBOX_MAX_CONCURRENCY` (default 4), so one poison 503 cannot block later
+callbacks or create an unbounded Render request fan-out. Complete absence of an
+Open row, Trades/Closed row, and Trade Metadata is not proof of intentional
+deletion: the callback stays retryable because it may have arrived before
+ENTRY_FILL/Open publication. Render may return terminal HTTP 200 without another
+close or Telegram only when the same exact setup has durable evidence of a
+previous close in Trade Metadata/completed publication or compatible legacy
+Closed raw JSON. Compact Closed Trades identity alone is insufficient. A private
+operator can inspect, retry, or explicitly discard a genuinely abandoned local
+outbox item through the bridge diagnostic routes; automatic absence never
+performs that discard.
+
+Repository bridge code preserves the deployed `v6_edge_exit_durable_v2`
+operational contract while retaining the newer strict Edge recovery machinery:
+payload-only pending-close handoffs recover after restart, outbox diagnostics and
+explicit removal remain available, successful quote pushes log only when
+`QUOTE_PUSH_LOG_SUCCESS=true`, and an explicit `NO_EOD_CLOSE` managed row is
+excluded from forced flattening. A pending close handoff is also excluded from
+target reconciliation, forced EOD flattening, and managed quote subscription so
+the same broker lifecycle is not reclassified or executed again. Evidence-only
+target/manual reconciliation is not weakened.
+
+A broker-flat position alone is never TP or Manual Close evidence. Edge and
+Prime require exactly one matching evidence class: exact attached-target fill,
+exact bridge-close fill, or one unambiguous post-entry external closing
+execution. Manual Close uses the actual execution price and quantity and is
+published only after exact target cancellation is confirmed. Missing,
+historical, pre-entry, ambiguous, or cancellation-unverified evidence retains
+managed state and publishes nothing.
+
+**Reason:** HTTP acknowledgement before persistence created a loss window, flat
+state previously allowed Prime reconciliation to fabricate TP at the stored
+target, and a single hot-loop callback could monopolize local delivery. Durable
+ownership on both sides plus exact broker evidence preserves execution-first
+publication across retries and restarts. Ledger absence is ambiguous during
+out-of-order callback recovery and therefore cannot be a terminal idempotency
+signal by itself.
+
+**Schema impact:** Adds the `Webhook Inbox` A:M worksheet. `Trade Metadata` A:Y
+remains the technical publication authority; compact `Closed Trades` A:J remains
+human-readable. The local bridge adds a JSON Render outbox with attempts and
+`next_attempt_at`. TradingView payloads, canonical setup IDs, Pine logic, sizing,
+and EOD policy are unchanged.
+
+**Deployment impact:** The repository bridge and deployed
+`C:\ib_bridge\ib_bridge.py` were different at implementation time. Merging this
+ADR does not update or restart the local bridge; the deployed file remains the
+read-only operational baseline, and deploying the reconciled reviewed bridge
+file is a separate owner-approved production step. Render deployment likewise
+requires merge approval. Do not clear either durable queue during rollout.
 
 ---
 
