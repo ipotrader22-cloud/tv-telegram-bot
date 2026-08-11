@@ -227,6 +227,14 @@ TARGET_MONITOR_POLL_SECONDS = env_float("TARGET_MONITOR_POLL_SECONDS", 1.0)
 ENABLE_MANAGED_TARGET_RECONCILE = env_bool("ENABLE_MANAGED_TARGET_RECONCILE", True)
 MANAGED_TARGET_RECONCILE_POLL_SECONDS = env_float("MANAGED_TARGET_RECONCILE_POLL_SECONDS", 5.0)
 
+# Durable Render callback outbox. Items are retained across restarts and each
+# item owns its own retry schedule so a poison callback cannot block newer work.
+ENABLE_RENDER_OUTBOX_RETRY = env_bool("ENABLE_RENDER_OUTBOX_RETRY", True)
+RENDER_OUTBOX_FILE = os.getenv("RENDER_OUTBOX_FILE", "vixale_render_outbox.json").strip() or "vixale_render_outbox.json"
+RENDER_OUTBOX_RETRY_SECONDS = env_float("RENDER_OUTBOX_RETRY_SECONDS", 5.0)
+RENDER_OUTBOX_BACKOFF_BASE_SECONDS = env_float("RENDER_OUTBOX_BACKOFF_BASE_SECONDS", 5.0)
+RENDER_OUTBOX_BACKOFF_MAX_SECONDS = env_float("RENDER_OUTBOX_BACKOFF_MAX_SECONDS", 900.0)
+
 # Live quote push for dashboard. The bridge subscribes to TWS market data for
 # currently managed/open stock positions and pushes a lightweight quote snapshot
 # to Render/app.js. This is dashboard-only and does not place/cancel orders.
@@ -324,6 +332,7 @@ _ib_connection_gap_observed = False
 _last_force_eod_date = None
 _force_eod_task = None
 _target_reconcile_task = None
+_render_outbox_task = None
 _quote_push_task = None
 _quote_tickers: Dict[str, Any] = {}
 _quote_contracts: Dict[str, Any] = {}
@@ -335,6 +344,8 @@ _execution_monitor_tasks = set()
 # the managed-position file remains available for a later retry/restart.
 _target_report_claims = set()
 _target_report_claim_lock = asyncio.Lock()
+_render_outbox_claims = set()
+_render_outbox_claim_lock = asyncio.Lock()
 _edge_stop_close_lock = asyncio.Lock()
 _ib_connection_lock = asyncio.Lock()
 logger = logging.getLogger("vixale.ib_bridge")
@@ -803,14 +814,55 @@ def mark_managed_bridge_close(
     data: Dict[str, Any],
     ib_result: Dict[str, Any],
 ) -> bool:
-    if not is_vixale_edge_payload(data):
-        return True
-
     symbol = str(data.get("symbol") or "").upper().strip()
     managed = load_managed_positions()
     row = dict(managed.get(symbol) or {})
     if not row:
-        return False
+        return not is_vixale_edge_payload(data)
+
+    if not is_vixale_edge_payload(data):
+        now_iso = datetime.now(
+            ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)
+        ).isoformat()
+        existing_close = (
+            row.get("bridge_close_order")
+            if isinstance(row.get("bridge_close_order"), dict)
+            else {}
+        )
+        row["bridge_close_order"] = {
+            "order_id": ib_result.get("order_id") or existing_close.get("order_id", ""),
+            "perm_id": ib_result.get("order_perm_id") or existing_close.get("perm_id", ""),
+            "order_ref": ib_result.get("order_ref") or existing_close.get("order_ref", ""),
+            "bridge_status": ib_result.get("status") or existing_close.get("bridge_status", ""),
+            "latest_status": ib_result.get("close_status") or existing_close.get("latest_status", ""),
+            "filled_qty": to_float(ib_result.get("close_filled_qty")) or to_float(existing_close.get("filled_qty")),
+            "fill_price": to_float(ib_result.get("close_fill_price")) or to_float(existing_close.get("fill_price")),
+            "exec_ids": list(ib_result.get("close_exec_ids") or existing_close.get("exec_ids") or []),
+            "broker_confirmed_flat": bool(
+                ib_result.get("broker_confirmed_flat")
+                or existing_close.get("broker_confirmed_flat")
+            ),
+            "position_after_close": (
+                ib_result.get("position_after_close")
+                if ib_result.get("position_after_close") not in (None, "")
+                else existing_close.get("position_after_close", "")
+            ),
+            "submitted_at": existing_close.get("submitted_at") or now_iso,
+            "filled_at": (
+                now_iso
+                if ib_result.get("close_filled")
+                else existing_close.get("filled_at", "")
+            ),
+        }
+        prior_payload = (
+            row.get("last_payload")
+            if isinstance(row.get("last_payload"), dict)
+            else {}
+        )
+        row["last_payload"] = {**prior_payload, **dict(data)}
+        row["updated_at"] = now_iso
+        managed[symbol] = row
+        return save_managed_positions(managed)
 
     setup_id = str(data.get("setup_id") or "").strip()
     managed_setup_id = str(row.get("setup_id") or "").strip()
@@ -1276,6 +1328,342 @@ def render_delivery_succeeded(result: Dict[str, Any]) -> bool:
         return False
 
     return 200 <= status_code < 300
+
+
+def render_outbox_path() -> str:
+    if os.path.isabs(RENDER_OUTBOX_FILE):
+        return RENDER_OUTBOX_FILE
+    return os.path.join(os.getcwd(), RENDER_OUTBOX_FILE)
+
+
+def load_render_outbox() -> Dict[str, Any]:
+    path = render_outbox_path()
+    try:
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        print(f"[RENDER OUTBOX LOAD ERROR] {exc}")
+        return {}
+
+
+def save_render_outbox(data: Dict[str, Any]) -> bool:
+    path = render_outbox_path()
+    try:
+        folder = os.path.dirname(path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True, default=str)
+        os.replace(tmp_path, path)
+        return True
+    except Exception as exc:
+        print(f"[RENDER OUTBOX SAVE ERROR] {exc}")
+        return False
+
+
+def make_render_delivery_id(payload: Dict[str, Any]) -> str:
+    existing = str(payload.get("bridge_delivery_id") or "").strip()
+    if existing:
+        return existing
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+    event = str(payload.get("event") or "EVENT").upper().strip() or "EVENT"
+    symbol = str(payload.get("symbol") or "UNKNOWN").upper().strip() or "UNKNOWN"
+    return f"{event}:{symbol}:{digest}"
+
+
+def render_outbox_retry_delay_seconds(attempts: int) -> float:
+    exponent = max(0, min(16, int(attempts or 0) - 1))
+    return min(
+        max(RENDER_OUTBOX_BACKOFF_MAX_SECONDS, RENDER_OUTBOX_BACKOFF_BASE_SECONDS),
+        max(RENDER_OUTBOX_BACKOFF_BASE_SECONDS, 1.0) * (2 ** exponent),
+    )
+
+
+def enqueue_render_outbox(
+    payload: Dict[str, Any],
+    reconcile_payload: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, bool]:
+    clean_payload = dict(payload)
+    delivery_id = make_render_delivery_id(clean_payload)
+    clean_payload["bridge_delivery_id"] = delivery_id
+    clean_reconcile = dict(reconcile_payload) if isinstance(reconcile_payload, dict) else None
+    if clean_reconcile is not None:
+        clean_reconcile["bridge_delivery_id"] = f"{delivery_id}:RECONCILE"
+    outbox = load_render_outbox()
+    existing = outbox.get(delivery_id) if isinstance(outbox.get(delivery_id), dict) else {}
+    now = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    outbox[delivery_id] = {
+        "delivery_id": delivery_id,
+        "payload": clean_payload,
+        "reconcile_payload": clean_reconcile,
+        "primary_delivered": bool(existing.get("primary_delivered", False)),
+        "attempts": int(existing.get("attempts", 0) or 0),
+        "next_attempt_at": existing.get("next_attempt_at") or now,
+        "created_at": existing.get("created_at") or now,
+        "updated_at": now,
+        "last_result": existing.get("last_result") or {},
+        "last_reconcile_result": existing.get("last_reconcile_result") or {},
+    }
+    return delivery_id, save_render_outbox(outbox)
+
+
+def update_render_outbox_item(delivery_id: str, **updates: Any) -> bool:
+    outbox = load_render_outbox()
+    item = outbox.get(delivery_id)
+    if not isinstance(item, dict):
+        return False
+    item.update(updates)
+    item["updated_at"] = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    outbox[delivery_id] = item
+    return save_render_outbox(outbox)
+
+
+def remove_render_outbox_item(delivery_id: str) -> bool:
+    outbox = load_render_outbox()
+    if delivery_id not in outbox:
+        return True
+    outbox.pop(delivery_id, None)
+    return save_render_outbox(outbox)
+
+
+async def claim_render_outbox_delivery(delivery_id: str) -> bool:
+    clean_id = str(delivery_id or "").strip()
+    if not clean_id:
+        return False
+    async with _render_outbox_claim_lock:
+        if clean_id in _render_outbox_claims:
+            return False
+        _render_outbox_claims.add(clean_id)
+        return True
+
+
+async def release_render_outbox_delivery(delivery_id: str) -> None:
+    async with _render_outbox_claim_lock:
+        _render_outbox_claims.discard(str(delivery_id or "").strip())
+
+
+def mark_managed_close_delivery_pending(
+    symbol: str,
+    payload: Dict[str, Any],
+    reconcile_payload: Optional[Dict[str, Any]] = None,
+) -> bool:
+    clean_symbol = str(symbol or payload.get("symbol") or "").upper().strip()
+    if not clean_symbol:
+        return False
+    managed = load_managed_positions()
+    row = dict(managed.get(clean_symbol) or {})
+    row.setdefault("symbol", clean_symbol)
+    row.setdefault("side", str(payload.get("side") or "").upper().strip())
+    row.setdefault("qty", to_float(payload.get("qty")))
+    row.setdefault("entry", to_float(payload.get("entry")))
+    row.setdefault("target", to_float(payload.get("target")))
+    row.setdefault("last_payload", dict(payload))
+    row["pending_close_delivery"] = True
+    row["pending_close_payload"] = dict(payload)
+    row["pending_close_reconcile_payload"] = (
+        dict(reconcile_payload) if isinstance(reconcile_payload, dict) else None
+    )
+    row["updated_at"] = datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)).isoformat()
+    managed[clean_symbol] = row
+    return save_managed_positions(managed)
+
+
+def render_outbox_item_due(item: Dict[str, Any], now: Optional[datetime] = None) -> bool:
+    raw_value = str(item.get("next_attempt_at") or "").strip()
+    if not raw_value:
+        return True
+    try:
+        due_at = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE))
+        current = now or datetime.now(ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE))
+        return due_at <= current
+    except Exception:
+        return True
+
+
+async def attempt_render_outbox_delivery(
+    delivery_id: str,
+    force: bool = False,
+) -> Dict[str, Any]:
+    clean_id = str(delivery_id or "").strip()
+    if not clean_id:
+        return {"delivered": False, "reason": "missing_delivery_id"}
+    if not await claim_render_outbox_delivery(clean_id):
+        return {"delivered": False, "reason": "delivery_in_progress"}
+
+    try:
+        item = load_render_outbox().get(clean_id)
+        if not isinstance(item, dict):
+            return {"delivered": True, "reason": "already_delivered_or_absent"}
+        if not force and not render_outbox_item_due(item):
+            return {
+                "delivered": False,
+                "reason": "not_due",
+                "next_attempt_at": item.get("next_attempt_at", ""),
+            }
+
+        payload = dict(item.get("payload") or {})
+        reconcile_payload = (
+            dict(item.get("reconcile_payload") or {})
+            if isinstance(item.get("reconcile_payload"), dict)
+            else None
+        )
+        primary_delivered = bool(item.get("primary_delivered", False))
+        primary_result = dict(item.get("last_result") or {})
+        reconcile_result = dict(item.get("last_reconcile_result") or {})
+
+        if not primary_delivered:
+            primary_result = await forward_to_render(payload)
+            primary_delivered = render_delivery_succeeded(primary_result)
+
+        reconcile_delivered = reconcile_payload is None
+        if primary_delivered and reconcile_payload is not None:
+            reconcile_result = await forward_to_render(reconcile_payload)
+            reconcile_delivered = render_delivery_succeeded(reconcile_result)
+
+        if primary_delivered and reconcile_delivered:
+            removed = remove_render_outbox_item(clean_id)
+            return {
+                "delivered": bool(removed),
+                "reason": "complete" if removed else "completion_persistence_failed",
+                "primary_result": primary_result,
+                "reconcile_result": reconcile_result,
+            }
+
+        attempts = int(item.get("attempts", 0) or 0) + 1
+        delay = render_outbox_retry_delay_seconds(attempts)
+        next_attempt = datetime.now(
+            ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE)
+        ).timestamp() + delay
+        next_attempt_at = datetime.fromtimestamp(
+            next_attempt,
+            ZoneInfo(FORCE_EOD_FLATTEN_TIMEZONE),
+        ).isoformat()
+        persisted = update_render_outbox_item(
+            clean_id,
+            primary_delivered=primary_delivered,
+            attempts=attempts,
+            next_attempt_at=next_attempt_at,
+            last_result=primary_result,
+            last_reconcile_result=reconcile_result,
+        )
+        return {
+            "delivered": False,
+            "reason": "render_retry_scheduled" if persisted else "retry_persistence_failed",
+            "attempts": attempts,
+            "next_attempt_at": next_attempt_at,
+            "primary_result": primary_result,
+            "reconcile_result": reconcile_result,
+        }
+    finally:
+        await release_render_outbox_delivery(clean_id)
+
+
+async def persist_and_deliver_managed_exit_callback(
+    symbol: str,
+    payload: Dict[str, Any],
+    reconcile_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    clean_payload = dict(payload)
+    delivery_id = make_render_delivery_id(clean_payload)
+    clean_payload["bridge_delivery_id"] = delivery_id
+    if not mark_managed_close_delivery_pending(
+        symbol,
+        clean_payload,
+        reconcile_payload,
+    ):
+        return {
+            "delivered": False,
+            "reason": "managed_close_persistence_failed",
+            "delivery_id": delivery_id,
+        }
+
+    queued_id, queued = enqueue_render_outbox(clean_payload, reconcile_payload)
+    if not queued:
+        return {
+            "delivered": False,
+            "reason": "outbox_persistence_failed",
+            "delivery_id": queued_id,
+        }
+
+    # Once the callback is durable in the outbox, the managed position can be
+    # removed without losing the callback across a restart.
+    clear_managed_position(symbol)
+    result = await attempt_render_outbox_delivery(queued_id, force=True)
+    return {**result, "delivery_id": queued_id, "queued": True}
+
+
+def recover_pending_managed_close_deliveries() -> int:
+    managed = load_managed_positions()
+    recovered = 0
+    for symbol, row in list(managed.items()):
+        if not row.get("pending_close_delivery"):
+            continue
+        payload = row.get("pending_close_payload")
+        if not isinstance(payload, dict) or not payload:
+            continue
+        reconcile_payload = row.get("pending_close_reconcile_payload")
+        _delivery_id, queued = enqueue_render_outbox(
+            payload,
+            reconcile_payload if isinstance(reconcile_payload, dict) else None,
+        )
+        if queued:
+            managed.pop(symbol, None)
+            recovered += 1
+    if recovered:
+        save_managed_positions(managed)
+    return recovered
+
+
+async def retry_render_outbox_once() -> Dict[str, Any]:
+    recovered = recover_pending_managed_close_deliveries()
+    outbox = load_render_outbox()
+    due_ids = [
+        delivery_id
+        for delivery_id, item in outbox.items()
+        if isinstance(item, dict) and render_outbox_item_due(item)
+    ]
+    # Each item is attempted independently. One old 503/backoff item therefore
+    # cannot block newer due callbacks from being delivered.
+    results = await asyncio.gather(
+        *(attempt_render_outbox_delivery(delivery_id) for delivery_id in due_ids),
+        return_exceptions=True,
+    )
+    details = []
+    for delivery_id, result in zip(due_ids, results):
+        details.append({
+            "delivery_id": delivery_id,
+            "result": {"delivered": False, "reason": str(result)}
+            if isinstance(result, Exception)
+            else result,
+        })
+    return {
+        "ok": True,
+        "recovered": recovered,
+        "due": len(due_ids),
+        "remaining": len(load_render_outbox()),
+        "details": details,
+    }
+
+
+async def render_outbox_retry_loop() -> None:
+    poll = max(RENDER_OUTBOX_RETRY_SECONDS, 1.0)
+    print(f"[RENDER OUTBOX START] enabled={ENABLE_RENDER_OUTBOX_RETRY} poll={poll}s")
+    while True:
+        try:
+            if ENABLE_RENDER_OUTBOX_RETRY:
+                result = await retry_render_outbox_once()
+                if result.get("due") or result.get("recovered"):
+                    print(f"[RENDER OUTBOX RESULT] {result}")
+        except Exception as exc:
+            print(f"[RENDER OUTBOX ERROR] {exc}")
+        await asyncio.sleep(poll)
 
 
 TARGET_PRICE_KEYS = (
@@ -2356,24 +2744,23 @@ async def monitor_target_fill(
                     actual_qty = trade_filled_qty(target_trade) or qty
                     fill_price = trade_fill_price(target_trade)
                     edge_target = is_vixale_edge_payload(original_data)
-                    if edge_target and fill_price <= 0:
+                    if fill_price <= 0:
                         print(
                             f"[TP MONITOR RETRY ARMED] symbol={symbol} exact target is Filled "
                             "but actual execution price is unavailable; managed state retained"
                         )
                         return
-                    if edge_target:
-                        flat, position_after = await verify_position_flat(
-                            symbol,
-                            FORCE_EOD_POSITION_VERIFY_SECONDS,
+                    flat, position_after = await verify_position_flat(
+                        symbol,
+                        FORCE_EOD_POSITION_VERIFY_SECONDS,
+                    )
+                    if not flat:
+                        print(
+                            f"[TP MONITOR CRITICAL RETRY ARMED] symbol={symbol} "
+                            f"exact target is Filled but broker position remains {position_after}; "
+                            "TP callback withheld and managed state retained"
                         )
-                        if not flat:
-                            print(
-                                f"[TP MONITOR CRITICAL RETRY ARMED] symbol={symbol} "
-                                f"exact target is Filled but broker position remains {position_after}; "
-                                "TP callback withheld and managed state retained"
-                            )
-                            return
+                        return
                     payload = dict(original_data)
                     payload["event"] = "TP"
                     payload["symbol"] = symbol
@@ -2391,26 +2778,30 @@ async def monitor_target_fill(
                     payload["ib_target_perm_id"] = trade_perm_id(target_trade)
                     payload["ib_target_order_ref"] = trade_order_ref_value(target_trade)
                     payload["ib_target_status"] = trade_status(target_trade)
-                    if edge_target:
-                        identity = execution_identity_text(
-                            exec_ids=trade_execution_ids(target_trade),
-                            perm_id=trade_perm_id(target_trade),
-                            order_id=trade_order_id(target_trade),
-                            order_ref_value=trade_order_ref_value(target_trade),
+                    identity = execution_identity_text(
+                        exec_ids=trade_execution_ids(target_trade),
+                        perm_id=trade_perm_id(target_trade),
+                        order_id=trade_order_id(target_trade),
+                        order_ref_value=trade_order_ref_value(target_trade),
+                    )
+                    if not identity:
+                        print(
+                            f"[TP MONITOR RETRY ARMED] symbol={symbol} "
+                            "target execution identity is unavailable; Render callback withheld"
                         )
-                        if not identity:
-                            print(
-                                f"[TP MONITOR RETRY ARMED] symbol={symbol} "
-                                "target execution identity is unavailable; Render callback withheld"
-                            )
-                            return
-                        setup_id = str(original_data.get("setup_id") or "").strip()
-                        payload["source"] = "IB_BRIDGE"
+                        return
+                    setup_id = str(
+                        original_data.get("setup_id")
+                        or original_data.get("trade_id")
+                        or f"{symbol}_{side}"
+                    ).strip()
+                    payload["source"] = "IB_BRIDGE"
+                    payload["exit_execution_id"] = identity
+                    payload["reconciliation_id"] = f"{setup_id or symbol}:{identity}"
+                    payload["broker_confirmed_flat"] = True
+                    payload["position_after_close"] = position_after
+                    if edge_target:
                         payload["system_id"] = "VIXALE_EDGE"
-                        payload["exit_execution_id"] = identity
-                        payload["reconciliation_id"] = f"{setup_id or symbol}:{identity}"
-                        payload["broker_confirmed_flat"] = True
-                        payload["position_after_close"] = position_after
                         managed = load_managed_positions()
                         managed_row = dict(managed.get(symbol) or {})
                         managed_row["reconciliation_claim"] = {
@@ -2428,19 +2819,18 @@ async def monitor_target_fill(
                             )
                             return
 
-                    render_result = await forward_to_render(payload)
+                    render_result = await persist_and_deliver_managed_exit_callback(
+                        symbol,
+                        payload,
+                    )
                     print(f"[TP MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
 
-                    if render_delivery_succeeded(render_result):
-                        clear_managed_position(symbol)
+                    if render_result.get("delivered"):
                         print(f"[TP MONITOR DONE] symbol={symbol} side={side} filled={qty}@{fill_price}")
-                        if CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
-                            try:
-                                await cleanup_orphan_targets_if_flat(symbol)
-                            except Exception as cleanup_exc:
-                                print(f"[TP MONITOR CLEANUP ERROR] symbol={symbol} error={cleanup_exc}")
+                    elif render_result.get("queued"):
+                        print(f"[TP MONITOR QUEUED] symbol={symbol} durable Render retry armed")
                     else:
-                        print(f"[TP MONITOR RETRY ARMED] symbol={symbol} Render delivery failed; managed state retained")
+                        print(f"[TP MONITOR RETRY ARMED] symbol={symbol} outbox persistence failed; managed state retained")
                 finally:
                     await release_target_report_claim(symbol)
                 return
@@ -6538,9 +6928,6 @@ async def monitor_close_fill_confirmation(
                     await asyncio.sleep(0.50)
                     result.update(await cleanup_orphan_targets_if_flat(symbol))
 
-                if not edge_close:
-                    clear_managed_position(symbol)
-
                 render_payload = make_close_fill_payload(original_data, result)
                 if (
                     edge_stop_close
@@ -6552,16 +6939,18 @@ async def monitor_close_fill_confirmation(
                         "Render callback withheld and managed state retained"
                     )
                     return
-                render_result = await forward_to_render(render_payload)
-                print(f"[CLOSE FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
-                if edge_close and render_delivery_succeeded(render_result):
-                    clear_managed_position(symbol)
-
                 event = str(original_data.get("event", "")).upper()
-                if not edge_stop_close and should_send_flat_reconcile(event, result):
-                    reconcile_payload = make_reconcile_flat_payload(original_data, result)
-                    reconcile_result = await forward_to_render(reconcile_payload)
-                    print(f"[CLOSE FILL MONITOR RECONCILE RESULT] symbol={symbol} {reconcile_result}")
+                reconcile_payload = (
+                    make_reconcile_flat_payload(original_data, result)
+                    if not edge_stop_close and should_send_flat_reconcile(event, result)
+                    else None
+                )
+                render_result = await persist_and_deliver_managed_exit_callback(
+                    symbol,
+                    render_payload,
+                    reconcile_payload,
+                )
+                print(f"[CLOSE FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
 
                 print(
                     f"[CLOSE FILL MONITOR DONE] symbol={symbol} side={side} "
@@ -6675,12 +7064,6 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
 
     edge_close = is_vixale_edge_payload(data) and event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"]
     edge_stop_close = is_edge_stop_close(data)
-    if (
-        event in ["TP", "CLOSE_STOP", "EOD_CLOSE", "NEW_DAY_EMERGENCY_CLOSE"]
-        and ib_close_accepted(ib_result)
-        and not edge_close
-    ):
-        clear_managed_position(symbol)
 
     # Execution-first architecture: successful fills must be echoed back to Render.
     # app.js publishes Telegram/Sheets/dashboard only from these bridge callbacks.
@@ -6743,17 +7126,25 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
         )
         return
 
+    if transform == "CLOSE_FILL":
+        if edge_close and ib_close_accepted(ib_result):
+            mark_managed_bridge_close(data, ib_result)
+        reconcile_payload = (
+            make_reconcile_flat_payload(data, ib_result)
+            if not edge_stop_close and should_send_flat_reconcile(event, ib_result)
+            else None
+        )
+        render_result = await persist_and_deliver_managed_exit_callback(
+            symbol,
+            render_payload,
+            reconcile_payload,
+        )
+        print(f"[RENDER DURABLE CLOSE RESULT] {render_result}")
+        print(f"[BG DONE] event={event} symbol={symbol} side={side}")
+        return
+
     render_result = await forward_to_render(render_payload)
     print(f"[RENDER RESULT] {render_result}")
-    if edge_close and ib_close_accepted(ib_result):
-        mark_managed_bridge_close(data, ib_result)
-        if render_delivery_succeeded(render_result):
-            clear_managed_position(symbol)
-
-    if not edge_stop_close and should_send_flat_reconcile(event, ib_result):
-        reconcile_payload = make_reconcile_flat_payload(data, ib_result)
-        reconcile_result = await forward_to_render(reconcile_payload)
-        print(f"[RECONCILE_FLAT RENDER RESULT] symbol={symbol} {reconcile_result}")
 
     print(f"[BG DONE] event={event} symbol={symbol} side={side}")
 
@@ -8318,7 +8709,10 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
     side = str(row.get("side") or payload.get("side") or "").upper().strip()
 
     evidence = target_evidence or mixed_evidence or close_evidence or external_evidence
-    execution_identity = str(evidence.get("identity")) if evidence else "FLAT_NO_EXECUTION_HISTORY"
+    if not evidence:
+        return {}, "EDGE_FLAT_EXECUTION_EVIDENCE_PENDING"
+
+    execution_identity = str(evidence.get("identity"))
     reconciliation_id = f"{setup_id or symbol}:{execution_identity}"
     event = (
         "TP"
@@ -8367,44 +8761,107 @@ def edge_reconciliation_payload(row: Dict[str, Any]) -> Tuple[Dict[str, Any], st
         "reconciliation_id": reconciliation_id,
     })
 
-    if evidence:
-        payload["price"] = evidence["price"]
-        payload["qty"] = evidence["qty"]
-        payload["exit_price_available"] = True
-        payload["exit_quantity_available"] = True
-        payload["ib_exit_order_id"] = evidence.get("order_id", "")
-        payload["ib_exit_perm_id"] = evidence.get("perm_id", "")
-        payload["ib_exit_order_ref"] = evidence.get("order_ref", "")
-        if mixed_evidence:
-            for key in (
-                "original_position_qty",
-                "target_partial_filled_qty",
-                "target_partial_fill_price",
-                "target_partial_exec_ids",
-                "target_partial_execution_components",
-                "expected_remaining_qty",
-                "confirmed_remaining_qty",
-                "stop_close_filled_qty",
-                "stop_close_fill_price",
-                "stop_close_exec_ids",
-                "mixed_exit_weighted_price",
-                "mixed_exit_total_qty",
-                "mixed_exit_exec_ids",
-                "mixed_exit_evidence_complete",
-                "mixed_exit_execution_components",
-                "external_close_filled_qty",
-                "external_close_fill_price",
-                "external_close_exec_ids",
-                "external_close_identity",
-                "close_attempts",
-            ):
-                payload[key] = mixed_evidence.get(key)
-    else:
-        payload["price"] = ""
-        payload["qty"] = ""
-        payload["exit_price_available"] = False
-        payload["exit_quantity_available"] = False
+    payload["price"] = evidence["price"]
+    payload["qty"] = evidence["qty"]
+    payload["exit_price_available"] = True
+    payload["exit_quantity_available"] = True
+    payload["ib_exit_order_id"] = evidence.get("order_id", "")
+    payload["ib_exit_perm_id"] = evidence.get("perm_id", "")
+    payload["ib_exit_order_ref"] = evidence.get("order_ref", "")
+    if mixed_evidence:
+        for key in (
+            "original_position_qty",
+            "target_partial_filled_qty",
+            "target_partial_fill_price",
+            "target_partial_exec_ids",
+            "target_partial_execution_components",
+            "expected_remaining_qty",
+            "confirmed_remaining_qty",
+            "stop_close_filled_qty",
+            "stop_close_fill_price",
+            "stop_close_exec_ids",
+            "mixed_exit_weighted_price",
+            "mixed_exit_total_qty",
+            "mixed_exit_exec_ids",
+            "mixed_exit_evidence_complete",
+            "mixed_exit_execution_components",
+            "external_close_filled_qty",
+            "external_close_fill_price",
+            "external_close_exec_ids",
+            "external_close_identity",
+            "close_attempts",
+        ):
+            payload[key] = mixed_evidence.get(key)
 
+    return payload, reconciliation_id
+
+
+def managed_flat_reconciliation_payload(
+    row: Dict[str, Any],
+) -> Tuple[Dict[str, Any], str]:
+    """Classify a non-Edge flat position only from exact IB execution evidence."""
+    target_evidence = find_managed_execution_evidence(row, "target")
+    close_evidence = find_managed_execution_evidence(row, "close")
+    external_evidence = find_external_close_execution(row)
+    candidates = [
+        ("TP", target_evidence, "IB_TARGET_EXECUTION_CONFIRMED"),
+        ("CLOSE_STOP", close_evidence, "IB_BRIDGE_CLOSE_EXECUTION_CONFIRMED"),
+        ("EXTERNAL_CLOSE", external_evidence, "IB_POSITION_FLAT_EXTERNAL_EXECUTION"),
+    ]
+    confirmed = [candidate for candidate in candidates if candidate[1]]
+    if len(confirmed) != 1:
+        return {}, (
+            "MANAGED_FLAT_EXECUTION_EVIDENCE_PENDING"
+            if not confirmed
+            else "MANAGED_FLAT_EXECUTION_EVIDENCE_AMBIGUOUS"
+        )
+
+    event, evidence, reason = confirmed[0]
+    payload = dict(row.get("last_payload") or {})
+    raw_event = str(payload.get("event") or "").upper().strip()
+    if event == "CLOSE_STOP" and raw_event in (
+        "EOD_CLOSE",
+        "NEW_DAY_EMERGENCY_CLOSE",
+    ):
+        event = raw_event
+    symbol = str(row.get("symbol") or payload.get("symbol") or "").upper().strip()
+    side = str(row.get("side") or payload.get("side") or "").upper().strip()
+    setup_id = str(
+        row.get("setup_id")
+        or payload.get("setup_id")
+        or payload.get("trade_id")
+        or f"{symbol}_{side}"
+    ).strip()
+    execution_identity = str(evidence.get("identity") or "").strip()
+    if not execution_identity:
+        return {}, "MANAGED_FLAT_EXECUTION_IDENTITY_PENDING"
+    reconciliation_id = f"{setup_id}:{execution_identity}"
+    payload.update({
+        "source": "IB_BRIDGE",
+        "system_id": payload.get("system_id") or row.get("system_id") or "VIXALE_PRIME",
+        "strategy": payload.get("strategy") or row.get("strategy") or "MANAGED_TARGET_RECONCILE",
+        "variant": payload.get("variant") or row.get("variant") or "",
+        "setup_id": setup_id,
+        "event": event,
+        "symbol": symbol,
+        "side": side,
+        "entry": row.get("entry") or payload.get("entry") or "",
+        "target": row.get("target") or payload.get("target") or "",
+        "stop": row.get("stop") or payload.get("stop") or "",
+        "price": evidence["price"],
+        "qty": evidence["qty"],
+        "reason": reason,
+        "broker_confirmed_flat": True,
+        "position_after_close": 0,
+        "ib_status": "position_flat_execution_reconciled",
+        "exit_execution_id": execution_identity,
+        "reconciliation_id": reconciliation_id,
+        "exit_price_available": True,
+        "exit_quantity_available": True,
+        "ib_exit_order_id": evidence.get("order_id", ""),
+        "ib_exit_perm_id": evidence.get("perm_id", ""),
+        "ib_exit_order_ref": evidence.get("order_ref", ""),
+    })
     return payload, reconciliation_id
 
 
@@ -8419,6 +8876,13 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
     for symbol, row in list(managed.items()):
         symbol = str(symbol or row.get("symbol") or "").upper().strip()
         if not symbol:
+            continue
+
+        if row.get("pending_close_delivery"):
+            details.append({
+                "symbol": symbol,
+                "status": "render_outbox_handoff_pending",
+            })
             continue
 
         target_price = to_float(row.get("target"))
@@ -8550,19 +9014,32 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
                         })
                         continue
 
-                render_result = await forward_to_render(payload)
                 cleanup = {}
-                if render_delivery_succeeded(render_result):
-                    clear_managed_position(symbol)
-                    if CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
-                        try:
-                            cleanup = await cleanup_orphan_targets_if_flat(symbol)
-                        except Exception as cleanup_exc:
-                            cleanup = {"cleanup_error": str(cleanup_exc)}
+                if str(payload.get("event") or "").upper() == "EXTERNAL_CLOSE":
+                    cleanup = await cancel_and_verify_edge_target(row)
+                    if not cleanup.get("ok") or cleanup.get("status") != "target_cancelled":
+                        details.append({
+                            **cleanup,
+                            "symbol": symbol,
+                            "status": "external_close_target_cancel_unconfirmed",
+                            "event": payload.get("event"),
+                            "reason": payload.get("reason"),
+                            "reconciliation_id": reconciliation_id,
+                            "target": target_price,
+                        })
+                        continue
+
+                render_result = await persist_and_deliver_managed_exit_callback(
+                    symbol,
+                    payload,
+                )
+                if render_result.get("delivered"):
                     reported += 1
                     status = f"reported_{str(payload.get('event') or '').lower()}_flat"
+                elif render_result.get("queued"):
+                    status = "render_delivery_queued_for_retry"
                 else:
-                    status = "render_delivery_failed_retry_retained"
+                    status = "render_delivery_persistence_failed_retained"
 
                 details.append({
                     "symbol": symbol,
@@ -8576,44 +9053,48 @@ async def reconcile_managed_target_fills_once() -> Dict[str, Any]:
                 })
                 continue
 
-            payload = dict(row.get("last_payload") or {})
-            side = str(row.get("side") or payload.get("side") or "").upper().strip()
-            qty = to_int_qty(row.get("qty")) or to_int_qty(payload.get("qty"))
-            entry = to_float(row.get("entry")) or to_float(payload.get("entry")) or to_float(payload.get("price"))
+            payload, reconciliation_id = managed_flat_reconciliation_payload(row)
+            if not payload:
+                details.append({
+                    "symbol": symbol,
+                    "status": reconciliation_id,
+                    "target": target_price,
+                })
+                continue
 
-            payload.update({
-                "source": payload.get("source") or "IB_BRIDGE",
-                "strategy": payload.get("strategy") or row.get("strategy") or "MANAGED_TARGET_RECONCILE",
-                "event": "TP",
-                "symbol": symbol,
-                "side": side,
-                "qty": qty,
-                "entry": round_price(entry) if entry > 0 else entry,
-                "price": round_price(target_price),
-                "target": round_price(target_price),
-                "reason": "IB_TARGET_FILLED_RECONCILE",
-                "ib_status": "position_flat_target_reconcile",
-            })
-
-            render_result = await forward_to_render(payload)
             cleanup = {}
+            if str(payload.get("event") or "").upper() == "EXTERNAL_CLOSE":
+                cleanup = await cancel_and_verify_edge_target(row)
+                if not cleanup.get("ok") or cleanup.get("status") != "target_cancelled":
+                    details.append({
+                        **cleanup,
+                        "symbol": symbol,
+                        "status": "external_close_target_cancel_unconfirmed",
+                        "event": payload.get("event"),
+                        "reason": payload.get("reason"),
+                        "reconciliation_id": reconciliation_id,
+                        "target": target_price,
+                    })
+                    continue
 
-            if render_delivery_succeeded(render_result):
-                clear_managed_position(symbol)
-                if CANCEL_ORPHAN_TARGETS_AFTER_FLAT:
-                    try:
-                        cleanup = await cleanup_orphan_targets_if_flat(symbol)
-                    except Exception as cleanup_exc:
-                        cleanup = {"cleanup_error": str(cleanup_exc)}
-
+            render_result = await persist_and_deliver_managed_exit_callback(
+                symbol,
+                payload,
+            )
+            if render_result.get("delivered"):
                 reported += 1
-                status = "reported_tp_flat"
+                status = f"reported_{str(payload.get('event') or '').lower()}_flat"
+            elif render_result.get("queued"):
+                status = "render_delivery_queued_for_retry"
             else:
-                status = "render_delivery_failed_retry_retained"
+                status = "render_delivery_persistence_failed_retained"
 
             details.append({
                 "symbol": symbol,
                 "status": status,
+                "event": payload.get("event"),
+                "reason": payload.get("reason"),
+                "reconciliation_id": reconciliation_id,
                 "target": target_price,
                 "render_result": render_result,
                 **cleanup,
@@ -8926,9 +9407,11 @@ async def forced_eod_scheduler_loop() -> None:
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    global _force_eod_task, _target_reconcile_task, _quote_push_task
+    global _force_eod_task, _target_reconcile_task, _render_outbox_task, _quote_push_task
     if ENABLE_MANAGED_TARGET_RECONCILE and _target_reconcile_task is None:
         _target_reconcile_task = asyncio.create_task(managed_target_reconcile_loop())
+    if ENABLE_RENDER_OUTBOX_RETRY and _render_outbox_task is None:
+        _render_outbox_task = asyncio.create_task(render_outbox_retry_loop())
     if ENABLE_RENDER_QUOTE_PUSH and _quote_push_task is None:
         _quote_push_task = asyncio.create_task(live_quote_push_loop())
     if FORCE_EOD_FLATTEN_ENABLED and _force_eod_task is None:
@@ -8951,6 +9434,8 @@ async def root():
         "target_monitor_seconds": TARGET_MONITOR_SECONDS,
         "enable_managed_target_reconcile": ENABLE_MANAGED_TARGET_RECONCILE,
         "managed_target_reconcile_poll_seconds": MANAGED_TARGET_RECONCILE_POLL_SECONDS,
+        "enable_render_outbox_retry": ENABLE_RENDER_OUTBOX_RETRY,
+        "render_outbox_count": len(load_render_outbox()),
         "enable_render_quote_push": ENABLE_RENDER_QUOTE_PUSH,
         "render_quote_url_configured": bool(render_quote_update_url()),
         "quote_push_poll_seconds": QUOTE_PUSH_POLL_SECONDS,

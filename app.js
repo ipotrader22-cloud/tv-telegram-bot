@@ -2,6 +2,7 @@ const express = require('express');
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const {
   createBrokerEodCallbackRegistry,
@@ -130,6 +131,12 @@ const TRADE_METADATA_HEADERS = [
   'Edge Exit Publication Complete',
   'Publication Completed At',
 ];
+const WEBHOOK_INBOX_SHEET = 'Webhook Inbox';
+const WEBHOOK_INBOX_HEADERS = [
+  'Delivery ID', 'Received At', 'Event', 'System ID', 'Setup ID', 'Symbol',
+  'Side', 'Status', 'Attempts', 'Next Attempt At', 'Last Error', 'Raw JSON',
+  'Completed At',
+];
 const LEGACY_POSITIONS_SHEET = 'Positions';
 const OPTION_JOURNAL_SHEET = 'Option Journal';
 const OPTION_JOURNAL_HEADERS = ['ID', 'Trade Date', 'Entry Time', 'Symbol', 'Strategy', 'Legs', 'Expiration', 'Contracts', 'Multiplier', 'Trade Type', 'Entry Price', 'Exit Date', 'Exit Time', 'Exit Price', 'Fees', 'Status', 'Notes', 'Created At', 'Updated At'];
@@ -153,6 +160,13 @@ const OPTION_STATUSES = ['Open', 'Closed', 'Cancelled'];
 
 const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UPDATE']);
 const EDGE_PENDING_EOD_CLEANUP_INTERVAL_MS = 300_000;
+const WEBHOOK_INBOX_RETRY_INTERVAL_MS = Math.max(1_000, Math.floor(envNumber('WEBHOOK_INBOX_RETRY_INTERVAL_MS', 5_000)));
+const WEBHOOK_INBOX_BACKOFF_BASE_MS = Math.max(1_000, Math.floor(envNumber('WEBHOOK_INBOX_BACKOFF_BASE_MS', 5_000)));
+const WEBHOOK_INBOX_BACKOFF_MAX_MS = Math.max(WEBHOOK_INBOX_BACKOFF_BASE_MS, Math.floor(envNumber('WEBHOOK_INBOX_BACKOFF_MAX_MS', 300_000)));
+const WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS = Math.max(1, Math.floor(envNumber('WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS', 90)));
+const WEBHOOK_INBOX_SPOOL_FILE = String(
+  process.env.WEBHOOK_INBOX_SPOOL_FILE || path.join(os.tmpdir(), 'vixale_webhook_inbox_spool.json')
+).trim();
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LIVE QUOTE CACHE — updated by local TWS/IB bridge
@@ -166,7 +180,12 @@ const EDGE_EXTERNAL_CLOSE_IN_FLIGHT = new Map();
 const EDGE_BROKER_EXIT_IN_FLIGHT = new Map();
 let pendingSheetMutationTail = Promise.resolve();
 let ledgerSheetMutationTail = Promise.resolve();
+let webhookInboxMutationTail = Promise.resolve();
 let tradeMetadataSheetReadyPromise = null;
+let webhookInboxSheetReadyPromise = null;
+let webhookInboxWorkerTimer = null;
+let webhookInboxWorkerRunning = false;
+const WEBHOOK_INBOX_IN_FLIGHT = new Map();
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1566,6 +1585,18 @@ function formatTelegramMessage(row, originalMessage) {
     ].filter(Boolean).join('\n');
   }
 
+  if (row.event === 'EXTERNAL_CLOSE' && isOppositeFlipRow(row)) {
+    return [
+      `⚪ <b>Vixale Prime closed manually</b>`,
+      '',
+      `<b>${titleBase || row.symbol}</b>`,
+      row.exit !== ''
+        ? `Manual Close: <b>${row.exit}</b>`
+        : 'Manual Close — price unavailable',
+      row.exit !== '' && row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
+    ].filter(Boolean).join('\n');
+  }
+
   if (row.event === 'TP') {
     if (isFionaLimitPullbackRow(row)) {
       return [
@@ -2430,16 +2461,41 @@ async function getStandardBridgeClosePublicationState(
   sheets,
   row
 ) {
+  await ensureTradeMetadataSheet(sheets);
   const deliveryId = rawBridgeDeliveryId(row?.raw);
-  const [openRows, tradeRows, closedRows] = await Promise.all([
+  const [openRows, tradeRows, closedRows, metadataRows] = await Promise.all([
     readSheet(sheets, OPEN_POSITIONS_SHEET, 'A:V'),
     readSheet(sheets, TRADES_SHEET, 'A:V'),
     readSheet(sheets, CLOSED_TRADES_SHEET, 'A:V'),
+    readSheet(sheets, TRADE_METADATA_SHEET, 'A:Y'),
   ]);
 
   const openRowNumber = findRowIndexByTradeId(
     openRows,
     row?.trade_id
+  );
+  let metadata = null;
+  if (deliveryId) {
+    for (let index = 1; index < metadataRows.length; index++) {
+      const parsedMetadata = parseTradeMetadataRow(metadataRows[index] || []);
+      if (String(parsedMetadata.bridge_delivery_id || '').trim() === deliveryId) {
+        metadata = {
+          row: metadataRows[index],
+          row_number: index + 1,
+          metadata: parsedMetadata,
+        };
+        break;
+      }
+    }
+  }
+  const trade = deliveryId
+    ? findRawBridgeDeliveryRow(tradeRows, [10, 20], deliveryId)
+    : null;
+  const legacyClosed = deliveryId
+    ? findRawBridgeDeliveryRow(closedRows, [11, 21], deliveryId)
+    : null;
+  const closed = legacyClosed || (
+    metadata && findCompactClosedTradeRow(closedRows, metadata.metadata)
   );
 
   return {
@@ -2450,20 +2506,33 @@ async function getStandardBridgeClosePublicationState(
           row_number: openRowNumber,
         }
       : null,
-    trade: deliveryId
-      ? findRawBridgeDeliveryRow(
-          tradeRows,
-          [10, 20],
-          deliveryId
-        )
-      : null,
-    closed: deliveryId
-      ? findRawBridgeDeliveryRow(
-          closedRows,
-          [11, 21],
-          deliveryId
-        )
-      : null,
+    trade,
+    closed,
+    metadata,
+    telegram_published: Boolean(metadata?.metadata?.telegram_edge_exit_published),
+    publication_complete: Boolean(metadata?.metadata?.edge_exit_publication_complete),
+  };
+}
+
+async function markStandardBridgeClosePublicationComplete(sheets, row) {
+  const state = await getStandardBridgeClosePublicationState(sheets, row);
+  if (!state.metadata || !state.closed) {
+    throw new Error(
+      `Cannot complete durable bridge close publication: ${state.delivery_id || row?.trade_id || ''}`
+    );
+  }
+  const publishedAt = nowNy();
+  await updateTradeMetadataRow(sheets, state.metadata.row_number, {
+    ...state.metadata.metadata,
+    closed_trade_written: true,
+    telegram_edge_exit_published: true,
+    edge_exit_publication_complete: true,
+    publication_completed_at: publishedAt,
+  });
+  return {
+    delivery_id: state.delivery_id,
+    telegram_published: true,
+    publication_complete: true,
   };
 }
 
@@ -3114,7 +3183,6 @@ async function processLedgerUnlocked(row, dependencies = {}) {
 
   if (row.event === 'EXTERNAL_CLOSE') {
     if (
-      !isFionaLimitPullbackRow(row) ||
       !row.setup_id ||
       !row.reconciliation_id ||
       !row.broker_confirmed_flat
@@ -3141,9 +3209,26 @@ async function processLedgerUnlocked(row, dependencies = {}) {
     }
 
     const openPosition = state.open ? openPositionFromSheetRow(state.open.row) : null;
+    if (
+      !openPosition &&
+      !state.trades_close_exists &&
+      !state.closed_trade_exists &&
+      !state.metadata
+    ) {
+      return {
+        ...row,
+        status: 'terminal_orphan_already_removed_broker_exit',
+        skip_telegram: true,
+        external_close_publication_state: {
+          ...state,
+          publication_complete: true,
+          terminal_orphan: true,
+        },
+      };
+    }
     if (!state.closed_trade_exists && !openPosition) {
       const error = new Error(
-        `Edge EXTERNAL_CLOSE cannot create Closed row without matching Open state: ${row.setup_id}`
+        `EXTERNAL_CLOSE cannot create Closed row without matching Open state: ${row.setup_id}`
       );
       error.retryable = true;
       throw error;
@@ -3203,6 +3288,23 @@ async function processLedgerUnlocked(row, dependencies = {}) {
     }
 
     const openPosition = state.open ? openPositionFromSheetRow(state.open.row) : null;
+    if (
+      !openPosition &&
+      !state.trade &&
+      !state.closed &&
+      !state.metadata
+    ) {
+      return {
+        ...row,
+        status: 'terminal_orphan_already_removed_broker_exit',
+        skip_telegram: true,
+        edge_exit_publication_state: {
+          ...state,
+          publication_complete: true,
+          terminal_orphan: true,
+        },
+      };
+    }
     if (!state.closed_trade_written && !openPosition) {
       const error = new Error(
         `Edge broker exit cannot create Closed row without matching Open state: ${row.setup_id}`
@@ -3281,9 +3383,29 @@ async function processLedgerUnlocked(row, dependencies = {}) {
         sheets,
         row
       );
+      if (state.publication_complete) {
+        return {
+          ...row,
+          status: 'ignored_duplicate_bridge_close',
+          skip_telegram: true,
+          bridge_close_publication_state: state,
+        };
+      }
       const openPosition = state.open
         ? openPositionFromSheetRow(state.open.row)
         : null;
+      if (!openPosition && !state.trade && !state.closed && !state.metadata) {
+        return {
+          ...row,
+          status: 'terminal_orphan_already_removed_broker_exit',
+          skip_telegram: true,
+          bridge_close_publication_state: {
+            delivery_id: bridgeDeliveryId,
+            publication_complete: true,
+            terminal_orphan: true,
+          },
+        };
+      }
       const enrichedCloseRow = enrichCloseRowFromOpenPosition(
         row,
         openPosition
@@ -3299,6 +3421,19 @@ async function processLedgerUnlocked(row, dependencies = {}) {
           enrichedCloseRow
         );
       }
+      if (!state.metadata && state.closed) {
+        await upsertTradeMetadata(
+          sheets,
+          openPosition,
+          enrichedCloseRow,
+          sheetEventLabel(enrichedCloseRow),
+          {
+            closed_trade_written: true,
+            telegram_edge_exit_published: state.telegram_published,
+            edge_exit_publication_complete: state.publication_complete,
+          }
+        );
+      }
       if (state.open) {
         await removeOpenPosition(sheets, row.trade_id);
       }
@@ -3310,12 +3445,17 @@ async function processLedgerUnlocked(row, dependencies = {}) {
 
       return {
         ...enrichedCloseRow,
-        status: 'bridge_close_publication_complete',
+        status: state.telegram_published
+          ? 'bridge_close_ledger_repaired'
+          : 'bridge_close_publication_pending',
+        skip_telegram: state.telegram_published,
         bridge_close_publication_state: {
           delivery_id: bridgeDeliveryId,
           open_position_removed: true,
           trades_close_written: true,
           closed_trade_written: true,
+          telegram_published: state.telegram_published,
+          publication_complete: state.publication_complete,
         },
       };
     }
@@ -3727,6 +3867,177 @@ function parseTradeMetadataRow(row) {
     edge_exit_publication_complete: bool(row[23]),
     publication_completed_at: row[24] || '',
   };
+}
+
+async function ensureWebhookInboxSheet(sheets) {
+  if (!webhookInboxSheetReadyPromise) {
+    webhookInboxSheetReadyPromise = ensureSheetWithHeaders(
+      sheets,
+      WEBHOOK_INBOX_SHEET,
+      WEBHOOK_INBOX_HEADERS
+    ).catch(error => {
+      webhookInboxSheetReadyPromise = null;
+      throw error;
+    });
+  }
+  return webhookInboxSheetReadyPromise;
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+function webhookInboundDeliveryId(reqBody, parsedRow) {
+  const raw = reqBody && typeof reqBody === 'object' ? reqBody : {};
+  const identity = {
+    system_id: String(raw.system_id || parsedRow?.system_id || parsedRow?.strategy || '').trim().toUpperCase(),
+    event: String(raw.event || parsedRow?.raw_event || parsedRow?.event || '').trim().toUpperCase(),
+    setup_or_trade_id: String(raw.setup_id || parsedRow?.setup_id || raw.trade_id || parsedRow?.trade_id || '').trim(),
+    alert_instance_id: String(raw.alert_instance_id || parsedRow?.alert_instance_id || '').trim(),
+    bar_identity: String(
+      raw.bar_time ?? raw.flip_bar_time ?? raw.signal_bar_time ??
+      raw.time_close ?? raw.timestamp ?? raw.time ?? ''
+    ).trim(),
+    symbol: normalizeSymbol(raw.symbol || parsedRow?.symbol || ''),
+    side: String(raw.side || parsedRow?.side || '').trim().toUpperCase(),
+  };
+  const digest = crypto.createHash('sha256').update(canonicalJson(identity)).digest('hex').slice(0, 32);
+  return `TV:${identity.event || 'EVENT'}:${identity.symbol || 'UNKNOWN'}:${digest}`;
+}
+
+function parseWebhookInboxRow(row, rowNumber = 0) {
+  return {
+    delivery_id: String(row[0] || '').trim(), received_at: row[1] || '',
+    event: row[2] || '', system_id: row[3] || '', setup_id: row[4] || '',
+    symbol: row[5] || '', side: row[6] || '', status: row[7] || '',
+    attempts: Math.max(0, Number(row[8]) || 0), next_attempt_at: row[9] || '',
+    last_error: row[10] || '', raw_json: row[11] || '', completed_at: row[12] || '',
+    row_number: rowNumber,
+  };
+}
+
+function webhookInboxRowValues(item) {
+  return [
+    item.delivery_id, item.received_at, item.event, item.system_id, item.setup_id,
+    item.symbol, item.side, item.status, item.attempts, item.next_attempt_at,
+    item.last_error, item.raw_json, item.completed_at,
+  ];
+}
+
+async function upsertWebhookInboxItemUnlocked(sheets, reqBody, parsedRow, receivedAt) {
+  await ensureWebhookInboxSheet(sheets);
+  const deliveryId = webhookInboundDeliveryId(reqBody, parsedRow);
+  const rows = await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M');
+  for (let index = 1; index < rows.length; index++) {
+    if (String(rows[index][0] || '').trim() === deliveryId) {
+      return { ...parseWebhookInboxRow(rows[index], index + 1), duplicate: true };
+    }
+  }
+  const item = {
+    delivery_id: deliveryId,
+    received_at: receivedAt,
+    event: String(reqBody?.event || parsedRow?.raw_event || parsedRow?.event || '').toUpperCase(),
+    system_id: String(reqBody?.system_id || parsedRow?.system_id || parsedRow?.strategy || ''),
+    setup_id: String(reqBody?.setup_id || parsedRow?.setup_id || ''),
+    symbol: normalizeSymbol(reqBody?.symbol || parsedRow?.symbol || ''),
+    side: String(reqBody?.side || parsedRow?.side || '').toUpperCase(),
+    status: 'PENDING', attempts: 0, next_attempt_at: receivedAt, last_error: '',
+    raw_json: JSON.stringify(reqBody), completed_at: '',
+  };
+  item.row_number = await writeSheetRowStrict(
+    sheets, WEBHOOK_INBOX_SHEET, 'A', 'M', webhookInboxRowValues(item), 'A:M', 'RAW'
+  );
+  return item;
+}
+
+function upsertWebhookInboxItem(
+  sheets,
+  reqBody,
+  parsedRow,
+  receivedAt = new Date().toISOString()
+) {
+  const current = webhookInboxMutationTail.then(
+    () => upsertWebhookInboxItemUnlocked(sheets, reqBody, parsedRow, receivedAt),
+    () => upsertWebhookInboxItemUnlocked(sheets, reqBody, parsedRow, receivedAt)
+  );
+  webhookInboxMutationTail = current.catch(() => {});
+  return current;
+}
+
+async function updateWebhookInboxItem(sheets, item, updates = {}) {
+  const next = { ...item, ...updates };
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${quotedSheetName(WEBHOOK_INBOX_SHEET)}!A${item.row_number}:M${item.row_number}`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [webhookInboxRowValues(next)] },
+  });
+  return next;
+}
+
+async function getWebhookInboxItemByDeliveryId(sheets, deliveryId) {
+  const rows = await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M');
+  for (let index = 1; index < rows.length; index++) {
+    if (String(rows[index][0] || '').trim() === String(deliveryId || '').trim()) {
+      return parseWebhookInboxRow(rows[index], index + 1);
+    }
+  }
+  return null;
+}
+
+function readWebhookInboxSpool() {
+  try {
+    if (!WEBHOOK_INBOX_SPOOL_FILE || !fs.existsSync(WEBHOOK_INBOX_SPOOL_FILE)) return {};
+    const parsed = JSON.parse(fs.readFileSync(WEBHOOK_INBOX_SPOOL_FILE, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    console.error('Webhook Inbox spool read failed:', error.message);
+    return {};
+  }
+}
+
+function writeWebhookInboxSpool(items) {
+  if (!WEBHOOK_INBOX_SPOOL_FILE) return false;
+  try {
+    const folder = path.dirname(WEBHOOK_INBOX_SPOOL_FILE);
+    fs.mkdirSync(folder, { recursive: true });
+    const temp = `${WEBHOOK_INBOX_SPOOL_FILE}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify(items, null, 2), { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temp, WEBHOOK_INBOX_SPOOL_FILE);
+    return true;
+  } catch (error) {
+    console.error('Webhook Inbox spool write failed:', error.message);
+    return false;
+  }
+}
+
+function spoolWebhookInboxItem(reqBody, parsedRow, receivedAt = new Date().toISOString()) {
+  const items = readWebhookInboxSpool();
+  const deliveryId = webhookInboundDeliveryId(reqBody, parsedRow);
+  items[deliveryId] = items[deliveryId] || { delivery_id: deliveryId, received_at: receivedAt, raw_json: JSON.stringify(reqBody) };
+  return writeWebhookInboxSpool(items);
+}
+
+async function migrateWebhookInboxSpool(sheets) {
+  const items = readWebhookInboxSpool();
+  let migrated = 0;
+  for (const [deliveryId, spooled] of Object.entries(items)) {
+    try {
+      const reqBody = JSON.parse(spooled.raw_json || '{}');
+      const parsedRow = parseJsonTradingViewAlert(reqBody);
+      await upsertWebhookInboxItem(sheets, reqBody, parsedRow, spooled.received_at);
+      delete items[deliveryId];
+      migrated++;
+    } catch (error) {
+      console.error('Webhook Inbox spool migration retained item:', deliveryId, error.message);
+    }
+  }
+  if (migrated) writeWebhookInboxSpool(items);
+  return migrated;
 }
 
 function tradeMetadataRowValues(metadata) {
@@ -10203,6 +10514,7 @@ async function processRecognizedTradingViewWebhook(
   const brokerEodWatchdog = Boolean(reqBody && reqBody.broker_eod_watchdog);
   const brokerEodKey = String(reqBody?.eod_idempotency_key || '').trim();
   const callbackStrategy = String(reqBody?.strategy || parsedRow?.strategy || '').toUpperCase();
+  const forcePublicationErrors = dependencies.failOnPublicationErrorOverride === true;
 
   if (
     !bridgeCallback &&
@@ -10261,7 +10573,6 @@ async function processRecognizedTradingViewWebhook(
   const edgeExternalCloseCallback =
     isBridgeExecutionCallback(reqBody) &&
     parsedRow?.event === 'EXTERNAL_CLOSE' &&
-    isFionaLimitPullbackRow(parsedRow) &&
     Boolean(parsedRow.setup_id) &&
     Boolean(parsedRow.reconciliation_id);
   const edgeBrokerExitCallback =
@@ -10279,7 +10590,8 @@ async function processRecognizedTradingViewWebhook(
     durableBridgeCloseCallback ||
       edgeEntryFillCallback ||
       edgeExternalCloseCallback ||
-      edgeBrokerExitCallback,
+      edgeBrokerExitCallback ||
+      forcePublicationErrors,
     dependencies
   );
 }
@@ -10297,7 +10609,6 @@ async function processRecognizedTradingViewWebhookLifecycle(
       : '';
   const edgeExternalCloseKey =
     parsedRow?.event === 'EXTERNAL_CLOSE' &&
-    isFionaLimitPullbackRow(parsedRow) &&
     parsedRow.setup_id &&
     parsedRow.reconciliation_id
       ? `${parsedRow.setup_id}:${parsedRow.reconciliation_id}`
@@ -10370,6 +10681,16 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
       'bridge_result:',
       JSON.stringify(bridgeResult)
     );
+    if (
+      failOnPublicationError &&
+      (!bridgeResult || bridgeResult.forwarded !== true)
+    ) {
+      const error = new Error(
+        bridgeResult?.error || bridgeResult?.reason || 'Bridge execution request was not accepted'
+      );
+      error.retryable = true;
+      throw error;
+    }
     return;
   }
 
@@ -10411,13 +10732,16 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
     (
       !bridgeCallback ||
       String(reqBody?.source || '').toUpperCase() !== 'IB_BRIDGE' ||
-      !isFionaLimitPullbackRow(parsedRow) ||
       !parsedRow.setup_id ||
       !parsedRow.reconciliation_id ||
-      !hasBrokerConfirmedFlat(reqBody)
+      !hasBrokerConfirmedFlat(reqBody) ||
+      !hasValidBrokerExecutionIdentity(reqBody?.exit_execution_id) ||
+      cleanNumber(reqBody?.price) === '' ||
+      cleanNumber(reqBody?.qty) === '' ||
+      Number(cleanNumber(reqBody?.qty)) <= 0
     )
   ) {
-    console.log('Ignored unconfirmed or incomplete Edge EXTERNAL_CLOSE callback:', bridgeLogPrefix(parsedRow));
+    console.log('Ignored unconfirmed or incomplete EXTERNAL_CLOSE callback:', bridgeLogPrefix(parsedRow));
     return;
   }
 
@@ -10546,11 +10870,168 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
     };
   }
 
+  const standardDurableBridgeClose =
+    bridgeCallback &&
+    ['TP', 'SL', 'EOD'].includes(String(parsedRow.event || '').toUpperCase()) &&
+    Boolean(rawBridgeDeliveryId(parsedRow.raw)) &&
+    !isPersistentEdgeBrokerExitCallback(reqBody, parsedRow);
+  if (
+    standardDurableBridgeClose &&
+    finalRow.status !== 'ignored_duplicate_bridge_close' &&
+    finalRow.status !== 'terminal_orphan_already_removed_broker_exit' &&
+    (
+      telegramPublishedNow ||
+      finalRow.bridge_close_publication_state?.telegram_published
+    )
+  ) {
+    const sheets = dependencies.sheets ||
+      await (dependencies.getSheetsClient || getSheetsClient)();
+    if (!sheets) {
+      const error = new Error('Sheets unavailable while completing durable bridge close publication');
+      error.retryable = true;
+      throw error;
+    }
+    finalRow = {
+      ...finalRow,
+      status: 'bridge_close_publication_complete',
+      bridge_close_publication_state: await markStandardBridgeClosePublicationComplete(
+        sheets,
+        parsedRow
+      ),
+    };
+  }
+
   // Callback events are blocked inside shouldForwardToBridge(), preventing
   // Render -> bridge -> Render loops.
-  await bridgeForwarder(reqBody, finalRow);
+  const bridgeResult = await bridgeForwarder(reqBody, finalRow);
+  if (
+    failOnPublicationError &&
+    bridgeResult &&
+    bridgeResult.forwarded === false &&
+    !bridgeResult.skipped
+  ) {
+    const error = new Error(bridgeResult.error || 'Bridge forwarding failed');
+    error.retryable = true;
+    throw error;
+  }
 
   return { ok: true, finalRow };
+}
+
+function webhookInboxBackoffMs(attempts) {
+  return Math.min(
+    WEBHOOK_INBOX_BACKOFF_MAX_MS,
+    WEBHOOK_INBOX_BACKOFF_BASE_MS * (2 ** Math.max(0, Math.min(16, attempts - 1)))
+  );
+}
+
+function webhookInboxTerminalStatus(status) {
+  return ['COMPLETE', 'STALE_EXECUTION_DROPPED'].includes(String(status || '').toUpperCase());
+}
+
+async function processWebhookInboxItem(item, dependencies = {}) {
+  if (!item?.delivery_id || webhookInboxTerminalStatus(item.status)) return item;
+  const existing = WEBHOOK_INBOX_IN_FLIGHT.get(item.delivery_id);
+  if (existing) return existing;
+
+  const work = (async () => {
+    const sheets = dependencies.sheets || await (dependencies.getSheetsClient || getSheetsClient)();
+    if (!sheets) throw new Error('Sheets unavailable for Webhook Inbox processing');
+    const authoritative = await getWebhookInboxItemByDeliveryId(
+      sheets,
+      item.delivery_id
+    );
+    if (authoritative && webhookInboxTerminalStatus(authoritative.status)) {
+      return authoritative;
+    }
+    const sourceItem = authoritative || item;
+    const attempts = Number(sourceItem.attempts || 0) + 1;
+    let current = await updateWebhookInboxItem(sheets, sourceItem, {
+      status: 'PROCESSING', attempts, last_error: '', next_attempt_at: '',
+    });
+    try {
+      const reqBody = JSON.parse(current.raw_json || '{}');
+      const message = normalizeRawMessage(reqBody);
+      const parsedRow = typeof reqBody === 'object' && reqBody !== null
+        ? parseJsonTradingViewAlert(reqBody)
+        : parseTradingViewMessage(message);
+      const receivedMs = Date.parse(current.received_at);
+      const setupAgeSeconds = Number.isFinite(receivedMs)
+        ? Math.max(0, (Date.now() - receivedMs) / 1000)
+        : Number.POSITIVE_INFINITY;
+
+      if (
+        parsedRow.event === 'SETUP' &&
+        !isBridgeExecutionCallback(reqBody) &&
+        setupAgeSeconds > WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS
+      ) {
+        if (parsedRow.setup_id) {
+          await removePendingRowByExactSetupId(sheets, parsedRow.setup_id);
+        }
+        return updateWebhookInboxItem(sheets, current, {
+          status: 'STALE_EXECUTION_DROPPED', next_attempt_at: '', last_error: '',
+          completed_at: new Date().toISOString(),
+        });
+      }
+
+      await processRecognizedTradingViewWebhook(reqBody, parsedRow, message, {
+        ...dependencies,
+        sheets,
+        failOnPublicationErrorOverride: true,
+      });
+      return updateWebhookInboxItem(sheets, current, {
+        status: 'COMPLETE', next_attempt_at: '', last_error: '',
+        completed_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      const nextAttemptAt = new Date(Date.now() + webhookInboxBackoffMs(attempts)).toISOString();
+      current = await updateWebhookInboxItem(sheets, current, {
+        status: 'RETRY', next_attempt_at: nextAttemptAt,
+        last_error: String(error?.message || error).slice(0, 500), completed_at: '',
+      });
+      return current;
+    }
+  })();
+  WEBHOOK_INBOX_IN_FLIGHT.set(item.delivery_id, work);
+  try {
+    return await work;
+  } finally {
+    if (WEBHOOK_INBOX_IN_FLIGHT.get(item.delivery_id) === work) {
+      WEBHOOK_INBOX_IN_FLIGHT.delete(item.delivery_id);
+    }
+  }
+}
+
+async function processWebhookInboxDueItems(dependencies = {}) {
+  if (webhookInboxWorkerRunning) return { skipped: true, reason: 'worker_running' };
+  webhookInboxWorkerRunning = true;
+  try {
+    const sheets = dependencies.sheets || await (dependencies.getSheetsClient || getSheetsClient)();
+    if (!sheets) return { skipped: true, reason: 'sheets_unavailable' };
+    await ensureWebhookInboxSheet(sheets);
+    await migrateWebhookInboxSpool(sheets);
+    const rows = await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M');
+    const now = Date.now();
+    const due = rows.slice(1).map((row, index) => parseWebhookInboxRow(row, index + 2)).filter(item => {
+      if (!item.delivery_id || webhookInboxTerminalStatus(item.status)) return false;
+      const next = Date.parse(item.next_attempt_at || item.received_at || '');
+      return !Number.isFinite(next) || next <= now;
+    });
+    const results = await Promise.all(due.map(item => processWebhookInboxItem(item, { ...dependencies, sheets })));
+    return { processed: results.length, results };
+  } finally {
+    webhookInboxWorkerRunning = false;
+  }
+}
+
+function startWebhookInboxWorker() {
+  if (webhookInboxWorkerTimer) return webhookInboxWorkerTimer;
+  setImmediate(() => processWebhookInboxDueItems().catch(error => console.error('Webhook Inbox startup retry failed:', error)));
+  webhookInboxWorkerTimer = setInterval(() => {
+    processWebhookInboxDueItems().catch(error => console.error('Webhook Inbox retry failed:', error));
+  }, WEBHOOK_INBOX_RETRY_INTERVAL_MS);
+  webhookInboxWorkerTimer.unref?.();
+  return webhookInboxWorkerTimer;
 }
 
 async function handleTradingViewWebhookWithDependencies(
@@ -10582,8 +11063,7 @@ async function handleTradingViewWebhookWithDependencies(
       isVixaleEdgeV2SetupRow(parsedRow);
     const edgeExternalCloseCallback =
       isBridgeExecutionCallback(reqBody) &&
-      parsedRow.event === 'EXTERNAL_CLOSE' &&
-      isFionaLimitPullbackRow(parsedRow);
+      parsedRow.event === 'EXTERNAL_CLOSE';
     const edgeBrokerExitCallback =
       isPersistentEdgeBrokerExitCallback(reqBody, parsedRow);
     const durableBridgeCloseCallback =
@@ -10613,22 +11093,31 @@ async function handleTradingViewWebhookWithDependencies(
       }
     }
 
-    // TradingView has a short webhook timeout. Acknowledge ordinary alerts
-    // immediately, then do Sheets / Telegram / bridge forwarding in the background.
-    res.status(200).send('OK');
+    const receivedAt = new Date().toISOString();
+    let inboxItem;
+    try {
+      const sheets = dependencies.sheets || await (dependencies.getSheetsClient || getSheetsClient)();
+      if (!sheets) throw new Error('Sheets unavailable for authoritative Webhook Inbox persistence');
+      inboxItem = await (dependencies.upsertWebhookInboxItem || upsertWebhookInboxItem)(
+        sheets, reqBody, parsedRow, receivedAt
+      );
+    } catch (inboxError) {
+      (dependencies.spoolWebhookInboxItem || spoolWebhookInboxItem)(
+        reqBody,
+        parsedRow,
+        receivedAt
+      );
+      console.error('Webhook Inbox persistence failed; TradingView must retry:', inboxError);
+      return res.status(503).send('RETRY');
+    }
 
-    setImmediate(async () => {
-      try {
-        await processRecognizedTradingViewWebhook(
-          reqBody,
-          parsedRow,
-          message,
-          dependencies
-        );
-      } catch (err) {
-        console.error('Background webhook processing failed:', err);
-      }
-    });
+    res.status(200).send('OK');
+    const scheduleWork = dependencies.scheduleWebhookInboxWork || (work => setImmediate(work));
+    scheduleWork(() =>
+      processWebhookInboxItem(inboxItem, dependencies).catch(error => {
+        console.error('Webhook Inbox immediate processing failed:', error);
+      })
+    );
   } catch (err) {
     console.error('Error before webhook acknowledgement:', err);
     if (!res.headersSent) {
@@ -11826,6 +12315,7 @@ if (require.main === module) {
     console.log(`Server running on port ${PORT}`);
   });
   startEdgePendingEodCleanupScheduler();
+  startWebhookInboxWorker();
 }
 
 module.exports.__test = {
@@ -11854,4 +12344,9 @@ module.exports.__test = {
   parseOpenPositionRow,
   buildWorkingExitOrders,
   renderDashboardHtml,
+  webhookInboundDeliveryId,
+  upsertWebhookInboxItem,
+  processWebhookInboxItem,
+  processWebhookInboxDueItems,
+  webhookInboxBackoffMs,
 };
