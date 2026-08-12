@@ -242,6 +242,59 @@ function makeTradeId(symbol, side) {
   return `${cleanSymbol}_${cleanSide}`;
 }
 
+function parseVixaleEdgeSetupIdentity(value) {
+  const match = String(value || '').trim().toUpperCase().match(
+    /^VIXALE_EDGE:([A-Z0-9.^_-]+):([1-9]\d{0,3}):(LONG|SHORT):(\d{10,16})$/
+  );
+  if (!match) return null;
+  return {
+    setup_id: match[0],
+    symbol: normalizeSymbol(match[1]),
+    timeframe: match[2],
+    side: match[3],
+    bar_time: match[4],
+  };
+}
+
+function isClaimedTradingViewEdgeV2Payload(data) {
+  return Boolean(
+    data &&
+    typeof data === 'object' &&
+    !Buffer.isBuffer(data) &&
+    String(data.source || '').trim().toUpperCase() === 'TRADINGVIEW' &&
+    String(data.system_id || '').trim().toUpperCase() === 'VIXALE_EDGE' &&
+    String(data.payload_version || '').trim() === '2'
+  );
+}
+
+function isStructurallyValidTradingViewEdgeV2Payload(data) {
+  if (!isClaimedTradingViewEdgeV2Payload(data)) return false;
+
+  const event = String(data.event || '').trim().toUpperCase();
+  if (!['PENDING_SETUP', 'SETUP', 'CANCEL', 'CLOSE_STOP'].includes(event)) {
+    return false;
+  }
+
+  const identity = parseVixaleEdgeSetupIdentity(data.setup_id);
+  if (!identity) return false;
+
+  const symbol = normalizeSymbol(data.symbol);
+  const side = String(data.side || '').trim().toUpperCase();
+  const explicitTimeframe = String(data.timeframe ?? '').trim();
+  if (!symbol || symbol !== identity.symbol) return false;
+  if (!side || side !== identity.side) return false;
+  if (explicitTimeframe && explicitTimeframe !== identity.timeframe) return false;
+
+  if (
+    event === 'CANCEL' &&
+    String(data.cancel_scope || '').trim().toUpperCase() !== 'PENDING_ONLY'
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function isV51IntradayName(value) {
   const text = String(value || '').toUpperCase();
   return text.includes('VX_ST_STK_INTRADAY_V51') || text.includes('ST_STOP_ATR_TARGET_WFO') || text.includes('_INTRADAY');
@@ -272,8 +325,11 @@ function isFionaLimitPullbackRow(row) {
 
 function isVixaleEdgePendingLifecycleRow(row) {
   if (!row) return false;
-  return String(row.system_id || '').toUpperCase() === 'VIXALE_EDGE' &&
-    isFionaLimitPullbackRow(row);
+  if (String(row.system_id || '').toUpperCase() !== 'VIXALE_EDGE') return false;
+  const canonicalV2Identity =
+    String(row.payload_version || '') === '2' &&
+    parseVixaleEdgeSetupIdentity(row.setup_id);
+  return Boolean(canonicalV2Identity || isFionaLimitPullbackRow(row));
 }
 
 function isVixaleEdgePendingCancel(row) {
@@ -285,7 +341,7 @@ function isVixaleEdgePendingCancel(row) {
 function isVixaleEdgeV2SetupRow(row) {
   return isVixaleEdgePendingLifecycleRow(row) &&
     String(row.payload_version || '') === '2' &&
-    Boolean(row.setup_id);
+    Boolean(parseVixaleEdgeSetupIdentity(row.setup_id));
 }
 
 function isOppositeFlipName(value) {
@@ -378,7 +434,10 @@ function isEmaPullbackRow(row) {
 }
 
 function isOpenOnSetupRow(row) {
-  return isV51IntradayRow(row) || isOppositeFlipRow(row) || isEmaPullbackRow(row);
+  return isVixaleEdgeV2SetupRow(row) ||
+    isV51IntradayRow(row) ||
+    isOppositeFlipRow(row) ||
+    isEmaPullbackRow(row);
 }
 
 function isNoTargetMode(rowOrPayload) {
@@ -767,6 +826,28 @@ function normalizeRawMessage(reqBody) {
   return typeof reqBody === 'string'
     ? reqBody
     : JSON.stringify(reqBody, null, 2);
+}
+
+function parseWebhookJsonObject(reqBody) {
+  if (
+    reqBody &&
+    typeof reqBody === 'object' &&
+    !Array.isArray(reqBody) &&
+    !Buffer.isBuffer(reqBody)
+  ) {
+    return reqBody;
+  }
+  if (typeof reqBody !== 'string') return null;
+  const text = reqBody.trim();
+  if (!text.startsWith('{') || !text.endsWith('}')) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function googleFinanceSymbolFormula(rowNum) {
@@ -1281,6 +1362,7 @@ function parseJsonTradingViewAlert(data) {
   }
 
   const symbol = String(data.symbol || data.ticker || '').trim();
+  const edgeSetupIdentity = parseVixaleEdgeSetupIdentity(data.setup_id);
 
   // If side is missing on EOD_RESET / NEW_DAY_RESET, leave side blank.
   // That lets us remove all pending rows by symbol.
@@ -1413,7 +1495,7 @@ function parseJsonTradingViewAlert(data) {
     setup_id: String(data.setup_id || '').trim(),
     alert_instance_id: data.alert_instance_id ?? '',
     cancel_scope: data.cancel_scope ?? '',
-    timeframe: data.timeframe ?? '',
+    timeframe: String(data.timeframe ?? '').trim() || edgeSetupIdentity?.timeframe || '',
     flip_bar_time: data.flip_bar_time ?? '',
     planned_limit_entry: data.planned_limit_entry ?? '',
     exit_execution_id: data.exit_execution_id ?? '',
@@ -10438,6 +10520,9 @@ function bridgePayload(reqBody, parsedRow) {
   // The bridge log showed dry_run=false when absent, so Render now always sends this field.
   payload.dry_run = BRIDGE_DRY_RUN;
   payload.render_forwarded_at = nowNy();
+  if (!String(payload.timeframe ?? '').trim() && parsedRow?.timeframe) {
+    payload.timeframe = parsedRow.timeframe;
+  }
   if (cleanNumber(payload.qty) === '' && cleanNumber(payload.size) === '' && cleanNumber(payload.quantity) === '') {
     payload.qty = BRIDGE_DEFAULT_QTY;
     payload.qty_source = 'Render BRIDGE_DEFAULT_QTY';
@@ -10582,8 +10667,15 @@ async function forwardToBridge(reqBody, parsedRow) {
 // WEBHOOK ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function isRecognizedTradeWebhook(row) {
+function isRecognizedTradeWebhook(row, reqBody = null) {
   if (!row) return false;
+
+  // Canonical Edge v2 identity is the durable admission contract. Optional
+  // parser/classifier fields must not cause a real lifecycle delivery to be
+  // HTTP-200 dropped before Webhook Inbox persistence.
+  if (isClaimedTradingViewEdgeV2Payload(reqBody)) {
+    return isStructurallyValidTradingViewEdgeV2Payload(reqBody);
+  }
 
   const event = String(row.event || '').toUpperCase();
 
@@ -11223,11 +11315,9 @@ async function handleTradingViewWebhookWithDependencies(
   dependencies = {}
 ) {
   try {
-    const reqBody = req.body;
-    const isJsonObject =
-      typeof reqBody === 'object' &&
-      reqBody !== null &&
-      !Buffer.isBuffer(reqBody);
+    const parsedJsonBody = parseWebhookJsonObject(req.body);
+    const reqBody = parsedJsonBody || req.body;
+    const isJsonObject = Boolean(parsedJsonBody);
 
     const message = normalizeRawMessage(reqBody);
 
@@ -11235,7 +11325,7 @@ async function handleTradingViewWebhookWithDependencies(
       ? parseJsonTradingViewAlert(reqBody)
       : parseTradingViewMessage(message);
 
-    if (!isRecognizedTradeWebhook(parsedRow)) {
+    if (!isRecognizedTradeWebhook(parsedRow, reqBody)) {
       console.log('Ignored unknown webhook payload:', message.slice(0, 500));
       return res.status(200).send('IGNORED');
     }

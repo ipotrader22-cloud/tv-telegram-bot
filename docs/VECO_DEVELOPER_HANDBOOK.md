@@ -673,6 +673,15 @@ IB bridge. An identified `SETUP` preserves the exact Pending row until the
 broker returns `ENTRY_FILL`; the fill removes that row by `setup_id` and creates
 Open once. Legacy Edge alerts without `setup_id` remain supported.
 
+For `source=TradingView`, `system_id=VIXALE_EDGE`, `payload_version=2`, the
+canonical `setup_id` is also the durable admission identity. Render validates
+that its symbol and side agree with the explicit payload and derives the
+timeframe segment when the redundant `timeframe` field is absent. Valid
+`PENDING_SETUP`, `SETUP`, `CANCEL` with `cancel_scope=PENDING_ONLY`, and
+`CLOSE_STOP` deliveries do not depend on optional Fiona profile/classifier
+fields for admission. A valid JSON object received through a text content type
+is normalized to the same object contract before recognition.
+
 Edge `PENDING_SETUP` and every pending-only `CANCEL` update Google Sheets and
 the website/dashboard but never publish to Telegram. A TradingView `SETUP`
 continues to be forwarded to the bridge without public OPEN publication.
@@ -1211,6 +1220,14 @@ Recovery processes at most `WEBHOOK_INBOX_MAX_CONCURRENCY` items concurrently
 (default 4). When Sheets is temporarily unavailable, Render writes a local JSON
 spool and returns HTTP 503 so TradingView retains retry ownership.
 
+Structurally valid TradingView Edge v2 lifecycle JSON is admitted from its
+canonical `setup_id` before optional parsed-row classification and is persisted
+to this Inbox before HTTP 200. Missing redundant `timeframe` is not an ignore
+condition. Truly unrelated JSON, malformed canonical identity, mismatched
+symbol/side/timeframe, and Edge `CANCEL` without `PENDING_ONLY` remain outside
+this admission path. Broker callbacks continue through their separate strict
+execution-evidence checks and are not trusted by this TradingView-only rule.
+
 ### 9.7 `Positions`
 
 Legacy sheet. Current code cleans matching legacy rows when processing modern events.
@@ -1520,6 +1537,13 @@ delivery identity. Stale entry execution is suppressed after the configured
 maximum age, preferring a reliable payload emission/bar-close timestamp over
 Inbox receipt time, while close/cancel safety work remains eligible indefinitely.
 Do not manually backfill a missed live signal without an explicit decision.
+
+Edge v2 admission must not depend on the transport content type producing an
+already-parsed Express object or on redundant `timeframe`/optional Fiona
+classifier fields. Render normalizes valid JSON text, validates canonical
+`VIXALE_EDGE:<symbol>:<timeframe>:<side>:<bar_time>` identity, and persists the
+delivery before ACK. This rule does not replay or execute previously missed
+setups; the ordinary 90-second `SETUP` TTL still fails closed.
 
 ### 13.13 Execution order during reversals
 
@@ -2339,6 +2363,15 @@ when the authoritative Inbox write fails, and that request still receives HTTP
 503. COMPLETE status persistence is awaited inside the retry boundary, so a
 post-side-effect status-write failure becomes RETRY rather than an escaped lost
 promise.
+
+TradingView Edge v2 lifecycle admission is based on a structurally valid
+canonical `setup_id`, matching explicit symbol/side, and the supported event
+set (`PENDING_SETUP`, `SETUP`, pending-only `CANCEL`, `CLOSE_STOP`). Render
+derives a missing redundant timeframe from that identity and normalizes a valid
+JSON text body before admission. Optional Fiona classifier fields are not an
+admission dependency. This exception is source-scoped to TradingView; it does
+not weaken the separate broker callback confirmation, flat-position, execution
+identity, or reconciliation requirements.
 
 The bridge durably queues TP, Stop Loss, Manual Close, and `RECONCILE_FLAT`
 callbacks before managed state is cleared. Each callback has its own
