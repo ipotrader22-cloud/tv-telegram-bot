@@ -260,6 +260,7 @@ function isClaimedTradingViewEdgeV2Payload(data) {
   return Boolean(
     data &&
     typeof data === 'object' &&
+    !Array.isArray(data) &&
     !Buffer.isBuffer(data) &&
     String(data.source || '').trim().toUpperCase() === 'TRADINGVIEW' &&
     String(data.system_id || '').trim().toUpperCase() === 'VIXALE_EDGE' &&
@@ -267,32 +268,60 @@ function isClaimedTradingViewEdgeV2Payload(data) {
   );
 }
 
-function isStructurallyValidTradingViewEdgeV2Payload(data) {
-  if (!isClaimedTradingViewEdgeV2Payload(data)) return false;
+function validateTradingViewEdgeV2Payload(data) {
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    Buffer.isBuffer(data)
+  ) {
+    return { ok: false, reason: 'edge_v2_not_object' };
+  }
+
+  if (String(data.source || '').trim().toUpperCase() !== 'TRADINGVIEW') {
+    return { ok: false, reason: 'edge_v2_source_mismatch' };
+  }
+  if (String(data.system_id || '').trim().toUpperCase() !== 'VIXALE_EDGE') {
+    return { ok: false, reason: 'edge_v2_system_id_mismatch' };
+  }
+  if (String(data.payload_version || '').trim() !== '2') {
+    return { ok: false, reason: 'edge_v2_payload_version_mismatch' };
+  }
 
   const event = String(data.event || '').trim().toUpperCase();
   if (!['PENDING_SETUP', 'SETUP', 'CANCEL', 'CLOSE_STOP'].includes(event)) {
-    return false;
+    return { ok: false, reason: 'edge_v2_unsupported_event' };
   }
 
   const identity = parseVixaleEdgeSetupIdentity(data.setup_id);
-  if (!identity) return false;
+  if (!identity) return { ok: false, reason: 'edge_v2_invalid_setup_id' };
 
   const symbol = normalizeSymbol(data.symbol);
   const side = String(data.side || '').trim().toUpperCase();
   const explicitTimeframe = String(data.timeframe ?? '').trim();
-  if (!symbol || symbol !== identity.symbol) return false;
-  if (!side || side !== identity.side) return false;
-  if (explicitTimeframe && explicitTimeframe !== identity.timeframe) return false;
+  if (!symbol) return { ok: false, reason: 'edge_v2_missing_symbol' };
+  if (symbol !== identity.symbol) {
+    return { ok: false, reason: 'edge_v2_symbol_mismatch' };
+  }
+  if (!side) return { ok: false, reason: 'edge_v2_missing_side' };
+  if (!['LONG', 'SHORT'].includes(side)) {
+    return { ok: false, reason: 'edge_v2_invalid_side' };
+  }
+  if (side !== identity.side) {
+    return { ok: false, reason: 'edge_v2_side_mismatch' };
+  }
+  if (explicitTimeframe && explicitTimeframe !== identity.timeframe) {
+    return { ok: false, reason: 'edge_v2_timeframe_mismatch' };
+  }
 
   if (
     event === 'CANCEL' &&
     String(data.cancel_scope || '').trim().toUpperCase() !== 'PENDING_ONLY'
   ) {
-    return false;
+    return { ok: false, reason: 'edge_v2_cancel_scope_not_pending_only' };
   }
 
-  return true;
+  return { ok: true, identity };
 }
 
 function isV51IntradayName(value) {
@@ -828,26 +857,77 @@ function normalizeRawMessage(reqBody) {
     : JSON.stringify(reqBody, null, 2);
 }
 
-function parseWebhookJsonObject(reqBody) {
+function inspectWebhookJsonObject(reqBody) {
   if (
     reqBody &&
     typeof reqBody === 'object' &&
     !Array.isArray(reqBody) &&
     !Buffer.isBuffer(reqBody)
   ) {
-    return reqBody;
+    return {
+      value: reqBody,
+      json_parse_attempted: false,
+      json_parse_succeeded: false,
+    };
   }
-  if (typeof reqBody !== 'string') return null;
-  const text = reqBody.trim();
-  if (!text.startsWith('{') || !text.endsWith('}')) return null;
-  try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed
+
+  const text = Buffer.isBuffer(reqBody)
+    ? reqBody.toString('utf8')
+    : typeof reqBody === 'string'
+      ? reqBody
       : null;
-  } catch (_) {
-    return null;
+  if (text === null) {
+    return {
+      value: null,
+      json_parse_attempted: false,
+      json_parse_succeeded: false,
+    };
   }
+
+  try {
+    const parsed = JSON.parse(text.trim());
+    return {
+      value: parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed
+        : null,
+      json_parse_attempted: true,
+      json_parse_succeeded: true,
+    };
+  } catch (_) {
+    return {
+      value: null,
+      json_parse_attempted: true,
+      json_parse_succeeded: false,
+    };
+  }
+}
+
+function parseWebhookJsonObject(reqBody, inspection = null) {
+  return (inspection || inspectWebhookJsonObject(reqBody)).value;
+}
+
+function safeWebhookDiagnosticText(value, maxLength = 240) {
+  return String(value ?? '').slice(0, maxLength);
+}
+
+function webhookBodyDiagnosticLength(reqBody) {
+  if (Buffer.isBuffer(reqBody)) {
+    return { length: reqBody.length, unit: 'bytes' };
+  }
+  if (typeof reqBody === 'string') {
+    return { length: reqBody.length, unit: 'characters' };
+  }
+  if (reqBody && typeof reqBody === 'object') {
+    try {
+      return {
+        length: Buffer.byteLength(JSON.stringify(reqBody), 'utf8'),
+        unit: 'serialized_bytes',
+      };
+    } catch (_) {
+      return { length: 0, unit: 'unavailable' };
+    }
+  }
+  return { length: 0, unit: 'unavailable' };
 }
 
 function googleFinanceSymbolFormula(rowNum) {
@@ -10667,6 +10747,59 @@ async function forwardToBridge(reqBody, parsedRow) {
 // WEBHOOK ROUTES
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+function isPotentialEdgeV2Payload(data) {
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    Buffer.isBuffer(data)
+  ) {
+    return false;
+  }
+  return String(data.system_id || '').trim().toUpperCase() === 'VIXALE_EDGE' ||
+    String(data.setup_id || '').trim().toUpperCase().startsWith('VIXALE_EDGE:');
+}
+
+function ignoredWebhookDiagnostics(req, rawBody, bodyInspection, parsedBody) {
+  const diagnosticBody =
+    parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)
+      ? parsedBody
+      : {};
+  const bodyLength = webhookBodyDiagnosticLength(rawBody);
+  const edgeValidation = validateTradingViewEdgeV2Payload(diagnosticBody);
+  const canonicalIdentity = parseVixaleEdgeSetupIdentity(diagnosticBody.setup_id);
+  const contentType =
+    req?.headers?.['content-type'] ??
+    req?.headers?.['Content-Type'] ??
+    '';
+
+  return {
+    content_type: safeWebhookDiagnosticText(contentType, 160),
+    req_body_typeof: typeof rawBody,
+    req_body_is_buffer: Buffer.isBuffer(rawBody),
+    req_body_is_array: Array.isArray(rawBody),
+    body_length: bodyLength.length,
+    body_length_unit: bodyLength.unit,
+    parse_webhook_json_object_succeeded: Boolean(bodyInspection?.value),
+    body_json_parse_attempted: bodyInspection?.json_parse_attempted === true,
+    body_json_parse_succeeded: bodyInspection?.json_parse_succeeded === true,
+    source: safeWebhookDiagnosticText(diagnosticBody.source),
+    system_id: safeWebhookDiagnosticText(diagnosticBody.system_id),
+    payload_version: safeWebhookDiagnosticText(diagnosticBody.payload_version),
+    event: safeWebhookDiagnosticText(diagnosticBody.event),
+    setup_id: safeWebhookDiagnosticText(diagnosticBody.setup_id),
+    symbol: safeWebhookDiagnosticText(diagnosticBody.symbol),
+    side: safeWebhookDiagnosticText(diagnosticBody.side),
+    explicit_timeframe: safeWebhookDiagnosticText(diagnosticBody.timeframe),
+    canonical_identity: canonicalIdentity,
+    structural_rejection_reason: isPotentialEdgeV2Payload(diagnosticBody)
+      ? edgeValidation.ok
+        ? 'edge_v2_structurally_valid_but_unrecognized'
+        : edgeValidation.reason
+      : 'not_claimed_edge_v2',
+  };
+}
+
 function isRecognizedTradeWebhook(row, reqBody = null) {
   if (!row) return false;
 
@@ -10674,7 +10807,7 @@ function isRecognizedTradeWebhook(row, reqBody = null) {
   // parser/classifier fields must not cause a real lifecycle delivery to be
   // HTTP-200 dropped before Webhook Inbox persistence.
   if (isClaimedTradingViewEdgeV2Payload(reqBody)) {
-    return isStructurallyValidTradingViewEdgeV2Payload(reqBody);
+    return validateTradingViewEdgeV2Payload(reqBody).ok;
   }
 
   const event = String(row.event || '').toUpperCase();
@@ -11315,8 +11448,10 @@ async function handleTradingViewWebhookWithDependencies(
   dependencies = {}
 ) {
   try {
-    const parsedJsonBody = parseWebhookJsonObject(req.body);
-    const reqBody = parsedJsonBody || req.body;
+    const rawBody = req.body;
+    const bodyInspection = inspectWebhookJsonObject(rawBody);
+    const parsedJsonBody = parseWebhookJsonObject(rawBody, bodyInspection);
+    const reqBody = parsedJsonBody || rawBody;
     const isJsonObject = Boolean(parsedJsonBody);
 
     const message = normalizeRawMessage(reqBody);
@@ -11326,7 +11461,15 @@ async function handleTradingViewWebhookWithDependencies(
       : parseTradingViewMessage(message);
 
     if (!isRecognizedTradeWebhook(parsedRow, reqBody)) {
-      console.log('Ignored unknown webhook payload:', message.slice(0, 500));
+      console.log(
+        'Ignored unknown webhook payload:',
+        JSON.stringify(ignoredWebhookDiagnostics(
+          req,
+          rawBody,
+          bodyInspection,
+          parsedJsonBody
+        ))
+      );
       return res.status(200).send('IGNORED');
     }
 
