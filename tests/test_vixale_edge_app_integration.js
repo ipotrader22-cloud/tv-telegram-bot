@@ -199,6 +199,54 @@ function edgePayload(event, setupId, overrides = {}) {
   };
 }
 
+const REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME = {
+  source: 'TradingView',
+  payload_version: 2,
+  system_id: 'VIXALE_EDGE',
+  setup_id: 'VIXALE_EDGE:LABU:15:LONG:1786541400000',
+  alert_instance_id: 'FIONA_LABU_15',
+  strategy: 'VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1',
+  variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+  event: 'PENDING_SETUP',
+  sec_type: 'STK',
+  asset_class: 'STOCK',
+  symbol: 'LABU',
+  exchange: 'SMART',
+  currency: 'USD',
+  side: 'LONG',
+  entry: 283.94,
+  price: 287.40,
+  target: 285.84,
+  target_tif: 'GTC',
+  cancel_scope: '',
+  stop: 276.92,
+  qty: 70,
+};
+
+const REAL_EDGE_SETUP_NO_TIMEFRAME = {
+  source: 'TradingView',
+  payload_version: 2,
+  system_id: 'VIXALE_EDGE',
+  setup_id: 'VIXALE_EDGE:XBI:15:LONG:1786541400000',
+  alert_instance_id: 'FIONA_XBI_15',
+  strategy: 'VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1',
+  variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+  event: 'SETUP',
+  sec_type: 'STK',
+  asset_class: 'STOCK',
+  symbol: 'XBI',
+  exchange: 'SMART',
+  currency: 'USD',
+  side: 'LONG',
+  entry: 159.03,
+  price: 159.03,
+  target: 159.38,
+  target_tif: 'GTC',
+  cancel_scope: '',
+  stop: 157.92,
+  qty: 125,
+};
+
 function countRowsBySetupId(rows, rawColumn, setupId) {
   return rows
     .slice(1)
@@ -1561,6 +1609,228 @@ async function run() {
     true,
     'route 200 follows persistent publication completion'
   );
+
+  // Exact production Edge v2 shapes are admitted by canonical setup identity,
+  // even without a redundant timeframe. Text/plain JSON is normalized before
+  // the durable admission gate instead of falling into the legacy text parser.
+  const productionPendingSheets = createMockSheets();
+  const productionPendingTelegram = [];
+  const productionPendingBridge = [];
+  let productionPendingWork = null;
+  const productionPendingDependencies = {
+    sheets: productionPendingSheets,
+    scheduleWebhookInboxWork: work => { productionPendingWork = work(); },
+    sendTelegram: async message => {
+      productionPendingTelegram.push(message);
+      return { ok: true };
+    },
+    forwardToBridge: async (raw, row) => {
+      const decision = shouldForwardToBridge(raw, row);
+      if (decision.ok) {
+        productionPendingBridge.push({ raw, row });
+        return { forwarded: true };
+      }
+      return { forwarded: false, skipped: true, reason: decision.reason };
+    },
+  };
+  const productionPendingResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: JSON.stringify(REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME) },
+    productionPendingResponse,
+    productionPendingDependencies
+  );
+  assert.strictEqual(productionPendingResponse.statusCode, 200);
+  assert.strictEqual(productionPendingResponse.body, 'OK');
+  await productionPendingWork;
+  assert.strictEqual(productionPendingSheets.rows['Webhook Inbox'].length - 1, 1);
+  assert.strictEqual(productionPendingSheets.rows['Webhook Inbox'][1][7], 'COMPLETE');
+  assert.strictEqual(productionPendingSheets.rows.Pending.length - 1, 1);
+  assert.strictEqual(
+    productionPendingSheets.rows.Pending[1][0],
+    REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME.setup_id
+  );
+  assert.strictEqual(productionPendingTelegram.length, 0);
+  assert.strictEqual(productionPendingBridge.length, 0);
+  assert.strictEqual(
+    parseJsonTradingViewAlert(REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME).timeframe,
+    '15'
+  );
+
+  const duplicateProductionPendingResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: { ...REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME } },
+    duplicateProductionPendingResponse,
+    productionPendingDependencies
+  );
+  assert.strictEqual(duplicateProductionPendingResponse.statusCode, 200);
+  await productionPendingWork;
+  assert.strictEqual(productionPendingSheets.rows['Webhook Inbox'].length - 1, 1);
+  assert.strictEqual(productionPendingSheets.rows.Pending.length - 1, 1);
+
+  const unrelatedPendingId = 'VIXALE_EDGE:XLE:30:LONG:1786541400001';
+  productionPendingSheets.rows.Pending.push([
+    unrelatedPendingId, '', 'XLE', 'LONG', 'pending', 1, 1, 2, 0,
+    JSON.stringify({
+      ...REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME,
+      setup_id: unrelatedPendingId,
+      symbol: 'XLE',
+    }),
+  ]);
+  const productionCancelResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    {
+      body: {
+        ...REAL_EDGE_PENDING_SETUP_NO_TIMEFRAME,
+        event: 'CANCEL',
+        cancel_scope: 'PENDING_ONLY',
+        reason: 'UNFILLED_BY_MARKET_CLOSE',
+      },
+    },
+    productionCancelResponse,
+    productionPendingDependencies
+  );
+  assert.strictEqual(productionCancelResponse.statusCode, 200);
+  await productionPendingWork;
+  assert.strictEqual(productionPendingSheets.rows.Pending.length - 1, 1);
+  assert.strictEqual(productionPendingSheets.rows.Pending[1][0], unrelatedPendingId);
+  assert.strictEqual(productionPendingTelegram.length, 0);
+  assert.strictEqual(productionPendingBridge.length, 0);
+
+  const productionSetupSheets = createMockSheets();
+  const productionSetupTelegram = [];
+  const productionSetupBridge = [];
+  let productionSetupWork = null;
+  const productionSetupResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: { ...REAL_EDGE_SETUP_NO_TIMEFRAME } },
+    productionSetupResponse,
+    {
+      sheets: productionSetupSheets,
+      scheduleWebhookInboxWork: work => { productionSetupWork = work(); },
+      sendTelegram: async message => {
+        productionSetupTelegram.push(message);
+        return { ok: true };
+      },
+      forwardToBridge: async (raw, row) => {
+        productionSetupBridge.push({ raw, row });
+        return { forwarded: true };
+      },
+    }
+  );
+  assert.strictEqual(productionSetupResponse.statusCode, 200);
+  await productionSetupWork;
+  assert.strictEqual(productionSetupSheets.rows['Webhook Inbox'].length - 1, 1);
+  assert.strictEqual(productionSetupSheets.rows['Webhook Inbox'][1][7], 'COMPLETE');
+  assert.strictEqual(productionSetupBridge.length, 1);
+  assert.strictEqual(productionSetupBridge[0].row.event, 'SETUP');
+  assert.strictEqual(productionSetupBridge[0].row.timeframe, '15');
+  assert.strictEqual(productionSetupTelegram.length, 0);
+  assert.strictEqual(productionSetupSheets.rows.Pending.length - 1, 0);
+  assert.strictEqual(productionSetupSheets.rows['Open Positions'].length - 1, 0);
+
+  const timeframe30Payload = {
+    ...REAL_EDGE_SETUP_NO_TIMEFRAME,
+    setup_id: 'VIXALE_EDGE:XLE:30:LONG:1786541400000',
+    alert_instance_id: 'FIONA_XLE_30',
+    symbol: 'XLE',
+  };
+  assert.strictEqual(parseJsonTradingViewAlert(timeframe30Payload).timeframe, '30');
+
+  const productionCloseSheets = createMockSheets();
+  let productionCloseWork = null;
+  const productionCloseBridge = [];
+  const productionCloseTelegram = [];
+  const productionCloseResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: { ...REAL_EDGE_SETUP_NO_TIMEFRAME, event: 'CLOSE_STOP' } },
+    productionCloseResponse,
+    {
+      sheets: productionCloseSheets,
+      scheduleWebhookInboxWork: work => { productionCloseWork = work(); },
+      sendTelegram: async message => {
+        productionCloseTelegram.push(message);
+        return { ok: true };
+      },
+      forwardToBridge: async (raw, row) => {
+        productionCloseBridge.push({ raw, row });
+        return { forwarded: true };
+      },
+    }
+  );
+  assert.strictEqual(productionCloseResponse.statusCode, 200);
+  await productionCloseWork;
+  assert.strictEqual(productionCloseSheets.rows['Webhook Inbox'][1][7], 'COMPLETE');
+  assert.strictEqual(productionCloseBridge.length, 1);
+  assert.strictEqual(productionCloseBridge[0].row.event, 'SL');
+  assert.strictEqual(productionCloseBridge[0].row.raw_event, 'CLOSE_STOP');
+  assert.strictEqual(productionCloseBridge[0].row.timeframe, '15');
+  assert.strictEqual(productionCloseTelegram.length, 0);
+
+  // Structurally invalid Edge claims and unrelated JSON remain outside the
+  // Inbox, while incomplete bridge exits stay on the pre-existing strict path.
+  const ignoredCountBefore = productionSetupSheets.rows['Webhook Inbox'].length;
+  const malformedEdgeResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: { ...REAL_EDGE_SETUP_NO_TIMEFRAME, timeframe: '30' } },
+    malformedEdgeResponse,
+    { sheets: productionSetupSheets }
+  );
+  assert.strictEqual(malformedEdgeResponse.statusCode, 200);
+  assert.strictEqual(malformedEdgeResponse.body, 'IGNORED');
+  const randomResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: { hello: 'world' } },
+    randomResponse,
+    { sheets: productionSetupSheets }
+  );
+  assert.strictEqual(randomResponse.statusCode, 200);
+  assert.strictEqual(randomResponse.body, 'IGNORED');
+  assert.strictEqual(productionSetupSheets.rows['Webhook Inbox'].length, ignoredCountBefore);
+
+  const incompleteBrokerExitResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    {
+      body: {
+        ...REAL_EDGE_SETUP_NO_TIMEFRAME,
+        source: 'IB_BRIDGE',
+        event: 'TP',
+        broker_confirmed_flat: true,
+        position_after_close: 0,
+      },
+    },
+    incompleteBrokerExitResponse,
+    { sheets: productionSetupSheets }
+  );
+  assert.strictEqual(incompleteBrokerExitResponse.statusCode, 200);
+  assert.strictEqual(productionSetupSheets.rows['Webhook Inbox'].length, ignoredCountBefore);
+  assert.strictEqual(productionSetupSheets.rows.Trades.length - 1, 0);
+  assert.strictEqual(productionSetupSheets.rows['Closed Trades'].length - 1, 0);
+
+  const staleProductionSheets = createMockSheets();
+  let staleProductionWork = null;
+  let staleProductionBridgeCalls = 0;
+  const staleProductionResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    {
+      body: {
+        ...REAL_EDGE_SETUP_NO_TIMEFRAME,
+        alert_timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      },
+    },
+    staleProductionResponse,
+    {
+      sheets: staleProductionSheets,
+      scheduleWebhookInboxWork: work => { staleProductionWork = work(); },
+      forwardToBridge: async () => {
+        staleProductionBridgeCalls++;
+        return { forwarded: true };
+      },
+    }
+  );
+  assert.strictEqual(staleProductionResponse.statusCode, 200);
+  await staleProductionWork;
+  assert.strictEqual(staleProductionBridgeCalls, 0);
+  assert.strictEqual(staleProductionSheets.rows['Webhook Inbox'][1][7], 'STALE_EXECUTION_DROPPED');
 
   // Ordinary TradingView delivery is acknowledged only after durable Inbox persistence.
   const ackOrder = [];
