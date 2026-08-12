@@ -1,0 +1,1245 @@
+//@version=6
+strategy("Vixale Edge 1.2 Safety",
+     overlay=true,
+     initial_capital=1000000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=2,
+     pyramiding=0,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.00,
+     process_orders_on_close=false,
+     calc_on_every_tick=false,
+     calc_on_order_fills=true,
+     max_labels_count=500,
+     max_lines_count=500)
+
+//==================================================================================================
+// VIXALE EDGE LIMIT PULLBACK — LIVE v1.2 SAFETY
+//--------------------------------------------------------------------------------------------------
+// Canonical Vixale Edge production source.
+// v1.2 Safety hardens alert idempotency, stale-fill rejection, and overnight opposite-ST exits.
+// It does NOT wait for a candle to touch the orange level and reclaim it on the close.
+// Instead, after a confirmed SuperTrend flip it prepares a resting LIMIT entry.
+//
+// DEFAULT LONG EXAMPLE — "Flip Close" anchor:
+// - Broken bearish SuperTrend level = 100.
+// - Bullish flip candle closes at 102.
+// - ATR(14) = 2.
+// - Entry buffer = 1.5 ATR = 3.
+// - LONG limit entry = 102 - 3 = 99.
+// - The order fills when a later bar trades at or below 99.
+// - Fixed target = 99 + ATR(14) × target multiplier.
+//
+// SHORT is mirrored:
+// - SHORT limit entry = flip candle close + ATR(14) × entry buffer.
+//
+// NEXT_RTH_OPEN tester parity requires an RTH-only chart/session. On a chart
+// that includes extended hours, TradingView may fill the queued strategy.close
+// on the next extended-hours bar instead of the 09:30 ET RTH open. Live bridge
+// execution remains gated by the authoritative IB stock RTH session.
+//
+// An optional second anchor is included for direct comparison:
+// - "Broken STL" LONG  = broken STL - ATR buffer.
+// - "Broken STL" SHORT = broken STL + ATR buffer.
+//
+// IMPORTANT:
+// - ATR(14), flip close, broken STL, limit entry and target are frozen on the flip candle.
+// - No reclaim-close confirmation is required.
+// - No Maximum Wait Bars.
+// - A new setup requires aligned completed 1H + 4H SuperTrend bias on the primary flip.
+// - Loss of either HTF confirmation permanently cancels the pending setup.
+// - Opposite primary SuperTrend flip cancels the old setup and replaces it only when HTF is aligned.
+// - Pending setup expires on the deterministic final RTH bar and cannot survive into the next session.
+// - Open trades exit only by fixed ATR target or a confirmed RTH Stop Loss flip.
+// - A flip on the bar closing at 16:00 ET queues execution for the next confirmed RTH open.
+// - Live SETUP is sent once when the TradingView limit order actually fills and is still valid.
+// - Bridge enters TWS at MARKET and attaches the frozen ATR target immediately.
+// - Open positions and their GTC targets remain active overnight; Pine never emits EOD_CLOSE.
+// - If an overnight ST flip leaves an open position opposite the trend at the first confirmed RTH bar,
+//   v1.2 emits one CLOSE_STOP at that first RTH bar close.
+//==================================================================================================
+
+//────────────────────────────────────────────────────────────
+// 01. SuperTrend
+//────────────────────────────────────────────────────────────
+groupST = "01. SuperTrend"
+
+stAtrPeriod = input.int(
+     10,
+     "SuperTrend ATR Period",
+     minval=1,
+     group=groupST)
+
+stFactor = input.float(
+     3.0,
+     "SuperTrend Factor",
+     minval=0.1,
+     step=0.1,
+     group=groupST)
+
+//────────────────────────────────────────────────────────────
+// 02. Limit Pullback Entry
+// ATR length is intentionally hard-coded at 14.
+//────────────────────────────────────────────────────────────
+groupEntry = "02. Limit Pullback Entry"
+
+entryAnchor = input.string(
+     "Flip Close",
+     "Limit Entry Anchor",
+     options=["Flip Close", "Broken STL"],
+     group=groupEntry,
+     tooltip="Flip Close matches your example: close 102 - 1.5×ATR(2) = 99. Broken STL would use 100 - 3 = 97.")
+
+atrEntryBuffer = input.float(
+     1.5,
+     "ATR Entry Buffer",
+     minval=0.1,
+     step=0.1,
+     group=groupEntry)
+
+//────────────────────────────────────────────────────────────
+// 03. Required HTF Bias
+// Uses only completed 1H and 4H SuperTrend candles.
+//────────────────────────────────────────────────────────────
+groupHtf = "03. HTF Bias"
+
+// Legacy input retained for UAM/settings compatibility. False disables new
+// pending setups; it never bypasses completed 1H + 4H confirmation.
+useHtfBias = input.bool(
+     true,
+     "Use 1H + 4H SuperTrend Bias",
+     group=groupHtf)
+
+//────────────────────────────────────────────────────────────
+// 04. ATR Target
+// ATR length is intentionally hard-coded at 14.
+//────────────────────────────────────────────────────────────
+groupTarget = "04. ATR Target"
+
+useAtrTarget = input.bool(
+     true,
+     "Use Fixed ATR Target",
+     group=groupTarget)
+
+atrTargetMult = input.float(
+     2.0,
+     "ATR Target Multiplier",
+     minval=0.1,
+     step=0.1,
+     group=groupTarget)
+
+//────────────────────────────────────────────────────────────
+// 05. Session / EOD
+//────────────────────────────────────────────────────────────
+groupSession = "05. Session / EOD"
+
+useRthOnly = input.bool(
+     true,
+     "Use RTH Filter for Limit Entry",
+     group=groupSession)
+
+rthSession = input.session(
+     "0930-1600:23456",
+     "RTH Session",
+     group=groupSession)
+
+sessionTimezone = input.string(
+     "America/New_York",
+     "Session Timezone",
+     group=groupSession)
+
+//────────────────────────────────────────────────────────────
+// 06. Date Range
+//────────────────────────────────────────────────────────────
+groupDate = "06. Date Range"
+
+useDateRange = input.bool(
+     false,
+     "Use Date Range",
+     group=groupDate)
+
+const int DEFAULT_START_DATE = timestamp("01 Jan 2022 00:00 -0500")
+const int DEFAULT_END_DATE   = timestamp("31 Dec 2035 23:59 -0500")
+
+startDate = input.time(
+     DEFAULT_START_DATE,
+     "Start Date",
+     group=groupDate)
+
+endDate = input.time(
+     DEFAULT_END_DATE,
+     "End Date",
+     group=groupDate)
+
+//────────────────────────────────────────────────────────────
+// 07. Live Bridge JSON
+//────────────────────────────────────────────────────────────
+groupBridge = "07. Live Bridge JSON"
+
+profileName = input.string(
+     "",
+     "Alert/Profile Name Optional",
+     group=groupBridge)
+
+symbolOverride = input.string(
+     "",
+     "Symbol Override Optional",
+     group=groupBridge)
+
+stockExchange = input.string(
+     "SMART",
+     "Stock Exchange",
+     group=groupBridge)
+
+stockCurrency = input.string(
+     "USD",
+     "Stock Currency",
+     group=groupBridge)
+
+//────────────────────────────────────────────────────────────
+// 08. Visuals
+//────────────────────────────────────────────────────────────
+groupVisuals = "08. Visuals"
+
+showSuperTrend = input.bool(
+     true,
+     "Show Current SuperTrend",
+     group=groupVisuals)
+
+// Legacy input title retained for UAM automation compatibility; it now controls
+// only the orange Pending Limit Entry plot.
+showPendingLevels = input.bool(
+     true,
+     "Show Broken STL + Limit Entry",
+     group=groupVisuals)
+
+showTarget = input.bool(
+     true,
+     "Show Planned / Active ATR Target",
+     group=groupVisuals)
+
+showSignals = input.bool(
+     true,
+     "Show Limit Fill Signals",
+     group=groupVisuals)
+
+showHtfTable = input.bool(
+     true,
+     "Show HTF / Pending Table",
+     group=groupVisuals)
+
+//────────────────────────────────────────────────────────────
+// Primary SuperTrend
+// TradingView convention:
+// direction < 0 = bullish
+// direction > 0 = bearish
+//────────────────────────────────────────────────────────────
+[stLine, stDirection] = ta.supertrend(stFactor, stAtrPeriod)
+
+bullTrend = stDirection < 0
+bearTrend = stDirection > 0
+
+bullFlip =
+     barstate.isconfirmed and
+     bullTrend and
+     bearTrend[1]
+
+bearFlip =
+     barstate.isconfirmed and
+     bearTrend and
+     bullTrend[1]
+
+atr14 = ta.atr(14)
+
+//────────────────────────────────────────────────────────────
+// Confirmed HTF SuperTrend directions
+// Previous completed HTF candle only.
+//────────────────────────────────────────────────────────────
+f_confirmed_st_direction(_factor, _period) =>
+    [_, _direction] = ta.supertrend(_factor, _period)
+    _direction[1]
+
+stDirection1H = request.security(
+     syminfo.tickerid,
+     "60",
+     f_confirmed_st_direction(stFactor, stAtrPeriod),
+     lookahead=barmerge.lookahead_on)
+
+stDirection4H = request.security(
+     syminfo.tickerid,
+     "240",
+     f_confirmed_st_direction(stFactor, stAtrPeriod),
+     lookahead=barmerge.lookahead_on)
+
+htfLongAligned =
+     stDirection1H < 0 and
+     stDirection4H < 0
+
+htfShortAligned =
+     stDirection1H > 0 and
+     stDirection4H > 0
+
+f_htf_allows(_direction) =>
+    useHtfBias and
+     (
+         (_direction == 1 and htfLongAligned) or
+         (_direction == -1 and htfShortAligned)
+     )
+
+//────────────────────────────────────────────────────────────
+// Session / Date Logic
+//────────────────────────────────────────────────────────────
+rthBarOpenTimestamp = time(
+     timeframe.period,
+     rthSession,
+     sessionTimezone)
+
+rthBarCloseTimestamp = time_close(
+     timeframe.period,
+     rthSession,
+     sessionTimezone)
+
+inRth = not na(rthBarOpenTimestamp)
+
+inDateRange =
+     not useDateRange or
+     (time >= startDate and time <= endDate)
+
+eodTimestamp = timestamp(
+     sessionTimezone,
+     year(time, sessionTimezone),
+     month(time, sessionTimezone),
+     dayofmonth(time, sessionTimezone),
+     16,
+     0)
+
+rthOpenTimestamp = timestamp(
+     sessionTimezone,
+     year(time, sessionTimezone),
+     month(time, sessionTimezone),
+     dayofmonth(time, sessionTimezone),
+     9,
+     30)
+
+// time()/time_close() build bars from the explicit 09:30-16:00 New York
+// session. The final custom-session bar therefore closes at 16:00 even when
+// the chart's regular/extended-hours bars use a different alignment.
+isFinalCustomRthBar =
+     barstate.isconfirmed and
+     inRth and
+     not na(rthBarCloseTimestamp) and
+     rthBarCloseTimestamp == eodTimestamp
+
+isBeforeFinalCustomRthBar =
+     inRth and
+     not na(rthBarCloseTimestamp) and
+     rthBarCloseTimestamp < eodTimestamp
+
+isFirstCustomRthBar =
+     barstate.isconfirmed and
+     inRth and
+     not na(rthBarOpenTimestamp) and
+     rthBarOpenTimestamp == rthOpenTimestamp
+
+currentSessionDate =
+     str.format_time(time, "yyyy-MM-dd", sessionTimezone)
+
+canCreateSetup =
+     barstate.isconfirmed and
+     inDateRange and
+     isBeforeFinalCustomRthBar and
+     strategy.position_size == 0
+
+canWorkEntryOrder =
+     inDateRange and
+     (
+         not useRthOnly or
+         isBeforeFinalCustomRthBar
+     )
+
+//────────────────────────────────────────────────────────────
+// Pending Setup State
+// +1 = pending LONG limit
+// -1 = pending SHORT limit
+//  0 = none
+//────────────────────────────────────────────────────────────
+var int pendingDirection = 0
+var int pendingSetupBar = na
+var float setupBrokenStl = na
+var float setupFlipClose = na
+var float setupAtr14 = na
+var float setupLimitEntry = na
+var float setupTarget = na
+var string pendingSetupId = ""
+var int pendingFlipBarTime = na
+var string pendingSessionDate = ""
+
+//────────────────────────────────────────────────────────────
+// Active Trade State
+//────────────────────────────────────────────────────────────
+var float activeTarget = na
+var float filledBrokenStl = na
+var float filledFlipClose = na
+var float filledAtr14 = na
+var float filledLimitEntry = na
+var float filledTarget = na
+var string filledSetupId = ""
+var int filledFlipBarTime = na
+var string filledSessionDate = ""
+var string activeSetupId = ""
+var int activeFlipBarTime = na
+
+// Intrabar-persistent lifecycle latches. calc_on_order_fills=true can execute the
+// strategy multiple times on the same bar, and normal var values can roll back.
+// These IDs make every lifecycle alert exactly-once per setup.
+varip string lastPendingAlertSetupId = ""
+varip string lastSetupAlertSetupId = ""
+varip string lastCancelAlertSetupId = ""
+varip string lastCloseAlertSetupId = ""
+
+newLong =
+     strategy.position_size > 0 and
+     strategy.position_size[1] <= 0
+
+newShort =
+     strategy.position_size < 0 and
+     strategy.position_size[1] >= 0
+
+becameFlat =
+     strategy.position_size == 0 and
+     strategy.position_size[1] != 0
+
+if newLong or newShort
+    activeTarget := setupTarget
+    filledBrokenStl := setupBrokenStl
+    filledFlipClose := setupFlipClose
+    filledAtr14 := setupAtr14
+    filledLimitEntry := setupLimitEntry
+    filledTarget := setupTarget
+    filledSetupId := pendingSetupId
+    filledFlipBarTime := pendingFlipBarTime
+    filledSessionDate := pendingSessionDate
+    activeSetupId := pendingSetupId
+    activeFlipBarTime := pendingFlipBarTime
+    pendingDirection := 0
+    pendingSetupBar := na
+    setupBrokenStl := na
+    setupFlipClose := na
+    setupAtr14 := na
+    setupLimitEntry := na
+    setupTarget := na
+    pendingSetupId := ""
+    pendingFlipBarTime := na
+    pendingSessionDate := ""
+
+if becameFlat
+    activeTarget := na
+    activeSetupId := ""
+    activeFlipBarTime := na
+
+//────────────────────────────────────────────────────────────
+// Helpers
+//────────────────────────────────────────────────────────────
+f_long_limit(_flipClose, _brokenStl, _atr) =>
+    anchor = entryAnchor == "Flip Close" ? _flipClose : _brokenStl
+    anchor - _atr * atrEntryBuffer
+
+f_short_limit(_flipClose, _brokenStl, _atr) =>
+    anchor = entryAnchor == "Flip Close" ? _flipClose : _brokenStl
+    anchor + _atr * atrEntryBuffer
+
+f_long_target(_entry, _atr) =>
+    _entry + _atr * atrTargetMult
+
+f_short_target(_entry, _atr) =>
+    _entry - _atr * atrTargetMult
+
+payloadSymbol =
+     str.length(symbolOverride) > 0 ?
+     symbolOverride :
+     syminfo.ticker
+
+payloadProfile =
+     str.length(profileName) > 0 ?
+     profileName :
+     payloadSymbol + "_" + timeframe.period + "_VIXALE_EDGE"
+
+f_payload_num(x) =>
+    na(x) ? "0" : str.tostring(x, format.mintick)
+
+f_json_escape(_value) =>
+    string escaped = str.replace_all(_value, "\\", "\\\\")
+    escaped := str.replace_all(escaped, "\"", "\\\"")
+    escaped := str.replace_all(escaped, "\n", "\\n")
+    escaped := str.replace_all(escaped, "\r", "\\r")
+    escaped := str.replace_all(escaped, "\t", "\\t")
+    escaped
+
+f_qty_from_value(x) =>
+    int(math.max(1, math.floor(math.abs(x))))
+
+f_entry_qty(_price) =>
+    f_qty_from_value(strategy.default_entry_qty(_price))
+
+f_close_qty() =>
+    f_qty_from_value(strategy.position_size)
+
+f_json(
+     _event,
+     _side,
+     _entry,
+     _price,
+     _target,
+     _stopRef,
+     _qty,
+     _reason,
+     _brokenStl,
+     _flipClose,
+     _limitEntry) =>
+
+    targetType =
+         useAtrTarget and (_event == "SETUP" or _event == "PENDING_SETUP") ?
+         "ATR_LIMIT_OPPOSITE_FLIP" :
+         "NONE_OPPOSITE_FLIP"
+
+    targetForPayload =
+         useAtrTarget and (_event == "SETUP" or _event == "PENDING_SETUP" or _event == "CANCEL") ?
+         _target :
+         0.0
+
+    setupId =
+         _event == "SETUP" ? filledSetupId :
+         _event == "CLOSE_STOP" ? activeSetupId :
+         _event == "CANCEL" and str.length(pendingSetupId) == 0 ? filledSetupId :
+         pendingSetupId
+
+    flipBarTime =
+         _event == "SETUP" ? filledFlipBarTime :
+         _event == "CLOSE_STOP" ? activeFlipBarTime :
+         _event == "CANCEL" and na(pendingFlipBarTime) ? filledFlipBarTime :
+         pendingFlipBarTime
+
+    signalAtRthClose =
+         _event == "CLOSE_STOP" and
+         _reason == "STOP_LOSS_SIGNAL_AT_RTH_CLOSE"
+
+    closeExecutionPolicy =
+         _event == "CLOSE_STOP" ?
+         (signalAtRthClose ? "NEXT_RTH_OPEN" : "IMMEDIATE_RTH") :
+         ""
+
+    signalSessionDate =
+         signalAtRthClose ?
+         str.format_time(time_close - 1, "yyyy-MM-dd", sessionTimezone) :
+         ""
+
+    signalBarTime =
+         signalAtRthClose ?
+         time :
+         0
+
+    string j = "{"
+    j += "\"source\":\"TradingView\","
+    j += "\"payload_version\":2,"
+    j += "\"system_id\":\"VIXALE_EDGE\","
+    j += "\"setup_id\":\"" + f_json_escape(setupId) + "\","
+    j += "\"alert_instance_id\":\"" + f_json_escape(payloadProfile) + "\","
+    j += "\"strategy\":\"VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1\","
+    j += "\"variant\":\"FIONA_LIMIT_PULLBACK_ATR_TARGET\","
+    j += "\"event\":\"" + f_json_escape(_event) + "\","
+    j += "\"sec_type\":\"STK\","
+    j += "\"asset_class\":\"STOCK\","
+    j += "\"symbol\":\"" + f_json_escape(payloadSymbol) + "\","
+    j += "\"exchange\":\"" + f_json_escape(stockExchange) + "\","
+    j += "\"currency\":\"" + f_json_escape(stockCurrency) + "\","
+    j += "\"side\":\"" + f_json_escape(_side) + "\","
+    j += "\"entry\":" + f_payload_num(_entry) + ","
+    j += "\"price\":" + f_payload_num(_price) + ","
+    j += "\"target\":" + f_payload_num(targetForPayload) + ","
+    j += "\"target_tif\":\"GTC\","
+    j += "\"cancel_scope\":\"" + f_json_escape(_event == "CANCEL" ? "PENDING_ONLY" : "") + "\","
+    j += "\"stop\":" + f_payload_num(_stopRef) + ","
+    j += "\"qty\":" + str.tostring(_qty) + ","
+    j += "\"qty_source\":\"TV Strategy Properties\","
+    j += "\"profile\":\"" + f_json_escape(payloadProfile) + "\","
+    j += "\"timeframe\":\"" + f_json_escape(timeframe.period) + "\","
+    j += "\"tv_ticker\":\"" + f_json_escape(syminfo.ticker) + "\","
+    j += "\"tv_tickerid\":\"" + f_json_escape(syminfo.tickerid) + "\","
+    j += "\"target_type\":\"" + f_json_escape(targetType) + "\","
+    j += "\"stop_type\":\"OPPOSITE_SUPERTREND_FLIP_CLOSE\","
+    j += "\"eod_policy\":\"NO_EOD_CLOSE\","
+    j += "\"close_execution_policy\":\"" + f_json_escape(closeExecutionPolicy) + "\","
+    j += "\"signal_at_rth_close\":" + str.tostring(signalAtRthClose) + ","
+    j += "\"signal_session_date\":\"" + f_json_escape(signalSessionDate) + "\","
+    j += "\"signal_bar_time\":" + str.tostring(signalBarTime) + ","
+    j += "\"st_atr_period\":" + str.tostring(stAtrPeriod) + ","
+    j += "\"st_factor\":" + str.tostring(stFactor) + ","
+    j += "\"atr_length\":14,"
+    j += "\"atr_entry_buffer\":" + str.tostring(atrEntryBuffer) + ","
+    j += "\"atr_target_mult\":" + str.tostring(atrTargetMult) + ","
+    j += "\"limit_entry_anchor\":\"" + f_json_escape(entryAnchor) + "\","
+    j += "\"broken_stl\":" + f_payload_num(_brokenStl) + ","
+    j += "\"flip_close\":" + f_payload_num(_flipClose) + ","
+    j += "\"planned_limit_entry\":" + f_payload_num(_limitEntry) + ","
+    j += "\"flip_bar_time\":" + str.tostring(flipBarTime) + ","
+    j += "\"htf_bias_enabled\":" + str.tostring(useHtfBias) + ","
+    j += "\"bar_time\":" + str.tostring(time) + ","
+    j += "\"reason\":\"" + f_json_escape(_reason) + "\""
+    j += "}"
+    j
+
+f_send(_json) =>
+    alert(_json, alert.freq_all)
+
+// Fill validity is re-checked at the actual TradingView fill. This closes a
+// race where a resting order could fill after confirmed HTF conditions changed
+// but before the next normal bar-close cancellation pass. Primary validation uses
+// the latest CONFIRMED chart-timeframe ST direction, never an intrabar repaint.
+longFillStillValid =
+     newLong and
+     str.length(filledSetupId) > 0 and
+     inDateRange and
+     inRth and
+     str.length(filledSessionDate) > 0 and
+     filledSessionDate == currentSessionDate and
+     stDirection[1] < 0 and
+     f_htf_allows(1)
+
+shortFillStillValid =
+     newShort and
+     str.length(filledSetupId) > 0 and
+     inDateRange and
+     inRth and
+     str.length(filledSessionDate) > 0 and
+     filledSessionDate == currentSessionDate and
+     stDirection[1] > 0 and
+     f_htf_allows(-1)
+
+// Send SETUP exactly once, only after the TradingView LIMIT order actually
+// fills and the setup is still valid. Use the actual simulated filled size.
+if newLong
+    if longFillStillValid
+        if filledSetupId != lastSetupAlertSetupId
+            f_send(f_json(
+                 "SETUP",
+                 "LONG",
+                 strategy.position_avg_price,
+                 close,
+                 filledTarget,
+                 stLine,
+                 f_close_qty(),
+                 "VIXALE_EDGE_LONG_LIMIT_PULLBACK_FILLED",
+                 filledBrokenStl,
+                 filledFlipClose,
+                 filledLimitEntry))
+            lastSetupAlertSetupId := filledSetupId
+    else
+        if str.length(filledSetupId) > 0 and filledSetupId != lastCancelAlertSetupId
+            f_send(f_json(
+                 "CANCEL",
+                 "LONG",
+                 filledLimitEntry,
+                 close,
+                 filledTarget,
+                 filledBrokenStl,
+                 f_close_qty(),
+                 "FILL_REJECTED_SETUP_NO_LONGER_VALID",
+                 filledBrokenStl,
+                 filledFlipClose,
+                 filledLimitEntry))
+            lastCancelAlertSetupId := filledSetupId
+
+        strategy.cancel("Long ATR Target")
+        strategy.close(
+             "Long Limit",
+             comment="Rejected stale LONG fill",
+             immediately=true)
+        activeTarget := na
+        activeSetupId := ""
+        activeFlipBarTime := na
+
+if newShort
+    if shortFillStillValid
+        if filledSetupId != lastSetupAlertSetupId
+            f_send(f_json(
+                 "SETUP",
+                 "SHORT",
+                 strategy.position_avg_price,
+                 close,
+                 filledTarget,
+                 stLine,
+                 f_close_qty(),
+                 "VIXALE_EDGE_SHORT_LIMIT_PULLBACK_FILLED",
+                 filledBrokenStl,
+                 filledFlipClose,
+                 filledLimitEntry))
+            lastSetupAlertSetupId := filledSetupId
+    else
+        if str.length(filledSetupId) > 0 and filledSetupId != lastCancelAlertSetupId
+            f_send(f_json(
+                 "CANCEL",
+                 "SHORT",
+                 filledLimitEntry,
+                 close,
+                 filledTarget,
+                 filledBrokenStl,
+                 f_close_qty(),
+                 "FILL_REJECTED_SETUP_NO_LONGER_VALID",
+                 filledBrokenStl,
+                 filledFlipClose,
+                 filledLimitEntry))
+            lastCancelAlertSetupId := filledSetupId
+
+        strategy.cancel("Short ATR Target")
+        strategy.close(
+             "Short Limit",
+             comment="Rejected stale SHORT fill",
+             immediately=true)
+        activeTarget := na
+        activeSetupId := ""
+        activeFlipBarTime := na
+
+if newLong or newShort
+    filledBrokenStl := na
+    filledFlipClose := na
+    filledAtr14 := na
+    filledLimitEntry := na
+    filledTarget := na
+    filledSetupId := ""
+    filledFlipBarTime := na
+    filledSessionDate := ""
+
+//────────────────────────────────────────────────────────────
+// Date Range Cleanup
+//────────────────────────────────────────────────────────────
+crossedPastEndDate =
+     useDateRange and
+     barstate.isconfirmed and
+     time > endDate and
+     time[1] <= endDate
+
+if crossedPastEndDate
+    if pendingDirection != 0
+        strategy.cancel("Long Limit")
+        strategy.cancel("Short Limit")
+        strategy.cancel("Long ATR Target")
+        strategy.cancel("Short ATR Target")
+        if pendingSetupId != lastCancelAlertSetupId
+            f_send(f_json(
+                 "CANCEL",
+                 pendingDirection == 1 ? "LONG" : "SHORT",
+                 setupLimitEntry,
+                 close,
+                 setupTarget,
+                 setupBrokenStl,
+                 f_entry_qty(nz(setupLimitEntry, close)),
+                 "DATE_RANGE_ENDED",
+                 setupBrokenStl,
+                 setupFlipClose,
+                 setupLimitEntry))
+            lastCancelAlertSetupId := pendingSetupId
+
+    pendingDirection := 0
+    pendingSetupBar := na
+    setupBrokenStl := na
+    setupFlipClose := na
+    setupAtr14 := na
+    setupLimitEntry := na
+    setupTarget := na
+    pendingSetupId := ""
+    pendingFlipBarTime := na
+    pendingSessionDate := ""
+
+//────────────────────────────────────────────────────────────
+// Permanent Pending Invalidation
+// A canceled setup can never resume. A future setup requires a new,
+// fully qualified primary flip with completed 1H + 4H confirmation.
+//────────────────────────────────────────────────────────────
+pendingLost1HConfirmation =
+     pendingDirection == 1 ?
+     not (stDirection1H < 0) :
+     pendingDirection == -1 ?
+     not (stDirection1H > 0) :
+     false
+
+pendingLost4HConfirmation =
+     pendingDirection == 1 ?
+     not (stDirection4H < 0) :
+     pendingDirection == -1 ?
+     not (stDirection4H > 0) :
+     false
+
+pendingOppositePrimaryFlip =
+     (pendingDirection == 1 and bearFlip) or
+     (pendingDirection == -1 and bullFlip)
+
+pendingFromPriorSession =
+     pendingDirection != 0 and
+     (
+         str.length(pendingSessionDate) == 0 or
+         pendingSessionDate != currentSessionDate
+     )
+
+pendingCancelReason =
+     pendingDirection == 0 ? "" :
+     isFinalCustomRthBar ? "UNFILLED_BY_MARKET_CLOSE" :
+     pendingFromPriorSession ? "STALE_PRIOR_SESSION" :
+     pendingOppositePrimaryFlip ? "REPLACED_BY_OPPOSITE_RTH_SIGNAL" :
+     pendingLost1HConfirmation ? "HTF_1H_CONFIRMATION_LOST" :
+     pendingLost4HConfirmation ? "HTF_4H_CONFIRMATION_LOST" :
+     ""
+
+if barstate.isconfirmed and str.length(pendingCancelReason) > 0 and strategy.position_size == 0
+    strategy.cancel("Long Limit")
+    strategy.cancel("Short Limit")
+    strategy.cancel("Long ATR Target")
+    strategy.cancel("Short ATR Target")
+
+    if pendingSetupId != lastCancelAlertSetupId
+        f_send(f_json(
+             "CANCEL",
+             pendingDirection == 1 ? "LONG" : "SHORT",
+             setupLimitEntry,
+             close,
+             setupTarget,
+             setupBrokenStl,
+             f_entry_qty(nz(setupLimitEntry, close)),
+             pendingCancelReason,
+             setupBrokenStl,
+             setupFlipClose,
+             setupLimitEntry))
+        lastCancelAlertSetupId := pendingSetupId
+
+    pendingDirection := 0
+    pendingSetupBar := na
+    setupBrokenStl := na
+    setupFlipClose := na
+    setupAtr14 := na
+    setupLimitEntry := na
+    setupTarget := na
+    pendingSetupId := ""
+    pendingFlipBarTime := na
+    pendingSessionDate := ""
+
+//────────────────────────────────────────────────────────────
+// Overnight opposite-SuperTrend safety
+// If the primary ST flipped while the market was closed, there may be no fresh
+// RTH flip event to trigger the normal stop logic. On the first confirmed RTH
+// bar, close an overnight position that is already opposite the primary ST.
+// On a 15-minute chart this alert is emitted at the 09:45 ET bar close.
+//────────────────────────────────────────────────────────────
+overnightLongOppositeAtFirstRth =
+     isFirstCustomRthBar and
+     strategy.position_size > 0 and
+     bearTrend and
+     not bearFlip
+
+overnightShortOppositeAtFirstRth =
+     isFirstCustomRthBar and
+     strategy.position_size < 0 and
+     bullTrend and
+     not bullFlip
+
+if overnightLongOppositeAtFirstRth and str.length(activeSetupId) > 0 and activeSetupId != lastCloseAlertSetupId
+    f_send(f_json(
+         "CLOSE_STOP",
+         "LONG",
+         strategy.position_avg_price,
+         close,
+         0.0,
+         stLine,
+         f_close_qty(),
+         "STOP_LOSS_OPPOSITE_ST_AT_FIRST_RTH_CLOSE",
+         0.0,
+         0.0,
+         0.0))
+    strategy.cancel("Long ATR Target")
+    strategy.close(
+         "Long Limit",
+         comment="Overnight opposite ST",
+         immediately=true)
+    lastCloseAlertSetupId := activeSetupId
+
+if overnightShortOppositeAtFirstRth and str.length(activeSetupId) > 0 and activeSetupId != lastCloseAlertSetupId
+    f_send(f_json(
+         "CLOSE_STOP",
+         "SHORT",
+         strategy.position_avg_price,
+         close,
+         0.0,
+         stLine,
+         f_close_qty(),
+         "STOP_LOSS_OPPOSITE_ST_AT_FIRST_RTH_CLOSE",
+         0.0,
+         0.0,
+         0.0))
+    strategy.cancel("Short ATR Target")
+    strategy.close(
+         "Short Limit",
+         comment="Overnight opposite ST",
+         immediately=true)
+    lastCloseAlertSetupId := activeSetupId
+
+//────────────────────────────────────────────────────────────
+// Confirmed RTH Stop Loss / pending replacement
+// - Closes an open opposite-side position.
+// - Cancels/replaces any old pending limit setup.
+// - Creates a new frozen limit setup from the current flip.
+//────────────────────────────────────────────────────────────
+if bullFlip and isBeforeFinalCustomRthBar
+    strategy.cancel("Long Limit")
+    strategy.cancel("Short Limit")
+    strategy.cancel("Long ATR Target")
+    strategy.cancel("Short ATR Target")
+
+    if strategy.position_size < 0 and str.length(activeSetupId) > 0 and activeSetupId != lastCloseAlertSetupId
+        f_send(f_json(
+             "CLOSE_STOP",
+             "SHORT",
+             strategy.position_avg_price,
+             close,
+             0.0,
+             stLine[1],
+             f_close_qty(),
+             "STOP_LOSS",
+             0.0,
+             0.0,
+             0.0))
+        strategy.close(
+             "Short Limit",
+             comment="Stop Loss",
+             immediately=true)
+        lastCloseAlertSetupId := activeSetupId
+
+    if canCreateSetup and pendingDirection == 0 and f_htf_allows(1)
+        pendingDirection := 1
+        pendingSetupBar := bar_index
+        setupBrokenStl := stLine[1]
+        setupFlipClose := close
+        setupAtr14 := atr14
+        setupLimitEntry := f_long_limit(setupFlipClose, setupBrokenStl, setupAtr14)
+        setupTarget :=
+             useAtrTarget ?
+             f_long_target(setupLimitEntry, setupAtr14) :
+             na
+        pendingFlipBarTime := time
+        pendingSessionDate := currentSessionDate
+        pendingSetupId := "VIXALE_EDGE:" + payloadSymbol + ":" + timeframe.period + ":LONG:" + str.tostring(pendingFlipBarTime)
+        if pendingSetupId != lastPendingAlertSetupId
+            f_send(f_json(
+                 "PENDING_SETUP",
+                 "LONG",
+                 setupLimitEntry,
+                 setupFlipClose,
+                 setupTarget,
+                 stLine,
+                 f_entry_qty(setupLimitEntry),
+                 "VIXALE_EDGE_LONG_PENDING",
+                 setupBrokenStl,
+                 setupFlipClose,
+                 setupLimitEntry))
+            lastPendingAlertSetupId := pendingSetupId
+
+if bearFlip and isBeforeFinalCustomRthBar
+    strategy.cancel("Long Limit")
+    strategy.cancel("Short Limit")
+    strategy.cancel("Long ATR Target")
+    strategy.cancel("Short ATR Target")
+
+    if strategy.position_size > 0 and str.length(activeSetupId) > 0 and activeSetupId != lastCloseAlertSetupId
+        f_send(f_json(
+             "CLOSE_STOP",
+             "LONG",
+             strategy.position_avg_price,
+             close,
+             0.0,
+             stLine[1],
+             f_close_qty(),
+             "STOP_LOSS",
+             0.0,
+             0.0,
+             0.0))
+        strategy.close(
+             "Long Limit",
+             comment="Stop Loss",
+             immediately=true)
+        lastCloseAlertSetupId := activeSetupId
+
+    if canCreateSetup and pendingDirection == 0 and f_htf_allows(-1)
+        pendingDirection := -1
+        pendingSetupBar := bar_index
+        setupBrokenStl := stLine[1]
+        setupFlipClose := close
+        setupAtr14 := atr14
+        setupLimitEntry := f_short_limit(setupFlipClose, setupBrokenStl, setupAtr14)
+        setupTarget :=
+             useAtrTarget ?
+             f_short_target(setupLimitEntry, setupAtr14) :
+             na
+        pendingFlipBarTime := time
+        pendingSessionDate := currentSessionDate
+        pendingSetupId := "VIXALE_EDGE:" + payloadSymbol + ":" + timeframe.period + ":SHORT:" + str.tostring(pendingFlipBarTime)
+        if pendingSetupId != lastPendingAlertSetupId
+            f_send(f_json(
+                 "PENDING_SETUP",
+                 "SHORT",
+                 setupLimitEntry,
+                 setupFlipClose,
+                 setupTarget,
+                 stLine,
+                 f_entry_qty(setupLimitEntry),
+                 "VIXALE_EDGE_SHORT_PENDING",
+                 setupBrokenStl,
+                 setupFlipClose,
+                 setupLimitEntry))
+            lastPendingAlertSetupId := pendingSetupId
+
+//==================================================================================================
+// Confirmed 16:00 ET closing-bar Stop Loss signal
+//--------------------------------------------------------------------------------------------------
+// The alert queues broker execution for the next confirmed stock RTH session.
+// process_orders_on_close=false keeps the Strategy Tester market close from
+// filling at the prior session close; the emulator fills it on the next
+// available bar open. The live bridge remains the execution authority.
+// The active GTC target is intentionally left working overnight.
+//==================================================================================================
+queuedLongClose =
+     bearFlip and
+     isFinalCustomRthBar and
+     strategy.position_size > 0
+
+queuedShortClose =
+     bullFlip and
+     isFinalCustomRthBar and
+     strategy.position_size < 0
+
+queuedCloseSetupId =
+     queuedLongClose or queuedShortClose ?
+     activeSetupId :
+     ""
+
+queuedCloseIsNew =
+     str.length(queuedCloseSetupId) > 0 and
+     queuedCloseSetupId != lastCloseAlertSetupId
+
+if queuedCloseIsNew
+    f_send(f_json(
+         "CLOSE_STOP",
+         queuedLongClose ? "LONG" : "SHORT",
+         strategy.position_avg_price,
+         close,
+         0.0,
+         stLine[1],
+         f_close_qty(),
+         "STOP_LOSS_SIGNAL_AT_RTH_CLOSE",
+         0.0,
+         0.0,
+         0.0))
+
+    strategy.close(
+         queuedLongClose ? "Long Limit" : "Short Limit",
+         comment="Stop Loss next RTH open")
+
+    lastCloseAlertSetupId := queuedCloseSetupId
+
+//────────────────────────────────────────────────────────────
+// Working Resting LIMIT Order
+//
+// The setup remains pending during the current RTH session, while the virtual
+// order is active only when RTH/HTF/trend conditions allow entry.
+// The order is submitted on the flip close. With OnBarClose calculation it can first fill on the next bar.
+//────────────────────────────────────────────────────────────
+longLimitMayWork =
+     barstate.isconfirmed and
+     pendingDirection == 1 and
+     strategy.position_size == 0 and
+     canWorkEntryOrder and
+     bullTrend and
+     f_htf_allows(1) and
+     not na(setupLimitEntry)
+
+shortLimitMayWork =
+     barstate.isconfirmed and
+     pendingDirection == -1 and
+     strategy.position_size == 0 and
+     canWorkEntryOrder and
+     bearTrend and
+     f_htf_allows(-1) and
+     not na(setupLimitEntry)
+
+if longLimitMayWork
+    strategy.cancel("Short Limit")
+    strategy.cancel("Short ATR Target")
+
+    strategy.entry(
+         "Long Limit",
+         strategy.long,
+         limit=setupLimitEntry,
+         comment="Vixale Edge LONG Limit Pullback")
+
+    if useAtrTarget and not na(setupTarget)
+        strategy.exit(
+             "Long ATR Target",
+             from_entry="Long Limit",
+             limit=setupTarget,
+             comment="Fixed ATR Target",
+             disable_alert=true)
+else if pendingDirection == 1 and strategy.position_size == 0
+    strategy.cancel("Long Limit")
+    strategy.cancel("Long ATR Target")
+
+if shortLimitMayWork
+    strategy.cancel("Long Limit")
+    strategy.cancel("Long ATR Target")
+
+    strategy.entry(
+         "Short Limit",
+         strategy.short,
+         limit=setupLimitEntry,
+         comment="Vixale Edge SHORT Limit Pullback")
+
+    if useAtrTarget and not na(setupTarget)
+        strategy.exit(
+             "Short ATR Target",
+             from_entry="Short Limit",
+             limit=setupTarget,
+             comment="Fixed ATR Target",
+             disable_alert=true)
+else if pendingDirection == -1 and strategy.position_size == 0
+    strategy.cancel("Short Limit")
+    strategy.cancel("Short ATR Target")
+
+// Keep the active target working after the pending setup variables are cleared on fill.
+if strategy.position_size > 0 and useAtrTarget and not na(activeTarget)
+    strategy.exit(
+         "Long ATR Target",
+         from_entry="Long Limit",
+         limit=activeTarget,
+         comment="Fixed ATR Target",
+             disable_alert=true)
+
+if strategy.position_size < 0 and useAtrTarget and not na(activeTarget)
+    strategy.exit(
+         "Short ATR Target",
+         from_entry="Short Limit",
+         limit=activeTarget,
+         comment="Fixed ATR Target",
+             disable_alert=true)
+
+//────────────────────────────────────────────────────────────
+// Plots
+//────────────────────────────────────────────────────────────
+plot(
+     showSuperTrend and bullTrend ? stLine : na,
+     "Bullish SuperTrend",
+     color=color.green,
+     linewidth=2,
+     style=plot.style_linebr)
+
+plot(
+     showSuperTrend and bearTrend ? stLine : na,
+     "Bearish SuperTrend",
+     color=color.red,
+     linewidth=2,
+     style=plot.style_linebr)
+
+plot(
+     showPendingLevels and pendingDirection != 0 ?
+     setupLimitEntry :
+     na,
+     "Pending Limit Entry",
+     color=color.orange,
+     linewidth=3,
+     style=plot.style_linebr)
+
+plannedOrActiveTarget =
+     strategy.position_size != 0 ?
+     activeTarget :
+     pendingDirection != 0 ?
+     setupTarget :
+     na
+
+plot(
+     showTarget ? plannedOrActiveTarget : na,
+     "Planned / Active ATR Target",
+     color=color.blue,
+     linewidth=2,
+     style=plot.style_linebr)
+
+plotshape(
+     showSignals and newLong,
+     title="Vixale Edge Long Limit Filled",
+     style=shape.triangleup,
+     location=location.belowbar,
+     color=color.green,
+     text="L",
+     textcolor=color.white,
+     size=size.small)
+
+plotshape(
+     showSignals and newShort,
+     title="Vixale Edge Short Limit Filled",
+     style=shape.triangledown,
+     location=location.abovebar,
+     color=color.red,
+     text="L",
+     textcolor=color.white,
+     size=size.small)
+
+//────────────────────────────────────────────────────────────
+// HTF / Pending Status Table
+//────────────────────────────────────────────────────────────
+var table statusTable = table.new(
+     position.top_right,
+     2,
+     8,
+     border_width=1)
+
+f_direction_text(_direction) =>
+    _direction < 0 ? "BULLISH" :
+     _direction > 0 ? "BEARISH" :
+     "N/A"
+
+f_table_num(x) =>
+    na(x) ? "—" : str.tostring(x, format.mintick)
+
+if barstate.islast
+    if showHtfTable
+        table.cell(statusTable, 0, 0, "VIXALE EDGE", text_color=color.white, bgcolor=color.black)
+        table.cell(statusTable, 1, 0, entryAnchor, text_color=color.white, bgcolor=color.black)
+
+        table.cell(statusTable, 0, 1, "1H")
+        table.cell(statusTable, 1, 1, f_direction_text(stDirection1H))
+
+        table.cell(statusTable, 0, 2, "4H")
+        table.cell(statusTable, 1, 2, f_direction_text(stDirection4H))
+
+        table.cell(statusTable, 0, 3, "PENDING")
+        table.cell(
+             statusTable,
+             1,
+             3,
+             pendingDirection == 1 ? "LONG" :
+             pendingDirection == -1 ? "SHORT" :
+             "NONE")
+
+        table.cell(statusTable, 0, 4, "BROKEN STL")
+        table.cell(statusTable, 1, 4, f_table_num(setupBrokenStl))
+
+        table.cell(statusTable, 0, 5, "ENTRY FLIP CLOSE")
+        table.cell(statusTable, 1, 5, f_table_num(setupFlipClose))
+
+        table.cell(statusTable, 0, 6, "LIMIT ENTRY")
+        table.cell(statusTable, 1, 6, f_table_num(setupLimitEntry))
+
+        table.cell(statusTable, 0, 7, "TARGET")
+        table.cell(statusTable, 1, 7, f_table_num(plannedOrActiveTarget))
+    else
+        table.clear(statusTable, 0, 0, 1, 7)
+
+//────────────────────────────────────────────────────────────
+// TradingView alert setup
+// Condition: Vixale Edge 1.2 Safety
+// Trigger: alert() function calls only
+// Webhook: https://www.vixale.com/tv
+//────────────────────────────────────────────────────────────
