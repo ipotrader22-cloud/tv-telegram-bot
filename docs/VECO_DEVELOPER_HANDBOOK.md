@@ -680,7 +680,10 @@ timeframe segment when the redundant `timeframe` field is absent. Valid
 `PENDING_SETUP`, `SETUP`, `CANCEL` with `cancel_scope=PENDING_ONLY`, and
 `CLOSE_STOP` deliveries do not depend on optional Fiona profile/classifier
 fields for admission. A valid JSON object received through a text content type
-is normalized to the same object contract before recognition.
+is normalized to the same object contract before recognition. Render accepts
+the raw body as an already-parsed object, a JSON string, or a UTF-8 Buffer only
+when decoding produces one JSON object; arrays and malformed input are never
+promoted to an Edge lifecycle payload.
 
 Edge `PENDING_SETUP` and every pending-only `CANCEL` update Google Sheets and
 the website/dashboard but never publish to Telegram. A TradingView `SETUP`
@@ -1228,6 +1231,13 @@ symbol/side/timeframe, and Edge `CANCEL` without `PENDING_ONLY` remain outside
 this admission path. Broker callbacks continue through their separate strict
 execution-evidence checks and are not trusted by this TradingView-only rule.
 
+Immediately before returning HTTP 200 `IGNORED`, Render emits one bounded safe
+diagnostic record containing content type, body representation/length, JSON
+parse outcome, canonical Edge fields and identity, and an exact structural
+reason such as `edge_v2_invalid_setup_id`, `edge_v2_symbol_mismatch`, or
+`edge_v2_unsupported_event`. It does not log authorization headers, secrets, or
+the raw body. Accepted deliveries do not emit this diagnostic.
+
 ### 9.7 `Positions`
 
 Legacy sheet. Current code cleans matching legacy rows when processing modern events.
@@ -1544,6 +1554,13 @@ classifier fields. Render normalizes valid JSON text, validates canonical
 `VIXALE_EDGE:<symbol>:<timeframe>:<side>:<bar_time>` identity, and persists the
 delivery before ACK. This rule does not replay or execute previously missed
 setups; the ordinary 90-second `SETUP` TTL still fails closed.
+
+After the first admission hardening deployment, a manual canonical Edge v2
+`PENDING_SETUP` sent as `text/plain` completed through Webhook Inbox and Pending,
+while later real TradingView SBUX/XLE deliveries were still reported as unknown.
+The visible canonical fields alone did not reproduce that rejection across
+object, JSON-string, or UTF-8-Buffer tests. Do not infer a Pine or strategy
+semantic cause without the safe ignored-path diagnostic from the exact delivery.
 
 ### 13.13 Execution order during reversals
 
@@ -2368,10 +2385,14 @@ TradingView Edge v2 lifecycle admission is based on a structurally valid
 canonical `setup_id`, matching explicit symbol/side, and the supported event
 set (`PENDING_SETUP`, `SETUP`, pending-only `CANCEL`, `CLOSE_STOP`). Render
 derives a missing redundant timeframe from that identity and normalizes a valid
-JSON text body before admission. Optional Fiona classifier fields are not an
-admission dependency. This exception is source-scoped to TradingView; it does
-not weaken the separate broker callback confirmation, flat-position, execution
-identity, or reconciliation requirements.
+JSON object, string, or UTF-8 Buffer before admission. Decoding must yield one
+object, never an array or malformed input. Optional Fiona classifier fields are
+not an admission dependency. This exception is source-scoped to TradingView; it
+does not weaken the separate broker callback confirmation, flat-position,
+execution identity, or reconciliation requirements. Structural validation
+returns either the parsed canonical identity or one stable reason code. Only an
+about-to-be-ignored request logs bounded transport/identity fields and that
+reason; raw bodies and authorization data are excluded.
 
 The bridge durably queues TP, Stop Loss, Manual Close, and `RECONCILE_FLAT`
 callbacks before managed state is cleared. Each callback has its own

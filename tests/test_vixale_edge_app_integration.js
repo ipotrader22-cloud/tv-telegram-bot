@@ -247,6 +247,33 @@ const REAL_EDGE_SETUP_NO_TIMEFRAME = {
   qty: 125,
 };
 
+const POST_DEPLOY_REAL_EDGE_PENDING_PAYLOADS = [
+  {
+    source: 'TradingView',
+    payload_version: 2,
+    system_id: 'VIXALE_EDGE',
+    setup_id: 'VIXALE_EDGE:SBUX:15:LONG:1786544100000',
+    alert_instance_id: 'FIONA_SBUX_15',
+    strategy: 'VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1',
+    variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+    event: 'PENDING_SETUP',
+    symbol: 'SBUX',
+    side: 'LONG',
+  },
+  {
+    source: 'TradingView',
+    payload_version: 2,
+    system_id: 'VIXALE_EDGE',
+    setup_id: 'VIXALE_EDGE:XLE:30:LONG:1786541400000',
+    alert_instance_id: 'FIONA_XLE_30',
+    strategy: 'VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1',
+    variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+    event: 'PENDING_SETUP',
+    symbol: 'XLE',
+    side: 'LONG',
+  },
+];
+
 function countRowsBySetupId(rows, rawColumn, setupId) {
   return rows
     .slice(1)
@@ -1610,6 +1637,74 @@ async function run() {
     'route 200 follows persistent publication completion'
   );
 
+  // Post-PR #19 production identities are accepted identically as an object,
+  // JSON string, or UTF-8 Buffer. Each representation owns one fresh durable
+  // lifecycle so the assertions cannot hide cross-representation deduplication.
+  const bodyRepresentations = [
+    {
+      name: 'object',
+      contentType: 'application/json',
+      makeBody: payload => ({ ...payload }),
+    },
+    {
+      name: 'string',
+      contentType: 'text/plain',
+      makeBody: payload => JSON.stringify(payload),
+    },
+    {
+      name: 'buffer',
+      contentType: 'application/octet-stream',
+      makeBody: payload => Buffer.from(JSON.stringify(payload), 'utf8'),
+    },
+  ];
+  for (const payload of POST_DEPLOY_REAL_EDGE_PENDING_PAYLOADS) {
+    const expectedTimeframe = payload.setup_id.split(':')[2];
+    for (const representation of bodyRepresentations) {
+      const representationSheets = createMockSheets();
+      let representationWork = null;
+      let representationTelegramCalls = 0;
+      let representationBridgeCalls = 0;
+      const representationResponse = createMockResponse();
+      await handleTradingViewWebhookWithDependencies(
+        {
+          body: representation.makeBody(payload),
+          headers: { 'content-type': representation.contentType },
+        },
+        representationResponse,
+        {
+          sheets: representationSheets,
+          scheduleWebhookInboxWork: work => { representationWork = work(); },
+          sendTelegram: async () => {
+            representationTelegramCalls++;
+            return { ok: true };
+          },
+          forwardToBridge: async (raw, row) => {
+            const decision = shouldForwardToBridge(raw, row);
+            if (decision.ok) {
+              representationBridgeCalls++;
+              return { forwarded: true };
+            }
+            return { forwarded: false, skipped: true, reason: decision.reason };
+          },
+        }
+      );
+      assert.strictEqual(
+        representationResponse.statusCode,
+        200,
+        `${payload.symbol} ${representation.name} returns HTTP 200`
+      );
+      assert.strictEqual(representationResponse.body, 'OK');
+      await representationWork;
+      assert.strictEqual(representationSheets.rows['Webhook Inbox'].length - 1, 1);
+      assert.strictEqual(representationSheets.rows['Webhook Inbox'][1][7], 'COMPLETE');
+      assert.strictEqual(representationSheets.rows.Pending.length - 1, 1);
+      assert.strictEqual(representationSheets.rows.Pending[1][0], payload.setup_id);
+      assert.strictEqual(representationTelegramCalls, 0);
+      assert.strictEqual(representationBridgeCalls, 0);
+      assert.strictEqual(parseJsonTradingViewAlert(payload).timeframe, expectedTimeframe);
+    }
+  }
+
   // Exact production Edge v2 shapes are admitted by canonical setup identity,
   // even without a redundant timeframe. Text/plain JSON is normalized before
   // the durable admission gate instead of falling into the legacy text parser.
@@ -1770,13 +1865,49 @@ async function run() {
   // Inbox, while incomplete bridge exits stay on the pre-existing strict path.
   const ignoredCountBefore = productionSetupSheets.rows['Webhook Inbox'].length;
   const malformedEdgeResponse = createMockResponse();
-  await handleTradingViewWebhookWithDependencies(
-    { body: { ...REAL_EDGE_SETUP_NO_TIMEFRAME, timeframe: '30' } },
-    malformedEdgeResponse,
-    { sheets: productionSetupSheets }
-  );
+  const ignoredDiagnosticLogs = [];
+  const originalConsoleLog = console.log;
+  console.log = (...args) => { ignoredDiagnosticLogs.push(args); };
+  try {
+    await handleTradingViewWebhookWithDependencies(
+      {
+        body: { ...REAL_EDGE_SETUP_NO_TIMEFRAME, symbol: 'WRONG' },
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      },
+      malformedEdgeResponse,
+      { sheets: productionSetupSheets }
+    );
+  } finally {
+    console.log = originalConsoleLog;
+  }
   assert.strictEqual(malformedEdgeResponse.statusCode, 200);
   assert.strictEqual(malformedEdgeResponse.body, 'IGNORED');
+  const ignoredDiagnosticLog = ignoredDiagnosticLogs.find(
+    args => args[0] === 'Ignored unknown webhook payload:'
+  );
+  assert.ok(ignoredDiagnosticLog, 'invalid claimed Edge payload emits safe diagnostics');
+  const ignoredDiagnostic = JSON.parse(ignoredDiagnosticLog[1]);
+  assert.strictEqual(ignoredDiagnostic.content_type, 'application/json; charset=utf-8');
+  assert.strictEqual(ignoredDiagnostic.req_body_typeof, 'object');
+  assert.strictEqual(ignoredDiagnostic.req_body_is_buffer, false);
+  assert.strictEqual(ignoredDiagnostic.req_body_is_array, false);
+  assert.ok(ignoredDiagnostic.body_length > 0);
+  assert.strictEqual(ignoredDiagnostic.parse_webhook_json_object_succeeded, true);
+  assert.strictEqual(ignoredDiagnostic.body_json_parse_attempted, false);
+  assert.strictEqual(ignoredDiagnostic.body_json_parse_succeeded, false);
+  assert.strictEqual(ignoredDiagnostic.source, 'TradingView');
+  assert.strictEqual(ignoredDiagnostic.system_id, 'VIXALE_EDGE');
+  assert.strictEqual(ignoredDiagnostic.payload_version, '2');
+  assert.strictEqual(ignoredDiagnostic.event, 'SETUP');
+  assert.strictEqual(ignoredDiagnostic.setup_id, REAL_EDGE_SETUP_NO_TIMEFRAME.setup_id);
+  assert.strictEqual(ignoredDiagnostic.symbol, 'WRONG');
+  assert.strictEqual(ignoredDiagnostic.side, 'LONG');
+  assert.strictEqual(ignoredDiagnostic.explicit_timeframe, '');
+  assert.strictEqual(ignoredDiagnostic.canonical_identity.symbol, 'XBI');
+  assert.strictEqual(
+    ignoredDiagnostic.structural_rejection_reason,
+    'edge_v2_symbol_mismatch'
+  );
   const randomResponse = createMockResponse();
   await handleTradingViewWebhookWithDependencies(
     { body: { hello: 'world' } },
