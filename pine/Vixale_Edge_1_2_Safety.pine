@@ -467,6 +467,14 @@ payloadProfile =
 f_payload_num(x) =>
     na(x) ? "0" : str.tostring(x, format.mintick)
 
+f_json_escape(_value) =>
+    string escaped = str.replace_all(_value, "\\", "\\\\")
+    escaped := str.replace_all(escaped, "\"", "\\\"")
+    escaped := str.replace_all(escaped, "\n", "\\n")
+    escaped := str.replace_all(escaped, "\r", "\\r")
+    escaped := str.replace_all(escaped, "\t", "\\t")
+    escaped
+
 f_qty_from_value(x) =>
     int(math.max(1, math.floor(math.abs(x))))
 
@@ -534,49 +542,49 @@ f_json(
     j += "\"source\":\"TradingView\","
     j += "\"payload_version\":2,"
     j += "\"system_id\":\"VIXALE_EDGE\","
-    j += "\"setup_id\":\"" + setupId + "\","
-    j += "\"alert_instance_id\":\"" + payloadProfile + "\","
+    j += "\"setup_id\":\"" + f_json_escape(setupId) + "\","
+    j += "\"alert_instance_id\":\"" + f_json_escape(payloadProfile) + "\","
     j += "\"strategy\":\"VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1\","
     j += "\"variant\":\"FIONA_LIMIT_PULLBACK_ATR_TARGET\","
-    j += "\"event\":\"" + _event + "\","
+    j += "\"event\":\"" + f_json_escape(_event) + "\","
     j += "\"sec_type\":\"STK\","
     j += "\"asset_class\":\"STOCK\","
-    j += "\"symbol\":\"" + payloadSymbol + "\","
-    j += "\"exchange\":\"" + stockExchange + "\","
-    j += "\"currency\":\"" + stockCurrency + "\","
-    j += "\"side\":\"" + _side + "\","
+    j += "\"symbol\":\"" + f_json_escape(payloadSymbol) + "\","
+    j += "\"exchange\":\"" + f_json_escape(stockExchange) + "\","
+    j += "\"currency\":\"" + f_json_escape(stockCurrency) + "\","
+    j += "\"side\":\"" + f_json_escape(_side) + "\","
     j += "\"entry\":" + f_payload_num(_entry) + ","
     j += "\"price\":" + f_payload_num(_price) + ","
     j += "\"target\":" + f_payload_num(targetForPayload) + ","
     j += "\"target_tif\":\"GTC\","
-    j += "\"cancel_scope\":\"" + (_event == "CANCEL" ? "PENDING_ONLY" : "") + "\","
+    j += "\"cancel_scope\":\"" + f_json_escape(_event == "CANCEL" ? "PENDING_ONLY" : "") + "\","
     j += "\"stop\":" + f_payload_num(_stopRef) + ","
     j += "\"qty\":" + str.tostring(_qty) + ","
     j += "\"qty_source\":\"TV Strategy Properties\","
-    j += "\"profile\":\"" + payloadProfile + "\","
-    j += "\"timeframe\":\"" + timeframe.period + "\","
-    j += "\"tv_ticker\":\"" + syminfo.ticker + "\","
-    j += "\"tv_tickerid\":\"" + syminfo.tickerid + "\","
-    j += "\"target_type\":\"" + targetType + "\","
+    j += "\"profile\":\"" + f_json_escape(payloadProfile) + "\","
+    j += "\"timeframe\":\"" + f_json_escape(timeframe.period) + "\","
+    j += "\"tv_ticker\":\"" + f_json_escape(syminfo.ticker) + "\","
+    j += "\"tv_tickerid\":\"" + f_json_escape(syminfo.tickerid) + "\","
+    j += "\"target_type\":\"" + f_json_escape(targetType) + "\","
     j += "\"stop_type\":\"OPPOSITE_SUPERTREND_FLIP_CLOSE\","
     j += "\"eod_policy\":\"NO_EOD_CLOSE\","
-    j += "\"close_execution_policy\":\"" + closeExecutionPolicy + "\","
+    j += "\"close_execution_policy\":\"" + f_json_escape(closeExecutionPolicy) + "\","
     j += "\"signal_at_rth_close\":" + str.tostring(signalAtRthClose) + ","
-    j += "\"signal_session_date\":\"" + signalSessionDate + "\","
+    j += "\"signal_session_date\":\"" + f_json_escape(signalSessionDate) + "\","
     j += "\"signal_bar_time\":" + str.tostring(signalBarTime) + ","
     j += "\"st_atr_period\":" + str.tostring(stAtrPeriod) + ","
     j += "\"st_factor\":" + str.tostring(stFactor) + ","
     j += "\"atr_length\":14,"
     j += "\"atr_entry_buffer\":" + str.tostring(atrEntryBuffer) + ","
     j += "\"atr_target_mult\":" + str.tostring(atrTargetMult) + ","
-    j += "\"limit_entry_anchor\":\"" + entryAnchor + "\","
+    j += "\"limit_entry_anchor\":\"" + f_json_escape(entryAnchor) + "\","
     j += "\"broken_stl\":" + f_payload_num(_brokenStl) + ","
     j += "\"flip_close\":" + f_payload_num(_flipClose) + ","
     j += "\"planned_limit_entry\":" + f_payload_num(_limitEntry) + ","
     j += "\"flip_bar_time\":" + str.tostring(flipBarTime) + ","
     j += "\"htf_bias_enabled\":" + str.tostring(useHtfBias) + ","
     j += "\"bar_time\":" + str.tostring(time) + ","
-    j += "\"reason\":\"" + _reason + "\""
+    j += "\"reason\":\"" + f_json_escape(_reason) + "\""
     j += "}"
     j
 
