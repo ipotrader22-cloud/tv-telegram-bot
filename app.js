@@ -272,7 +272,7 @@ function isClaimedTradingViewEdgeV2Payload(data) {
   );
 }
 
-function validateTradingViewEdgeV2Identity(data) {
+function validateTradingViewEdgeV2Payload(data) {
   if (
     !data ||
     typeof data !== 'object' ||
@@ -290,6 +290,11 @@ function validateTradingViewEdgeV2Identity(data) {
   }
   if (String(data.payload_version || '').trim() !== '2') {
     return { ok: false, reason: 'edge_v2_payload_version_mismatch' };
+  }
+
+  const event = String(data.event || '').trim().toUpperCase();
+  if (!['PENDING_SETUP', 'SETUP', 'CANCEL', 'CLOSE_STOP'].includes(event)) {
+    return { ok: false, reason: 'edge_v2_unsupported_event' };
   }
 
   const identity = parseVixaleEdgeSetupIdentity(data.setup_id);
@@ -313,18 +318,6 @@ function validateTradingViewEdgeV2Identity(data) {
     return { ok: false, reason: 'edge_v2_timeframe_mismatch' };
   }
 
-  return { ok: true, identity };
-}
-
-function validateTradingViewEdgeV2Payload(data) {
-  const identityValidation = validateTradingViewEdgeV2Identity(data);
-  if (!identityValidation.ok) return identityValidation;
-
-  const event = String(data.event || '').trim().toUpperCase();
-  if (!['PENDING_SETUP', 'SETUP', 'CANCEL', 'CLOSE_STOP'].includes(event)) {
-    return { ok: false, reason: 'edge_v2_unsupported_event' };
-  }
-
   if (
     event === 'CANCEL' &&
     String(data.cancel_scope || '').trim().toUpperCase() !== 'PENDING_ONLY'
@@ -332,7 +325,7 @@ function validateTradingViewEdgeV2Payload(data) {
     return { ok: false, reason: 'edge_v2_cancel_scope_not_pending_only' };
   }
 
-  return identityValidation;
+  return { ok: true, identity };
 }
 
 function isV51IntradayName(value) {
@@ -10493,26 +10486,37 @@ function hasBrokerOrderIdentity(reqBody, fields) {
   });
 }
 
-function isStrictCopiedEdgeEntryFillCallback(reqBody, row) {
-  if (!isClaimedTradingViewEdgeV2Payload(reqBody)) return false;
+function isEdgeEntryFillBrokerCallback(reqBody, row) {
+  if (String(reqBody?.source || '').trim().toUpperCase() !== 'IB_BRIDGE') return false;
+  if (String(reqBody?.system_id || '').trim().toUpperCase() !== 'VIXALE_EDGE') return false;
   if (String(reqBody.event || '').trim().toUpperCase() !== 'ENTRY_FILL') return false;
   if (String(row?.event || '').trim().toUpperCase() !== 'FILL') return false;
   if (!isVixaleEdgeV2SetupRow(row)) return false;
 
-  const identityValidation = validateTradingViewEdgeV2Identity(reqBody);
-  if (!identityValidation.ok) return false;
+  const identity = parseVixaleEdgeSetupIdentity(reqBody.setup_id);
+  return Boolean(
+    identity &&
+    identity.setup_id === String(row.setup_id || '').trim().toUpperCase() &&
+    identity.symbol === normalizeSymbol(row.symbol) &&
+    identity.side === String(row.side || '').trim().toUpperCase() &&
+    identity.timeframe === String(row.timeframe || '').trim()
+  );
+}
 
-  const hasRenderForwardMarker = Boolean(reqBody.render_forwarded_at || reqBody.render_safety);
+function hasConfirmedEdgeEntryExecution(reqBody, row) {
+  if (!isEdgeEntryFillBrokerCallback(reqBody, row)) return false;
   const entryStatus = String(reqBody.ib_entry_status || '').trim().toUpperCase();
   const ibStatus = String(reqBody.ib_status || '').trim();
-  const fillPrice = firstCleanNumber(reqBody.entry, reqBody.price);
-  const fillQty = firstCleanNumber(reqBody.qty, reqBody.size, reqBody.quantity);
+  const fillPrice = cleanNumber(reqBody.ib_entry_fill_price);
+  const fillQty = cleanNumber(reqBody.ib_entry_filled_qty);
+  const publishedPrice = firstCleanNumber(reqBody.entry, reqBody.price);
+  const publishedQty = firstCleanNumber(reqBody.qty, reqBody.size, reqBody.quantity);
 
   return Boolean(
-    hasRenderForwardMarker &&
     reqBody.entry_filled === true &&
     entryStatus === 'FILLED' &&
     ibStatus &&
+    hasValidBrokerExecutionIdentity(reqBody.entry_execution_id) &&
     hasBrokerOrderIdentity(reqBody, ['ib_order_id', 'ib_order_perm_id', 'ib_order_ref']) &&
     hasBrokerOrderIdentity(
       reqBody,
@@ -10522,24 +10526,11 @@ function isStrictCopiedEdgeEntryFillCallback(reqBody, row) {
     Number(fillPrice) > 0 &&
     fillQty !== '' &&
     Number(fillQty) > 0 &&
+    Number(publishedPrice) === Number(fillPrice) &&
+    Number(publishedQty) === Number(fillQty) &&
     cleanNumber(reqBody.target) !== '' &&
     Number(cleanNumber(reqBody.target)) > 0
   );
-}
-
-function isEdgeEntryFillBrokerCallback(reqBody, row) {
-  if (
-    String(row?.event || '').trim().toUpperCase() !== 'FILL' ||
-    !isVixaleEdgeV2SetupRow(row)
-  ) {
-    return false;
-  }
-
-  if (isClaimedTradingViewEdgeV2Payload(reqBody)) {
-    return isStrictCopiedEdgeEntryFillCallback(reqBody, row);
-  }
-
-  return isBridgeExecutionCallback(reqBody);
 }
 
 function requiresBridgeExecutionConfirmation(row) {
@@ -10939,17 +10930,21 @@ function ignoredWebhookDiagnostics(req, rawBody, bodyInspection, parsedBody) {
 function isRecognizedTradeWebhook(row, reqBody = null) {
   if (!row) return false;
 
-  // The bridge copies the original Edge SETUP when it publishes ENTRY_FILL, so
-  // that broker callback intentionally retains source=TradingView. Admit it
-  // before the TradingView-only lifecycle validator, but only with the actual
-  // IB entry/target order evidence emitted by make_entry_fill_payload().
-  if (isStrictCopiedEdgeEntryFillCallback(reqBody, row)) return true;
-
   // Canonical Edge v2 identity is the durable admission contract. Optional
   // parser/classifier fields must not cause a real lifecycle delivery to be
   // HTTP-200 dropped before Webhook Inbox persistence.
   if (isClaimedTradingViewEdgeV2Payload(reqBody)) {
     return validateTradingViewEdgeV2Payload(reqBody).ok;
+  }
+
+  // ENTRY_FILL is broker-only. The bridge producer must identify itself
+  // explicitly; no amount of IB-looking data promotes a TradingView payload.
+  if (
+    String(reqBody?.source || '').trim().toUpperCase() === 'IB_BRIDGE' &&
+    String(reqBody?.system_id || '').trim().toUpperCase() === 'VIXALE_EDGE' &&
+    String(reqBody?.event || '').trim().toUpperCase() === 'ENTRY_FILL'
+  ) {
+    return isEdgeEntryFillBrokerCallback(reqBody, row);
   }
 
   const event = String(row.event || '').toUpperCase();
@@ -11044,6 +11039,14 @@ async function processRecognizedTradingViewWebhook(
   }
 
   const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);
+  if (
+    edgeEntryFillCallback &&
+    !hasConfirmedEdgeEntryExecution(reqBody, parsedRow)
+  ) {
+    const error = new Error('Incomplete broker ENTRY_FILL execution evidence');
+    error.retryable = true;
+    throw error;
+  }
   const edgeExternalCloseCallback =
     isBridgeExecutionCallback(reqBody) &&
     parsedRow?.event === 'EXTERNAL_CLOSE' &&

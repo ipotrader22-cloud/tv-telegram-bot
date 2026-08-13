@@ -1862,9 +1862,8 @@ async function run() {
   assert.strictEqual(productionCloseBridge[0].row.timeframe, '15');
   assert.strictEqual(productionCloseTelegram.length, 0);
 
-  // A real Edge ENTRY_FILL is a broker callback even though the bridge copies
-  // source=TradingView from the original SETUP. It must be admitted only with
-  // the concrete IB entry and attached-target evidence produced by the bridge.
+  // The bridge producer explicitly identifies a genuine Edge ENTRY_FILL as
+  // source=IB_BRIDGE and includes actual entry execution evidence.
   const slsSheets = createMockSheets();
   const slsTelegram = [];
   const slsBridge = [];
@@ -1932,6 +1931,7 @@ async function run() {
 
   const slsEntryFill = {
     ...slsSetup,
+    source: 'IB_BRIDGE',
     event: 'ENTRY_FILL',
     entry: 24.83,
     price: 24.83,
@@ -1947,7 +1947,12 @@ async function run() {
     ib_target_perm_id: 94102,
     ib_target_order_ref: 'VECO_TARGET:SLS:LONG',
     ib_target_status: 'Submitted',
+    ib_entry_fill_price: 24.83,
+    ib_entry_filled_qty: 23,
+    entry_exec_ids: ['0001.SLS.01'],
+    entry_execution_id: 'EXEC:0001.SLS.01',
     entry_filled: true,
+    bridge_delivery_id: 'ENTRY_FILL:SLS:test-sls-entry',
   };
   const slsFillResponse = createMockResponse();
   await handleTradingViewWebhookWithDependencies(
@@ -1985,7 +1990,7 @@ async function run() {
   assert.strictEqual(
     slsTelegram.filter(message => message.includes('Vixale Edge opened')).length,
     1,
-    'duplicate copied ENTRY_FILL sends Telegram OPEN exactly once'
+    'duplicate broker ENTRY_FILL sends Telegram OPEN exactly once'
   );
 
   const forgedEntrySheets = createMockSheets();
@@ -2002,7 +2007,19 @@ async function run() {
         qty: 23,
         render_forwarded_at: '2026-08-13T10:20:00-04:00',
         ib_status: 'FILLED',
+        ib_order_id: 9901,
+        ib_order_perm_id: 999901,
+        ib_order_ref: 'FAKE:ENTRY:WILL_NOT_PASS',
         ib_entry_status: 'Filled',
+        ib_target_order_id: 9902,
+        ib_target_perm_id: 999902,
+        ib_target_order_ref: 'FAKE:TARGET:WILL_NOT_PASS',
+        ib_target_status: 'Submitted',
+        ib_entry_fill_price: 24.83,
+        ib_entry_filled_qty: 23,
+        entry_exec_ids: ['FAKE.EXECUTION.ID'],
+        entry_execution_id: 'EXEC:FAKE.EXECUTION.ID',
+        render_safety: { bridge_forward_enabled: true, bridge_dry_run: false },
         entry_filled: true,
       },
     },
@@ -2026,6 +2043,35 @@ async function run() {
   assert.strictEqual(forgedEntryTelegram.length, 0);
   assert.strictEqual(forgedEntryBridgeCalls, 0);
 
+  const incompleteBrokerSheets = createMockSheets();
+  const incompleteBrokerResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    {
+      body: {
+        ...slsEntryFill,
+        setup_id: 'VIXALE_EDGE:INCOMPLETE:1:LONG:1786635500000',
+        alert_instance_id: 'FIONA_INCOMPLETE_1',
+        symbol: 'INCOMPLETE',
+        entry_execution_id: '',
+        bridge_delivery_id: 'ENTRY_FILL:INCOMPLETE:missing-execution-id',
+      },
+    },
+    incompleteBrokerResponse,
+    {
+      sheets: incompleteBrokerSheets,
+      sendTelegram: async () => {
+        throw new Error('incomplete broker callback must not publish Telegram');
+      },
+      forwardToBridge: async () => {
+        throw new Error('broker callback must not be forwarded to the bridge');
+      },
+    }
+  );
+  assert.strictEqual(incompleteBrokerResponse.statusCode, 503);
+  assert.strictEqual(incompleteBrokerResponse.body, 'RETRY');
+  assert.strictEqual(incompleteBrokerSheets.rows['Open Positions'].length - 1, 0);
+  assert.strictEqual(incompleteBrokerSheets.rows.Trades.length - 1, 0);
+
   const earlyFillSheets = createMockSheets();
   const earlyFillTelegram = [];
   const earlyFillSetupId = 'VIXALE_EDGE:EARLY:1:LONG:1786635540000';
@@ -2040,6 +2086,9 @@ async function run() {
     ib_target_order_id: 4202,
     ib_target_perm_id: 94202,
     ib_target_order_ref: 'VECO_TARGET:EARLY:LONG',
+    entry_exec_ids: ['0001.EARLY.01'],
+    entry_execution_id: 'EXEC:0001.EARLY.01',
+    bridge_delivery_id: 'ENTRY_FILL:EARLY:test-early-entry',
   };
   const earlyFillResponse = createMockResponse();
   await handleTradingViewWebhookWithDependencies(
@@ -2072,6 +2121,9 @@ async function run() {
     ib_target_order_id: 4302,
     ib_target_perm_id: 94302,
     ib_target_order_ref: 'VECO_TARGET:RETRYFILL:LONG',
+    entry_exec_ids: ['0001.RETRYFILL.01'],
+    entry_execution_id: 'EXEC:0001.RETRYFILL.01',
+    bridge_delivery_id: 'ENTRY_FILL:RETRYFILL:test-retry-entry',
   };
   let retryFillTelegramFailures = 1;
   const retryFillTelegram = [];

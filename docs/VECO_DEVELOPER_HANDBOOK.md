@@ -688,15 +688,14 @@ when decoding produces one JSON object; arrays and malformed input are never
 promoted to an Edge lifecycle payload.
 
 `ENTRY_FILL` remains a broker-only event and is not part of that TradingView
-allowed-event set. The current bridge builds it by copying the Render-forwarded
-`SETUP`, so the callback intentionally retains `source=TradingView`. Render
-therefore checks this one copied callback before the TradingView-only lifecycle
-validator, but admits it only when canonical Edge identity, the Render-forward
-marker, `entry_filled=true`, Filled IB entry status, non-empty IB status, entry
-and attached-target order identity, and positive actual fill price/quantity and
-target are all present. Missing broker evidence cannot create Open. A confirmed
-callback uses the exact `setup_id`, actual IB price and quantity, preserves the
-target, and never forwards back to the bridge.
+allowed-event set. `make_entry_fill_payload()` explicitly changes the copied
+SETUP source to `IB_BRIDGE`, preserves the canonical identity and target, derives
+a missing timeframe from `setup_id`, and publishes actual IB fill price,
+quantity, entry execution identity, and entry/target order evidence. Render does
+not promote a `source=TradingView` ENTRY_FILL even if every IB-looking field is
+present. A complete broker callback removes only its exact Pending `setup_id`,
+creates Open and Trades once, publishes Telegram once, and is never forwarded
+back to the bridge.
 
 Edge `PENDING_SETUP` and every pending-only `CANCEL` update Google Sheets and
 the website/dashboard but never publish to Telegram. A TradingView `SETUP`
@@ -1249,12 +1248,14 @@ condition. Truly unrelated JSON, malformed canonical identity, mismatched
 symbol/side/timeframe, and Edge `CANCEL` without `PENDING_ONLY` remain outside
 this admission path. Broker callbacks continue through their separate strict
 execution-evidence checks and are not trusted by this TradingView-only rule.
-In particular, copied Edge `ENTRY_FILL` is classified from its IB entry and
-attached-target evidence before the TradingView-only event validator. It is not
-added to the TradingView event allowlist. Publication is synchronous with the
-bridge HTTP request: Render returns HTTP 200 only after the Open ledger and
-Telegram publication are complete, and returns HTTP 503 on retryable publication
-failure so the bridge retains retry ownership.
+In particular, Edge `ENTRY_FILL` must arrive as `source=IB_BRIDGE`; it is never
+added to the TradingView event allowlist. Render additionally requires canonical
+Edge identity, Filled entry status, actual fill price and quantity, a valid entry
+execution identity, and entry plus attached-target order identity. The bridge
+persists that exact callback in its Render outbox before the first HTTP attempt.
+Render returns HTTP 200 only after Open ledger and Telegram publication are
+complete and HTTP 503 on retryable failure, so the bridge retains retry ownership
+with per-item backoff across restarts.
 
 Immediately before returning HTTP 200 `IGNORED`, Render emits one bounded safe
 diagnostic record containing content type, body representation/length, JSON
@@ -2434,22 +2435,24 @@ returns either the parsed canonical identity or one stable reason code. Only an
 about-to-be-ignored request logs bounded transport/identity fields and that
 reason; raw bodies and authorization data are excluded.
 
-The bridge's current `make_entry_fill_payload()` deliberately copies its
-original Render-forwarded SETUP and changes only the lifecycle event plus actual
-IB fields. Consequently it can retain the original `source=TradingView` even
-though it is a genuine broker callback. Render gives this precise shape broker
-admission precedence over the TradingView-only validator, using canonical Edge
-identity, Render-forward provenance, `entry_filled=true`, Filled entry status,
-IB entry and target order identities, and positive actual price/quantity/target.
-This does not add `ENTRY_FILL` to the TradingView event allowlist. Direct Pine or
-forged `ENTRY_FILL` without that evidence remains rejected and cannot create an
-Open row. Edge target, broker-confirmed Stop Loss, and Manual/External Close
-builders already set `source=IB_BRIDGE` and retain their existing flat,
-execution-identity, reconciliation, and durable-publication gates; Prime routing
-is unchanged.
+The bridge's `make_entry_fill_payload()` copies the canonical SETUP fields but
+explicitly overwrites `source=IB_BRIDGE` and `event=ENTRY_FILL`. It carries the
+actual IB fill price and quantity, entry execution IDs and normalized execution
+identity, entry/target order identities, target metadata, and a missing canonical
+timeframe derived from `setup_id`. A deterministic `bridge_delivery_id` keys the
+same callback across retries. Render requires this broker source contract plus
+canonical Edge identity and complete execution evidence. A fully populated
+`source=TradingView` ENTRY_FILL remains rejected even when it invents non-zero IB
+IDs and Render-forward markers. `ENTRY_FILL` remains outside the TradingView
+event allowlist. Edge target, broker-confirmed Stop Loss, Manual/External Close,
+and reconcile behavior retain their existing flat, execution-identity,
+reconciliation, and durable-publication gates; Prime classification and trading
+semantics are unchanged.
 
-The bridge durably queues TP, Stop Loss, Manual Close, and `RECONCILE_FLAT`
-callbacks before managed state is cleared. Each callback has its own
+The bridge durably queues ENTRY_FILL, TP, Stop Loss, Manual Close, and
+`RECONCILE_FLAT` callbacks before delivery. ENTRY_FILL uses the generic outbox
+without clearing the managed open position; exit handoff retains its existing
+managed-state clearing rules. Each callback has its own
 `next_attempt_at`, and recovery is bounded by
 `RENDER_OUTBOX_MAX_CONCURRENCY` (default 4), so one poison 503 cannot block later
 callbacks or create an unbounded Render request fan-out. Complete absence of an
