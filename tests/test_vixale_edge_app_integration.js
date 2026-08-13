@@ -55,6 +55,7 @@ const {
   upsertWebhookInboxItem,
   processWebhookInboxItem,
   processWebhookInboxDueItems,
+  resetWebhookInboxWorkerStateForTests,
 } = require('../app.js').__test;
 Module._load = originalLoad;
 
@@ -2280,6 +2281,126 @@ async function run() {
   assert.strictEqual(pendingCompletionSheets.rows.Trades.length - 1, 0);
   assert.strictEqual(pendingCompletionTelegram, 0);
   assert.strictEqual(pendingCompletionBridge, 0);
+
+  // The recovery poll is single-flight. A timer tick that arrives while the
+  // full Inbox read is unresolved skips without issuing a second Sheets read.
+  resetWebhookInboxWorkerStateForTests();
+  const singleFlightSheets = createMockSheets();
+  const singleFlightGet = singleFlightSheets.spreadsheets.values.get;
+  let singleFlightReadCount = 0;
+  let releaseSingleFlightRead;
+  let markSingleFlightReadStarted;
+  const singleFlightReadStarted = new Promise(resolve => {
+    markSingleFlightReadStarted = resolve;
+  });
+  const singleFlightReadGate = new Promise(resolve => {
+    releaseSingleFlightRead = resolve;
+  });
+  singleFlightSheets.spreadsheets.values.get = async (params, options) => {
+    if (params.range === 'Webhook Inbox!A:M') {
+      singleFlightReadCount++;
+      markSingleFlightReadStarted();
+      await singleFlightReadGate;
+    }
+    return singleFlightGet(params, options);
+  };
+  const singleFlightLogs = [];
+  const singleFlightOriginalConsoleLog = console.log;
+  console.log = message => singleFlightLogs.push(String(message));
+  try {
+    const activePoll = processWebhookInboxDueItems({ sheets: singleFlightSheets });
+    await singleFlightReadStarted;
+    const overlappingPoll = await processWebhookInboxDueItems({ sheets: singleFlightSheets });
+    assert.deepStrictEqual(overlappingPoll, {
+      skipped: true,
+      reason: 'already_running',
+    });
+    assert.strictEqual(singleFlightReadCount, 1);
+    assert.ok(singleFlightLogs.includes('[WEBHOOK INBOX SKIP] reason=already_running'));
+    releaseSingleFlightRead();
+    await activePoll;
+  } finally {
+    console.log = singleFlightOriginalConsoleLog;
+    releaseSingleFlightRead();
+  }
+
+  // A 429 uses exactly one no-retry poll request, starts a shared cooldown,
+  // and all timer ticks during that cooldown perform zero additional reads.
+  // A later successful poll resets the exponential backoff to its base.
+  resetWebhookInboxWorkerStateForTests();
+  const quotaSheets = createMockSheets();
+  const quotaGet = quotaSheets.spreadsheets.values.get;
+  const quotaReadOptions = [];
+  let quotaReadCount = 0;
+  let failNextQuotaRead = true;
+  quotaSheets.spreadsheets.values.get = async (params, options) => {
+    if (params.range === 'Webhook Inbox!A:M') {
+      quotaReadCount++;
+      quotaReadOptions.push(options);
+      if (failNextQuotaRead) {
+        failNextQuotaRead = false;
+        const error = new Error('Quota exceeded for read requests per minute per user');
+        error.response = {
+          status: 429,
+          data: { error: { errors: [{ reason: 'rateLimitExceeded' }] } },
+        };
+        throw error;
+      }
+    }
+    return quotaGet(params, options);
+  };
+  let quotaNowMs = 1_000_000;
+  const quotaDependencies = {
+    sheets: quotaSheets,
+    webhookInboxNowMs: () => quotaNowMs,
+    webhookInboxRandom: () => 0,
+  };
+  const quotaLogs = [];
+  const quotaWarnings = [];
+  const quotaOriginalLog = console.log;
+  const quotaOriginalWarn = console.warn;
+  console.log = message => quotaLogs.push(String(message));
+  console.warn = message => quotaWarnings.push(String(message));
+  try {
+    const rateLimited = await processWebhookInboxDueItems(quotaDependencies);
+    assert.strictEqual(rateLimited.rate_limited, true);
+    assert.strictEqual(rateLimited.cooldown_ms, 60_000);
+    assert.strictEqual(quotaReadCount, 1);
+    assert.deepStrictEqual(quotaReadOptions[0], { retry: false });
+    assert.deepStrictEqual(quotaWarnings, ['[WEBHOOK INBOX 429] cooldown_ms=60000']);
+
+    for (let tick = 0; tick < 3; tick++) {
+      const skipped = await processWebhookInboxDueItems(quotaDependencies);
+      assert.strictEqual(skipped.reason, 'cooldown');
+    }
+    assert.strictEqual(quotaReadCount, 1, 'cooldown ticks make zero Sheets reads');
+    assert.strictEqual(
+      quotaLogs.filter(message => message === '[WEBHOOK INBOX SKIP] reason=cooldown').length,
+      3
+    );
+
+    quotaNowMs += rateLimited.cooldown_ms + 1;
+    failNextQuotaRead = true;
+    const repeatedRateLimit = await processWebhookInboxDueItems(quotaDependencies);
+    assert.strictEqual(repeatedRateLimit.rate_limited, true);
+    assert.strictEqual(repeatedRateLimit.cooldown_ms, 120_000);
+    assert.strictEqual(quotaReadCount, 2);
+
+    quotaNowMs += repeatedRateLimit.cooldown_ms + 1;
+    const recovered = await processWebhookInboxDueItems(quotaDependencies);
+    assert.strictEqual(recovered.processed, 0);
+    assert.strictEqual(quotaReadCount, 3);
+
+    failNextQuotaRead = true;
+    const afterReset = await processWebhookInboxDueItems(quotaDependencies);
+    assert.strictEqual(afterReset.rate_limited, true);
+    assert.strictEqual(afterReset.cooldown_ms, 60_000);
+    assert.strictEqual(quotaReadCount, 4);
+  } finally {
+    console.log = quotaOriginalLog;
+    console.warn = quotaOriginalWarn;
+    resetWebhookInboxWorkerStateForTests();
+  }
 
   // Recovery uses at most four simultaneous workers; one poison item retries
   // without preventing the other due items from completing.
