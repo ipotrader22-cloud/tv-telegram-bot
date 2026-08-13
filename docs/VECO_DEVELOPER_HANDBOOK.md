@@ -538,6 +538,8 @@ BRIDGE_ALLOWED_SYMBOLS
 WEBHOOK_INBOX_RETRY_INTERVAL_MS
 WEBHOOK_INBOX_BACKOFF_BASE_MS
 WEBHOOK_INBOX_BACKOFF_MAX_MS
+WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS
+WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS
 WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS
 WEBHOOK_INBOX_SPOOL_FILE
 ```
@@ -1220,8 +1222,14 @@ take precedence over Inbox receipt time, which is the fallback. Setup-origin
 `flip_bar_time` and bar-start identity are not execution-age evidence because a
 virtual Edge limit can fill later. Close/cancel safety work does not expire.
 Recovery processes at most `WEBHOOK_INBOX_MAX_CONCURRENCY` items concurrently
-(default 4). When Sheets is temporarily unavailable, Render writes a local JSON
-spool and returns HTTP 503 so TradingView retains retry ownership.
+(default 4). The recovery poll is process-wide single-flight and has a
+15-second minimum interval. Its Inbox reads disable the Google client's local
+request retry so one quota response remains one request. HTTP 429 or a Sheets
+rate-limit reason starts a shared exponential cooldown with jitter (60 seconds
+by default, capped at five minutes); timer ticks skip without reading until the
+cooldown expires, and the next successful Inbox read resets the backoff. When
+Sheets is temporarily unavailable, Render writes a local JSON spool and returns
+HTTP 503 so TradingView retains retry ownership.
 
 Structurally valid TradingView Edge v2 lifecycle JSON is admitted from its
 canonical `setup_id` before optional parsed-row classification and is persisted
@@ -1547,6 +1555,12 @@ delivery identity. Stale entry execution is suppressed after the configured
 maximum age, preferring a reliable payload emission/bar-close timestamp over
 Inbox receipt time, while close/cancel safety work remains eligible indefinitely.
 Do not manually backfill a missed live signal without an explicit decision.
+
+The Inbox recovery worker must not poll Sheets faster than every 15 seconds or
+overlap itself. A quota-limited read is not retried inside gaxios: it activates
+the shared 60-second-to-five-minute jittered read cooldown, and intervening
+timer ticks perform no Sheets reads. This cooldown is separate from per-item
+downstream retry timestamps and does not remove or bypass durable rows.
 
 Edge v2 admission must not depend on the transport content type producing an
 already-parsed Express object or on redundant `timeframe`/optional Fiona
@@ -2380,6 +2394,15 @@ when the authoritative Inbox write fails, and that request still receives HTTP
 503. COMPLETE status persistence is awaited inside the retry boundary, so a
 post-side-effect status-write failure becomes RETRY rather than an escaped lost
 promise.
+
+The worker itself is single-flight and polls no faster than every 15 seconds.
+Worker-owned Inbox reads disable gaxios request retries only for those reads.
+A 429 or Sheets rate-limit reason starts one shared exponential cooldown with
+jitter, beginning at 60 seconds and capped at five minutes; ticks during the
+cooldown issue no worker reads, and a successful Inbox read resets the backoff.
+This quota control changes neither the Inbox schema nor durable ownership,
+per-item retry state, bounded processing concurrency, or the 90-second SETUP
+execution TTL.
 
 TradingView Edge v2 lifecycle admission is based on a structurally valid
 canonical `setup_id`, matching explicit symbol/side, and the supported event

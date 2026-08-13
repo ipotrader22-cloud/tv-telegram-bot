@@ -160,9 +160,11 @@ const OPTION_STATUSES = ['Open', 'Closed', 'Cancelled'];
 
 const SILENT_TELEGRAM_EVENTS = new Set(['CANCEL', 'RECONCILE_FLAT', 'STOP_REF_UPDATE']);
 const EDGE_PENDING_EOD_CLEANUP_INTERVAL_MS = 300_000;
-const WEBHOOK_INBOX_RETRY_INTERVAL_MS = Math.max(1_000, Math.floor(envNumber('WEBHOOK_INBOX_RETRY_INTERVAL_MS', 5_000)));
+const WEBHOOK_INBOX_RETRY_INTERVAL_MS = Math.max(15_000, Math.floor(envNumber('WEBHOOK_INBOX_RETRY_INTERVAL_MS', 15_000)));
 const WEBHOOK_INBOX_BACKOFF_BASE_MS = Math.max(1_000, Math.floor(envNumber('WEBHOOK_INBOX_BACKOFF_BASE_MS', 5_000)));
 const WEBHOOK_INBOX_BACKOFF_MAX_MS = Math.max(WEBHOOK_INBOX_BACKOFF_BASE_MS, Math.floor(envNumber('WEBHOOK_INBOX_BACKOFF_MAX_MS', 300_000)));
+const WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS = Math.max(1_000, Math.floor(envNumber('WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS', 60_000)));
+const WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS = Math.max(WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS, Math.floor(envNumber('WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS', 300_000)));
 const WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS = Math.max(1, Math.floor(envNumber('WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS', 90)));
 const WEBHOOK_INBOX_MAX_CONCURRENCY = Math.max(1, Math.min(32, Math.floor(envNumber('WEBHOOK_INBOX_MAX_CONCURRENCY', 4))));
 const WEBHOOK_INBOX_SPOOL_FILE = String(
@@ -186,6 +188,8 @@ let tradeMetadataSheetReadyPromise = null;
 let webhookInboxSheetReadyPromise = null;
 let webhookInboxWorkerTimer = null;
 let webhookInboxWorkerRunning = false;
+let webhookInboxReadCooldownUntilMs = 0;
+let webhookInboxReadBackoffFailures = 0;
 const WEBHOOK_INBOX_IN_FLIGHT = new Map();
 
 
@@ -1947,11 +1951,14 @@ async function getSheetIdByName(sheets, sheetName) {
   return sheet ? sheet.properties.sheetId : null;
 }
 
-async function readSheet(sheets, sheetName, range = 'A:Z') {
-  const response = await sheets.spreadsheets.values.get({
+async function readSheet(sheets, sheetName, range = 'A:Z', requestOptions = null) {
+  const params = {
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${sheetName}!${range}`,
-  });
+  };
+  const response = requestOptions
+    ? await sheets.spreadsheets.values.get(params, requestOptions)
+    : await sheets.spreadsheets.values.get(params);
 
   return response.data.values || [];
 }
@@ -4139,10 +4146,60 @@ function webhookInboxRowValues(item) {
   ];
 }
 
-async function upsertWebhookInboxItemUnlocked(sheets, reqBody, parsedRow, receivedAt) {
+function isGoogleSheetsRateLimitError(error) {
+  const status = Number(
+    error?.response?.status ??
+    error?.response?.data?.error?.code ??
+    error?.status ??
+    error?.code
+  );
+  const reasons = [
+    error?.response?.data?.error?.status,
+    ...(Array.isArray(error?.response?.data?.error?.errors)
+      ? error.response.data.error.errors.map(item => item?.reason)
+      : []),
+    ...(Array.isArray(error?.errors) ? error.errors.map(item => item?.reason) : []),
+  ].map(value => String(value || '').trim());
+  return status === 429 || reasons.some(reason =>
+    ['ratelimitexceeded', 'userratelimitexceeded', 'resource_exhausted'].includes(
+      reason.toLowerCase()
+    )
+  );
+}
+
+function markWebhookInboxReadError(error) {
+  if (error && typeof error === 'object') {
+    try {
+      error.webhook_inbox_read = true;
+    } catch (_markError) {
+      // The original Sheets error remains authoritative if it is non-extensible.
+    }
+  }
+  return error;
+}
+
+function isWebhookInboxReadRateLimitError(error) {
+  return error?.webhook_inbox_read === true && isGoogleSheetsRateLimitError(error);
+}
+
+async function readWebhookInboxSheet(sheets, requestOptions = null) {
+  try {
+    return await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M', requestOptions);
+  } catch (error) {
+    throw markWebhookInboxReadError(error);
+  }
+}
+
+async function upsertWebhookInboxItemUnlocked(
+  sheets,
+  reqBody,
+  parsedRow,
+  receivedAt,
+  readRequestOptions = null
+) {
   await ensureWebhookInboxSheet(sheets);
   const deliveryId = webhookInboundDeliveryId(reqBody, parsedRow);
-  const rows = await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M');
+  const rows = await readWebhookInboxSheet(sheets, readRequestOptions);
   for (let index = 1; index < rows.length; index++) {
     if (String(rows[index][0] || '').trim() === deliveryId) {
       return { ...parseWebhookInboxRow(rows[index], index + 1), duplicate: true };
@@ -4169,11 +4226,16 @@ function upsertWebhookInboxItem(
   sheets,
   reqBody,
   parsedRow,
-  receivedAt = new Date().toISOString()
+  receivedAt = new Date().toISOString(),
+  readRequestOptions = null
 ) {
   const current = webhookInboxMutationTail.then(
-    () => upsertWebhookInboxItemUnlocked(sheets, reqBody, parsedRow, receivedAt),
-    () => upsertWebhookInboxItemUnlocked(sheets, reqBody, parsedRow, receivedAt)
+    () => upsertWebhookInboxItemUnlocked(
+      sheets, reqBody, parsedRow, receivedAt, readRequestOptions
+    ),
+    () => upsertWebhookInboxItemUnlocked(
+      sheets, reqBody, parsedRow, receivedAt, readRequestOptions
+    )
   );
   webhookInboxMutationTail = current.catch(() => {});
   return current;
@@ -4190,8 +4252,12 @@ async function updateWebhookInboxItem(sheets, item, updates = {}) {
   return next;
 }
 
-async function getWebhookInboxItemByDeliveryId(sheets, deliveryId) {
-  const rows = await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M');
+async function getWebhookInboxItemByDeliveryId(
+  sheets,
+  deliveryId,
+  readRequestOptions = null
+) {
+  const rows = await readWebhookInboxSheet(sheets, readRequestOptions);
   for (let index = 1; index < rows.length; index++) {
     if (String(rows[index][0] || '').trim() === String(deliveryId || '').trim()) {
       return parseWebhookInboxRow(rows[index], index + 1);
@@ -4233,17 +4299,24 @@ function spoolWebhookInboxItem(reqBody, parsedRow, receivedAt = new Date().toISO
   return writeWebhookInboxSpool(items);
 }
 
-async function migrateWebhookInboxSpool(sheets) {
+async function migrateWebhookInboxSpool(sheets, readRequestOptions = null) {
   const items = readWebhookInboxSpool();
   let migrated = 0;
   for (const [deliveryId, spooled] of Object.entries(items)) {
     try {
       const reqBody = JSON.parse(spooled.raw_json || '{}');
       const parsedRow = parseJsonTradingViewAlert(reqBody);
-      await upsertWebhookInboxItem(sheets, reqBody, parsedRow, spooled.received_at);
+      await upsertWebhookInboxItem(
+        sheets,
+        reqBody,
+        parsedRow,
+        spooled.received_at,
+        readRequestOptions
+      );
       delete items[deliveryId];
       migrated++;
     } catch (error) {
+      if (isWebhookInboxReadRateLimitError(error)) throw error;
       console.error('Webhook Inbox spool migration retained item:', deliveryId, error.message);
     }
   }
@@ -11260,6 +11333,58 @@ function webhookInboxBackoffMs(attempts) {
   );
 }
 
+function webhookInboxWorkerNowMs(dependencies = {}) {
+  const value = typeof dependencies.webhookInboxNowMs === 'function'
+    ? dependencies.webhookInboxNowMs()
+    : Date.now();
+  return Number.isFinite(Number(value)) ? Number(value) : Date.now();
+}
+
+function webhookInboxReadCooldownRemainingMs(dependencies = {}) {
+  return Math.max(
+    0,
+    webhookInboxReadCooldownUntilMs - webhookInboxWorkerNowMs(dependencies)
+  );
+}
+
+function beginWebhookInboxReadCooldown(dependencies = {}) {
+  const nowMs = webhookInboxWorkerNowMs(dependencies);
+  const existingRemainingMs = Math.max(0, webhookInboxReadCooldownUntilMs - nowMs);
+  if (existingRemainingMs > 0) return existingRemainingMs;
+
+  webhookInboxReadBackoffFailures += 1;
+  const exponentialMs = Math.min(
+    WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS,
+    WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS * (
+      2 ** Math.max(0, Math.min(16, webhookInboxReadBackoffFailures - 1))
+    )
+  );
+  const jitterRoomMs = Math.min(
+    WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS - exponentialMs,
+    Math.floor(exponentialMs * 0.25)
+  );
+  const randomValue = typeof dependencies.webhookInboxRandom === 'function'
+    ? Number(dependencies.webhookInboxRandom())
+    : Math.random();
+  const normalizedRandom = Number.isFinite(randomValue)
+    ? Math.max(0, Math.min(0.999999, randomValue))
+    : 0;
+  const cooldownMs = exponentialMs + Math.floor(normalizedRandom * (jitterRoomMs + 1));
+  webhookInboxReadCooldownUntilMs = nowMs + cooldownMs;
+  console.warn(`[WEBHOOK INBOX 429] cooldown_ms=${cooldownMs}`);
+  return cooldownMs;
+}
+
+function resetWebhookInboxReadBackoff() {
+  webhookInboxReadCooldownUntilMs = 0;
+  webhookInboxReadBackoffFailures = 0;
+}
+
+function resetWebhookInboxWorkerStateForTests() {
+  webhookInboxWorkerRunning = false;
+  resetWebhookInboxReadBackoff();
+}
+
 function parseWebhookTimestampMs(value) {
   if (value === null || value === undefined || value === '') return NaN;
   const numeric = Number(value);
@@ -11340,7 +11465,8 @@ async function processWebhookInboxItem(item, dependencies = {}) {
     if (!sheets) throw new Error('Sheets unavailable for Webhook Inbox processing');
     const authoritative = await getWebhookInboxItemByDeliveryId(
       sheets,
-      item.delivery_id
+      item.delivery_id,
+      dependencies.webhookInboxReadRequestOptions || null
     );
     if (authoritative && webhookInboxTerminalStatus(authoritative.status)) {
       return authoritative;
@@ -11407,15 +11533,29 @@ async function processWebhookInboxItem(item, dependencies = {}) {
 }
 
 async function processWebhookInboxDueItems(dependencies = {}) {
-  if (webhookInboxWorkerRunning) return { skipped: true, reason: 'worker_running' };
+  if (webhookInboxWorkerRunning) {
+    console.log('[WEBHOOK INBOX SKIP] reason=already_running');
+    return { skipped: true, reason: 'already_running' };
+  }
+  const cooldownRemainingMs = webhookInboxReadCooldownRemainingMs(dependencies);
+  if (cooldownRemainingMs > 0) {
+    console.log('[WEBHOOK INBOX SKIP] reason=cooldown');
+    return {
+      skipped: true,
+      reason: 'cooldown',
+      cooldown_ms: cooldownRemainingMs,
+    };
+  }
   webhookInboxWorkerRunning = true;
   try {
     const sheets = dependencies.sheets || await (dependencies.getSheetsClient || getSheetsClient)();
     if (!sheets) return { skipped: true, reason: 'sheets_unavailable' };
+    const workerReadOptions = { retry: false };
     await ensureWebhookInboxSheet(sheets);
-    await migrateWebhookInboxSpool(sheets);
-    const rows = await readSheet(sheets, WEBHOOK_INBOX_SHEET, 'A:M');
-    const now = Date.now();
+    await migrateWebhookInboxSpool(sheets, workerReadOptions);
+    const rows = await readWebhookInboxSheet(sheets, workerReadOptions);
+    resetWebhookInboxReadBackoff();
+    const now = webhookInboxWorkerNowMs(dependencies);
     const due = rows.slice(1).map((row, index) => parseWebhookInboxRow(row, index + 2)).filter(item => {
       if (!item.delivery_id || webhookInboxTerminalStatus(item.status)) return false;
       const next = Date.parse(item.next_attempt_at || item.received_at || '');
@@ -11424,9 +11564,34 @@ async function processWebhookInboxDueItems(dependencies = {}) {
     const results = await mapWithConcurrency(
       due,
       WEBHOOK_INBOX_MAX_CONCURRENCY,
-      item => processWebhookInboxItem(item, { ...dependencies, sheets })
+      async item => {
+        if (webhookInboxReadCooldownRemainingMs(dependencies) > 0) {
+          return { ...item, worker_skipped: 'cooldown' };
+        }
+        try {
+          return await processWebhookInboxItem(item, {
+            ...dependencies,
+            sheets,
+            webhookInboxReadRequestOptions: workerReadOptions,
+          });
+        } catch (error) {
+          if (isWebhookInboxReadRateLimitError(error)) {
+            beginWebhookInboxReadCooldown(dependencies);
+          }
+          throw error;
+        }
+      }
     );
-    return { processed: results.length, results };
+    return {
+      processed: results.filter(item => !item?.worker_skipped).length,
+      results,
+    };
+  } catch (error) {
+    if (isGoogleSheetsRateLimitError(error)) {
+      const cooldownMs = beginWebhookInboxReadCooldown(dependencies);
+      return { processed: 0, results: [], rate_limited: true, cooldown_ms: cooldownMs };
+    }
+    throw error;
   } finally {
     webhookInboxWorkerRunning = false;
   }
@@ -12765,4 +12930,5 @@ module.exports.__test = {
   processWebhookInboxItem,
   processWebhookInboxDueItems,
   webhookInboxBackoffMs,
+  resetWebhookInboxWorkerStateForTests,
 };
