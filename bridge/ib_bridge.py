@@ -1623,6 +1623,23 @@ async def persist_and_deliver_managed_exit_callback(
     return {**result, "delivery_id": queued_id, "queued": True}
 
 
+async def persist_and_deliver_entry_fill_callback(
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Durably hand a broker-confirmed ENTRY_FILL to Render before delivery."""
+    clean_payload = dict(payload)
+    queued_id, queued = enqueue_render_outbox(clean_payload)
+    if not queued:
+        return {
+            "delivered": False,
+            "reason": "outbox_persistence_failed",
+            "delivery_id": queued_id,
+        }
+
+    result = await attempt_render_outbox_delivery(queued_id, force=True)
+    return {**result, "delivery_id": queued_id, "queued": True}
+
+
 def recover_pending_managed_close_deliveries() -> int:
     managed = load_managed_positions()
     recovered = 0
@@ -6461,15 +6478,26 @@ def make_cancel_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> Dict
 
 def make_entry_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(data)
+    payload["source"] = "IB_BRIDGE"
     payload["event"] = "ENTRY_FILL"
 
-    fill_price = to_float(ib_result.get("entry_fill_price")) or to_float(data.get("entry")) or to_float(data.get("price"))
+    if (
+        not str(payload.get("timeframe") or "").strip()
+        and str(payload.get("system_id") or "").upper().strip() == "VIXALE_EDGE"
+    ):
+        setup_parts = str(payload.get("setup_id") or "").split(":")
+        if len(setup_parts) == 5 and setup_parts[0].upper() == "VIXALE_EDGE":
+            payload["timeframe"] = setup_parts[2]
+
+    actual_fill_price = to_float(ib_result.get("entry_fill_price"))
+    actual_filled_qty = to_int_qty(ib_result.get("entry_filled_qty"))
+    fill_price = actual_fill_price or to_float(data.get("entry")) or to_float(data.get("price"))
     qty = (
-        to_int_qty(ib_result.get("target_position_qty"))
+        actual_filled_qty
+        or to_int_qty(ib_result.get("target_position_qty"))
         or to_int_qty(ib_result.get("desired_qty"))
         or to_int_qty(ib_result.get("qty"))
         or to_int_qty(data.get("qty"))
-        or to_int_qty(ib_result.get("entry_filled_qty"))
     )
 
     if fill_price > 0:
@@ -6488,6 +6516,30 @@ def make_entry_fill_payload(data: Dict[str, Any], ib_result: Dict[str, Any]) -> 
     payload["ib_target_order_ref"] = ib_result.get("target_order_ref", "")
     payload["ib_entry_status"] = ib_result.get("entry_status", "")
     payload["ib_target_status"] = ib_result.get("target_status", "")
+    payload["ib_entry_fill_price"] = (
+        round_price(actual_fill_price) if actual_fill_price > 0 else ""
+    )
+    payload["ib_entry_filled_qty"] = actual_filled_qty
+    payload["entry_filled"] = bool(ib_result.get("entry_filled"))
+    payload["entry_exec_ids"] = list(ib_result.get("entry_exec_ids") or [])
+    entry_identity = execution_identity_text(
+        exec_ids=payload["entry_exec_ids"],
+        perm_id=ib_result.get("order_perm_id"),
+        order_id=ib_result.get("order_id"),
+        order_ref_value=ib_result.get("order_ref"),
+    )
+    if entry_identity:
+        payload["entry_execution_id"] = entry_identity
+        delivery_key = "|".join((
+            str(payload.get("setup_id") or ""),
+            entry_identity,
+            str(payload.get("symbol") or "").upper().strip(),
+            str(payload.get("side") or "").upper().strip(),
+        ))
+        delivery_digest = hashlib.sha256(delivery_key.encode("utf-8")).hexdigest()[:24]
+        payload["bridge_delivery_id"] = (
+            f"ENTRY_FILL:{str(payload.get('symbol') or 'UNKNOWN').upper().strip()}:{delivery_digest}"
+        )
     payload["reason"] = payload.get("reason") or "IB_ENTRY_FILLED"
 
     return payload
@@ -6696,8 +6748,7 @@ async def monitor_entry_fill_confirmation(
                     print(f"[ENTRY FILL MONITOR REVERSAL CLOSE RESULT] symbol={symbol} side={side} {reversal_result}")
 
                 render_payload = make_entry_fill_payload(original_data, result)
-                render_payload["entry_filled"] = True
-                render_result = await forward_to_render(render_payload)
+                render_result = await persist_and_deliver_entry_fill_callback(render_payload)
                 print(f"[ENTRY FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
 
                 # Repaired targets start their own monitor inside the repair helper.
@@ -6754,8 +6805,7 @@ async def monitor_entry_fill_confirmation(
                             print(f"[ENTRY FILL MONITOR REVERSAL CLOSE RESULT] symbol={symbol} side={side} {reversal_result}")
 
                         render_payload = make_entry_fill_payload(original_data, result)
-                        render_payload["entry_filled"] = True
-                        render_result = await forward_to_render(render_payload)
+                        render_result = await persist_and_deliver_entry_fill_callback(render_payload)
                         print(f"[ENTRY FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
                     elif FORWARD_REJECTED_SETUPS_TO_RENDER_AS_CANCEL:
                         cancel_payload = make_cancel_payload(original_data, result)
@@ -6789,8 +6839,7 @@ async def monitor_entry_fill_confirmation(
                             reversal_result = await forward_to_render(reversal_close_payload)
                             print(f"[ENTRY FILL MONITOR REVERSAL CLOSE RESULT] symbol={symbol} side={side} {reversal_result}")
                         render_payload = make_entry_fill_payload(original_data, result)
-                        render_payload["entry_filled"] = True
-                        render_result = await forward_to_render(render_payload)
+                        render_result = await persist_and_deliver_entry_fill_callback(render_payload)
                         print(f"[ENTRY FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
                     elif FORWARD_REJECTED_SETUPS_TO_RENDER_AS_CANCEL:
                         cancel_payload = make_cancel_payload(original_data, result)
@@ -6864,8 +6913,7 @@ async def monitor_entry_fill_confirmation(
                     reversal_result = await forward_to_render(reversal_close_payload)
                     print(f"[ENTRY FILL MONITOR REVERSAL CLOSE RESULT] symbol={symbol} side={side} {reversal_result}")
                 render_payload = make_entry_fill_payload(original_data, result)
-                render_payload["entry_filled"] = True
-                render_result = await forward_to_render(render_payload)
+                render_result = await persist_and_deliver_entry_fill_callback(render_payload)
                 print(f"[ENTRY FILL MONITOR RENDER RESULT] symbol={symbol} side={side} {render_result}")
             elif FORWARD_REJECTED_SETUPS_TO_RENDER_AS_CANCEL:
                 cancel_payload = make_cancel_payload(original_data, result)
@@ -7174,6 +7222,12 @@ async def process_signal_background(data: Dict[str, Any]) -> None:
             reconcile_payload,
         )
         print(f"[RENDER DURABLE CLOSE RESULT] {render_result}")
+        print(f"[BG DONE] event={event} symbol={symbol} side={side}")
+        return
+
+    if transform == "ENTRY_FILL":
+        render_result = await persist_and_deliver_entry_fill_callback(render_payload)
+        print(f"[RENDER DURABLE ENTRY_FILL RESULT] {render_result}")
         print(f"[BG DONE] event={event} symbol={symbol} side={side}")
         return
 

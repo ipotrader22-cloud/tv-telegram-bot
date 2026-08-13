@@ -6266,6 +6266,124 @@ class PrimeManualCloseSafetyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RenderOutboxIsolationTests(unittest.IsolatedAsyncioTestCase):
+    def test_entry_fill_producer_sets_bridge_contract_and_actual_execution_identity(self):
+        payload = edge_payload(
+            setup_id="VIXALE_EDGE:SLS:1:LONG:1786635420000",
+            symbol="SLS",
+            timeframe="",
+            entry=24.80,
+            target=25.25,
+            qty=24,
+        )
+        fill = ib_bridge.make_entry_fill_payload(payload, {
+            "status": "submitted_with_attached_target",
+            "order_id": 4101,
+            "order_perm_id": 94101,
+            "order_ref": "VECO:SLS:LONG",
+            "target_order_id": 4102,
+            "target_perm_id": 94102,
+            "target_order_ref": "VECO_TARGET:SLS:LONG",
+            "entry_status": "Filled",
+            "target_status": "Submitted",
+            "entry_filled": True,
+            "entry_fill_price": 24.83,
+            "entry_filled_qty": 23,
+            "entry_exec_ids": ["0001.SLS.01"],
+            "target_position_qty": 23,
+        })
+
+        self.assertEqual(fill["source"], "IB_BRIDGE")
+        self.assertEqual(fill["event"], "ENTRY_FILL")
+        self.assertEqual(fill["system_id"], "VIXALE_EDGE")
+        self.assertEqual(fill["setup_id"], payload["setup_id"])
+        self.assertEqual(fill["symbol"], "SLS")
+        self.assertEqual(fill["side"], "LONG")
+        self.assertEqual(fill["timeframe"], "1")
+        self.assertEqual(fill["entry"], 24.83)
+        self.assertEqual(fill["price"], 24.83)
+        self.assertEqual(fill["qty"], 23)
+        self.assertEqual(fill["target"], 25.25)
+        self.assertEqual(fill["ib_entry_fill_price"], 24.83)
+        self.assertEqual(fill["ib_entry_filled_qty"], 23)
+        self.assertEqual(fill["entry_exec_ids"], ["0001.SLS.01"])
+        self.assertEqual(fill["entry_execution_id"], "EXEC:0001.SLS.01")
+        self.assertTrue(fill["entry_filled"])
+        self.assertTrue(fill["bridge_delivery_id"].startswith("ENTRY_FILL:SLS:"))
+
+    async def test_entry_fill_outbox_retries_after_failure_and_survives_restart(self):
+        payload = ib_bridge.make_entry_fill_payload(
+            edge_payload(
+                setup_id="VIXALE_EDGE:SLS:1:LONG:1786635420000",
+                symbol="SLS",
+                timeframe="1",
+                entry=24.80,
+                target=25.25,
+                qty=24,
+            ),
+            {
+                "status": "submitted_with_attached_target",
+                "order_id": 4101,
+                "order_perm_id": 94101,
+                "order_ref": "VECO:SLS:LONG",
+                "target_order_id": 4102,
+                "target_perm_id": 94102,
+                "target_order_ref": "VECO_TARGET:SLS:LONG",
+                "entry_status": "Filled",
+                "target_status": "Submitted",
+                "entry_filled": True,
+                "entry_fill_price": 24.83,
+                "entry_filled_qty": 23,
+                "entry_exec_ids": ["0001.SLS.01"],
+                "target_position_qty": 23,
+            },
+        )
+        store = {}
+        delivered = []
+        statuses = [503, 200]
+
+        def load_outbox():
+            return copy.deepcopy(store)
+
+        def save_outbox(value):
+            store.clear()
+            store.update(copy.deepcopy(value))
+            return True
+
+        async def forward(value):
+            delivered.append(copy.deepcopy(value))
+            return {"forwarded": True, "status_code": statuses.pop(0)}
+
+        with (
+            patch.object(ib_bridge, "load_render_outbox", side_effect=load_outbox),
+            patch.object(ib_bridge, "save_render_outbox", side_effect=save_outbox),
+            patch.object(ib_bridge, "forward_to_render", side_effect=forward),
+            patch.object(ib_bridge, "recover_pending_managed_close_deliveries", return_value=0),
+            patch.object(ib_bridge, "render_outbox_item_due", return_value=True),
+        ):
+            first = await ib_bridge.persist_and_deliver_entry_fill_callback(payload)
+            self.assertFalse(first["delivered"])
+            self.assertTrue(first["queued"])
+            self.assertIn(payload["bridge_delivery_id"], store)
+
+            # Simulate a process restart by reloading only the persisted outbox
+            # snapshot; no volatile delivery task or original SETUP is replayed.
+            persisted_snapshot = copy.deepcopy(store)
+            ib_bridge._render_outbox_claims.clear()
+            store.clear()
+            store.update(persisted_snapshot)
+            second = await ib_bridge.retry_render_outbox_once()
+
+        self.assertEqual(second["due"], 1)
+        self.assertEqual(second["remaining"], 0)
+        self.assertEqual(store, {})
+        self.assertEqual(len(delivered), 2)
+        self.assertTrue(all(item["source"] == "IB_BRIDGE" for item in delivered))
+        self.assertTrue(all(item["event"] == "ENTRY_FILL" for item in delivered))
+        self.assertEqual(
+            delivered[0]["bridge_delivery_id"],
+            delivered[1]["bridge_delivery_id"],
+        )
+
     def test_edge_close_payload_keeps_v6_durable_identity_contract(self):
         payload = edge_payload(event="CLOSE_STOP")
         close = ib_bridge.make_close_fill_payload(payload, {

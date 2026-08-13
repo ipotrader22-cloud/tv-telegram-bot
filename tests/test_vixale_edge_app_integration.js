@@ -1862,6 +1862,333 @@ async function run() {
   assert.strictEqual(productionCloseBridge[0].row.timeframe, '15');
   assert.strictEqual(productionCloseTelegram.length, 0);
 
+  // The bridge producer explicitly identifies a genuine Edge ENTRY_FILL as
+  // source=IB_BRIDGE and includes actual entry execution evidence.
+  const slsSheets = createMockSheets();
+  const slsTelegram = [];
+  const slsBridge = [];
+  let slsScheduledWork = null;
+  const slsDependencies = {
+    sheets: slsSheets,
+    scheduleWebhookInboxWork: work => { slsScheduledWork = work(); },
+    sendTelegram: async message => {
+      slsTelegram.push(message);
+      return { ok: true };
+    },
+    forwardToBridge: async (raw, row) => {
+      const decision = shouldForwardToBridge(raw, row);
+      if (!decision.ok) {
+        return { forwarded: false, skipped: true, reason: decision.reason };
+      }
+      slsBridge.push(row.event);
+      return { forwarded: true };
+    },
+  };
+  const deliverSlsInboxEvent = async payload => {
+    slsScheduledWork = null;
+    const response = createMockResponse();
+    await handleTradingViewWebhookWithDependencies(
+      { body: payload },
+      response,
+      slsDependencies
+    );
+    if (slsScheduledWork) await slsScheduledWork;
+    return response;
+  };
+  const slsSetupId = 'VIXALE_EDGE:SLS:1:LONG:1786635420000';
+  const slsSetup = {
+    ...REAL_EDGE_SETUP_NO_TIMEFRAME,
+    setup_id: slsSetupId,
+    alert_instance_id: 'FIONA_SLS_1',
+    symbol: 'SLS',
+    entry: 24.8,
+    price: 24.8,
+    target: 25.25,
+    stop: 24.1,
+    qty: 24,
+  };
+  const slsPendingResponse = await deliverSlsInboxEvent({
+    ...slsSetup,
+    event: 'PENDING_SETUP',
+  });
+  assert.strictEqual(slsPendingResponse.statusCode, 200);
+  assert.strictEqual(slsSheets.rows.Pending[1][0], slsSetupId);
+
+  const unrelatedSlsSetupId = 'VIXALE_EDGE:SLS:1:LONG:1786635480000';
+  await deliverSlsInboxEvent({
+    ...slsSetup,
+    setup_id: unrelatedSlsSetupId,
+    event: 'PENDING_SETUP',
+  });
+  const slsSetupResponse = await deliverSlsInboxEvent(slsSetup);
+  assert.strictEqual(slsSetupResponse.statusCode, 200);
+  assert.deepStrictEqual(slsBridge, ['SETUP']);
+  assert.strictEqual(slsTelegram.length, 0);
+  assert.deepStrictEqual(
+    slsSheets.rows['Webhook Inbox'].slice(1).map(row => row[7]),
+    ['COMPLETE', 'COMPLETE', 'COMPLETE']
+  );
+
+  const slsEntryFill = {
+    ...slsSetup,
+    source: 'IB_BRIDGE',
+    event: 'ENTRY_FILL',
+    entry: 24.83,
+    price: 24.83,
+    qty: 23,
+    render_forwarded_at: '2026-08-13T10:20:00-04:00',
+    render_safety: { bridge_forward_enabled: true, bridge_dry_run: false },
+    ib_status: 'submitted_with_attached_target',
+    ib_order_id: 4101,
+    ib_order_perm_id: 94101,
+    ib_order_ref: 'VECO:SLS:LONG',
+    ib_entry_status: 'Filled',
+    ib_target_order_id: 4102,
+    ib_target_perm_id: 94102,
+    ib_target_order_ref: 'VECO_TARGET:SLS:LONG',
+    ib_target_status: 'Submitted',
+    ib_entry_fill_price: 24.83,
+    ib_entry_filled_qty: 23,
+    entry_exec_ids: ['0001.SLS.01'],
+    entry_execution_id: 'EXEC:0001.SLS.01',
+    entry_filled: true,
+    bridge_delivery_id: 'ENTRY_FILL:SLS:test-sls-entry',
+  };
+  const slsFillResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: slsEntryFill },
+    slsFillResponse,
+    slsDependencies
+  );
+  assert.strictEqual(slsFillResponse.statusCode, 200);
+  assert.strictEqual(slsFillResponse.body, 'OK');
+  assert.deepStrictEqual(
+    slsSheets.rows.Pending.slice(1).map(row => row[0]),
+    [unrelatedSlsSetupId],
+    'ENTRY_FILL removes only the exact Pending setup_id'
+  );
+  assert.strictEqual(countRowsBySetupId(slsSheets.rows['Open Positions'], 11, slsSetupId), 1);
+  assert.strictEqual(countRowsBySetupEvent(slsSheets.rows.Trades, 10, slsSetupId, 'ENTRY_FILL'), 1);
+  assert.strictEqual(slsSheets.rows['Open Positions'][1][5], 24.83, 'Open uses actual IB fill price');
+  assert.strictEqual(slsSheets.rows['Open Positions'][1][6], 23, 'Open uses actual IB filled quantity');
+  assert.strictEqual(slsSheets.rows['Open Positions'][1][7], 25.25, 'Open preserves target metadata');
+  assert.strictEqual(
+    slsTelegram.filter(message => message.includes('Vixale Edge opened')).length,
+    1
+  );
+  assert.deepStrictEqual(slsBridge, ['SETUP'], 'ENTRY_FILL is never re-forwarded to the bridge');
+
+  const duplicateSlsFillResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: slsEntryFill },
+    duplicateSlsFillResponse,
+    slsDependencies
+  );
+  assert.strictEqual(duplicateSlsFillResponse.statusCode, 200);
+  assert.strictEqual(countRowsBySetupId(slsSheets.rows['Open Positions'], 11, slsSetupId), 1);
+  assert.strictEqual(countRowsBySetupEvent(slsSheets.rows.Trades, 10, slsSetupId, 'ENTRY_FILL'), 1);
+  assert.strictEqual(
+    slsTelegram.filter(message => message.includes('Vixale Edge opened')).length,
+    1,
+    'duplicate broker ENTRY_FILL sends Telegram OPEN exactly once'
+  );
+
+  const forgedEntrySheets = createMockSheets();
+  const forgedEntryTelegram = [];
+  let forgedEntryBridgeCalls = 0;
+  const forgedEntryResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    {
+      body: {
+        ...slsSetup,
+        event: 'ENTRY_FILL',
+        entry: 24.83,
+        price: 24.83,
+        qty: 23,
+        render_forwarded_at: '2026-08-13T10:20:00-04:00',
+        ib_status: 'FILLED',
+        ib_order_id: 9901,
+        ib_order_perm_id: 999901,
+        ib_order_ref: 'FAKE:ENTRY:WILL_NOT_PASS',
+        ib_entry_status: 'Filled',
+        ib_target_order_id: 9902,
+        ib_target_perm_id: 999902,
+        ib_target_order_ref: 'FAKE:TARGET:WILL_NOT_PASS',
+        ib_target_status: 'Submitted',
+        ib_entry_fill_price: 24.83,
+        ib_entry_filled_qty: 23,
+        entry_exec_ids: ['FAKE.EXECUTION.ID'],
+        entry_execution_id: 'EXEC:FAKE.EXECUTION.ID',
+        render_safety: { bridge_forward_enabled: true, bridge_dry_run: false },
+        entry_filled: true,
+      },
+    },
+    forgedEntryResponse,
+    {
+      sheets: forgedEntrySheets,
+      sendTelegram: async message => {
+        forgedEntryTelegram.push(message);
+        return { ok: true };
+      },
+      forwardToBridge: async () => {
+        forgedEntryBridgeCalls++;
+        return { forwarded: true };
+      },
+    }
+  );
+  assert.strictEqual(forgedEntryResponse.statusCode, 200);
+  assert.strictEqual(forgedEntryResponse.body, 'IGNORED');
+  assert.strictEqual(forgedEntrySheets.rows['Open Positions'].length - 1, 0);
+  assert.strictEqual(forgedEntrySheets.rows.Trades.length - 1, 0);
+  assert.strictEqual(forgedEntryTelegram.length, 0);
+  assert.strictEqual(forgedEntryBridgeCalls, 0);
+
+  const incompleteBrokerSheets = createMockSheets();
+  const incompleteBrokerResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    {
+      body: {
+        ...slsEntryFill,
+        setup_id: 'VIXALE_EDGE:INCOMPLETE:1:LONG:1786635500000',
+        alert_instance_id: 'FIONA_INCOMPLETE_1',
+        symbol: 'INCOMPLETE',
+        entry_execution_id: '',
+        bridge_delivery_id: 'ENTRY_FILL:INCOMPLETE:missing-execution-id',
+      },
+    },
+    incompleteBrokerResponse,
+    {
+      sheets: incompleteBrokerSheets,
+      sendTelegram: async () => {
+        throw new Error('incomplete broker callback must not publish Telegram');
+      },
+      forwardToBridge: async () => {
+        throw new Error('broker callback must not be forwarded to the bridge');
+      },
+    }
+  );
+  assert.strictEqual(incompleteBrokerResponse.statusCode, 503);
+  assert.strictEqual(incompleteBrokerResponse.body, 'RETRY');
+  assert.strictEqual(incompleteBrokerSheets.rows['Open Positions'].length - 1, 0);
+  assert.strictEqual(incompleteBrokerSheets.rows.Trades.length - 1, 0);
+
+  const earlyFillSheets = createMockSheets();
+  const earlyFillTelegram = [];
+  const earlyFillSetupId = 'VIXALE_EDGE:EARLY:1:LONG:1786635540000';
+  const earlyFill = {
+    ...slsEntryFill,
+    setup_id: earlyFillSetupId,
+    alert_instance_id: 'FIONA_EARLY_1',
+    symbol: 'EARLY',
+    ib_order_id: 4201,
+    ib_order_perm_id: 94201,
+    ib_order_ref: 'VECO:EARLY:LONG',
+    ib_target_order_id: 4202,
+    ib_target_perm_id: 94202,
+    ib_target_order_ref: 'VECO_TARGET:EARLY:LONG',
+    entry_exec_ids: ['0001.EARLY.01'],
+    entry_execution_id: 'EXEC:0001.EARLY.01',
+    bridge_delivery_id: 'ENTRY_FILL:EARLY:test-early-entry',
+  };
+  const earlyFillResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: earlyFill },
+    earlyFillResponse,
+    {
+      sheets: earlyFillSheets,
+      sendTelegram: async message => {
+        earlyFillTelegram.push(message);
+        return { ok: true };
+      },
+      forwardToBridge: async () => ({ forwarded: false, skipped: true }),
+    }
+  );
+  assert.strictEqual(earlyFillResponse.statusCode, 200);
+  assert.strictEqual(countRowsBySetupId(earlyFillSheets.rows['Open Positions'], 11, earlyFillSetupId), 1);
+  assert.strictEqual(countRowsBySetupEvent(earlyFillSheets.rows.Trades, 10, earlyFillSetupId, 'ENTRY_FILL'), 1);
+  assert.strictEqual(earlyFillTelegram.length, 1, 'broker ENTRY_FILL is authoritative before Pending appears');
+
+  const retryFillSheets = createMockSheets();
+  const retryFillSetupId = 'VIXALE_EDGE:RETRYFILL:1:LONG:1786635600000';
+  const retryFill = {
+    ...slsEntryFill,
+    setup_id: retryFillSetupId,
+    alert_instance_id: 'FIONA_RETRYFILL_1',
+    symbol: 'RETRYFILL',
+    ib_order_id: 4301,
+    ib_order_perm_id: 94301,
+    ib_order_ref: 'VECO:RETRYFILL:LONG',
+    ib_target_order_id: 4302,
+    ib_target_perm_id: 94302,
+    ib_target_order_ref: 'VECO_TARGET:RETRYFILL:LONG',
+    entry_exec_ids: ['0001.RETRYFILL.01'],
+    entry_execution_id: 'EXEC:0001.RETRYFILL.01',
+    bridge_delivery_id: 'ENTRY_FILL:RETRYFILL:test-retry-entry',
+  };
+  let retryFillTelegramFailures = 1;
+  const retryFillTelegram = [];
+  const retryFillDependencies = {
+    sheets: retryFillSheets,
+    sendTelegram: async message => {
+      if (retryFillTelegramFailures > 0) {
+        retryFillTelegramFailures--;
+        throw new Error('mock retryable ENTRY_FILL Telegram failure');
+      }
+      retryFillTelegram.push(message);
+      return { ok: true };
+    },
+    forwardToBridge: async () => ({ forwarded: false, skipped: true }),
+  };
+  const failedFillResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: retryFill },
+    failedFillResponse,
+    retryFillDependencies
+  );
+  assert.strictEqual(failedFillResponse.statusCode, 503);
+  assert.strictEqual(countRowsBySetupId(retryFillSheets.rows['Open Positions'], 11, retryFillSetupId), 1);
+  assert.strictEqual(countRowsBySetupEvent(retryFillSheets.rows.Trades, 10, retryFillSetupId, 'ENTRY_FILL'), 1);
+
+  const recoveredFillResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: retryFill },
+    recoveredFillResponse,
+    retryFillDependencies
+  );
+  assert.strictEqual(recoveredFillResponse.statusCode, 200);
+  assert.strictEqual(countRowsBySetupId(retryFillSheets.rows['Open Positions'], 11, retryFillSetupId), 1);
+  assert.strictEqual(countRowsBySetupEvent(retryFillSheets.rows.Trades, 10, retryFillSetupId, 'ENTRY_FILL'), 1);
+  assert.strictEqual(retryFillTelegram.length, 1);
+
+  const slsTp = {
+    ...slsSetup,
+    source: 'IB_BRIDGE',
+    event: 'TP',
+    entry: 24.83,
+    price: 25.25,
+    qty: 23,
+    ib_target_status: 'Filled',
+    broker_confirmed_flat: true,
+    position_after_close: 0,
+    exit_execution_id: 'EXEC:SLS-TP-1',
+    reconciliation_id: `${slsSetupId}:EXEC:SLS-TP-1`,
+    bridge_delivery_id: 'TP:SLS:test-sls-admission',
+  };
+  const slsTpResponse = createMockResponse();
+  await handleTradingViewWebhookWithDependencies(
+    { body: slsTp },
+    slsTpResponse,
+    slsDependencies
+  );
+  assert.strictEqual(slsTpResponse.statusCode, 200);
+  assert.strictEqual(countRowsBySetupId(slsSheets.rows['Open Positions'], 11, slsSetupId), 0);
+  assert.strictEqual(slsSheets.rows['Closed Trades'].length - 1, 1);
+  assert.strictEqual(
+    slsTelegram.filter(message => message.includes('Vixale Edge hit target')).length,
+    1
+  );
+  assert.deepStrictEqual(slsBridge, ['SETUP'], 'Edge TP callback is never re-forwarded');
+
   // Structurally invalid Edge claims and unrelated JSON remain outside the
   // Inbox, while incomplete bridge exits stay on the pre-existing strict path.
   const ignoredCountBefore = productionSetupSheets.rows['Webhook Inbox'].length;

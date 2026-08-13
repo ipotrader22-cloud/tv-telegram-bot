@@ -10479,6 +10479,60 @@ function isBridgeExecutionCallback(reqBody) {
     ['ENTRY_FILL', 'EXTERNAL_CLOSE', 'RECONCILE_FLAT', 'IB_CONFIRMED_FLAT', 'FLAT_RECONCILE'].includes(event);
 }
 
+function hasBrokerOrderIdentity(reqBody, fields) {
+  return fields.some(key => {
+    const value = String(reqBody?.[key] ?? '').trim();
+    return Boolean(value && value !== '0');
+  });
+}
+
+function isEdgeEntryFillBrokerCallback(reqBody, row) {
+  if (String(reqBody?.source || '').trim().toUpperCase() !== 'IB_BRIDGE') return false;
+  if (String(reqBody?.system_id || '').trim().toUpperCase() !== 'VIXALE_EDGE') return false;
+  if (String(reqBody.event || '').trim().toUpperCase() !== 'ENTRY_FILL') return false;
+  if (String(row?.event || '').trim().toUpperCase() !== 'FILL') return false;
+  if (!isVixaleEdgeV2SetupRow(row)) return false;
+
+  const identity = parseVixaleEdgeSetupIdentity(reqBody.setup_id);
+  return Boolean(
+    identity &&
+    identity.setup_id === String(row.setup_id || '').trim().toUpperCase() &&
+    identity.symbol === normalizeSymbol(row.symbol) &&
+    identity.side === String(row.side || '').trim().toUpperCase() &&
+    identity.timeframe === String(row.timeframe || '').trim()
+  );
+}
+
+function hasConfirmedEdgeEntryExecution(reqBody, row) {
+  if (!isEdgeEntryFillBrokerCallback(reqBody, row)) return false;
+  const entryStatus = String(reqBody.ib_entry_status || '').trim().toUpperCase();
+  const ibStatus = String(reqBody.ib_status || '').trim();
+  const fillPrice = cleanNumber(reqBody.ib_entry_fill_price);
+  const fillQty = cleanNumber(reqBody.ib_entry_filled_qty);
+  const publishedPrice = firstCleanNumber(reqBody.entry, reqBody.price);
+  const publishedQty = firstCleanNumber(reqBody.qty, reqBody.size, reqBody.quantity);
+
+  return Boolean(
+    reqBody.entry_filled === true &&
+    entryStatus === 'FILLED' &&
+    ibStatus &&
+    hasValidBrokerExecutionIdentity(reqBody.entry_execution_id) &&
+    hasBrokerOrderIdentity(reqBody, ['ib_order_id', 'ib_order_perm_id', 'ib_order_ref']) &&
+    hasBrokerOrderIdentity(
+      reqBody,
+      ['ib_target_order_id', 'ib_target_perm_id', 'ib_target_order_ref']
+    ) &&
+    fillPrice !== '' &&
+    Number(fillPrice) > 0 &&
+    fillQty !== '' &&
+    Number(fillQty) > 0 &&
+    Number(publishedPrice) === Number(fillPrice) &&
+    Number(publishedQty) === Number(fillQty) &&
+    cleanNumber(reqBody.target) !== '' &&
+    Number(cleanNumber(reqBody.target)) > 0
+  );
+}
+
 function requiresBridgeExecutionConfirmation(row) {
   if (!row) return false;
 
@@ -10883,6 +10937,16 @@ function isRecognizedTradeWebhook(row, reqBody = null) {
     return validateTradingViewEdgeV2Payload(reqBody).ok;
   }
 
+  // ENTRY_FILL is broker-only. The bridge producer must identify itself
+  // explicitly; no amount of IB-looking data promotes a TradingView payload.
+  if (
+    String(reqBody?.source || '').trim().toUpperCase() === 'IB_BRIDGE' &&
+    String(reqBody?.system_id || '').trim().toUpperCase() === 'VIXALE_EDGE' &&
+    String(reqBody?.event || '').trim().toUpperCase() === 'ENTRY_FILL'
+  ) {
+    return isEdgeEntryFillBrokerCallback(reqBody, row);
+  }
+
   const event = String(row.event || '').toUpperCase();
 
   if (event === 'UNKNOWN') return false;
@@ -10974,10 +11038,15 @@ async function processRecognizedTradingViewWebhook(
     return callbackResult;
   }
 
-  const edgeEntryFillCallback =
-    isBridgeExecutionCallback(reqBody) &&
-    parsedRow?.event === 'FILL' &&
-    isVixaleEdgeV2SetupRow(parsedRow);
+  const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);
+  if (
+    edgeEntryFillCallback &&
+    !hasConfirmedEdgeEntryExecution(reqBody, parsedRow)
+  ) {
+    const error = new Error('Incomplete broker ENTRY_FILL execution evidence');
+    error.retryable = true;
+    throw error;
+  }
   const edgeExternalCloseCallback =
     isBridgeExecutionCallback(reqBody) &&
     parsedRow?.event === 'EXTERNAL_CLOSE' &&
@@ -11638,10 +11707,7 @@ async function handleTradingViewWebhookWithDependencies(
       return res.status(200).send('IGNORED');
     }
 
-    const edgeEntryFillCallback =
-      isBridgeExecutionCallback(reqBody) &&
-      parsedRow.event === 'FILL' &&
-      isVixaleEdgeV2SetupRow(parsedRow);
+    const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);
     const edgeExternalCloseCallback =
       isBridgeExecutionCallback(reqBody) &&
       parsedRow.event === 'EXTERNAL_CLOSE';
