@@ -272,7 +272,7 @@ function isClaimedTradingViewEdgeV2Payload(data) {
   );
 }
 
-function validateTradingViewEdgeV2Payload(data) {
+function validateTradingViewEdgeV2Identity(data) {
   if (
     !data ||
     typeof data !== 'object' ||
@@ -290,11 +290,6 @@ function validateTradingViewEdgeV2Payload(data) {
   }
   if (String(data.payload_version || '').trim() !== '2') {
     return { ok: false, reason: 'edge_v2_payload_version_mismatch' };
-  }
-
-  const event = String(data.event || '').trim().toUpperCase();
-  if (!['PENDING_SETUP', 'SETUP', 'CANCEL', 'CLOSE_STOP'].includes(event)) {
-    return { ok: false, reason: 'edge_v2_unsupported_event' };
   }
 
   const identity = parseVixaleEdgeSetupIdentity(data.setup_id);
@@ -318,6 +313,18 @@ function validateTradingViewEdgeV2Payload(data) {
     return { ok: false, reason: 'edge_v2_timeframe_mismatch' };
   }
 
+  return { ok: true, identity };
+}
+
+function validateTradingViewEdgeV2Payload(data) {
+  const identityValidation = validateTradingViewEdgeV2Identity(data);
+  if (!identityValidation.ok) return identityValidation;
+
+  const event = String(data.event || '').trim().toUpperCase();
+  if (!['PENDING_SETUP', 'SETUP', 'CANCEL', 'CLOSE_STOP'].includes(event)) {
+    return { ok: false, reason: 'edge_v2_unsupported_event' };
+  }
+
   if (
     event === 'CANCEL' &&
     String(data.cancel_scope || '').trim().toUpperCase() !== 'PENDING_ONLY'
@@ -325,7 +332,7 @@ function validateTradingViewEdgeV2Payload(data) {
     return { ok: false, reason: 'edge_v2_cancel_scope_not_pending_only' };
   }
 
-  return { ok: true, identity };
+  return identityValidation;
 }
 
 function isV51IntradayName(value) {
@@ -10479,6 +10486,62 @@ function isBridgeExecutionCallback(reqBody) {
     ['ENTRY_FILL', 'EXTERNAL_CLOSE', 'RECONCILE_FLAT', 'IB_CONFIRMED_FLAT', 'FLAT_RECONCILE'].includes(event);
 }
 
+function hasBrokerOrderIdentity(reqBody, fields) {
+  return fields.some(key => {
+    const value = String(reqBody?.[key] ?? '').trim();
+    return Boolean(value && value !== '0');
+  });
+}
+
+function isStrictCopiedEdgeEntryFillCallback(reqBody, row) {
+  if (!isClaimedTradingViewEdgeV2Payload(reqBody)) return false;
+  if (String(reqBody.event || '').trim().toUpperCase() !== 'ENTRY_FILL') return false;
+  if (String(row?.event || '').trim().toUpperCase() !== 'FILL') return false;
+  if (!isVixaleEdgeV2SetupRow(row)) return false;
+
+  const identityValidation = validateTradingViewEdgeV2Identity(reqBody);
+  if (!identityValidation.ok) return false;
+
+  const hasRenderForwardMarker = Boolean(reqBody.render_forwarded_at || reqBody.render_safety);
+  const entryStatus = String(reqBody.ib_entry_status || '').trim().toUpperCase();
+  const ibStatus = String(reqBody.ib_status || '').trim();
+  const fillPrice = firstCleanNumber(reqBody.entry, reqBody.price);
+  const fillQty = firstCleanNumber(reqBody.qty, reqBody.size, reqBody.quantity);
+
+  return Boolean(
+    hasRenderForwardMarker &&
+    reqBody.entry_filled === true &&
+    entryStatus === 'FILLED' &&
+    ibStatus &&
+    hasBrokerOrderIdentity(reqBody, ['ib_order_id', 'ib_order_perm_id', 'ib_order_ref']) &&
+    hasBrokerOrderIdentity(
+      reqBody,
+      ['ib_target_order_id', 'ib_target_perm_id', 'ib_target_order_ref']
+    ) &&
+    fillPrice !== '' &&
+    Number(fillPrice) > 0 &&
+    fillQty !== '' &&
+    Number(fillQty) > 0 &&
+    cleanNumber(reqBody.target) !== '' &&
+    Number(cleanNumber(reqBody.target)) > 0
+  );
+}
+
+function isEdgeEntryFillBrokerCallback(reqBody, row) {
+  if (
+    String(row?.event || '').trim().toUpperCase() !== 'FILL' ||
+    !isVixaleEdgeV2SetupRow(row)
+  ) {
+    return false;
+  }
+
+  if (isClaimedTradingViewEdgeV2Payload(reqBody)) {
+    return isStrictCopiedEdgeEntryFillCallback(reqBody, row);
+  }
+
+  return isBridgeExecutionCallback(reqBody);
+}
+
 function requiresBridgeExecutionConfirmation(row) {
   if (!row) return false;
 
@@ -10876,6 +10939,12 @@ function ignoredWebhookDiagnostics(req, rawBody, bodyInspection, parsedBody) {
 function isRecognizedTradeWebhook(row, reqBody = null) {
   if (!row) return false;
 
+  // The bridge copies the original Edge SETUP when it publishes ENTRY_FILL, so
+  // that broker callback intentionally retains source=TradingView. Admit it
+  // before the TradingView-only lifecycle validator, but only with the actual
+  // IB entry/target order evidence emitted by make_entry_fill_payload().
+  if (isStrictCopiedEdgeEntryFillCallback(reqBody, row)) return true;
+
   // Canonical Edge v2 identity is the durable admission contract. Optional
   // parser/classifier fields must not cause a real lifecycle delivery to be
   // HTTP-200 dropped before Webhook Inbox persistence.
@@ -10974,10 +11043,7 @@ async function processRecognizedTradingViewWebhook(
     return callbackResult;
   }
 
-  const edgeEntryFillCallback =
-    isBridgeExecutionCallback(reqBody) &&
-    parsedRow?.event === 'FILL' &&
-    isVixaleEdgeV2SetupRow(parsedRow);
+  const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);
   const edgeExternalCloseCallback =
     isBridgeExecutionCallback(reqBody) &&
     parsedRow?.event === 'EXTERNAL_CLOSE' &&
@@ -11638,10 +11704,7 @@ async function handleTradingViewWebhookWithDependencies(
       return res.status(200).send('IGNORED');
     }
 
-    const edgeEntryFillCallback =
-      isBridgeExecutionCallback(reqBody) &&
-      parsedRow.event === 'FILL' &&
-      isVixaleEdgeV2SetupRow(parsedRow);
+    const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);
     const edgeExternalCloseCallback =
       isBridgeExecutionCallback(reqBody) &&
       parsedRow.event === 'EXTERNAL_CLOSE';
