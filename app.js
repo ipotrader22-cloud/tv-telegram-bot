@@ -871,7 +871,7 @@ function publicDashboardLivePnlPayload() {
   const positions = (dashboardPublicPnlPositions || []).map(row => {
     const quote = liveQuoteForSymbol(row.symbol);
 
-    if (!quote) {
+    if (!quote || quote.stale) {
       return {
         trade_id: row.trade_id,
         open_pnl: row.open_pnl,
@@ -9855,7 +9855,21 @@ function renderDashboardHtml(data, locale = 'en') {
       else el.classList.add('neutral');
     }
 
+    let publicPnlTimer = null;
+    let publicPnlInFlight = false;
+    let publicPnlPollingStopped = false;
+
+    function schedulePublicPnlRefresh(delay = 2000) {
+      if (publicPnlTimer) window.clearTimeout(publicPnlTimer);
+      publicPnlTimer = null;
+      if (publicPnlPollingStopped || document.hidden) return;
+      publicPnlTimer = window.setTimeout(refreshPublicOpenPnl, delay);
+    }
+
     async function refreshPublicOpenPnl() {
+      if (publicPnlInFlight || publicPnlPollingStopped || document.hidden) return;
+      publicPnlInFlight = true;
+
       try {
         const response = await fetch('/dashboard/live-pnl.json', {
           credentials: 'same-origin',
@@ -9864,6 +9878,7 @@ function renderDashboardHtml(data, locale = 'en') {
         });
 
         if (response.status === 401) {
+          publicPnlPollingStopped = true;
           window.location.href = '/login';
           return;
         }
@@ -9892,11 +9907,22 @@ function renderDashboardHtml(data, locale = 'en') {
         });
       } catch (err) {
         console.warn('Public live P&L refresh failed:', err);
+      } finally {
+        publicPnlInFlight = false;
+        schedulePublicPnlRefresh();
       }
     }
 
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (publicPnlTimer) window.clearTimeout(publicPnlTimer);
+        publicPnlTimer = null;
+        return;
+      }
+      schedulePublicPnlRefresh(0);
+    });
+
     refreshPublicOpenPnl();
-    window.setInterval(refreshPublicOpenPnl, 2000);
   </script>
 </body>
 </html>`;
@@ -12996,20 +13022,26 @@ app.post('/dashboard-login', async (req, res) => {
   }
 });
 
-app.get('/dashboard/live-pnl.json', async (req, res) => {
+async function handlePublicDashboardLivePnlRequest(req, res, dependencies = {}) {
   try {
     setPrivateNoStoreHeaders(res);
 
-    const authorization = await getDashboardAuthorization(req);
+    const authorize = dependencies.getDashboardAuthorization || getDashboardAuthorization;
+    const buildPayload = dependencies.publicDashboardLivePnlPayload || publicDashboardLivePnlPayload;
+    const authorization = await authorize(req);
     if (!authorization.authorized) {
       return res.status(401).json({ ok: false, error: 'dashboard_unauthorized' });
     }
 
-    return res.status(200).json(publicDashboardLivePnlPayload());
+    return res.status(200).json(buildPayload());
   } catch (error) {
     console.error('Dashboard live P&L error:', error);
     return res.status(500).json({ ok: false, error: 'dashboard_live_pnl_error' });
   }
+}
+
+app.get('/dashboard/live-pnl.json', async (req, res) => {
+  return handlePublicDashboardLivePnlRequest(req, res);
 });
 
 app.get('/dashboard', async (req, res) => {
@@ -13106,6 +13138,10 @@ module.exports.__test = {
   parseOpenPositionRow,
   buildWorkingExitOrders,
   renderDashboardHtml,
+  upsertLiveQuote,
+  rememberPublicDashboardPnlPositions,
+  publicDashboardLivePnlPayload,
+  handlePublicDashboardLivePnlRequest,
   webhookInboundDeliveryId,
   upsertWebhookInboxItem,
   processWebhookInboxItem,

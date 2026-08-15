@@ -1280,6 +1280,7 @@ Routes include:
 /login
 /dashboard
 /dashboard?key=...
+/dashboard/live-pnl.json
 ```
 
 Authorization uses:
@@ -1288,6 +1289,27 @@ Authorization uses:
 - `vixale_dashboard_key` cookie.
 
 The dashboard reads from Google Sheets. TWS is the execution source of truth; Sheets is the displayed operational ledger.
+
+The authenticated `GET /dashboard/live-pnl.json` route supplies presentation-only
+running Open P&L updates to the public dashboard. It accepts the same active owner
+or viewer session as `/dashboard`, applies private no-store response headers, and
+returns only `ok`, `updated_at`, and a `positions` array containing `trade_id` and
+`open_pnl`. It never returns quote price, bid, ask, last, source, age, market-data
+type, entry, size, symbol, side, or other owner-only quote details.
+
+For each cached Open Position snapshot, a fresh TWS quote may recalculate running
+P&L using the existing live-quote staleness threshold. A quote that the shared
+quote helper marks stale is never used for public recalculation. When the TWS quote
+is stale or absent, the endpoint preserves the fallback P&L captured from the
+dashboard/Open Positions data. An empty startup snapshot safely returns an empty
+`positions` array.
+
+The browser performs one request at a time, schedules the next refresh about two
+seconds after the prior request completes, pauses while the document is hidden,
+and resumes when visible. HTTP 401 redirects to login; transient endpoint or
+network failures leave the last displayed value unchanged. This route mutates no
+Google Sheet, execution record, lifecycle state, broker state, or Telegram state
+and has no effect on TradingView, bridge, IB/TWS, EOD, or reconciliation behavior.
 
 The authorized public dashboard also includes a read-only Option Journal table
 showing the latest 20 option records, newest first. Journal loading is isolated
