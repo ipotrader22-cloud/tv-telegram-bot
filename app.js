@@ -177,6 +177,7 @@ const WEBHOOK_INBOX_SPOOL_FILE = String(
 
 const LIVE_QUOTE_STALE_SECONDS = Math.max(15, Math.floor(envNumber('LIVE_QUOTE_STALE_SECONDS', 90)));
 const LIVE_QUOTES = new Map();
+let dashboardPublicPnlPositions = [];
 const BROKER_EOD_CALLBACKS = createBrokerEodCallbackRegistry();
 const EDGE_ENTRY_FILL_IN_FLIGHT = new Map();
 const EDGE_EXTERNAL_CLOSE_IN_FLIGHT = new Map();
@@ -854,6 +855,44 @@ function ownerQuoteCachePayload() {
     quotes,
   };
 }
+
+function rememberPublicDashboardPnlPositions(openPositions) {
+  dashboardPublicPnlPositions = (openPositions || []).map(row => ({
+    trade_id: String(row.trade_id || ''),
+    symbol: normalizeSymbol(row.symbol),
+    side: String(row.side || '').toUpperCase(),
+    entry: cleanNumber(row.entry),
+    size: cleanNumber(row.size),
+    open_pnl: cleanNumber(row.open_pnl),
+  }));
+}
+
+function publicDashboardLivePnlPayload() {
+  const positions = (dashboardPublicPnlPositions || []).map(row => {
+    const quote = liveQuoteForSymbol(row.symbol);
+
+    if (!quote) {
+      return {
+        trade_id: row.trade_id,
+        open_pnl: row.open_pnl,
+      };
+    }
+
+    const enriched = recalcOpenPositionFromLast(row, quote.price, quote);
+
+    return {
+      trade_id: row.trade_id,
+      open_pnl: cleanNumber(enriched.open_pnl),
+    };
+  });
+
+  return {
+    ok: true,
+    updated_at: nowNy(),
+    positions,
+  };
+}
+
 
 function normalizeRawMessage(reqBody) {
   return typeof reqBody === 'string'
@@ -5016,6 +5055,7 @@ async function getDashboardData() {
     .map(parseOpenPositionRow);
 
   openPositions = enrichOpenPositionsWithLiveQuotes(openPositions);
+  rememberPublicDashboardPnlPositions(openPositions);
 
   const pendingOrders = pendingValues
     .slice(1)
@@ -9059,11 +9099,11 @@ function renderDashboardHtml(data, locale = 'en') {
         { title: 'Option Straddles', text: 'Option Straddles usually open between 18:00 and 20:30 ET.' },
       ];
 
-  // Public open positions intentionally show only confirmed trade facts.
-  // No current quote, running P&L, quote source, or distance calculations are rendered here.
-  // The owner-only /admin/live page keeps the real-time IBKR/TWS view.
+  // Public open positions show confirmed trade facts plus derived running P&L.
+  // Bid / Ask / Last, quote source, quote age, and distance calculations remain owner-only.
+  // Running P&L is copied from the same live quote layer used by /admin/live.
   const openRows = data.open_positions.map(row => `
-    <tr>
+    <tr class="public-pnl-row" data-trade-id="${escapeHtml(String(row.trade_id || ''))}">
       <td>${escapeHtml(row.system)}</td>
       <td class="ticker">${escapeHtml(displayTradeId(row))}</td>
       <td>${escapeHtml(safeDateText(row.open_time))}</td>
@@ -9073,7 +9113,7 @@ function renderDashboardHtml(data, locale = 'en') {
       <td>${num(row.entry)}</td>
       <td class="muted-dash">—</td>
       <td>${num(row.size, 0)}</td>
-      <td class="muted-dash">—</td>
+      <td class="js-public-pnl ${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl) || '—'}</td>
       <td><span class="open-position-label">OPEN POSITION</span></td>
     </tr>
   `).join('');
@@ -9683,7 +9723,7 @@ function renderDashboardHtml(data, locale = 'en') {
     <div class="section">
       <div class="section-header">
         <h2>Open Positions</h2>
-        <span>Final exit and P&amp;L appear after the trade closes.</span>
+        <span>Open P&amp;L updates live. Final exit and result appear after the trade closes.</span>
       </div>
       <div class="table-wrap">
         ${data.open_positions.length ? `
@@ -9799,6 +9839,65 @@ function renderDashboardHtml(data, locale = 'en') {
       <strong>Important Risk Disclosure:</strong> Vixale is not a registered investment adviser, broker-dealer, commodity trading adviser, fiduciary, law firm, accounting firm, or tax adviser. This private dashboard, including all signals, alerts, spreadsheets, trade history, P&L, win rate, examples, and strategy data, is provided strictly for educational, research, and informational purposes only. Nothing shown here is personalized financial, investment, trading, legal, tax, or accounting advice, and nothing should be interpreted as an offer, solicitation, recommendation, endorsement, instruction, or invitation to buy, sell, short, hold, or trade any security, option, futures contract, cryptocurrency, derivative, or other financial instrument. Results may be backtested, hypothetical, simulated, paper-traded, forward-tested, delayed, incomplete, based on assumptions, affected by data errors, and materially different from live brokerage execution. Past performance is not indicative of future results. Trading and investing involve substantial risk, including the possible loss of some or all capital. You alone are responsible for all trading decisions, position sizing, risk controls, broker selection, order execution, taxes, and compliance with applicable laws and regulations. Consult properly licensed professionals before making any financial decisions. By using this dashboard or related materials, you agree that Vixale and its operators are not liable for any losses, damages, missed profits, execution differences, delays, outages, data inaccuracies, or reliance on any information provided.
     </div>
   </div>
+
+  <script>
+    function publicPnlMoney(value) {
+      const x = Number(value);
+      if (!Number.isFinite(x)) return '—';
+      const sign = x > 0 ? '+' : x < 0 ? '-' : '';
+      return sign + '$' + Math.abs(x).toFixed(2);
+    }
+
+    function setPublicPnlClass(el, value) {
+      el.classList.remove('positive', 'negative', 'neutral');
+      if (value > 0) el.classList.add('positive');
+      else if (value < 0) el.classList.add('negative');
+      else el.classList.add('neutral');
+    }
+
+    async function refreshPublicOpenPnl() {
+      try {
+        const response = await fetch('/dashboard/live-pnl.json', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+
+        if (!response.ok) return;
+
+        const payload = await response.json();
+        const byTradeId = new Map(
+          (payload.positions || []).map(position => [String(position.trade_id || ''), position])
+        );
+
+        document.querySelectorAll('.public-pnl-row').forEach(row => {
+          const tradeId = String(row.dataset.tradeId || '');
+          const position = byTradeId.get(tradeId);
+          if (!position) return;
+
+          if (position.open_pnl === '' || position.open_pnl === null || position.open_pnl === undefined) return;
+          const pnl = Number(position.open_pnl);
+          if (!Number.isFinite(pnl)) return;
+
+          const cell = row.querySelector('.js-public-pnl');
+          if (!cell) return;
+
+          cell.textContent = publicPnlMoney(pnl);
+          setPublicPnlClass(cell, pnl);
+        });
+      } catch (err) {
+        console.warn('Public live P&L refresh failed:', err);
+      }
+    }
+
+    refreshPublicOpenPnl();
+    window.setInterval(refreshPublicOpenPnl, 2000);
+  </script>
 </body>
 </html>`;
 }
@@ -12894,6 +12993,22 @@ app.post('/dashboard-login', async (req, res) => {
   } catch (error) {
     console.error('Dashboard viewer login error:', error);
     return res.status(503).send(renderLoginHtml('Viewer-code login is temporarily unavailable. Please try again.'));
+  }
+});
+
+app.get('/dashboard/live-pnl.json', async (req, res) => {
+  try {
+    setPrivateNoStoreHeaders(res);
+
+    const authorization = await getDashboardAuthorization(req);
+    if (!authorization.authorized) {
+      return res.status(401).json({ ok: false, error: 'dashboard_unauthorized' });
+    }
+
+    return res.status(200).json(publicDashboardLivePnlPayload());
+  } catch (error) {
+    console.error('Dashboard live P&L error:', error);
+    return res.status(500).json({ ok: false, error: 'dashboard_live_pnl_error' });
   }
 });
 
