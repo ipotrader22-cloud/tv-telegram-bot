@@ -1,32 +1,34 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest created:** 2026-08-24  
+**Manifest updated:** 2026-08-24  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
 ## Verification status
 
-This manifest records the website/dashboard baseline and approved presentation contract. It is not sufficient by itself to prove production deployment.
+This manifest records the website/dashboard repository baseline and approved presentation contract. It is not sufficient by itself to prove production deployment.
 
-At creation time, GitHub `main` was directly re-checked and pointed to:
+At the latest direct GitHub verification, `main` pointed to:
 
-- **Observed main SHA:** `169a1a9b292d62a82dece21baeb4e5a4dbd650dc`
-- **Observed commit:** `Harden public dashboard live P&L (#24)`
+- **Observed main SHA:** `f1b38746b17f17bc9ae0ed5f30bc10d65ca107ab`
+- **Observed commit:** `Add realized P&L equity curve to Vixale dashboard (#26)`
+- **Observed state:** PR #26 merged into `main`
 
-The observed SHA is a repository baseline, **not a claim that this SHA is currently deployed**.
+The observed SHA is a repository/code-state fact. It is **not** a claim that this SHA is deployed to production.
 
 ### Production / deployment
 
 - **Production deployment SHA:** UNVERIFIED
 - **Deployment status:** UNVERIFIED
 - **Render/runtime configuration:** UNVERIFIED from this manifest
+- **Live Equity Curve verification:** UNVERIFIED until the authenticated dashboard/runtime is checked
 
-Before stating that a change is deployed or active, verify the deployment provider/runtime and the live site when accessible.
+Before stating that the Equity Curve or any other website change is deployed or active, verify the deployment provider/runtime and the live site when accessible.
 
 ## Repository baseline relevant to the public dashboard
 
-The checked repository baseline contains the authenticated public dashboard at `/dashboard` and the presentation-only `/dashboard/live-pnl.json` endpoint used for running Open P&L updates. The dashboard reads its displayed operational ledger from Google Sheets. TWS/IBKR execution remains outside the Website / Design / Copy scope.
+The checked repository baseline contains the authenticated public dashboard at `/dashboard`, the presentation-only `/dashboard/live-pnl.json` endpoint used for running Open P&L updates, and the merged realized Equity Curve implementation from PR #26. The dashboard reads its displayed operational ledger from Google Sheets. TWS/IBKR execution remains outside the Website / Design / Copy scope.
 
 These statements describe the checked repository baseline. They do not independently prove live deployment state.
 
@@ -73,9 +75,11 @@ The chart contract is:
 ### Implementation/deployment status
 
 - **Design/data contract:** APPROVED by user
-- **Production implementation:** UNVERIFIED / do not claim deployed
+- **Repository implementation:** MERGED to `main` in PR #26
+- **Merge commit:** `f1b38746b17f17bc9ae0ed5f30bc10d65ca107ab`
+- **Production deployment:** UNVERIFIED / do not claim deployed
 
-A tested implementation patch was prepared from the repository baseline, but a local patch, feature branch, or pull request must not be described as production. When implementation is merged and deployment is verified, update this section with the merge commit and verified deployment evidence.
+The merged implementation is presentation-only. It adds no new Google Sheets request, API route, payload/schema field, environment variable, simulated value, trading logic, or execution logic.
 
 ## Safety boundary
 
