@@ -47,6 +47,7 @@ function testCurveUsesOnlyCloseTimeAndResult() {
     ['ANOTHER', '', '08/21/2026 10:30:00', 'NOT_USED', '', '', '', '', '+50', ''],
     ['BAD_DATE', '', 'not-a-date', 'SOXL', '', '', '', '', '999.00', ''],
     ['BAD_RESULT', '', '2026-08-22 15:00:00', 'SOXL', '', '', '', '', '', ''],
+    ['NON_NUMERIC', '', '2026-08-22 15:00:00', 'SOXL', '', '', '', '', 'not-a-number', ''],
   ];
 
   assert.deepStrictEqual(buildRealizedEquityCurve(values), {
@@ -93,6 +94,25 @@ function testDashboardChartMarkup() {
   assert.ok(html.includes('Cumulative P&amp;L'));
   assert.ok(html.includes("}, '$0');"));
   assert.ok(html.includes('Open P&amp;L excluded'));
+  assert.ok(html.includes('.equity-chart-svg { height: 300px; }'));
+}
+
+function testDashboardRussianMarkup() {
+  const html = renderDashboardHtml({
+    open_positions: [],
+    working_orders: [],
+    pending_orders: [],
+    recent_closed_trades: [],
+    option_journal: { trades: [], error: false },
+    equity_curve: {
+      points: [{ date: '2026-08-20', daily_pnl: 25, cumulative_pnl: 25 }],
+      total_realized_pnl: 25,
+    },
+    summary: {},
+  }, 'ru');
+
+  assert.ok(html.includes('Накопленный реализованный P&amp;L'));
+  assert.ok(html.includes('Open P&amp;L исключен'));
 }
 
 function testDashboardEmptyState() {
@@ -113,5 +133,6 @@ function testDashboardEmptyState() {
 testCurveUsesOnlyCloseTimeAndResult();
 testEmptyCurve();
 testDashboardChartMarkup();
+testDashboardRussianMarkup();
 testDashboardEmptyState();
 console.log('Dashboard realized equity curve tests passed.');
