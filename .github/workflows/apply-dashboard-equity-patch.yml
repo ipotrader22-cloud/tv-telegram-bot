@@ -1,0 +1,50 @@
+name: Apply dashboard realized equity patch
+
+on:
+  push:
+    branches:
+      - feature/dashboard-realized-equity-curve
+    paths:
+      - .github/workflows/apply-dashboard-equity-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-equity-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/dashboard-realized-equity-curve
+          fetch-depth: 0
+
+      - name: Assemble and apply reviewed patch
+        shell: bash
+        run: |
+          cat .github/vixale-equity-patch/part00.patch \
+              .github/vixale-equity-patch/part01.patch \
+              .github/vixale-equity-patch/part02.patch \
+              .github/vixale-equity-patch/part03.patch \
+              > /tmp/equity.patch
+          git apply --check /tmp/equity.patch
+          git apply /tmp/equity.patch
+          git diff --check -- app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_dashboard_equity_curve.js
+
+      - name: Run focused checks
+        shell: bash
+        run: |
+          node --check app.js
+          node tests/test_dashboard_equity_curve.js
+          node tests/test_public_dashboard_live_pnl.js
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_dashboard_equity_curve.js
+          git diff --cached --check
+          git commit -m "Add realized P&L equity curve"
+          git push origin HEAD:feature/dashboard-realized-equity-curve
