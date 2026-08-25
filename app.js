@@ -5033,6 +5033,58 @@ function closedTradeExitDisplay(row) {
   return num(row?.exit);
 }
 
+function closedTradeDateKey(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const us = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (us) {
+    const month = us[1].padStart(2, '0');
+    const day = us[2].padStart(2, '0');
+    return `${us[3]}-${month}-${day}`;
+  }
+
+  return '';
+}
+
+function buildRealizedEquityCurve(closedValues) {
+  const dailyPnlByDate = new Map();
+
+  for (const row of (closedValues || []).slice(1)) {
+    // Equity Curve intentionally depends only on Closed Trades column C
+    // (close_time) and column I (result). Open P&L and trade metadata are excluded.
+    const date = closedTradeDateKey(row?.[2]);
+    const rawRealizedPnl = row?.[8];
+    if (!date || String(rawRealizedPnl ?? '').trim() === '') continue;
+
+    const realizedPnl = cleanNumber(rawRealizedPnl);
+    if (realizedPnl === '') continue;
+
+    dailyPnlByDate.set(date, (dailyPnlByDate.get(date) || 0) + realizedPnl);
+  }
+
+  let cumulativePnl = 0;
+  const points = [...dailyPnlByDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, dailyPnlRaw]) => {
+      const dailyPnl = Number(dailyPnlRaw.toFixed(2));
+      cumulativePnl = Number((cumulativePnl + dailyPnl).toFixed(2));
+      return {
+        date,
+        daily_pnl: dailyPnl,
+        cumulative_pnl: cumulativePnl,
+      };
+    });
+
+  return {
+    points,
+    total_realized_pnl: points.length ? points[points.length - 1].cumulative_pnl : 0,
+  };
+}
+
 async function getDashboardData() {
   const sheets = await getSheetsClient();
 
@@ -5066,6 +5118,7 @@ async function getDashboardData() {
   const workingOrders = [...pendingOrders, ...workingExitOrders];
 
   const tradeMetadataIndex = buildTradeMetadataIndex(tradeMetadataValues.slice(1));
+  const equityCurve = buildRealizedEquityCurve(closedValues);
 
   const closedTradesAll = closedValues
     .slice(1)
@@ -5114,6 +5167,7 @@ async function getDashboardData() {
     pending_orders: pendingOrders,
     working_orders: workingOrders,
     recent_closed_trades: closedTradesAll.slice(0, 20),
+    equity_curve: equityCurve,
     summary: {
       open_count: openPositions.length,
       pending_count: workingOrders.length,
@@ -9067,6 +9121,28 @@ function renderDashboardHtml(data, locale = 'en') {
   const s = data.summary;
   const optionJournal = data.option_journal || {};
   const isRu = String(locale || '').toLowerCase() === 'ru';
+  const equityCurve = data.equity_curve || { points: [], total_realized_pnl: 0 };
+  const equityPoints = Array.isArray(equityCurve.points) ? equityCurve.points : [];
+  const equityTotalNumber = cleanNumber(equityCurve.total_realized_pnl);
+  const equityTotal = equityTotalNumber === '' ? 0 : equityTotalNumber;
+  const equityTotalDisplay = `${equityTotal > 0 ? '+' : equityTotal < 0 ? '-' : ''}$${Math.abs(equityTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const equityPointsJson = JSON.stringify(equityPoints)
+    .replace(/&/g, '\\u0026')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
+  const equityCopy = isRu
+    ? {
+        title: 'Equity Curve — Realized P&L',
+        subtitle: 'Накопленный реализованный P&L · только закрытые сделки · Open P&L исключен',
+        total: 'Total Realized P&L',
+        empty: 'Пока нет закрытых сделок с реализованным P&L.',
+      }
+    : {
+        title: 'Equity Curve — Realized P&L',
+        subtitle: 'Cumulative realized P&L · closed trades only · Open P&L excluded',
+        total: 'Total Realized P&L',
+        empty: 'No closed trades with realized P&L yet.',
+      };
   const optionJournalCopy = isRu
     ? {
         title: 'Опционный журнал',
@@ -9624,6 +9700,164 @@ function renderDashboardHtml(data, locale = 'en') {
       white-space: nowrap;
     }
 
+    .equity-header {
+      align-items: center;
+    }
+
+    .equity-header-copy {
+      min-width: 0;
+    }
+
+    .equity-total {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      min-width: 170px;
+      text-align: right;
+    }
+
+    .equity-total span {
+      color: var(--muted2);
+      font-size: 11px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: 0.055em;
+    }
+
+    .equity-total strong {
+      color: var(--text);
+      font-size: 22px;
+      line-height: 1.1;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .equity-chart-wrap {
+      padding: 18px 18px 16px;
+      background: rgba(255,255,255,0.80);
+    }
+
+    .equity-chart-stage {
+      position: relative;
+      width: 100%;
+      min-height: 340px;
+    }
+
+    .equity-chart-svg {
+      display: block;
+      width: 100%;
+      height: 340px;
+      overflow: visible;
+      touch-action: none;
+    }
+
+    .equity-grid-line {
+      stroke: #edf3ef;
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .equity-zero-line {
+      stroke: #9eaaa4;
+      stroke-width: 1.2;
+      stroke-dasharray: 5 5;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .equity-line {
+      fill: none;
+      stroke: var(--green);
+      stroke-width: 2.5;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .equity-point {
+      fill: #ffffff;
+      stroke: var(--green);
+      stroke-width: 1.5;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .equity-point-last {
+      fill: var(--green);
+      stroke: #ffffff;
+      stroke-width: 2;
+    }
+
+    .equity-axis-text,
+    .equity-date-text {
+      fill: var(--muted2);
+      font-size: 11px;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .equity-last-value {
+      font-size: 12px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .equity-hover-line {
+      stroke: #c5d3cc;
+      stroke-width: 1;
+      stroke-dasharray: 3 4;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .equity-hover-dot {
+      fill: #ffffff;
+      stroke: #101713;
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .equity-tooltip {
+      position: absolute;
+      z-index: 4;
+      min-width: 190px;
+      padding: 11px 12px;
+      border: 1px solid #d7e4dc;
+      border-radius: 12px;
+      background: rgba(16, 23, 19, 0.95);
+      color: #ffffff;
+      box-shadow: 0 14px 34px rgba(16, 23, 19, 0.18);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity .12s ease;
+      font-size: 12px;
+      line-height: 1.45;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .equity-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .equity-tooltip-date {
+      margin-bottom: 5px;
+      color: #b9c7c0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.045em;
+    }
+
+    .equity-tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .equity-tooltip-row span:first-child {
+      color: #b9c7c0;
+    }
+
     .footer {
       margin-top: 18px;
       color: #6f7a75;
@@ -9652,6 +9886,12 @@ function renderDashboardHtml(data, locale = 'en') {
       .card .value { font-size: 21px; }
       .dash-btn, .home-link { width: 100%; }
       .left-links, .dashboard-links { width: 100%; }
+      .equity-header { align-items: flex-start; }
+      .equity-total { align-items: flex-start; min-width: 0; text-align: left; }
+      .equity-total strong { font-size: 20px; }
+      .equity-chart-wrap { padding: 12px 10px 10px; }
+      .equity-chart-stage { min-height: 300px; }
+      .equity-chart-svg { height: 300px; }
       th, td { font-size: 13px; padding: 12px 10px; }
     }
 </style>
@@ -9717,6 +9957,26 @@ function renderDashboardHtml(data, locale = 'en') {
           <div class="label">Win Rate</div>
           <div class="value">${pct(s.win_rate)}</div>
         </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header equity-header">
+        <div class="equity-header-copy">
+          <h2>${escapeHtml(equityCopy.title)}</h2>
+          <span>${escapeHtml(equityCopy.subtitle)}</span>
+        </div>
+        <div class="equity-total">
+          <span>${escapeHtml(equityCopy.total)}</span>
+          <strong class="${moneyClass(equityTotal)}">${escapeHtml(equityTotalDisplay)}</strong>
+        </div>
+      </div>
+      <div class="equity-chart-wrap">
+        ${equityPoints.length ? `
+        <div class="equity-chart-stage" id="equity-chart-stage">
+          <svg id="equity-chart-svg" class="equity-chart-svg" role="img" aria-label="${escapeHtml(equityCopy.title)}"></svg>
+          <div id="equity-chart-tooltip" class="equity-tooltip" aria-hidden="true"></div>
+        </div>` : `<div class="empty">${escapeHtml(equityCopy.empty)}</div>`}
       </div>
     </div>
 
@@ -9841,6 +10101,219 @@ function renderDashboardHtml(data, locale = 'en') {
   </div>
 
   <script>
+    const realizedEquityPoints = ${equityPointsJson};
+    const realizedEquityLocale = ${JSON.stringify(isRu ? 'ru-RU' : 'en-US')};
+
+    function equityMoney(value) {
+      const x = Number(value);
+      if (!Number.isFinite(x)) return '—';
+      const sign = x > 0 ? '+' : x < 0 ? '-' : '';
+      return sign + '$' + Math.abs(x).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function equityAxisMoney(value) {
+      const x = Number(value);
+      if (!Number.isFinite(x)) return '';
+      const sign = x < 0 ? '-' : '';
+      return sign + '$' + Math.abs(x).toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: Math.abs(x) < 100 ? 2 : 0
+      });
+    }
+
+    function equityDateLabel(value, compact = false) {
+      const match = String(value || '').match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      if (!match) return String(value || '');
+      const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+      return new Intl.DateTimeFormat(realizedEquityLocale, compact
+        ? { month: 'short', day: 'numeric' }
+        : { year: 'numeric', month: 'short', day: 'numeric' }
+      ).format(date);
+    }
+
+    function renderRealizedEquityChart() {
+      const stage = document.getElementById('equity-chart-stage');
+      const svg = document.getElementById('equity-chart-svg');
+      const tooltip = document.getElementById('equity-chart-tooltip');
+      if (!stage || !svg || !tooltip || !realizedEquityPoints.length) return;
+
+      const points = realizedEquityPoints
+        .map(point => ({
+          date: String(point.date || ''),
+          daily_pnl: Number(point.daily_pnl),
+          cumulative_pnl: Number(point.cumulative_pnl),
+        }))
+        .filter(point => point.date && Number.isFinite(point.daily_pnl) && Number.isFinite(point.cumulative_pnl));
+      if (!points.length) return;
+
+      const width = Math.max(stage.clientWidth || 0, 320);
+      const height = window.innerWidth <= 720 ? 300 : 340;
+      const margin = { top: 24, right: width <= 560 ? 82 : 112, bottom: 44, left: width <= 560 ? 56 : 70 };
+      const plotWidth = Math.max(1, width - margin.left - margin.right);
+      const plotHeight = Math.max(1, height - margin.top - margin.bottom);
+
+      const values = points.map(point => point.cumulative_pnl);
+      let minValue = Math.min(0, ...values);
+      let maxValue = Math.max(0, ...values);
+      const rawSpan = maxValue - minValue;
+      const padding = Math.max(rawSpan * 0.08, rawSpan === 0 ? 1 : 0.5);
+      minValue -= padding;
+      maxValue += padding;
+      const valueSpan = maxValue - minValue || 1;
+
+      const xForIndex = index => points.length === 1
+        ? margin.left + plotWidth / 2
+        : margin.left + (index / (points.length - 1)) * plotWidth;
+      const yForValue = value => margin.top + ((maxValue - value) / valueSpan) * plotHeight;
+
+      const ns = 'http://www.w3.org/2000/svg';
+      const add = (name, attrs = {}, text = '') => {
+        const el = document.createElementNS(ns, name);
+        Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)));
+        if (text !== '') el.textContent = text;
+        svg.appendChild(el);
+        return el;
+      };
+
+      svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      svg.replaceChildren();
+
+      const yTickCount = 4;
+      for (let i = 0; i <= yTickCount; i += 1) {
+        const value = maxValue - (i / yTickCount) * valueSpan;
+        const y = yForValue(value);
+        add('line', { x1: margin.left, y1: y, x2: margin.left + plotWidth, y2: y, class: 'equity-grid-line' });
+        if (Math.abs(value) > valueSpan * 0.035) {
+          add('text', { x: margin.left - 9, y: y + 4, 'text-anchor': 'end', class: 'equity-axis-text' }, equityAxisMoney(value));
+        }
+      }
+
+      const zeroY = yForValue(0);
+      add('line', { x1: margin.left, y1: zeroY, x2: margin.left + plotWidth, y2: zeroY, class: 'equity-zero-line' });
+      add('text', { x: margin.left - 9, y: zeroY + 4, 'text-anchor': 'end', class: 'equity-axis-text' }, '$0');
+
+      const tickSlots = Math.min(5, points.length);
+      const tickIndexes = new Set();
+      for (let i = 0; i < tickSlots; i += 1) {
+        tickIndexes.add(tickSlots === 1 ? 0 : Math.round((i / (tickSlots - 1)) * (points.length - 1)));
+      }
+      [...tickIndexes].sort((a, b) => a - b).forEach(index => {
+        add('text', {
+          x: xForIndex(index),
+          y: height - 14,
+          'text-anchor': index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle',
+          class: 'equity-date-text'
+        }, equityDateLabel(points[index].date, true));
+      });
+
+      const pathData = points.map((point, index) => {
+        const x = xForIndex(index).toFixed(2);
+        const y = yForValue(point.cumulative_pnl).toFixed(2);
+        return (index === 0 ? 'M' : 'L') + ' ' + x + ' ' + y;
+      }).join(' ');
+      add('path', { d: pathData, class: 'equity-line' });
+
+      points.forEach((point, index) => {
+        const isLast = index === points.length - 1;
+        add('circle', {
+          cx: xForIndex(index),
+          cy: yForValue(point.cumulative_pnl),
+          r: isLast ? 4.5 : 2.7,
+          class: isLast ? 'equity-point equity-point-last' : 'equity-point'
+        });
+      });
+
+      const lastIndex = points.length - 1;
+      const lastPoint = points[lastIndex];
+      const lastX = xForIndex(lastIndex);
+      const lastY = yForValue(lastPoint.cumulative_pnl);
+      add('text', {
+        x: Math.min(lastX + 11, width - 4),
+        y: Math.max(14, Math.min(height - 10, lastY + 4)),
+        'text-anchor': 'start',
+        class: 'equity-last-value',
+        fill: lastPoint.cumulative_pnl >= 0 ? 'var(--green)' : 'var(--red)'
+      }, equityMoney(lastPoint.cumulative_pnl));
+
+      const hoverLine = add('line', {
+        x1: 0, y1: margin.top, x2: 0, y2: margin.top + plotHeight,
+        class: 'equity-hover-line', visibility: 'hidden'
+      });
+      const hoverDot = add('circle', {
+        cx: 0, cy: 0, r: 4.5, class: 'equity-hover-dot', visibility: 'hidden'
+      });
+      const overlay = add('rect', {
+        x: margin.left, y: margin.top, width: plotWidth, height: plotHeight,
+        fill: 'transparent', cursor: 'crosshair'
+      });
+
+      function showPoint(event) {
+        const rect = svg.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const svgX = ((event.clientX - rect.left) / rect.width) * width;
+        const ratio = Math.max(0, Math.min(1, (svgX - margin.left) / plotWidth));
+        const index = points.length === 1 ? 0 : Math.round(ratio * (points.length - 1));
+        const point = points[index];
+        const x = xForIndex(index);
+        const y = yForValue(point.cumulative_pnl);
+
+        hoverLine.setAttribute('x1', x);
+        hoverLine.setAttribute('x2', x);
+        hoverLine.setAttribute('visibility', 'visible');
+        hoverDot.setAttribute('cx', x);
+        hoverDot.setAttribute('cy', y);
+        hoverDot.setAttribute('visibility', 'visible');
+
+        tooltip.innerHTML =
+          '<div class="equity-tooltip-date">' + equityDateLabel(point.date) + '</div>' +
+          '<div class="equity-tooltip-row"><span>Daily P&amp;L</span><span>' + equityMoney(point.daily_pnl) + '</span></div>' +
+          '<div class="equity-tooltip-row"><span>Cumulative P&amp;L</span><span>' + equityMoney(point.cumulative_pnl) + '</span></div>';
+        tooltip.classList.add('visible');
+        tooltip.setAttribute('aria-hidden', 'false');
+
+        const px = (x / width) * rect.width;
+        const py = (y / height) * rect.height;
+        const tooltipWidth = tooltip.offsetWidth || 190;
+        const tooltipHeight = tooltip.offsetHeight || 74;
+        const left = Math.max(8, Math.min(rect.width - tooltipWidth - 8, px + 12));
+        const top = Math.max(8, Math.min(rect.height - tooltipHeight - 8, py - tooltipHeight - 12));
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+      }
+
+      function hidePoint() {
+        hoverLine.setAttribute('visibility', 'hidden');
+        hoverDot.setAttribute('visibility', 'hidden');
+        tooltip.classList.remove('visible');
+        tooltip.setAttribute('aria-hidden', 'true');
+      }
+
+      overlay.addEventListener('pointermove', showPoint);
+      overlay.addEventListener('pointerdown', showPoint);
+      overlay.addEventListener('pointerleave', hidePoint);
+    }
+
+    let equityRenderTimer = null;
+    function scheduleEquityRender() {
+      if (equityRenderTimer) window.clearTimeout(equityRenderTimer);
+      equityRenderTimer = window.setTimeout(renderRealizedEquityChart, 80);
+    }
+
+    const equityStage = document.getElementById('equity-chart-stage');
+    if (equityStage) {
+      renderRealizedEquityChart();
+      if (window.ResizeObserver) {
+        const equityResizeObserver = new ResizeObserver(scheduleEquityRender);
+        equityResizeObserver.observe(equityStage);
+      } else {
+        window.addEventListener('resize', scheduleEquityRender);
+      }
+    }
+
     function publicPnlMoney(value) {
       const x = Number(value);
       if (!Number.isFinite(x)) return '—';
@@ -13121,6 +13594,7 @@ module.exports.__test = {
   shouldForwardToBridge,
   publicExitLabel,
   closedTradeExitDisplay,
+  buildRealizedEquityCurve,
   cleanupStaleVixaleEdgePendingRows,
   runEdgePendingEodCleanup,
   isCompletedEdgePendingSession,
