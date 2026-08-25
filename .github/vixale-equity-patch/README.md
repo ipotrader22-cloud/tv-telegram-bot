@@ -1,1 +1,0 @@
-Temporary PR-only patch staging files used to apply the reviewed realized-equity implementation on the feature branch. These files and the helper workflow are removed before the PR is marked ready for review.
