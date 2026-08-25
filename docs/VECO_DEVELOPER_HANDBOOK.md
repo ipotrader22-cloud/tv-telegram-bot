@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-24
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -1310,6 +1310,22 @@ and resumes when visible. HTTP 401 redirects to login; transient endpoint or
 network failures leave the last displayed value unchanged. This route mutates no
 Google Sheet, execution record, lifecycle state, broker state, or Telegram state
 and has no effect on TradingView, bridge, IB/TWS, EOD, or reconciliation behavior.
+
+The public dashboard's primary stock-performance chart is the **Equity Curve —
+Realized P&L**. It is presentation-only and reuses the existing `Closed Trades`
+worksheet read already performed by `GET /dashboard`; it adds no Google Sheets
+request and no new API route. The curve intentionally reads only `Closed Trades`
+column C (`Close Time`) and column I (`Result`). Rows with a valid close date and
+numeric realized result are grouped by calendar close date, same-day results are
+summed, dates are sorted ascending, and each point is the running cumulative sum
+of those daily realized results. Open/unrealized P&L, symbols, strategy metadata,
+Trade Metadata classification, entry/exit values, and open positions do not enter
+the calculation. Blank or non-numeric results are omitted rather than replaced
+with simulated values. The chart includes an explicit `$0` reference line,
+Date / Daily P&L / Cumulative P&L hover detail, and the latest cumulative value as
+`Total Realized P&L`. It refreshes with the normal dashboard page refresh cadence;
+the separate two-second `/dashboard/live-pnl.json` polling remains Open-P&L-only
+and never changes the realized equity curve between page refreshes.
 
 The authorized public dashboard also includes a read-only Option Journal table
 showing the latest 20 option records, newest first. Journal loading is isolated
