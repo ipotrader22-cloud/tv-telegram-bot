@@ -1,0 +1,180 @@
++      stroke-linejoin: round;
++      stroke-linecap: round;
++      vector-effect: non-scaling-stroke;
++    }
++
++    .equity-point {
++      fill: #ffffff;
++      stroke: var(--green);
++      stroke-width: 1.5;
++      vector-effect: non-scaling-stroke;
++    }
++
++    .equity-point-last {
++      fill: var(--green);
++      stroke: #ffffff;
++      stroke-width: 2;
++    }
++
++    .equity-axis-text,
++    .equity-date-text {
++      fill: var(--muted2);
++      font-size: 11px;
++      font-weight: 400;
++      font-variant-numeric: tabular-nums;
++    }
++
++    .equity-last-value {
++      font-size: 12px;
++      font-weight: 500;
++      font-variant-numeric: tabular-nums;
++    }
++
++    .equity-hover-line {
++      stroke: #c5d3cc;
++      stroke-width: 1;
++      stroke-dasharray: 3 4;
++      vector-effect: non-scaling-stroke;
++    }
++
++    .equity-hover-dot {
++      fill: #ffffff;
++      stroke: #101713;
++      stroke-width: 2;
++      vector-effect: non-scaling-stroke;
++    }
++
++    .equity-tooltip {
++      position: absolute;
++      z-index: 4;
++      min-width: 190px;
++      padding: 11px 12px;
++      border: 1px solid #d7e4dc;
++      border-radius: 12px;
++      background: rgba(16, 23, 19, 0.95);
++      color: #ffffff;
++      box-shadow: 0 14px 34px rgba(16, 23, 19, 0.18);
++      opacity: 0;
++      visibility: hidden;
++      pointer-events: none;
++      transition: opacity .12s ease;
++      font-size: 12px;
++      line-height: 1.45;
++      font-variant-numeric: tabular-nums;
++    }
++
++    .equity-tooltip.visible {
++      opacity: 1;
++      visibility: visible;
++    }
++
++    .equity-tooltip-date {
++      margin-bottom: 5px;
++      color: #b9c7c0;
++      font-size: 11px;
++      text-transform: uppercase;
++      letter-spacing: 0.045em;
++    }
++
++    .equity-tooltip-row {
++      display: flex;
++      justify-content: space-between;
++      gap: 16px;
++    }
++
++    .equity-tooltip-row span:first-child {
++      color: #b9c7c0;
++    }
++
+     .footer {
+       margin-top: 18px;
+       color: #6f7a75;
+@@ -9652,6 +9886,12 @@
+       .card .value { font-size: 21px; }
+       .dash-btn, .home-link { width: 100%; }
+       .left-links, .dashboard-links { width: 100%; }
++      .equity-header { align-items: flex-start; }
++      .equity-total { align-items: flex-start; min-width: 0; text-align: left; }
++      .equity-total strong { font-size: 20px; }
++      .equity-chart-wrap { padding: 12px 10px 10px; }
++      .equity-chart-stage { min-height: 300px; }
++      .equity-chart-svg { height: 300px; }
+       th, td { font-size: 13px; padding: 12px 10px; }
+     }
+ </style>
+@@ -9721,6 +9961,26 @@
+     </div>
+ 
+     <div class="section">
++      <div class="section-header equity-header">
++        <div class="equity-header-copy">
++          <h2>${escapeHtml(equityCopy.title)}</h2>
++          <span>${escapeHtml(equityCopy.subtitle)}</span>
++        </div>
++        <div class="equity-total">
++          <span>${escapeHtml(equityCopy.total)}</span>
++          <strong class="${moneyClass(equityTotal)}">${escapeHtml(equityTotalDisplay)}</strong>
++        </div>
++      </div>
++      <div class="equity-chart-wrap">
++        ${equityPoints.length ? `
++        <div class="equity-chart-stage" id="equity-chart-stage">
++          <svg id="equity-chart-svg" class="equity-chart-svg" role="img" aria-label="${escapeHtml(equityCopy.title)}"></svg>
++          <div id="equity-chart-tooltip" class="equity-tooltip" aria-hidden="true"></div>
++        </div>` : `<div class="empty">${escapeHtml(equityCopy.empty)}</div>`}
++      </div>
++    </div>
++
++    <div class="section">
+       <div class="section-header">
+         <h2>Open Positions</h2>
+         <span>Open P&amp;L updates live. Final exit and result appear after the trade closes.</span>
+@@ -9841,6 +10101,219 @@
+   </div>
+ 
+   <script>
++    const realizedEquityPoints = ${equityPointsJson};
++    const realizedEquityLocale = ${JSON.stringify(isRu ? 'ru-RU' : 'en-US')};
++
++    function equityMoney(value) {
++      const x = Number(value);
++      if (!Number.isFinite(x)) return '—';
++      const sign = x > 0 ? '+' : x < 0 ? '-' : '';
++      return sign + '$' + Math.abs(x).toLocaleString('en-US', {
++        minimumFractionDigits: 2,
++        maximumFractionDigits: 2
++      });
++    }
++
++    function equityAxisMoney(value) {
++      const x = Number(value);
++      if (!Number.isFinite(x)) return '';
++      const sign = x < 0 ? '-' : '';
++      return sign + '$' + Math.abs(x).toLocaleString('en-US', {
++        minimumFractionDigits: 0,
++        maximumFractionDigits: Math.abs(x) < 100 ? 2 : 0
++      });
++    }
++
++    function equityDateLabel(value, compact = false) {
++      const match = String(value || '').match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
++      if (!match) return String(value || '');
++      const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
++      return new Intl.DateTimeFormat(realizedEquityLocale, compact
++        ? { month: 'short', day: 'numeric' }
++        : { year: 'numeric', month: 'short', day: 'numeric' }
++      ).format(date);
++    }
++
++    function renderRealizedEquityChart() {
++      const stage = document.getElementById('equity-chart-stage');
++      const svg = document.getElementById('equity-chart-svg');
++      const tooltip = document.getElementById('equity-chart-tooltip');
++      if (!stage || !svg || !tooltip || !realizedEquityPoints.length) return;
++
++      const points = realizedEquityPoints
++        .map(point => ({
++          date: String(point.date || ''),
++          daily_pnl: Number(point.daily_pnl),
++          cumulative_pnl: Number(point.cumulative_pnl),
++        }))
