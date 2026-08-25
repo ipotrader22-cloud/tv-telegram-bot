@@ -1,17 +1,18 @@
 name: Apply dashboard realized equity patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/dashboard-realized-equity-curve
-    paths:
-      - .github/workflows/apply-dashboard-equity-patch.yml
+      - main
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   apply-equity-patch:
+    if: github.head_ref == 'feature/dashboard-realized-equity-curve'
     runs-on: ubuntu-latest
     steps:
       - name: Check out feature branch
@@ -23,6 +24,10 @@ jobs:
       - name: Assemble and apply reviewed patch
         shell: bash
         run: |
+          if grep -q "function buildRealizedEquityCurve" app.js; then
+            echo "Equity patch is already applied."
+            exit 0
+          fi
           cat .github/vixale-equity-patch/part00.patch \
               .github/vixale-equity-patch/part01.patch \
               .github/vixale-equity-patch/part02.patch \
@@ -39,9 +44,13 @@ jobs:
           node tests/test_dashboard_equity_curve.js
           node tests/test_public_dashboard_live_pnl.js
 
-      - name: Commit implementation
+      - name: Commit implementation if needed
         shell: bash
         run: |
+          if git diff --quiet -- app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_dashboard_equity_curve.js; then
+            echo "No implementation changes to commit."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_dashboard_equity_curve.js
