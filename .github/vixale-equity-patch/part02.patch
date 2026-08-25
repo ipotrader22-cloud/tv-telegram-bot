@@ -1,0 +1,180 @@
++        .filter(point => point.date && Number.isFinite(point.daily_pnl) && Number.isFinite(point.cumulative_pnl));
++      if (!points.length) return;
++
++      const width = Math.max(stage.clientWidth || 0, 320);
++      const height = window.innerWidth <= 720 ? 300 : 340;
++      const margin = { top: 24, right: width <= 560 ? 82 : 112, bottom: 44, left: width <= 560 ? 56 : 70 };
++      const plotWidth = Math.max(1, width - margin.left - margin.right);
++      const plotHeight = Math.max(1, height - margin.top - margin.bottom);
++
++      const values = points.map(point => point.cumulative_pnl);
++      let minValue = Math.min(0, ...values);
++      let maxValue = Math.max(0, ...values);
++      const rawSpan = maxValue - minValue;
++      const padding = Math.max(rawSpan * 0.08, rawSpan === 0 ? 1 : 0.5);
++      minValue -= padding;
++      maxValue += padding;
++      const valueSpan = maxValue - minValue || 1;
++
++      const xForIndex = index => points.length === 1
++        ? margin.left + plotWidth / 2
++        : margin.left + (index / (points.length - 1)) * plotWidth;
++      const yForValue = value => margin.top + ((maxValue - value) / valueSpan) * plotHeight;
++
++      const ns = 'http://www.w3.org/2000/svg';
++      const add = (name, attrs = {}, text = '') => {
++        const el = document.createElementNS(ns, name);
++        Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)));
++        if (text !== '') el.textContent = text;
++        svg.appendChild(el);
++        return el;
++      };
++
++      svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
++      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
++      svg.replaceChildren();
++
++      const yTickCount = 4;
++      for (let i = 0; i <= yTickCount; i += 1) {
++        const value = maxValue - (i / yTickCount) * valueSpan;
++        const y = yForValue(value);
++        add('line', { x1: margin.left, y1: y, x2: margin.left + plotWidth, y2: y, class: 'equity-grid-line' });
++        if (Math.abs(value) > valueSpan * 0.035) {
++          add('text', { x: margin.left - 9, y: y + 4, 'text-anchor': 'end', class: 'equity-axis-text' }, equityAxisMoney(value));
++        }
++      }
++
++      const zeroY = yForValue(0);
++      add('line', { x1: margin.left, y1: zeroY, x2: margin.left + plotWidth, y2: zeroY, class: 'equity-zero-line' });
++      add('text', { x: margin.left - 9, y: zeroY + 4, 'text-anchor': 'end', class: 'equity-axis-text' }, '$0');
++
++      const tickSlots = Math.min(5, points.length);
++      const tickIndexes = new Set();
++      for (let i = 0; i < tickSlots; i += 1) {
++        tickIndexes.add(tickSlots === 1 ? 0 : Math.round((i / (tickSlots - 1)) * (points.length - 1)));
++      }
++      [...tickIndexes].sort((a, b) => a - b).forEach(index => {
++        add('text', {
++          x: xForIndex(index),
++          y: height - 14,
++          'text-anchor': index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle',
++          class: 'equity-date-text'
++        }, equityDateLabel(points[index].date, true));
++      });
++
++      const pathData = points.map((point, index) => {
++        const x = xForIndex(index).toFixed(2);
++        const y = yForValue(point.cumulative_pnl).toFixed(2);
++        return (index === 0 ? 'M' : 'L') + ' ' + x + ' ' + y;
++      }).join(' ');
++      add('path', { d: pathData, class: 'equity-line' });
++
++      points.forEach((point, index) => {
++        const isLast = index === points.length - 1;
++        add('circle', {
++          cx: xForIndex(index),
++          cy: yForValue(point.cumulative_pnl),
++          r: isLast ? 4.5 : 2.7,
++          class: isLast ? 'equity-point equity-point-last' : 'equity-point'
++        });
++      });
++
++      const lastIndex = points.length - 1;
++      const lastPoint = points[lastIndex];
++      const lastX = xForIndex(lastIndex);
++      const lastY = yForValue(lastPoint.cumulative_pnl);
++      add('text', {
++        x: Math.min(lastX + 11, width - 4),
++        y: Math.max(14, Math.min(height - 10, lastY + 4)),
++        'text-anchor': 'start',
++        class: 'equity-last-value',
++        fill: lastPoint.cumulative_pnl >= 0 ? 'var(--green)' : 'var(--red)'
++      }, equityMoney(lastPoint.cumulative_pnl));
++
++      const hoverLine = add('line', {
++        x1: 0, y1: margin.top, x2: 0, y2: margin.top + plotHeight,
++        class: 'equity-hover-line', visibility: 'hidden'
++      });
++      const hoverDot = add('circle', {
++        cx: 0, cy: 0, r: 4.5, class: 'equity-hover-dot', visibility: 'hidden'
++      });
++      const overlay = add('rect', {
++        x: margin.left, y: margin.top, width: plotWidth, height: plotHeight,
++        fill: 'transparent', cursor: 'crosshair'
++      });
++
++      function showPoint(event) {
++        const rect = svg.getBoundingClientRect();
++        if (!rect.width || !rect.height) return;
++        const svgX = ((event.clientX - rect.left) / rect.width) * width;
++        const ratio = Math.max(0, Math.min(1, (svgX - margin.left) / plotWidth));
++        const index = points.length === 1 ? 0 : Math.round(ratio * (points.length - 1));
++        const point = points[index];
++        const x = xForIndex(index);
++        const y = yForValue(point.cumulative_pnl);
++
++        hoverLine.setAttribute('x1', x);
++        hoverLine.setAttribute('x2', x);
++        hoverLine.setAttribute('visibility', 'visible');
++        hoverDot.setAttribute('cx', x);
++        hoverDot.setAttribute('cy', y);
++        hoverDot.setAttribute('visibility', 'visible');
++
++        tooltip.innerHTML =
++          '<div class="equity-tooltip-date">' + equityDateLabel(point.date) + '</div>' +
++          '<div class="equity-tooltip-row"><span>Daily P&amp;L</span><span>' + equityMoney(point.daily_pnl) + '</span></div>' +
++          '<div class="equity-tooltip-row"><span>Cumulative P&amp;L</span><span>' + equityMoney(point.cumulative_pnl) + '</span></div>';
++        tooltip.classList.add('visible');
++        tooltip.setAttribute('aria-hidden', 'false');
++
++        const px = (x / width) * rect.width;
++        const py = (y / height) * rect.height;
++        const tooltipWidth = tooltip.offsetWidth || 190;
++        const tooltipHeight = tooltip.offsetHeight || 74;
++        const left = Math.max(8, Math.min(rect.width - tooltipWidth - 8, px + 12));
++        const top = Math.max(8, Math.min(rect.height - tooltipHeight - 8, py - tooltipHeight - 12));
++        tooltip.style.left = left + 'px';
++        tooltip.style.top = top + 'px';
++      }
++
++      function hidePoint() {
++        hoverLine.setAttribute('visibility', 'hidden');
++        hoverDot.setAttribute('visibility', 'hidden');
++        tooltip.classList.remove('visible');
++        tooltip.setAttribute('aria-hidden', 'true');
++      }
++
++      overlay.addEventListener('pointermove', showPoint);
++      overlay.addEventListener('pointerdown', showPoint);
++      overlay.addEventListener('pointerleave', hidePoint);
++    }
++
++    let equityRenderTimer = null;
++    function scheduleEquityRender() {
++      if (equityRenderTimer) window.clearTimeout(equityRenderTimer);
++      equityRenderTimer = window.setTimeout(renderRealizedEquityChart, 80);
++    }
++
++    const equityStage = document.getElementById('equity-chart-stage');
++    if (equityStage) {
++      renderRealizedEquityChart();
++      if (window.ResizeObserver) {
++        const equityResizeObserver = new ResizeObserver(scheduleEquityRender);
++        equityResizeObserver.observe(equityStage);
++      } else {
++        window.addEventListener('resize', scheduleEquityRender);
++      }
++    }
++
+     function publicPnlMoney(value) {
+       const x = Number(value);
+       if (!Number.isFinite(x)) return '—';
+@@ -13121,6 +13594,7 @@
+   shouldForwardToBridge,
+   publicExitLabel,
+   closedTradeExitDisplay,
++  buildRealizedEquityCurve,
+   cleanupStaleVixaleEdgePendingRows,
+   runEdgePendingEodCleanup,
+   isCompletedEdgePendingSession,
+--- a/docs/VECO_DEVELOPER_HANDBOOK.md
