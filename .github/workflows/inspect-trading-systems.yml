@@ -19,43 +19,50 @@ jobs:
           ref: feature/website-swing-trading
           fetch-depth: 0
 
-      - name: Extract focused Trading Systems snippets
+      - name: Extract compact Trading Systems contexts
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           s = Path('app.js').read_text(encoding='utf-8')
-          lines = s.splitlines()
-          needles = [
-              'function renderTradingSystemsHtml()',
-              'function renderTradingSystemsHtmlRu()',
-              'Vixale Prime', 'Vixale Edge', 'Straddle', 'Options Desk',
-              'market-nav', 'nav-links', 'Stocks', 'Futures', 'Options',
-              "app.get('/trading-systems'", 'renderTradingSystemsHtml(',
-          ]
-          hit_lines = set()
-          for i, line in enumerate(lines):
-              if any(n in line for n in needles):
-                  for j in range(max(0, i-14), min(len(lines), i+22)):
-                      hit_lines.add(j)
-          chunks=[]
-          last=None
-          for i in sorted(hit_lines):
-              if last is None or i != last+1:
-                  chunks.append(f'\n--- around line {i+1} ---\n')
-              chunks.append(f'{i+1:05d}: {lines[i]}\n')
-              last=i
-          out=''.join(chunks)
+          out=[]
+          def context(label, idx, before=1400, after=2600):
+              if idx < 0:
+                  out.append(f'=== {label}: NOT FOUND ===\n')
+                  return
+              out.append(f'=== {label} @ char {idx} ===\n{s[max(0,idx-before):min(len(s),idx+after)]}\n')
+          en = s.find('function renderTradingSystemsHtml')
+          ru = s.find('function renderTradingSystemsHtmlRu')
+          context('EN FUNCTION START', en, 0, 14000)
+          context('RU FUNCTION START', ru, 0, 12000)
+          end = s.find('\nfunction ', en + 20) if en >= 0 else -1
+          if end < 0: end = len(s)
+          block = s[en:end] if en >= 0 else ''
+          for needle in ['Vixale Prime','Vixale Edge','Straddle','Options Desk','market-nav','market-link','Stocks','Futures','Options','<body','</body>']:
+              pos=0; count=0
+              while block and count < 6:
+                  hit=block.find(needle,pos)
+                  if hit<0: break
+                  context(f'EN {needle} #{count+1}', en+hit, 1200, 2200)
+                  pos=hit+len(needle); count+=1
+          for needle in ["app.get('/trading-systems'", 'renderTradingSystemsHtml(', "'/trading-systems'"]:
+              pos=0; count=0
+              while count<8:
+                  hit=s.find(needle,pos)
+                  if hit<0: break
+                  context(f'GLOBAL {needle} #{count+1}', hit, 1200, 2200)
+                  pos=hit+len(needle); count+=1
+          compact='\n'.join(out)
           Path('.github/inspection').mkdir(parents=True, exist_ok=True)
-          Path('.github/inspection/trading-systems-focused.txt').write_text(out, encoding='utf-8')
-          print('focused bytes:', len(out.encode()))
+          Path('.github/inspection/trading-systems-compact.txt').write_text(compact, encoding='utf-8')
+          print('compact bytes:', len(compact.encode()))
           PY
 
-      - name: Commit focused snapshot
+      - name: Commit compact snapshot
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/inspection/trading-systems-focused.txt
-          git commit -m "Inspect focused Trading Systems snippets"
+          git add .github/inspection/trading-systems-compact.txt
+          git commit -m "Inspect compact Trading Systems contexts"
           git push origin HEAD:feature/website-swing-trading
