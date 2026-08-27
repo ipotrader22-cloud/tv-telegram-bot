@@ -1,0 +1,69 @@
+name: Inspect current Trading Systems render
+
+on:
+  push:
+    branches:
+      - feature/website-swing-trading
+    paths:
+      - .github/workflows/inspect-trading-systems.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/website-swing-trading
+          fetch-depth: 0
+
+      - name: Extract current website render blocks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app.js')
+          s = p.read_text(encoding='utf-8')
+          out = []
+
+          def extract_function(name):
+              marker = f'function {name}('
+              start = s.find(marker)
+              if start < 0:
+                  return f'=== {name}: NOT FOUND ===\n'
+              next_func = s.find('\nfunction ', start + len(marker))
+              next_route = s.find('\napp.get(', start + len(marker))
+              ends = [x for x in (next_func, next_route) if x >= 0]
+              end = min(ends) if ends else min(len(s), start + 120000)
+              return f'=== {name} ===\n' + s[start:end] + '\n'
+
+          for name in ['renderLandingHtml', 'renderLandingHtmlRu', 'renderTradingSystemsHtml', 'renderTradingSystemsHtmlRu']:
+              out.append(extract_function(name))
+
+          needle = "'/trading-systems'"
+          positions = []
+          pos = 0
+          while True:
+              idx = s.find(needle, pos)
+              if idx < 0: break
+              positions.append(idx)
+              pos = idx + 1
+          out.append('=== ROUTE /trading-systems OCCURRENCES ===\n')
+          for i, idx in enumerate(positions, 1):
+              out.append(f'--- occurrence {i} ---\n{s[max(0, idx-1800):min(len(s), idx+2600)]}\n')
+
+          Path('.github/inspection').mkdir(parents=True, exist_ok=True)
+          Path('.github/inspection/trading-systems-current.txt').write_text('\n'.join(out), encoding='utf-8')
+          print('extracted bytes:', Path('.github/inspection/trading-systems-current.txt').stat().st_size)
+          PY
+
+      - name: Commit inspection snapshot
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/inspection/trading-systems-current.txt
+          git commit -m "Inspect current Trading Systems render"
+          git push origin HEAD:feature/website-swing-trading
