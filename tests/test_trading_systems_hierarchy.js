@@ -16,8 +16,13 @@ function includes(value, message) {
 
 includes('href="#day-trading"', 'Trading Systems menu must link to Day Trading');
 includes('href="#swing-trading"', 'Trading Systems menu must link to Swing Trading');
+includes('aria-label="Trading system categories"', 'Trading Systems page must expose a horizon-level category menu');
+includes('<strong>Day Trading</strong><em>Prime · Edge · Straddles</em>');
+includes('<strong>Swing Trading</strong><em>Multi-session</em>');
+includes('href="#market-coverage"');
 includes('id="day-trading"', 'Day Trading section must exist');
 includes('id="swing-trading"', 'Swing Trading section must exist');
+includes('id="market-coverage"', 'Existing market detail navigation must remain available below the new hierarchy');
 includes('Day Trading Systems');
 includes('Prime');
 includes('Edge');
