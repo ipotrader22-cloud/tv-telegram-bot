@@ -1,0 +1,228 @@
+--- a/app.js
++++ b/app.js
+@@ -2697,13 +2697,32 @@ async function getStandardBridgeClosePublicationState(
+   const exactSetupOpen = wantedSetup
+     ? findRawSetupRow(openRows, 11, wantedSetup)
+     : null;
++  const legacyTradeId = makeTradeId(row?.symbol, row?.side);
++  const allowLegacyPrimeTradeIdFallback = Boolean(
++    wantedSetup &&
++    legacyTradeId &&
++    wantedSetup.toUpperCase() === legacyTradeId &&
++    normalizeTradeId(row?.trade_id) === legacyTradeId &&
++    String(row?.source || '').trim().toUpperCase() === 'IB_BRIDGE' &&
++    String(row?.system_id || '').trim().toUpperCase() === 'VIXALE_PRIME'
++  );
+   const openRowNumber = exactSetupOpen
+     ? exactSetupOpen.row_number
+     : wantedSetup
+-      ? 0
++      ? allowLegacyPrimeTradeIdFallback
++        ? findRowIndexByTradeId(openRows, legacyTradeId)
++        : 0
+       : findRowIndexByTradeId(openRows, row?.trade_id);
+   let metadata = null;
+@@ -27283,6 +27302,7 @@ module.exports.__test = {
+   parseJsonTradingViewAlert,
+   formatTelegramMessage,
+   processLedger,
++  getStandardBridgeClosePublicationState,
+   processRecognizedTradingViewWebhookLifecycle,
+   handleTradingViewWebhookWithDependencies,
+   shouldForwardToBridge,
+--- /dev/null
++++ b/tests/test_prime_close_trade_id_fallback.js
+@@ -0,0 +1,177 @@
++'use strict';
++
++const assert = require('assert');
++const Module = require('module');
++
++function fakeExpress() {
++  return {
++    set() {},
++    use() {},
++    get() {},
++    post() {},
++    listen() {
++      throw new Error('app.listen must not run while app.js is required by tests');
++    },
++  };
++}
++
++fakeExpress.json = () => (_req, _res, next) => next?.();
++fakeExpress.urlencoded = () => (_req, _res, next) => next?.();
++fakeExpress.text = () => (_req, _res, next) => next?.();
++
++const originalLoad = Module._load;
++Module._load = function loadWithTestDoubles(request, parent, isMain) {
++  if (request === 'express') return fakeExpress;
++  if (request === 'googleapis') {
++    return {
++      google: {
++        auth: { GoogleAuth: class GoogleAuth {} },
++        sheets: () => ({}),
++      },
++    };
++  }
++  return originalLoad.call(this, request, parent, isMain);
++};
++
++const { getStandardBridgeClosePublicationState } = require('../app.js').__test;
++Module._load = originalLoad;
++
++function sheetNameFromRange(range) {
++  return String(range || '')
++    .split('!')[0]
++    .replace(/^'|'$/g, '');
++}
++
++function createMockSheets(openRows) {
++  const rows = {
++    'Open Positions': [
++      ['trade_id', 'open_time', 'symbol', 'side', 'status', 'entry', 'size', 'target', 'stop', 'last_price', 'unrealized_p_l', 'raw'],
++      ...openRows,
++    ],
++    Trades: [['timestamp', 'symbol', 'side', 'event']],
++    'Closed Trades': [['trade_id', 'open_time', 'close_time']],
++    'Trade Metadata': [['Metadata ID', 'Trade ID', 'System']],
++  };
++
++  return {
++    spreadsheets: {
++      async get() {
++        return {
++          data: {
++            sheets: Object.keys(rows).map((title, index) => ({
++              properties: { title, sheetId: index + 1 },
++            })),
++          },
++        };
++      },
++      values: {
++        async get({ range }) {
++          const sheetName = sheetNameFromRange(range);
++          return { data: { values: (rows[sheetName] || []).map(row => [...row]) } };
++        },
++        async update({ range, requestBody }) {
++          const sheetName = sheetNameFromRange(range);
++          if (!rows[sheetName]) rows[sheetName] = [];
++          if (String(range).includes('!A1:')) rows[sheetName][0] = [...requestBody.values[0]];
++          return { data: {} };
++        },
++      },
++      async batchUpdate() {
++        return { data: {} };
++      },
++    },
++  };
++}
++
++function legacyOpenRow(tradeId, symbol, side, entry, qty, target, stop) {
++  return [
++    tradeId,
++    '2026-08-27 11:45:20',
++    symbol,
++    side,
++    'open',
++    entry,
++    qty,
++    target,
++    stop,
++    '',
++    '',
++    JSON.stringify({
++      source: 'IB_BRIDGE',
++      event: 'ENTRY_FILL',
++      strategy: 'SHREK_1_4',
++      system_id: 'VIXALE_PRIME',
++      symbol,
++      side,
++      entry,
++      qty,
++      target,
++      stop,
++      // Deliberately no setup_id: this is the live legacy Prime ENTRY_FILL shape.
++    }),
++  ];
++}
++
++function primeCloseRow(tradeId, symbol, side, deliveryId) {
++  return {
++    trade_id: tradeId,
++    setup_id: tradeId,
++    symbol,
++    side,
++    source: 'IB_BRIDGE',
++    system_id: 'VIXALE_PRIME',
++    raw: JSON.stringify({ bridge_delivery_id: deliveryId }),
++  };
++}
++
++async function assertLegacyPrimeFallback({ tradeId, symbol, side, entry, qty, target, stop, deliveryId }) {
++  const sheets = createMockSheets([
++    legacyOpenRow(tradeId, symbol, side, entry, qty, target, stop),
++  ]);
++  const state = await getStandardBridgeClosePublicationState(
++    sheets,
++    primeCloseRow(tradeId, symbol, side, deliveryId)
++  );
++
++  assert.ok(state.open, `${tradeId} must match its legacy Prime Open row`);
++  assert.strictEqual(state.open.row_number, 2);
++  assert.strictEqual(state.open.row[0], tradeId);
++}
++
++async function run() {
++  await assertLegacyPrimeFallback({
++    tradeId: 'OKLO_LONG',
++    symbol: 'OKLO',
++    side: 'LONG',
++    entry: 42.84,
++    qty: 700,
++    target: 43.38,
++    stop: 41.12,
++    deliveryId: 'TP:OKLO:5c6970a60002426211009112',
++  });
++
++  await assertLegacyPrimeFallback({
++    tradeId: 'NBIS_SHORT',
++    symbol: 'NBIS',
++    side: 'SHORT',
++    entry: 220.42,
++    qty: 134,
++    target: 212.64,
++    stop: 226.91,
++    deliveryId: 'TP:NBIS:test',
++  });
++
++  const unsafeSheets = createMockSheets([
++    legacyOpenRow('OKLO_LONG', 'OKLO', 'LONG', 42.84, 700, 43.38, 41.12),
++  ]);
++
++  const mismatchedSetup = await getStandardBridgeClosePublicationState(unsafeSheets, {
++    ...primeCloseRow('OKLO_LONG', 'OKLO', 'LONG', 'TP:OKLO:mismatch'),
++    setup_id: 'SOME_OTHER_SETUP',
++  });
++  assert.strictEqual(mismatchedSetup.open, null, 'non-legacy setup_id must not fall back to trade_id');
++
++  const edgeSetup = await getStandardBridgeClosePublicationState(unsafeSheets, {
++    ...primeCloseRow('OKLO_LONG', 'OKLO', 'LONG', 'TP:OKLO:edge'),
++    setup_id: 'VIXALE_EDGE:OKLO:15:LONG:1787844600000',
++    system_id: 'VIXALE_EDGE',
++  });
++  assert.strictEqual(edgeSetup.open, null, 'VIXALE_EDGE must keep strict setup_id matching');
++
++  const wrongSource = await getStandardBridgeClosePublicationState(unsafeSheets, {
++    ...primeCloseRow('OKLO_LONG', 'OKLO', 'LONG', 'TP:OKLO:source'),
++    source: 'TradingView',
++  });
++  assert.strictEqual(wrongSource.open, null, 'non-broker callbacks must not receive the legacy fallback');
++
++  console.log('Prime durable close trade-id fallback tests passed');
++}
++
++run().catch(error => {
++  console.error(error);
++  process.exitCode = 1;
++});
