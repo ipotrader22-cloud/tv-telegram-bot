@@ -8087,6 +8087,16 @@ function renderTradingSystemsHtml() {
       </div>
     </section>
 
+    <div class="market-nav-shell">
+      <div class="wrap">
+        <nav class="market-nav" aria-label="Trading system categories">
+          <a class="market-link" href="#day-trading"><strong>Day Trading</strong><em>Prime · Edge · Straddles</em></a>
+          <a class="market-link" href="#swing-trading"><strong>Swing Trading</strong><em>Multi-session</em></a>
+          <a class="market-link options" href="#market-coverage"><strong>Market Coverage</strong><em>Stocks · Futures · Options</em></a>
+        </nav>
+      </div>
+    </div>
+
     <section class="wrap section horizon-section" id="day-trading">
       <div class="section-head">
         <div class="market-kicker"><span class="market-label">Day Trading</span><span class="status-pill">Intraday Systems</span></div>
@@ -8146,15 +8156,18 @@ function renderTradingSystemsHtml() {
       </div>
     </section>
 
-    <div class="market-nav-shell">
-      <div class="wrap">
-        <nav class="market-nav" aria-label="Market coverage">
-          <a class="market-link" href="#stocks"><strong>Stocks</strong><em>2 Live · 1 Soon</em></a>
-          <a class="market-link" href="#futures"><strong>Futures</strong><em>In Development</em></a>
-          <a class="market-link options" href="#options"><strong>Options</strong><em>Live Desk</em></a>
-        </nav>
+    <section class="wrap section horizon-section" id="market-coverage">
+      <div class="section-head">
+        <div class="market-kicker"><span class="market-label">Market Coverage</span></div>
+        <h2>System details by market.</h2>
+        <p class="lead">The product hierarchy above is organized by trading horizon. The detailed sections below keep the existing market-specific execution, tracking, and transparency information.</p>
       </div>
-    </div>
+      <nav class="market-nav" aria-label="Market coverage">
+        <a class="market-link" href="#stocks"><strong>Stocks</strong><em>2 Live · 1 Soon</em></a>
+        <a class="market-link" href="#futures"><strong>Futures</strong><em>In Development</em></a>
+        <a class="market-link options" href="#options"><strong>Options</strong><em>Live Desk</em></a>
+      </nav>
+    </section>
 
     <section class="wrap section market-section" id="stocks">
       <div class="section-head">
