@@ -19,8 +19,8 @@ jobs:
           ref: feature/website-swing-trading
           fetch-depth: 0
 
-      - name: Apply reviewed website patch
-        run: python .github/vixale-swing/apply.py
+      - name: Refine Trading Systems category menu
+        run: python .github/vixale-swing/refine_menu.py
 
       - name: Syntax check
         run: node --check app.js
@@ -32,13 +32,13 @@ jobs:
         run: node tests/test_dashboard_equity_curve.js
 
       - name: Whitespace check
-        run: git diff --check -- app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_trading_systems_hierarchy.js
+        run: git diff --check -- app.js tests/test_trading_systems_hierarchy.js
 
-      - name: Commit implementation
+      - name: Commit refinement
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_trading_systems_hierarchy.js
-          git commit -m "Add Swing Trading website hierarchy"
+          git add app.js tests/test_trading_systems_hierarchy.js
+          git commit -m "Refine Trading Systems category menu"
           git push origin HEAD:feature/website-swing-trading
