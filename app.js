@@ -2683,10 +2683,21 @@ async function getStandardBridgeClosePublicationState(
   const exactSetupOpen = wantedSetup
     ? findRawSetupRow(openRows, 11, wantedSetup)
     : null;
+  const legacyTradeId = makeTradeId(row?.symbol, row?.side);
+  const allowLegacyPrimeTradeIdFallback = Boolean(
+    wantedSetup &&
+    legacyTradeId &&
+    wantedSetup.toUpperCase() === legacyTradeId &&
+    normalizeTradeId(row?.trade_id) === legacyTradeId &&
+    String(row?.source || '').trim().toUpperCase() === 'IB_BRIDGE' &&
+    String(row?.system_id || '').trim().toUpperCase() === 'VIXALE_PRIME'
+  );
   const openRowNumber = exactSetupOpen
     ? exactSetupOpen.row_number
     : wantedSetup
-      ? 0
+      ? allowLegacyPrimeTradeIdFallback
+        ? findRowIndexByTradeId(openRows, legacyTradeId)
+        : 0
       : findRowIndexByTradeId(openRows, row?.trade_id);
   let metadata = null;
   if (deliveryId) {
@@ -13589,6 +13600,7 @@ module.exports.__test = {
   parseJsonTradingViewAlert,
   formatTelegramMessage,
   processLedger,
+  getStandardBridgeClosePublicationState,
   processRecognizedTradingViewWebhookLifecycle,
   handleTradingViewWebhookWithDependencies,
   shouldForwardToBridge,
