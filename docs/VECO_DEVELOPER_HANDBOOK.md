@@ -2562,3 +2562,11 @@ When a future change is made:
 11. Verify Render and the complete VECO lifecycle after deployment.
 
 A handbook is not considered implemented until it is committed at its canonical Git path. Temporary chat/download copies are not canonical.
+
+## Public Trading Systems information architecture (2026-08-27)
+
+- `/trading-systems` is presented horizon-first at the public product level: **Day Trading** and **Swing Trading**.
+- **Day Trading** groups the public system families **Prime**, **Edge**, and **Straddles**. Existing Stocks / Futures / Options sections remain below as detailed market coverage and should keep their established deep links.
+- **Swing Trading** is a single public category. Do not split the navigation into Daily and Weekly products; timeframe inputs belong inside each strategy profile.
+- Swing strategy presentation can show multi-session holding, ATR / percentage targets, defined risk, and daily-close target / stop evaluation when those rules are part of the approved public strategy specification.
+- This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
