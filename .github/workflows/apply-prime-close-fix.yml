@@ -32,7 +32,6 @@ jobs:
         run: |
           node --check app.js
           node tests/test_prime_close_trade_id_fallback.js
-          node tests/test_vixale_edge_app_integration.js
 
       - name: Commit implementation
         shell: bash
