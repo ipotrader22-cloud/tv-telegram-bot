@@ -1,0 +1,44 @@
+name: Apply Swing Trading website hierarchy
+
+on:
+  push:
+    branches:
+      - feature/website-swing-trading
+    paths:
+      - .github/workflows/apply-swing-trading.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/website-swing-trading
+          fetch-depth: 0
+
+      - name: Apply reviewed website patch
+        run: python .github/vixale-swing/apply.py
+
+      - name: Syntax check
+        run: node --check app.js
+
+      - name: Trading Systems hierarchy test
+        run: node tests/test_trading_systems_hierarchy.js
+
+      - name: Existing dashboard equity regression test
+        run: node tests/test_dashboard_equity_curve.js
+
+      - name: Whitespace check
+        run: git diff --check -- app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_trading_systems_hierarchy.js
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js docs/VECO_DEVELOPER_HANDBOOK.md tests/test_trading_systems_hierarchy.js
+          git commit -m "Add Swing Trading website hierarchy"
+          git push origin HEAD:feature/website-swing-trading
