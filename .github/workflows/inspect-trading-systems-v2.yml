@@ -1,0 +1,58 @@
+name: Inspect Trading Systems focused snippets
+
+on:
+  push:
+    branches:
+      - feature/website-swing-trading
+    paths:
+      - .github/workflows/inspect-trading-systems-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/website-swing-trading
+          fetch-depth: 0
+      - name: Extract focused snippets
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('app.js').read_text(encoding='utf-8')
+          lines = s.splitlines()
+          needles = [
+              'function renderTradingSystemsHtml()',
+              'function renderTradingSystemsHtmlRu()',
+              'Vixale Prime', 'Vixale Edge', 'Straddle', 'Options Desk',
+              'market-nav', 'nav-links', 'Stocks', 'Futures', 'Options',
+              "app.get('/trading-systems'", 'renderTradingSystemsHtml(',
+          ]
+          hit_lines = set()
+          for i, line in enumerate(lines):
+              if any(n in line for n in needles):
+                  for j in range(max(0, i-14), min(len(lines), i+22)):
+                      hit_lines.add(j)
+          chunks=[]
+          last=None
+          for i in sorted(hit_lines):
+              if last is None or i != last+1:
+                  chunks.append(f'\n--- around line {i+1} ---\n')
+              chunks.append(f'{i+1:05d}: {lines[i]}\n')
+              last=i
+          out=''.join(chunks)
+          Path('.github/inspection/trading-systems-focused.txt').write_text(out,encoding='utf-8')
+          print('focused bytes', len(out.encode()))
+          PY
+      - name: Commit focused snapshot
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/inspection/trading-systems-focused.txt
+          git commit -m "Inspect focused Trading Systems snippets"
+          git push origin HEAD:feature/website-swing-trading
