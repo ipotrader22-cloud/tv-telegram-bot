@@ -8,6 +8,9 @@ const {
   createBrokerEodCallbackRegistry,
   runBrokerEodCallback,
 } = require('./lib/broker-eod-callbacks');
+const {
+  createSwingLeadersHandlers,
+} = require('./lib/swing-leaders');
 
 const app = express();
 
@@ -8146,7 +8149,7 @@ function renderTradingSystemsHtml() {
           <span class="horizon-kicker">Strategy profiles</span>
           <h3>One Swing Trading section. No Daily / Weekly split.</h3>
           <p>Each strategy will appear here by its own system name and rules. Daily or weekly inputs can remain part of the strategy logic without becoming separate public product categories.</p>
-          <p class="small-note">The first strategy profile can be added here once its public specification is finalized.</p>
+          <a class="horizon-link" href="/swing-leaders">View Vixale Swing Leaders →</a>
         </div>
         <div class="swing-rule-grid">
           <div class="swing-rule"><strong>Targets</strong><span>ATR or percentage based. Evaluated on daily close.</span></div>
@@ -13124,6 +13127,10 @@ app.get('/', (req, res) => {
 app.get('/trading-systems', (req, res) => {
   res.status(200).send(renderTradingSystemsHtml());
 });
+
+const swingLeadersHandlers = createSwingLeadersHandlers({ getSheetsClient });
+app.get('/swing-leaders', swingLeadersHandlers.page);
+app.get('/api/swing-leaders', swingLeadersHandlers.api);
 
 app.get('/risk-management', (req, res) => {
   res.status(200).send(renderRiskManagementHtml());
