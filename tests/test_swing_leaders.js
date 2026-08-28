@@ -132,7 +132,9 @@ async function run() {
   assertRejectsRows(rows => { rows[13][6] = 'n/a'; }, /Invalid percentage/);
   assertRejectsRows(rows => { rows[18][0] = 'FCX'; }, /already active/);
   assertRejectsRows(rows => { rows[23][7] = 'OTHER'; }, /Invalid exit_reason/);
-  assertRejectsRows(rows => { rows[23][0] = 'FCX'; }, /still active/);
+  const reentryRows = fixtureRows();
+  reentryRows[23][0] = 'FCX';
+  assert.doesNotThrow(() => parsePublicFeed(reentryRows), 'closed history may contain a ticker that has since been re-entered');
 
   const html = renderSwingLeadersHtml(deepClone(parsed), { stale: true });
   assert.ok(html.includes('Vixale Swing Leaders'));
