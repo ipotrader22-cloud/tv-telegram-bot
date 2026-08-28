@@ -2570,3 +2570,14 @@ A handbook is not considered implemented until it is committed at its canonical 
 - **Swing Trading** is a single public category. Do not split the navigation into Daily and Weekly products; timeframe inputs belong inside each strategy profile.
 - Swing strategy presentation can show multi-session holding, ATR / percentage targets, defined risk, and daily-close target / stop evaluation when those rules are part of the approved public strategy specification.
 - This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
+
+## Public Swing Leaders display feed (2026-08-27)
+
+- Frozen contract: **Research/Data Display Freeze: Vixale Swing Leaders v1.0**. Trading Lab remains the authority for Morning Leader scoring, Ready Now / Close to Breakout / Early Watch classification, portfolio membership, entry/exit values, market posture, research notes, and cash state.
+- The public page is `/swing-leaders`; the sanitized read-only JSON endpoint is `/api/swing-leaders`. Neither route creates trading signals, broker orders, portfolio decisions, or research classifications.
+- The backend reads only the approved workbook's `Public Feed` tab through the existing server-side Google Sheets authentication. Google credentials and private workbook access are never returned to browser JavaScript.
+- `lib/swing-leaders.js` enforces a strict public whitelist for snapshot, active, watch, and closed-trade fields. Extra/private workbook columns are ignored and never serialized. Prices, returns, scores, classifications, market posture, and membership are not recalculated or inferred by the website.
+- The approved quote source for v1.0 is the `GOOGLEFINANCE` value already resolved by Trading Lab in Google Sheets. The page visibly labels the delayed-quote/model-portfolio disclosure and never presents those values as broker execution prices.
+- The server caches the last complete validated snapshot in memory for display resilience. A failed or invalid refresh keeps that snapshot and marks it stale; if no valid snapshot has yet been loaded, the page/API fail closed with HTTP 503 instead of constructing a partial portfolio.
+- The displayed Last Updated value always comes from `snapshot_date` + `snapshot_time_et` in the feed. Website fetch time is not substituted for the research snapshot time.
+- This integration is website/data-display only and must remain isolated from TradingView alerts, UAM, TWS/IBKR execution, VECO order/risk logic, and broker lifecycle behavior.
