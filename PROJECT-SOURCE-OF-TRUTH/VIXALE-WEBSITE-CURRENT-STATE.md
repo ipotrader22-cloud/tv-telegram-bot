@@ -1,7 +1,7 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest updated:** 2026-08-24  
+**Manifest updated:** 2026-08-27  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
@@ -9,13 +9,15 @@
 
 This manifest records the website/dashboard repository baseline and approved presentation contract. It is not sufficient by itself to prove production deployment.
 
-At the latest direct GitHub verification, `main` pointed to:
+At the latest direct GitHub verification, the latest website-changing merge on `main` is:
 
-- **Observed main SHA:** `f1b38746b17f17bc9ae0ed5f30bc10d65ca107ab`
-- **Observed commit:** `Add realized P&L equity curve to Vixale dashboard (#26)`
-- **Observed state:** PR #26 merged into `main`
+- **Website merge SHA:** `c7165c15015089f36f73e446d1f7e9c14de73823`
+- **Observed commit:** `Merge pull request #29 from ipotrader22-cloud/feature/website-swing-trading — Add Swing Trading hierarchy to Trading Systems`
+- **Observed state:** PR #29 merged into `main`
 
-The observed SHA is a repository/code-state fact. It is **not** a claim that this SHA is deployed to production.
+A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #29.
+
+The observed repository state is **not** a claim that this SHA is deployed to production.
 
 ### Production / deployment
 
@@ -23,8 +25,24 @@ The observed SHA is a repository/code-state fact. It is **not** a claim that thi
 - **Deployment status:** UNVERIFIED
 - **Render/runtime configuration:** UNVERIFIED from this manifest
 - **Live Equity Curve verification:** UNVERIFIED until the authenticated dashboard/runtime is checked
+- **Live Trading Systems hierarchy verification:** UNVERIFIED until the public runtime is checked
 
-Before stating that the Equity Curve or any other website change is deployed or active, verify the deployment provider/runtime and the live site when accessible.
+Before stating that the Equity Curve, Trading Systems hierarchy, or any other website change is deployed or active, verify the deployment provider/runtime and the live site when accessible.
+
+## Public Trading Systems information architecture
+
+Repository implementation for the public `/trading-systems` page was merged in PR #29.
+
+- **Top-level public categories:** `Day Trading`, `Swing Trading`, and `Market Coverage`
+- **Day Trading:** groups `Prime`, `Edge`, and `Straddles`
+- **Swing Trading:** one unified multi-session category; do not split the public navigation into Daily and Weekly products
+- **Swing presentation contract:** may show multi-session positions, ATR / percentage targets, defined risk, and daily-close target / stop evaluation when those rules are part of the approved strategy specification
+- **Market Coverage:** retains the existing Stocks / Futures / Options detail sections and deep links
+- **Repository status:** MERGED to `main` in PR #29
+- **Website merge commit:** `c7165c15015089f36f73e446d1f7e9c14de73823`
+- **Production deployment:** UNVERIFIED / do not claim deployed
+
+This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
 
 ## Repository baseline relevant to the public dashboard
 
