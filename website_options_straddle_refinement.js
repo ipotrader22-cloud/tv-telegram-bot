@@ -1,9 +1,13 @@
 "use strict";
 
 const Module = require("module");
+const fs = require("fs");
+const path = require("path");
 
 const GUIDE_PATH = "/trading-guide";
 const SYSTEMS_PATH = "/trading-systems";
+const PDF_ROUTE = "/download/trading-guide.pdf";
+const PDF_BASE64_PATH = path.join(__dirname, "Vixale_Trading_Guide_UPDATED_SOURCE_BASE64.txt");
 
 function replaceAllLiteral(value, from, to) {
   return value.split(from).join(to);
@@ -35,14 +39,37 @@ function refineOptionsStraddleHtml(html) {
   ];
 
   for (const [from, to] of replacements) result = replaceAllLiteral(result, from, to);
-
   return result;
+}
+
+function readUpdatedPdfBuffer() {
+  const encoded = fs.readFileSync(PDF_BASE64_PATH, "utf8").trim();
+  const buffer = Buffer.from(encoded, "base64");
+  if (buffer.length < 1000 || buffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
+    throw new Error("Invalid Trading Guide PDF source");
+  }
+  return buffer;
 }
 
 function installOptionsStraddleMiddleware(app) {
   app.use((req, res, next) => {
     const requestPath = req.path || req.url.split("?")[0];
     const isRead = req.method === "GET" || req.method === "HEAD";
+
+    if (isRead && requestPath === PDF_ROUTE) {
+      try {
+        const pdf = readUpdatedPdfBuffer();
+        res.status(200);
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", 'attachment; filename="Vixale_Trading_Guide.pdf"');
+        res.setHeader("Content-Length", String(pdf.length));
+        res.send(pdf);
+      } catch (error) {
+        next(error);
+      }
+      return;
+    }
+
     if (isRead && (requestPath === GUIDE_PATH || requestPath === SYSTEMS_PATH)) {
       const originalSend = res.send.bind(res);
       res.send = function sendWithEsShortStraddle(body) {
@@ -88,7 +115,10 @@ Module._load = function vixaleEsStraddleModuleLoad(request, parent, isMain) {
 module.exports = {
   GUIDE_PATH,
   SYSTEMS_PATH,
+  PDF_ROUTE,
+  PDF_BASE64_PATH,
   refineOptionsStraddleHtml,
+  readUpdatedPdfBuffer,
   installOptionsStraddleMiddleware,
   wrapExpress,
 };
