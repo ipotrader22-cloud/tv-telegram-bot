@@ -17,11 +17,11 @@ Public presentation routes:
 /download/trading-guide.pdf
 ```
 
-`/website_trading_guide.js` adds the compact **How to Trade Vixale** panel to the generated Trading Systems HTML and serves the dedicated Trading Guide page and PDF download route.
+`/website_trading_guide.js` adds the compact **How to Trade Vixale** panel to the generated Trading Systems HTML and serves the dedicated Trading Guide page.
 
 `/website_trading_systems_refinement.js` is a website-only presentation refinement for `/trading-systems`. It adds a visible **Beginner Guide** link to the upper navigation and replaces the older generic Swing placeholder with the approved single-system Swing card.
 
-`/website_options_straddle_refinement.js` is a website-only presentation correction applied to `/trading-systems` and `/trading-guide`. It changes the beginner Options workflow from a long/debit example to the approved ES short-straddle credit workflow. It does not calculate or place any live order.
+`/website_options_straddle_refinement.js` is a website-only presentation correction applied to `/trading-systems` and `/trading-guide`. It changes the beginner Options workflow from a long/debit example to the approved ES short-straddle credit workflow. It also serves the aligned downloadable PDF from the verified base64 source `/Vixale_Trading_Guide.pdf.b64`. It does not calculate or place any live order.
 
 The Node start command preloads the presentation refinements before `/app.js`:
 
@@ -113,15 +113,17 @@ The proprietary hedge / adjustment / exit decision rules remain internal. This w
 
 ## PDF
 
-`/Vixale_Trading_Guide.pdf` is the downloadable five-page public guide served by `/download/trading-guide.pdf`. Website copy and PDF copy must remain aligned with the same public execution contracts.
+`/download/trading-guide.pdf` returns the five-page public Trading Guide with download filename `Vixale_Trading_Guide.pdf`. The checked source is `/Vixale_Trading_Guide.pdf.b64`; `/website_options_straddle_refinement.js` decodes it to PDF bytes after validating the `%PDF-` signature. Website copy and PDF copy must remain aligned with the same public execution contracts.
+
+The ES page in the PDF uses the same example as the website: 33.00 credit, 29.70 theoretical 10% buyback, 29.75 target after rounding to the nearest 0.25, multiplier 50, and +$162.50 illustrative profit if filled.
 
 ## Rollback
 
 For only the ES short-straddle copy correction:
 
 1. restore the prior start command without `/website_options_straddle_refinement.js`;
-2. restore the prior guide PDF;
-3. remove the focused ES short-straddle presentation test.
+2. restore the prior `Vixale_Trading_Guide.pdf` asset from Git history;
+3. remove `/Vixale_Trading_Guide.pdf.b64` and the focused ES short-straddle presentation test.
 
 For only the Trading Systems refinement:
 
@@ -131,7 +133,7 @@ For only the Trading Systems refinement:
 For the complete Beginner Trading Guide feature:
 
 1. restore the original application start command (`node app.js`);
-2. remove the website presentation preload modules and the guide PDF asset;
+2. remove the website presentation preload modules and guide PDF source;
 3. remove the related presentation tests.
 
 No trading-engine, bridge, TWS, Sheets, Telegram, or Swing feed rollback is required.
