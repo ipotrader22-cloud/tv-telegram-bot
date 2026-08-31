@@ -1,7 +1,10 @@
 'use strict';
 
 const assert = require('assert');
-const { refineOptionsStraddleHtml } = require('../website_options_straddle_refinement');
+const {
+  refineOptionsStraddleHtml,
+  readUpdatedPdfBuffer,
+} = require('../website_options_straddle_refinement');
 
 const source = `
 <h3>Watch → Straddle → +10% → Follow Updates</h3>
@@ -43,4 +46,9 @@ for (const forbidden of [
 ]) assert(!refined.includes(forbidden), `obsolete long-straddle copy remains: ${forbidden}`);
 
 assert.strictEqual(refineOptionsStraddleHtml(refined), refined, 'refinement must be idempotent');
+
+const pdf = readUpdatedPdfBuffer();
+assert.strictEqual(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
+assert(pdf.length > 5000, 'updated Trading Guide PDF must be nontrivial');
+
 console.log('ES short straddle guide refinement: PASS');
