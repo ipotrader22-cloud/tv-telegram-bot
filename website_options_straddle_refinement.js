@@ -7,7 +7,7 @@ const path = require("path");
 const GUIDE_PATH = "/trading-guide";
 const SYSTEMS_PATH = "/trading-systems";
 const PDF_ROUTE = "/download/trading-guide.pdf";
-const PDF_BASE64_PATH = path.join(__dirname, "Vixale_Trading_Guide_UPDATED_SOURCE_BASE64.txt");
+const PDF_BASE64_PATH = path.join(__dirname, "Vixale_Trading_Guide.pdf.b64");
 
 function replaceAllLiteral(value, from, to) {
   return value.split(from).join(to);
