@@ -18,6 +18,7 @@ function refineOptionsStraddleHtml(html) {
 
   let result = html;
   const replacements = [
+    ["Options · Straddles", "Options · ES Straddles"],
     ["Watch → Straddle → +10% → Follow Updates", "Watch → Sell ES Straddle → ~10% Buyback → Follow Updates"],
     ["Enter the specified call + put combination in your broker platform.", "SELL the specified ES call + put combination in your broker platform for the published credit."],
     ["Place the profit-taking limit at +10% above total straddle debit.", "After the credit fill, place a BUY TO CLOSE limit about 10% below the entry credit, rounded to the nearest 0.25."],
@@ -29,10 +30,8 @@ function refineOptionsStraddleHtml(html) {
     ["Set the profit-taking limit 10% above the total debit paid for the straddle.", "After the short straddle fills for a credit, place a BUY TO CLOSE limit about 10% below the entry credit. Round the target to the nearest 0.25 ES option price increment."],
     ["SPY straddle example", "ES short straddle example"],
     ["1 SPY STRADDLE @ $10.00 TOTAL DEBIT<br>100× multiplier = $1,000 cost", "SELL 1 ES STRADDLE @ 33.00 CREDIT<br>ES multiplier = 50"],
-    ["+10% target value", "10% buyback calculation"],
-    ["$11.00", "33.00 × 0.90 = 29.70"],
-    ["Target proceeds", "Rounded BUY TO CLOSE limit"],
-    ["$1,100", "29.75 (nearest 0.25)"],
+    ["<div class=\"row\"><span>+10% target value</span><b>$11.00</b></div>", "<div class=\"row\"><span>10% buyback calculation</span><b>33.00 × 0.90 = 29.70</b></div>"],
+    ["<div class=\"row\"><span>Target proceeds</span><b>$1,100</b></div>", "<div class=\"row\"><span>Rounded BUY TO CLOSE limit</span><b>29.75 (nearest 0.25)</b></div>"],
     ["If target fills</span><b class=\"positive\">+$100", "If target fills</span><b class=\"positive\">+$162.50"],
     ["Options results depend on actual fills, bid/ask spreads, commissions, and the exact contracts specified in the signal.", "Short straddles are opened for credit. Profit is the entry credit minus the buyback price, multiplied by 50 for ES. Actual results depend on fills, bid/ask spreads, commissions, margin requirements, and later hedge or exit instructions."],
     ["6:00–8:30 PM ET → open straddle → +10% target → follow hedge/exit updates.", "6:00–8:30 PM ET → sell ES straddle for credit → buy back about 10% lower → follow hedge/exit updates."],
