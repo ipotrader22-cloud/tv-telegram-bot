@@ -23,10 +23,12 @@ Public presentation routes:
 
 `/website_options_straddle_refinement.js` is a website-only presentation correction applied to `/trading-systems` and `/trading-guide`. It changes the beginner Options workflow from a long/debit example to the approved ES short-straddle credit workflow. It also serves the aligned downloadable PDF from the verified base64 source `/Vixale_Trading_Guide.pdf.b64`. It does not calculate or place any live order.
 
+`/website_trading_guide_style_refinement.js` is a presentation-only visual layer for `/trading-guide`. It aligns the guide with the broader Vixale website design without changing guide copy, strategy instructions, routes, PDF content, or data flow.
+
 The Node start command preloads the presentation refinements before `/app.js`:
 
 ```text
-node -r ./website_options_straddle_refinement.js -r ./website_trading_guide.js -r ./website_trading_systems_refinement.js app.js
+node -r ./website_trading_guide_style_refinement.js -r ./website_options_straddle_refinement.js -r ./website_trading_guide.js -r ./website_trading_systems_refinement.js app.js
 ```
 
 These presentation layers must not modify:
@@ -37,6 +39,22 @@ These presentation layers must not modify:
 - Telegram publishing logic;
 - Google Sheets trade lifecycle;
 - Swing Leaders public JSON schema or feed selection.
+
+## Trading Guide visual integration contract
+
+The dedicated `/trading-guide` page should visually read as part of the main Vixale website rather than as a separate marketing microsite.
+
+Approved visual direction:
+
+- use the same restrained green / neutral palette as the public Trading Systems experience;
+- use lighter, calmer heading weights rather than heavy display-bold typography;
+- keep the main `How to Trade Vixale` heading materially smaller than the former oversized 74px treatment;
+- use section headings around the same visual hierarchy as other Vixale public-page headings;
+- keep cards softly bordered with restrained shadows and consistent rounded corners;
+- preserve generous whitespace and desktop/mobile responsiveness;
+- do not alter instructional copy or examples as part of visual-only refinements.
+
+The style refinement is idempotent and applies only to `/trading-guide` HTML responses.
 
 ## Trading Systems navigation contract
 
@@ -118,6 +136,11 @@ The proprietary hedge / adjustment / exit decision rules remain internal. This w
 The ES page in the PDF uses the same example as the website: 33.00 credit, 29.70 theoretical 10% buyback, 29.75 target after rounding to the nearest 0.25, multiplier 50, and +$162.50 illustrative profit if filled.
 
 ## Rollback
+
+For only the Trading Guide visual refinement:
+
+1. remove `/website_trading_guide_style_refinement.js` from the preload command;
+2. remove the visual refinement module and its focused test.
 
 For only the ES short-straddle copy correction:
 
