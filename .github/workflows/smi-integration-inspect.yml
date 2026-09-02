@@ -16,43 +16,91 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Inspect routing and bridge hooks
+      - name: Recover staged SMI payload prefix
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64, zlib
+
+          parts = sorted(Path('.github/smi-v04-fwd').glob('part*.b64'))
+          raw_b64 = ''.join(''.join(p.read_text(encoding='utf-8').split()) for p in parts)
+          print('parts:', [p.name for p in parts])
+          print('base64_chars:', len(raw_b64))
+          usable = len(raw_b64) - (len(raw_b64) % 4)
+          compressed = base64.b64decode(raw_b64[:usable])
+          print('compressed_bytes:', len(compressed))
+
+          decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+          try:
+              tar_bytes = decoder.decompress(compressed)
+              tar_bytes += decoder.flush()
+          except zlib.error as exc:
+              print('expected_partial_gzip:', exc)
+              tar_bytes = decoder.unconsumed_tail
+              raise
+          print('decompressed_prefix_bytes:', len(tar_bytes))
+
+          def octal(field):
+              text = field.rstrip(b'\0 ').decode('ascii', errors='ignore').strip()
+              return int(text or '0', 8)
+
+          pos = 0
+          index = 0
+          while pos + 512 <= len(tar_bytes):
+              header = tar_bytes[pos:pos+512]
+              if header == b'\0' * 512:
+                  break
+              name = header[:100].split(b'\0',1)[0].decode('utf-8', errors='replace')
+              prefix = header[345:500].split(b'\0',1)[0].decode('utf-8', errors='replace')
+              if prefix:
+                  name = prefix + '/' + name
+              size = octal(header[124:136])
+              typeflag = header[156:157]
+              data_start = pos + 512
+              data_end = data_start + size
+              complete = data_end <= len(tar_bytes)
+              print(f'ARCHIVE_MEMBER {index}: name={name!r} size={size} type={typeflag!r} complete={complete}')
+              if complete and size and typeflag in (b'0', b'\0'):
+                  body = tar_bytes[data_start:data_end]
+                  try:
+                      text = body.decode('utf-8')
+                  except UnicodeDecodeError:
+                      text = ''
+                  if text:
+                      print(f'--- BEGIN RECOVERED {name} ---')
+                      print(text[:16000])
+                      if len(text) > 16000:
+                          print(f'--- TRUNCATED RECOVERED {name}: {len(text)} chars ---')
+                      print(f'--- END RECOVERED {name} ---')
+              if not complete:
+                  break
+              pos = data_start + ((size + 511) // 512) * 512
+              index += 1
+      - name: Inspect exact app and bridge ranges
         shell: python
         run: |
           from pathlib import Path
 
-          def show(path, needles, radius=10):
-              text = Path(path).read_text(encoding='utf-8')
-              lines = text.splitlines()
-              print(f'=== {path} lines={len(lines)} chars={len(text)} ===')
-              for needle in needles:
-                  hits = [i for i, line in enumerate(lines) if needle in line]
-                  print(f'--- needle={needle!r} hits={len(hits)} ---')
-                  for i in hits[:8]:
-                      lo = max(0, i-radius)
-                      hi = min(len(lines), i+radius+1)
-                      print(f'@@ line {i+1} @@')
-                      for j in range(lo, hi):
-                          print(f'{j+1:05d}: {lines[j][:1200]}')
+          def ranges(path, spans):
+              lines = Path(path).read_text(encoding='utf-8').splitlines()
+              print(f'=== {path} lines={len(lines)} ===')
+              for lo, hi, label in spans:
+                  print(f'--- {label}: {lo}-{hi} ---')
+                  for i in range(lo-1, min(hi, len(lines))):
+                      print(f'{i+1:05d}: {lines[i][:1600]}')
 
-          show('app.js', [
-              'app.post("/tv"',
-              "app.post('/tv'",
-              'BRIDGE_FORWARD_ENABLED',
-              'forwardToBridge',
-              'forwardToIbBridge',
-              'ENTRY_FILL',
-              'VIXALE_EDGE',
-              'processLedger',
-          ], radius=8)
-          show('bridge/ib_bridge.py', [
-              'async def tv_webhook',
-              'is_vixale_edge_payload',
-              'classify_strategy_payload',
-              'managed_positions',
-              'placeOrder',
-              'monitor_target_fill',
-          ], radius=8)
+          ranges('app.js', [
+              (1400, 1510, 'parser event/classifier'),
+              (11380, 11645, 'bridge decision/build/forward'),
+              (11680, 12085, 'recognition and execution-first lifecycle'),
+              (13740, 13811, 'route registration and test exports'),
+          ])
+          ranges('bridge/ib_bridge.py', [
+              (470, 590, 'managed position persistence'),
+              (2960, 3350, 'entry execution'),
+              (6150, 6350, 'generic close execution'),
+              (9760, 9893, 'tv webhook dispatcher'),
+          ])
       - name: Baseline syntax
         run: |
           node --check app.js
