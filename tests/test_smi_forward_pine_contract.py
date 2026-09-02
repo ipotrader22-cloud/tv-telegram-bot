@@ -18,10 +18,10 @@ def run_tests():
     assert 'f_entry_qty(_price) =>' in text
     assert 'strategy.default_entry_qty(_price)' in text
     assert 'math.floor(math.abs(_value))' in text
-    assert '\"qty_source\":\"TV Strategy Properties\"' in text
-    assert '\"position_size_pct\":' in text
-    assert '\"entry_order_type\":\"MARKET\"' in text
-    assert '\"target_tif\":\"GTC\"' in text
+    assert r'\"qty_source\":\"TV Strategy Properties\"' in text
+    assert r'\"position_size_pct\":' in text
+    assert r'\"entry_order_type\":\"MARKET\"' in text
+    assert r'\"target_tif\":\"GTC\"' in text
 
     assert '"BUY",\n         "SETUP",\n         "LONG"' in text
     assert '"SELL",\n         "SETUP",\n         "SHORT"' in text
