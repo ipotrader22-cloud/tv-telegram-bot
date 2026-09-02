@@ -348,7 +348,10 @@ pre-existing core unless an active SMI-managed symbol must be protected from a
 foreign broker-mutating action.
 
 SMI ownership is symbol-safe and fail-closed. Entry is refused when TWS already has
-a position, bridge managed state, or working orders for the symbol. An SMI exit must
+a position, bridge managed state, or working orders for the symbol. An accepted but
+not-yet-filled SMI entry also reserves the symbol in-process until its exact broker
+entry reaches a proven terminal state, so a lagging open-orders snapshot cannot admit
+a duplicate SETUP. An SMI exit must
 match the active managed SMI `setup_id` and side, prove the exact managed target,
 and refuse unrelated working orders before any cancellation/market close. Ambiguous
 broker state produces no speculative broker action. If a partial target fill and

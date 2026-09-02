@@ -456,23 +456,35 @@ def install_smi_forward_adapter(core: Any) -> Any:
 
     original_handle = core.handle_ib_action
     routing_lock = asyncio.Lock()
-    pending_smi_symbols = set()
+    pending_smi_entries: Dict[str, Dict[str, Any]] = {}
 
     async def pending_smi_ownership_block(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         symbol = _upper(data, "symbol")
         event = _upper(data, "event")
-        if symbol not in pending_smi_symbols or event not in SMI_OWNERSHIP_PROTECTED_EVENTS:
+        pending = dict(pending_smi_entries.get(symbol) or {})
+        if not pending or event not in SMI_OWNERSHIP_PROTECTED_EVENTS:
             return None
+
+        incoming_smi = is_smi_forward_payload(data)
+        blocked_status = (
+            "smi_entry_blocked_pending_broker_ownership"
+            if incoming_smi and event == "SETUP"
+            else "smi_managed_symbol_reserved"
+        )
+        blocked_message = (
+            "SMI entry blocked because a prior accepted SMI entry has not reached a proven terminal broker state."
+            if blocked_status == "smi_entry_blocked_pending_broker_ownership"
+            else "Broker-mutating foreign payload blocked while an accepted SMI entry still has broker ownership evidence."
+        )
 
         row = _managed_smi_row(core, symbol)
         if _managed_row_is_smi(row):
             return _blocked(
                 data,
-                "smi_managed_symbol_reserved",
-                "Broker-mutating foreign payload blocked because this symbol is owned by an active SMI setup.",
+                blocked_status,
+                blocked_message,
                 managed_setup_id=str(row.get("setup_id") or ""),
-                incoming_system_id=_upper(data, "system_id"),
-                incoming_strategy=_upper(data, "strategy"),
+                pending_setup_id=str(pending.get("setup_id") or ""),
             )
 
         position = await core.get_position_size(symbol)
@@ -484,17 +496,66 @@ def install_smi_forward_adapter(core: Any) -> Any:
             if contract_symbol == symbol:
                 working.append(trade)
 
-        if abs(float(position or 0.0)) <= 0.000001 and not working:
-            pending_smi_symbols.discard(symbol)
-            return None
+        if abs(float(position or 0.0)) > 0.000001 or working:
+            return _blocked(
+                data,
+                blocked_status,
+                blocked_message,
+                pending_setup_id=str(pending.get("setup_id") or ""),
+                pending_order_id=pending.get("order_id", ""),
+                working_order_count=len(working),
+                position_before_action=position,
+            )
+
+        # A flat/no-open-order snapshot alone is not enough to release an
+        # accepted entry reservation: IB caches can lag immediately after order
+        # submission. Require the exact accepted parent order to have a proven
+        # terminal history state. If history is unavailable/ambiguous, fail closed.
+        all_known = getattr(core, "all_known_ib_trades", None)
+        trade_status = getattr(core, "trade_status", None)
+        known_trades = list(all_known() or []) if callable(all_known) else []
+        expected_order_id = str(pending.get("order_id") or "")
+        expected_perm_id = str(pending.get("order_perm_id") or "")
+        expected_ref = str(pending.get("order_ref") or "").upper().strip()
+        matches = []
+        for trade in known_trades:
+            order = getattr(trade, "order", None)
+            order_id = str(getattr(order, "orderId", "") or "")
+            perm_id = str(getattr(order, "permId", "") or "")
+            order_ref = str(getattr(order, "orderRef", "") or "").upper().strip()
+            if (
+                (expected_perm_id and perm_id == expected_perm_id)
+                or (not expected_perm_id and expected_order_id and order_id == expected_order_id)
+                or (
+                    not expected_perm_id
+                    and not expected_order_id
+                    and expected_ref
+                    and order_ref == expected_ref
+                )
+            ):
+                matches.append(trade)
+
+        if len(matches) == 1 and callable(trade_status):
+            status = str(trade_status(matches[0]) or "").lower().strip()
+            terminal_bad = {
+                str(value).lower()
+                for value in getattr(core, "ORDER_BAD_STATUSES", set())
+            }
+            # Filled + broker-flat + no managed row/open order means the old
+            # entry lifecycle has already completed (for example target/manual
+            # flat followed by reconciliation). A canceled/rejected parent is
+            # likewise safe to release.
+            if status == "filled" or status in terminal_bad:
+                pending_smi_entries.pop(symbol, None)
+                return None
 
         return _blocked(
             data,
-            "smi_managed_symbol_reserved",
-            "Broker-mutating foreign payload blocked while an accepted SMI entry still has broker ownership evidence.",
-            managed_setup_id="",
-            incoming_system_id=_upper(data, "system_id"),
-            incoming_strategy=_upper(data, "strategy"),
+            blocked_status,
+            blocked_message,
+            pending_setup_id=str(pending.get("setup_id") or ""),
+            pending_order_id=pending.get("order_id", ""),
+            pending_history_matches=len(matches),
         )
 
     async def handle_ib_action_with_smi(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -524,6 +585,9 @@ def install_smi_forward_adapter(core: Any) -> Any:
             # under the one shared lock instead.
             async with core.ib_lock:
                 if signal in ("BUY", "SELL"):
+                    pending_guard = await pending_smi_ownership_block(data)
+                    if pending_guard is not None:
+                        return pending_guard
                     guard = await _smi_entry_guard(core, data)
                     if guard is not None:
                         return guard
@@ -536,7 +600,13 @@ def install_smi_forward_adapter(core: Any) -> Any:
                     }
                     accepted = status in accepted_statuses
                     if accepted and not bool(result.get("dry_run")):
-                        pending_smi_symbols.add(symbol)
+                        pending_smi_entries[symbol] = {
+                            "setup_id": _text(data, "setup_id"),
+                            "order_id": result.get("order_id", ""),
+                            "order_perm_id": result.get("order_perm_id", ""),
+                            "order_ref": result.get("order_ref", ""),
+                            "target_order_id": result.get("target_order_id", ""),
+                        }
                     if accepted and bool(result.get("entry_filled")):
                         mark = getattr(core, "mark_managed_position", None)
                         if callable(mark):
@@ -548,9 +618,23 @@ def install_smi_forward_adapter(core: Any) -> Any:
                     return guard
                 prepared = await _prepare_smi_exit(core, data, row)
                 if prepared is not None:
+                    prepared_position = prepared.get(
+                        "position_after_target_resolution",
+                        prepared.get("position_before_close", ""),
+                    )
+                    try:
+                        prepared_flat = abs(float(prepared_position)) <= 0.000001
+                    except Exception:
+                        prepared_flat = False
+                    if prepared_flat:
+                        pending_smi_entries.pop(symbol, None)
                     return prepared
 
                 result = await core.close_position_market(data)
+                if bool(result.get("close_filled")):
+                    position_after_close = await core.get_position_size(symbol)
+                    if abs(float(position_after_close or 0.0)) <= 0.000001:
+                        pending_smi_entries.pop(symbol, None)
 
                 partial_qty = float(data.pop("_smi_partial_target_filled_qty", 0.0) or 0.0)
                 partial_price = data.pop("_smi_partial_target_fill_price", 0)

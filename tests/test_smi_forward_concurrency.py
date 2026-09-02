@@ -115,6 +115,35 @@ async def test_duplicate_smi_is_serialized():
     assert any(status.startswith("smi_entry_blocked_") for status in statuses)
 
 
+class AwaitingFillRaceCore(RaceCore):
+    async def place_entry_order(self, data):
+        self.entry_calls += 1
+        self.entry_started.set()
+        await self.entry_release.wait()
+        return {
+            "status": "submitted_awaiting_entry_fill",
+            "entry_filled": False,
+            "dry_run": False,
+            "order_id": 901,
+            "order_perm_id": 1901,
+            "order_ref": "TVFVG_AAPL_LONG",
+            "target_order_id": 902,
+        }
+
+
+async def test_submitted_awaiting_fill_reservation_blocks_duplicate():
+    core = AwaitingFillRaceCore()
+    smi.install_smi_forward_adapter(core)
+    first, second = await asyncio.gather(
+        core.handle_ib_action(smi_entry()),
+        core.handle_ib_action(smi_entry()),
+    )
+    assert core.entry_calls == 1, "accepted unfilled SMI entry must reserve the symbol before a duplicate can submit"
+    statuses = {first["status"], second["status"]}
+    assert "submitted_awaiting_entry_fill" in statuses
+    assert "smi_entry_blocked_pending_broker_ownership" in statuses
+
+
 async def test_foreign_payload_cannot_pass_mid_smi_entry():
     core = RaceCore(gate_entry=True)
     smi.install_smi_forward_adapter(core)
@@ -161,6 +190,7 @@ async def test_guard_observes_state_changed_under_core_lock():
 
 async def run_tests():
     await test_duplicate_smi_is_serialized()
+    await test_submitted_awaiting_fill_reservation_blocks_duplicate()
     await test_foreign_payload_cannot_pass_mid_smi_entry()
     await test_guard_observes_state_changed_under_core_lock()
     print("SMI concurrency/atomic-routing tests passed")
