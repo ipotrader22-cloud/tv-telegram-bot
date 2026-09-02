@@ -45,6 +45,12 @@ jobs:
           new_helper = "def replace_once(old, new, label):\n    global text\n    scoped_labels = {'SMI callback evidence gates', 'SMI durable publication errors'}\n    if label in scoped_labels:\n        scope_start = text.index('async function processRecognizedTradingViewWebhook(')\n        scope_end = text.index('async function processRecognizedTradingViewWebhookLifecycle(', scope_start)\n        scope = text[scope_start:scope_end]\n        count = scope.count(old)\n        assert count == 1, f'{label}: expected 1 scoped anchor, found {count}'\n        scope = scope.replace(old, new, 1)\n        text = text[:scope_start] + scope + text[scope_end:]\n        return\n    count = text.count(old)\n    assert count == 1, f'{label}: expected 1 anchor, found {count}'\n    text = text.replace(old, new, 1)\n"
           assert old_helper in script
           script = script.replace(old_helper, new_helper, 1)
+
+          old_exports = "  isSmiForwardRow,\\n  validateSmiForwardTransportContract,\\n  isSmiEntryFillBrokerCallback,"
+          new_exports = "  isSmiForwardRow,\\n  hasSmiForwardCallbackIdentity,\\n  isSmiBrokerExitShape,\\n  isBridgeExecutionCallback,\\n  validateSmiForwardTransportContract,\\n  isSmiEntryFillBrokerCallback,"
+          assert old_exports in script
+          script = script.replace(old_exports, new_exports, 1)
+
           assert "SMI_FWD_SYSTEM_ID" in script
           assert "path.write_text(text, encoding='utf-8')" in script
           Path('/tmp/smi_render_patch.py').write_text(script, encoding='utf-8')
@@ -146,6 +152,9 @@ jobs:
           assert.deepStrictEqual(t.validateSmiForwardTransportContract(close), { ok: true, reason: 'ok' }, 'SMI close transport contract');
           assert.strictEqual(t.isSmiForwardPayload(close), true, 'SMI close payload identity');
           assert.strictEqual(t.isSmiForwardRow(closeRow), true, 'SMI parsed close row identity');
+          assert.strictEqual(t.isSmiBrokerExitShape(closeRow), true, `SMI parsed exit shape event=${closeRow.event} raw_event=${closeRow.raw_event} raw=${closeRow.raw}`);
+          assert.strictEqual(t.isBridgeExecutionCallback(close), true, 'SMI close recognized as bridge execution callback');
+          assert.strictEqual(t.hasSmiForwardCallbackIdentity(close), true, 'SMI close callback identity');
           assert.strictEqual(t.isSmiBrokerExitCallbackShape(close, closeRow), true, 'SMI close callback shape');
           assert.strictEqual(t.isPersistentSmiBrokerExitCallback(close, closeRow), true, 'SMI close execution evidence');
           assert.strictEqual(t.isPersistentSmiBrokerExitCallback({ ...close, position_after_close: 1 }, closeRow), false);
