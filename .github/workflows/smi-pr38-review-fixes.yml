@@ -29,6 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PYTHONPATH="$GITHUB_WORKSPACE${PYTHONPATH:+:$PYTHONPATH}"
           node --check app.js
           python -m py_compile bridge/ib_bridge.py bridge/ib_bridge_core.py bridge/smi_forward_adapter.py
           python tests/test_smi_forward_pine_contract.py
