@@ -528,6 +528,13 @@ shortMtfOK =
 
 var string activeUamSetupId = ""
 
+// ============================================================================
+// TARGET STORAGE
+// ============================================================================
+
+var float longTargetPrice = na
+var float shortTargetPrice = na
+
 f_json_escape(_value) =>
     string escaped = str.replace_all(_value, "\\", "\\\\")
     escaped := str.replace_all(escaped, "\"", "\\\"")
@@ -539,14 +546,12 @@ f_json_escape(_value) =>
 f_json_num(_value) =>
     na(_value) ? "null" : str.tostring(_value)
 
-f_qty_from_value(_value) =>
-    int(math.max(1, math.floor(math.abs(_value))))
-
 f_entry_qty(_price) =>
-    f_qty_from_value(strategy.default_entry_qty(_price))
+    float rawQty = strategy.default_entry_qty(_price)
+    na(rawQty) ? 0 : int(math.max(0, math.floor(math.abs(rawQty))))
 
 f_close_qty() =>
-    f_qty_from_value(strategy.position_size)
+    int(math.max(1, math.floor(math.abs(strategy.position_size))))
 
 f_setup_id(_side, _entrySignalBarTime) =>
     UAM_STRATEGY_ID + ":" +
@@ -699,13 +704,6 @@ shortCondition =
      shortCycleOK
 
 // ============================================================================
-// TARGET STORAGE
-// ============================================================================
-
-var float longTargetPrice = na
-var float shortTargetPrice = na
-
-// ============================================================================
 // LONG ENTRY
 // ============================================================================
 
@@ -719,16 +717,18 @@ if longCondition
 
     activeUamSetupId := f_setup_id("LONG", time)
 
-    f_send_uam(
-         "BUY",
-         "SETUP",
-         "LONG",
-         activeUamSetupId,
-         close,
-         longTargetPrice,
-         f_entry_qty(close),
-         "VALID_LONG_RESEARCH_SIGNAL"
-    )
+    int longEntryQty = f_entry_qty(close)
+    if longEntryQty > 0
+        f_send_uam(
+             "BUY",
+             "SETUP",
+             "LONG",
+             activeUamSetupId,
+             close,
+             longTargetPrice,
+             longEntryQty,
+             "VALID_LONG_RESEARCH_SIGNAL"
+        )
 
     strategy.entry(
          "Long",
@@ -760,16 +760,18 @@ if shortCondition
 
     activeUamSetupId := f_setup_id("SHORT", time)
 
-    f_send_uam(
-         "SELL",
-         "SETUP",
-         "SHORT",
-         activeUamSetupId,
-         close,
-         shortTargetPrice,
-         f_entry_qty(close),
-         "VALID_SHORT_RESEARCH_SIGNAL"
-    )
+    int shortEntryQty = f_entry_qty(close)
+    if shortEntryQty > 0
+        f_send_uam(
+             "SELL",
+             "SETUP",
+             "SHORT",
+             activeUamSetupId,
+             close,
+             shortTargetPrice,
+             shortEntryQty,
+             "VALID_SHORT_RESEARCH_SIGNAL"
+        )
 
     strategy.entry(
          "Short",

@@ -8,6 +8,7 @@ delegates broker work to the pre-existing bridge core.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from typing import Any, Dict, Optional, Tuple
 
@@ -58,8 +59,10 @@ def _float(value: Any) -> float:
 
 def _int(value: Any) -> int:
     try:
-        result = int(float(str(value).replace(",", "").strip()))
-        return result if result > 0 else 0
+        numeric = float(str(value).replace(",", "").strip())
+        if not math.isfinite(numeric) or numeric <= 0 or not numeric.is_integer():
+            return 0
+        return int(numeric)
     except Exception:
         return 0
 
@@ -442,60 +445,130 @@ def _foreign_payload_guard(core: Any, data: Dict[str, Any]) -> Optional[Dict[str
 
 
 def install_smi_forward_adapter(core: Any) -> Any:
-    """Patch exactly one core routing function and preserve ordinary paths."""
+    """Patch exactly one core routing function and preserve ordinary paths.
+
+    SMI ownership checks and SMI broker mutations are serialized under the same
+    ``core.ib_lock`` used by the pre-existing bridge. A routing lock also keeps
+    foreign handle calls from passing an SMI ownership check mid-transition.
+    """
     if getattr(core, "_smi_forward_adapter_installed", False):
         return core
 
     original_handle = core.handle_ib_action
+    routing_lock = asyncio.Lock()
+    pending_smi_symbols = set()
+
+    async def pending_smi_ownership_block(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        symbol = _upper(data, "symbol")
+        event = _upper(data, "event")
+        if symbol not in pending_smi_symbols or event not in SMI_OWNERSHIP_PROTECTED_EVENTS:
+            return None
+
+        row = _managed_smi_row(core, symbol)
+        if _managed_row_is_smi(row):
+            return _blocked(
+                data,
+                "smi_managed_symbol_reserved",
+                "Broker-mutating foreign payload blocked because this symbol is owned by an active SMI setup.",
+                managed_setup_id=str(row.get("setup_id") or ""),
+                incoming_system_id=_upper(data, "system_id"),
+                incoming_strategy=_upper(data, "strategy"),
+            )
+
+        position = await core.get_position_size(symbol)
+        working = []
+        for trade in list(core.ib.openTrades() or []):
+            contract_symbol = str(
+                getattr(getattr(trade, "contract", None), "symbol", "") or ""
+            ).upper().strip()
+            if contract_symbol == symbol:
+                working.append(trade)
+
+        if abs(float(position or 0.0)) <= 0.000001 and not working:
+            pending_smi_symbols.discard(symbol)
+            return None
+
+        return _blocked(
+            data,
+            "smi_managed_symbol_reserved",
+            "Broker-mutating foreign payload blocked while an accepted SMI entry still has broker ownership evidence.",
+            managed_setup_id="",
+            incoming_system_id=_upper(data, "system_id"),
+            incoming_strategy=_upper(data, "strategy"),
+        )
 
     async def handle_ib_action_with_smi(data: Dict[str, Any]) -> Dict[str, Any]:
-        if not is_smi_forward_payload(data):
-            ownership_block = _foreign_payload_guard(core, data)
-            if ownership_block is not None:
-                return ownership_block
-            return await original_handle(data)
+        async with routing_lock:
+            if not is_smi_forward_payload(data):
+                # Synchronize the ownership read with every existing core IB path.
+                # original_handle acquires this same lock itself, so release it
+                # before delegation; routing_lock prevents SMI from slipping into
+                # that small handoff window.
+                async with core.ib_lock:
+                    ownership_block = _foreign_payload_guard(core, data)
+                    if ownership_block is None:
+                        ownership_block = await pending_smi_ownership_block(data)
+                if ownership_block is not None:
+                    return ownership_block
+                return await original_handle(data)
 
-        contract_error = validate_smi_transport_contract(data)
-        if contract_error is not None:
-            return contract_error
+            contract_error = validate_smi_transport_contract(data)
+            if contract_error is not None:
+                return contract_error
 
-        signal = _upper(data, "signal")
-        if signal in ("BUY", "SELL"):
-            guard = await _smi_entry_guard(core, data)
-            if guard is not None:
-                return guard
-            return await original_handle(data)
+            signal = _upper(data, "signal")
+            symbol = _upper(data, "symbol")
 
-        guard, row = _smi_exit_ownership_guard(core, data)
-        if guard is not None:
-            return guard
-        prepared = await _prepare_smi_exit(core, data, row)
-        if prepared is not None:
-            return prepared
+            # original_handle cannot be called here because it would re-acquire
+            # the non-reentrant asyncio.Lock. Reuse the unchanged core primitives
+            # under the one shared lock instead.
+            async with core.ib_lock:
+                if signal in ("BUY", "SELL"):
+                    guard = await _smi_entry_guard(core, data)
+                    if guard is not None:
+                        return guard
 
-        result = await original_handle(data)
+                    result = await core.place_entry_order(data)
+                    status = str(result.get("status") or "").lower()
+                    accepted_statuses = {
+                        str(value).lower()
+                        for value in getattr(core, "SETUP_ACCEPTED_STATUSES", set())
+                    }
+                    accepted = status in accepted_statuses
+                    if accepted and not bool(result.get("dry_run")):
+                        pending_smi_symbols.add(symbol)
+                    if accepted and bool(result.get("entry_filled")):
+                        mark = getattr(core, "mark_managed_position", None)
+                        if callable(mark):
+                            mark(data, result)
+                    return result
 
-        # Partial target + market remainder is execution-real but generic
-        # CLOSE_FILL publication would use one price for the whole original row.
-        # Preserve broker safety by flattening the remainder, persist the bridge
-        # close evidence, and fail closed on public publication for manual review.
-        partial_qty = float(data.pop("_smi_partial_target_filled_qty", 0.0) or 0.0)
-        partial_price = data.pop("_smi_partial_target_fill_price", 0)
-        partial_exec_ids = data.pop("_smi_partial_target_exec_ids", [])
-        if partial_qty > 0 and bool(result.get("close_filled")):
-            persist = getattr(core, "mark_managed_bridge_close", None)
-            persisted = bool(persist(data, result)) if callable(persist) else False
-            return {
-                **result,
-                "status": "smi_mixed_exit_manual_reconcile",
-                "smi_partial_target_filled_qty": partial_qty,
-                "smi_partial_target_fill_price": partial_price,
-                "smi_partial_target_exec_ids": partial_exec_ids,
-                "managed_state_persisted": persisted,
-                "message": "SMI broker position flattened after partial target; automatic public close withheld for evidence-safe reconciliation.",
-            }
+                guard, row = _smi_exit_ownership_guard(core, data)
+                if guard is not None:
+                    return guard
+                prepared = await _prepare_smi_exit(core, data, row)
+                if prepared is not None:
+                    return prepared
 
-        return result
+                result = await core.close_position_market(data)
+
+                partial_qty = float(data.pop("_smi_partial_target_filled_qty", 0.0) or 0.0)
+                partial_price = data.pop("_smi_partial_target_fill_price", 0)
+                partial_exec_ids = data.pop("_smi_partial_target_exec_ids", [])
+                if partial_qty > 0 and bool(result.get("close_filled")):
+                    persist = getattr(core, "mark_managed_bridge_close", None)
+                    persisted = bool(persist(data, result)) if callable(persist) else False
+                    return {
+                        **result,
+                        "status": "smi_mixed_exit_manual_reconcile",
+                        "smi_partial_target_filled_qty": partial_qty,
+                        "smi_partial_target_fill_price": partial_price,
+                        "smi_partial_target_exec_ids": partial_exec_ids,
+                        "managed_state_persisted": persisted,
+                        "message": "SMI broker position flattened after partial target; automatic public close withheld for evidence-safe reconciliation.",
+                    }
+
+                return result
 
     core._smi_forward_original_handle_ib_action = original_handle
     core.handle_ib_action = handle_ib_action_with_smi

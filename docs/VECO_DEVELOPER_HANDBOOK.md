@@ -324,7 +324,9 @@ Pine snapshots the corresponding whole-share quantity from
 `strategy.default_entry_qty()` and serializes that integer as `qty` with
 `qty_source="TV Strategy Properties"` and `position_size_pct=3`. Render and the
 bridge must never recalculate the percentage, substitute `BRIDGE_DEFAULT_QTY`, or
-execute a missing/invalid SMI quantity.
+execute a missing/invalid SMI quantity. If `strategy.default_entry_qty()` does not
+produce at least one whole share, Pine emits no UAM entry alert; Engineering must
+never synthesize a one-share fallback.
 
 The ATR target is calculated and frozen by the approved Pine research event before
 transport. Engineering does not recompute ATR or target logic. SMI entries serialize

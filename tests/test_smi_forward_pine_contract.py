@@ -17,14 +17,21 @@ def run_tests():
 
     assert 'f_entry_qty(_price) =>' in text
     assert 'strategy.default_entry_qty(_price)' in text
-    assert 'math.floor(math.abs(_value))' in text
+    assert 'math.max(1, math.floor(math.abs(_value)))' not in text
+    assert 'na(rawQty) ? 0 : int(math.max(0, math.floor(math.abs(rawQty))))' in text
+    assert 'if longEntryQty > 0' in text
+    assert 'if shortEntryQty > 0' in text
+
+    target_decl = text.index('var float longTargetPrice = na')
+    eod_use = text.index('float eodTarget = strategy.position_size > 0 ? longTargetPrice : shortTargetPrice')
+    assert target_decl < eod_use, 'target storage must be declared before EOD serialization uses it'
     assert r'\"qty_source\":\"TV Strategy Properties\"' in text
     assert r'\"position_size_pct\":' in text
     assert r'\"entry_order_type\":\"MARKET\"' in text
     assert r'\"target_tif\":\"GTC\"' in text
 
-    assert '"BUY",\n         "SETUP",\n         "LONG"' in text
-    assert '"SELL",\n         "SETUP",\n         "SHORT"' in text
+    assert '"BUY",\n             "SETUP",\n             "LONG"' in text
+    assert '"SELL",\n             "SETUP",\n             "SHORT"' in text
     assert '"EXIT_LONG",\n         "CLOSE_STOP",\n         "LONG"' in text
     assert '"EXIT_SHORT",\n         "CLOSE_STOP",\n         "SHORT"' in text
 

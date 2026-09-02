@@ -16,6 +16,7 @@ class FakeCore:
     BLOCK_MARKET_CLOSES_OUTSIDE_RTH = False
 
     def __init__(self):
+        self.ib_lock = asyncio.Lock()
         self.managed = {}
         self.positions = {}
         self.ib = FakeIB()
@@ -36,6 +37,24 @@ class FakeCore:
 
     async def ensure_ib_connected(self):
         return True
+
+    async def place_entry_order(self, data):
+        self.original_calls.append(dict(data))
+        return {
+            "status": "delegated",
+            "symbol": data.get("symbol"),
+            "event": data.get("event"),
+            "close_filled": False,
+        }
+
+    async def close_position_market(self, data):
+        self.original_calls.append(dict(data))
+        return {
+            "status": "delegated",
+            "symbol": data.get("symbol"),
+            "event": data.get("event"),
+            "close_filled": data.get("event") in {"CLOSE_STOP", "EOD_CLOSE"},
+        }
 
     async def handle_ib_action(self, data):
         self.original_calls.append(dict(data))
@@ -115,6 +134,8 @@ async def run_tests():
     assert smi.validate_smi_transport_contract(smi_entry(position_size_pct=4))["status"] == "smi_contract_position_size_pct_mismatch"
     assert smi.validate_smi_transport_contract(smi_entry(qty_source="Render BRIDGE_DEFAULT_QTY"))["status"] == "smi_contract_qty_source_mismatch"
     assert smi.validate_smi_transport_contract(smi_entry(qty=0))["status"] == "smi_contract_invalid_qty"
+    assert smi.validate_smi_transport_contract(smi_entry(qty=30.5))["status"] == "smi_contract_invalid_qty"
+    assert smi.validate_smi_transport_contract(smi_entry(qty="30.5"))["status"] == "smi_contract_invalid_qty"
 
     core = FakeCore()
     smi.install_smi_forward_adapter(core)
