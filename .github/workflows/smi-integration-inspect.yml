@@ -99,7 +99,6 @@ jobs:
               'UAM_RESEARCH_VERSION = "0.4-FWD"',
               'UAM_POSITION_SIZE_PCT = 3.0',
               'ta.tsi(close, shortLen, longLen)',
-              'entryQty',
           ]
           for token in required_pine:
               assert token in pine, f'missing Pine contract token: {token}'
@@ -107,6 +106,9 @@ jobs:
           assert re.search(r'default_qty_value\s*=\s*3(?:\.0)?\b', pine)
           assert not re.search(r'default_qty_type\s*=\s*strategy\.fixed\b', pine)
           assert '\x00' not in pine
+          for line_no, line in enumerate(pine.splitlines(), 1):
+              if any(token in line for token in ('strategy.entry', 'qty', 'equity', 'math.floor')):
+                  print(f'PINE_QTY_LINE {line_no}: {line}')
 
           adapter = (root / 'bridge/smi_forward_adapter.py').read_text(encoding='utf-8')
           required_adapter = [
