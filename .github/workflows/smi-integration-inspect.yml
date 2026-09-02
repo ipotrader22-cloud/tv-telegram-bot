@@ -25,7 +25,7 @@ jobs:
           import subprocess
 
           previous = subprocess.check_output(
-              ['git', 'show', 'HEAD^:.github/workflows/smi-integration-inspect.yml'],
+              ['git', 'show', 'HEAD~2:.github/workflows/smi-integration-inspect.yml'],
               text=True,
           )
           start_marker = "      - name: Apply assert-driven SMI routing patch\n"
@@ -39,6 +39,30 @@ jobs:
               line[10:] if line.startswith("          ") else line
               for line in lines
           ) + "\n"
+
+          old_helper = '''def replace_once(old, new, label):
+    global text
+    count = text.count(old)
+    assert count == 1, f'{label}: expected 1 anchor, found {count}'
+    text = text.replace(old, new, 1)
+'''
+          new_helper = '''def replace_once(old, new, label):
+    global text
+    if label == 'SMI callback evidence gates':
+        scope_start = text.index('async function processRecognizedTradingViewWebhook(')
+        scope_end = text.index('async function processRecognizedTradingViewWebhookLifecycle(', scope_start)
+        scope = text[scope_start:scope_end]
+        count = scope.count(old)
+        assert count == 1, f'{label}: expected 1 scoped anchor, found {count}'
+        scope = scope.replace(old, new, 1)
+        text = text[:scope_start] + scope + text[scope_end:]
+        return
+    count = text.count(old)
+    assert count == 1, f'{label}: expected 1 anchor, found {count}'
+    text = text.replace(old, new, 1)
+'''
+          assert old_helper in script
+          script = script.replace(old_helper, new_helper, 1)
           assert "SMI_FWD_SYSTEM_ID" in script
           assert "path.write_text(text, encoding='utf-8')" in script
           Path('/tmp/smi_render_patch.py').write_text(script, encoding='utf-8')
