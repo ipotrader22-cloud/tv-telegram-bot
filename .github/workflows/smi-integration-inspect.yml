@@ -1,4 +1,4 @@
-name: SMI integration inspect
+name: SMI integration materialize
 
 on:
   push:
@@ -6,174 +6,151 @@ on:
       - feature/smi-v04-fwd-tws-adapter
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  materialize:
+    if: ${{ !contains(github.event.head_commit.message, '[smi-materialized]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Locate single-character staging seam corruption
+      - name: Recover and verify staged archive members
         shell: python
         run: |
           from pathlib import Path
-          import base64, zlib, hashlib, re
+          import base64, hashlib, re, zlib
 
-          p0 = ''.join(Path('.github/smi-v04-fwd/part00.b64').read_text().split())
-          p1 = ''.join(Path('.github/smi-v04-fwd/part01.b64').read_text().split())
-          p2 = ''.join(Path('.github/smi-v04-fwd/part02.b64').read_text().split())
-          print('lengths', len(p0), len(p1), len(p2))
+          root = Path('.')
+          p0 = ''.join((root / '.github/smi-v04-fwd/part00.b64').read_text().split())
+          p1 = ''.join((root / '.github/smi-v04-fwd/part01.b64').read_text().split())
+          p2 = ''.join((root / '.github/smi-v04-fwd/part02.b64').read_text().split())
+          assert (len(p0), len(p1), len(p2)) == (6000, 6001, 6000)
+          assert p1[3712] == '0'
 
-          def partial_gzip(data):
-              d = zlib.decompressobj(16 + zlib.MAX_WBITS)
-              out = bytearray()
-              error = ''
-              for i in range(0, len(data), 256):
-                  try:
-                      out.extend(d.decompress(data[i:i+256]))
-                  except zlib.error as exc:
-                      error = str(exc)
-                      break
-              return bytes(out), error
+          joined = p0 + p1[:3712] + p1[3713:] + p2
+          compressed = base64.b64decode(joined, validate=True)
+          decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+          tar_bytes = decoder.decompress(compressed)
+          try:
+              tar_bytes += decoder.flush()
+          except zlib.error:
+              pass
 
           def octal(field):
-              text = field.rstrip(b'\0 ').decode('ascii', errors='ignore').strip()
+              text = field.rstrip(b'\0 ').decode('ascii', errors='strict').strip()
               if not re.fullmatch(r'[0-7]*', text):
-                  return None
-              try:
-                  return int(text or '0', 8)
-              except ValueError:
-                  return None
+                  raise ValueError(f'invalid tar size field: {field!r}')
+              return int(text or '0', 8)
 
-          def tar_members(blob):
-              members=[]; pos=0
-              while pos + 512 <= len(blob):
-                  header=blob[pos:pos+512]
-                  if header == b'\0'*512: break
-                  size=octal(header[124:136])
-                  if size is None: break
-                  name=header[:100].split(b'\0',1)[0].decode('utf-8', errors='replace')
-                  prefix=header[345:500].split(b'\0',1)[0].decode('utf-8', errors='replace')
-                  if prefix: name=prefix+'/'+name
-                  data_start=pos+512; data_end=data_start+size
-                  complete=data_end <= len(blob)
-                  members.append((name,size,header[156:157],complete,data_start,data_end))
-                  if not complete: break
-                  pos=data_start+((size+511)//512)*512
-              return members, pos
+          members = {}
+          pos = 0
+          while pos + 512 <= len(tar_bytes):
+              header = tar_bytes[pos:pos+512]
+              if header == b'\0' * 512:
+                  break
+              name = header[:100].split(b'\0', 1)[0].decode('utf-8')
+              prefix = header[345:500].split(b'\0', 1)[0].decode('utf-8')
+              if prefix:
+                  name = prefix + '/' + name
+              size = octal(header[124:136])
+              start = pos + 512
+              end = start + size
+              if end > len(tar_bytes):
+                  break
+              if header[156:157] in (b'0', b'\0'):
+                  members[name] = tar_bytes[start:end]
+              pos = start + ((size + 511) // 512) * 512
 
-          candidates=[]
-          for idx in range(len(p1)):
-              joined = p0 + p1[:idx] + p1[idx+1:] + p2
-              try:
-                  compressed=base64.b64decode(joined, validate=True)
-              except Exception:
-                  continue
-              out, err = partial_gzip(compressed)
-              members, pos = tar_members(out)
-              file_members=[m for m in members if m[2] in (b'0',b'\0')]
-              pine_ok=False
-              pine_clean=False
-              for m in file_members:
-                  if m[0]=='pine/SMI_Histogram_v0_4_FWD_UAM.pine' and m[3]:
-                      body=out[m[4]:m[5]]
-                      text=body.decode('utf-8', errors='replace')
-                      pine_ok=all(token in text for token in [
-                          '//@version=6',
-                          'default_qty_type=strategy.percent_of_equity',
-                          'UAM_SYSTEM_ID = "VIXALE_SMI_FWD"',
-                          'ta.tsi(close, shortLen, longLen)',
-                          'strategy.entry',
-                          'alert(',
-                      ])
-                      pine_clean=(b'\x00' not in body and '\ufffd' not in text)
-              score=(len(members), pos, int(pine_ok), int(pine_clean), len(out), -len(err))
-              candidates.append((score,idx,p1[idx],len(out),err,members))
+          expected = {
+              'bridge/ib_bridge.py': '996a2c9de7dffb4128528af885792625a7ee3a21b842fdff016104719501b57c',
+              'bridge/smi_forward_adapter.py': 'b28e2a3df103f49a7d998be452d0d94222a91a583f1b6513e623bd9ade3542ac',
+              'pine/SMI_Histogram_v0_4_FWD_UAM.pine': '18b0914ae4c3baa6886ff281435331561e13a37e20f59af8d7013a27ac969f96',
+              'scripts/deploy-ib-bridge.ps1': '0da7c5f1c2fe527150c8a6edb9f1a5465cb219ecf79f324cb9c223f7f985449c',
+          }
+          for path, digest in expected.items():
+              assert path in members, f'missing recovered member: {path}'
+              actual = hashlib.sha256(members[path]).hexdigest()
+              assert actual == digest, f'{path}: sha256 {actual} != {digest}'
+              members[path].decode('utf-8')
 
-          candidates.sort(reverse=True)
-          print('TOP CANDIDATES')
-          for item in candidates[:12]:
-              score,idx,ch,outlen,err,members=item
-              print('candidate', {'index':idx,'char':ch,'score':score,'outlen':outlen,'error':err})
-              print('members', [(m[0],m[1],m[2].decode("latin1"),m[3]) for m in members[:12]])
+          original_core = (root / 'bridge/ib_bridge.py').read_bytes()
+          original_core_sha = hashlib.sha256(original_core).hexdigest()
+          (root / 'bridge/ib_bridge_core.py').write_bytes(original_core)
 
-          best=candidates[0]
-          score,idx,ch,outlen,err,members=best
-          print('BEST_REMOVAL_INDEX',idx)
-          print('BEST_REMOVAL_CHAR',repr(ch))
-          print('BEST_SCORE',score)
-          print('BEST_ERROR',err)
+          for path in expected:
+              dest = root / path
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(members[path])
 
-          joined=p0+p1[:idx]+p1[idx+1:]+p2
-          compressed=base64.b64decode(joined, validate=True)
-          out,_=partial_gzip(compressed)
-          members,_=tar_members(out)
-          for name,size,typeflag,complete,start,end in members:
-              if complete and typeflag in (b'0',b'\0'):
-                  body=out[start:end]
-                  print('RECOVERED_MEMBER',name,size,hashlib.sha256(body).hexdigest())
-                  if name=='pine/SMI_Histogram_v0_4_FWD_UAM.pine':
-                      text=body.decode('utf-8')
-                      print('PINE_NULS', body.count(b'\x00'), 'PINE_REPLACEMENTS', text.count('\ufffd'))
-                      print('PINE_LAST_40_LINES_BEGIN')
-                      print('\n'.join(text.splitlines()[-40:]))
-                      print('PINE_LAST_40_LINES_END')
+          assert hashlib.sha256((root / 'bridge/ib_bridge_core.py').read_bytes()).hexdigest() == original_core_sha
+          assert (root / 'bridge/ib_bridge_core.py').read_bytes() == original_core
 
-      - name: Inspect bridge entry target and routing primitives
-        shell: python
-        run: |
-          from pathlib import Path
-
-          def show_hits(path, needles, radius=45):
-              lines=Path(path).read_text(encoding='utf-8').splitlines()
-              print(f'=== {path} lines={len(lines)} ===')
-              for needle in needles:
-                  hits=[i for i,line in enumerate(lines) if needle in line]
-                  print(f'--- {needle!r}: hits={len(hits)} ---')
-                  for i in hits[:4]:
-                      lo=max(0,i-radius); hi=min(len(lines),i+radius+1)
-                      print(f'@@ {i+1} @@')
-                      for j in range(lo,hi): print(f'{j+1:05d}: {lines[j][:1800]}')
-
-          show_hits('bridge/ib_bridge.py', [
-              'async def handle_ib_action',
-              'async def process_signal_background',
-              'def find_exact_managed_target_trade',
-              'async def cancel_and_verify_edge_target',
-              'async def wait_for_edge_partial_position_sync',
-              'target_trade =',
-              'LimitOrder(',
-              'target_tif',
-              'mark_managed_position(data',
-          ])
-
-      - name: Inspect Render parser payload and validation primitives
-        shell: python
-        run: |
-          from pathlib import Path
-
-          lines=Path('app.js').read_text(encoding='utf-8').splitlines()
-          needles=[
-              'function parseJsonTradingViewAlert',
-              'function isOpenOnSetupRow',
-              'function bridgePayload',
-              'function validateBridgePayload',
-              'function isRecognizedTradeWebhook',
-              'function isBridgeExecutionCallback',
+          pine = (root / 'pine/SMI_Histogram_v0_4_FWD_UAM.pine').read_text(encoding='utf-8')
+          required_pine = [
+              '//@version=6',
+              'default_qty_type=strategy.percent_of_equity',
+              'default_qty_value=3.0',
+              'UAM_SYSTEM_ID = "VIXALE_SMI_FWD"',
+              'UAM_STRATEGY_ID = "SMI_HISTOGRAM_V0_4_FWD"',
+              'UAM_RESEARCH_VERSION = "0.4-FWD"',
+              'UAM_POSITION_SIZE_PCT = 3.0',
+              'ta.tsi(close, shortLen, longLen)',
+              'qty=entryQty',
           ]
-          for needle in needles:
-              hits=[i for i,line in enumerate(lines) if needle in line]
-              print(f'--- {needle!r}: hits={len(hits)} ---')
-              for i in hits[:3]:
-                  lo=max(0,i-55); hi=min(len(lines),i+100)
-                  print(f'@@ {i+1} @@')
-                  for j in range(lo,hi): print(f'{j+1:05d}: {lines[j][:1800]}')
+          for token in required_pine:
+              assert token in pine, f'missing Pine contract token: {token}'
+          assert 'default_qty_type=strategy.fixed' not in pine
+          assert '\x00' not in pine
 
-      - name: Baseline syntax
+          adapter = (root / 'bridge/smi_forward_adapter.py').read_text(encoding='utf-8')
+          required_adapter = [
+              'SMI_SYSTEM_ID = "VIXALE_SMI_FWD"',
+              'SMI_STRATEGY_ID = "SMI_HISTOGRAM_V0_4_FWD"',
+              'SMI_RESEARCH_VERSION = "0.4-FWD"',
+              'SMI_POSITION_SIZE_PCT = 3.0',
+              'SMI_QTY_SOURCE = "TV Strategy Properties"',
+              'install_smi_forward_adapter',
+          ]
+          for token in required_adapter:
+              assert token in adapter, f'missing adapter token: {token}'
+
+          print('original_core_sha256', original_core_sha)
+          for path, digest in expected.items():
+              print('materialized', path, digest)
+
+      - name: Compile and isolation guards
         run: |
-          node --check app.js
-          python -m py_compile bridge/ib_bridge.py
+          python -m py_compile bridge/ib_bridge.py bridge/ib_bridge_core.py bridge/smi_forward_adapter.py
+          python - <<'PY'
+          from pathlib import Path
+          wrapper = Path('bridge/ib_bridge.py').read_text(encoding='utf-8')
+          core = Path('bridge/ib_bridge_core.py').read_text(encoding='utf-8')
+          adapter = Path('bridge/smi_forward_adapter.py').read_text(encoding='utf-8')
+          assert 'install_smi_forward_adapter(_core)' in wrapper
+          assert '_smi_forward_original_handle_ib_action' in adapter
+          assert 'def install_smi_forward_adapter' in adapter
+          # No SMI implementation is allowed inside the preserved core copy.
+          assert 'SMI_SYSTEM_ID = "VIXALE_SMI_FWD"' not in core
+          PY
+
+      - name: Commit materialized integration layer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            bridge/ib_bridge.py \
+            bridge/ib_bridge_core.py \
+            bridge/smi_forward_adapter.py \
+            pine/SMI_Histogram_v0_4_FWD_UAM.pine \
+            scripts/deploy-ib-bridge.ps1
+          git diff --cached --check
+          git diff --cached --name-only
+          test "$(git diff --cached --name-only | wc -l)" -eq 5
+          git commit -m "Integrate frozen SMI v0.4-FWD bridge adapter [smi-materialized]"
+          git push origin HEAD:feature/smi-v04-fwd-tws-adapter
