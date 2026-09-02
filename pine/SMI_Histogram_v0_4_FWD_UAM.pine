@@ -1,0 +1,992 @@
+//@version=6
+strategy(
+     title="SMI Histogram Strategy — v0.4-FWD UAM",
+     shorttitle="SMI Hist v0.4-FWD",
+     overlay=true,
+     initial_capital=100000,
+     pyramiding=0,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=3,
+     calc_on_every_tick=false,
+     process_orders_on_close=true
+)
+
+// ============================================================================
+// ENGINEERING FREEZE / UAM CONTRACT
+// ============================================================================
+// Research signal logic below is frozen from SMI Histogram Strategy — Research v0.4.
+// Engineering additions are sizing/serialization only (user-approved 3% live sizing):
+//   BUY / SELL / EXIT_LONG / EXIT_SHORT / EOD_FLAT
+// UAM must route/execute these already-valid events and must not recalculate
+// TSI, histogram direction, cycle state, MTF votes, ATR target, session rules,
+// entry rules, or exit rules.
+//
+// TradingView alert configuration:
+//   Condition: SMI Hist v0.4-FWD
+//   Trigger: alert() function calls only
+// ============================================================================
+
+const string UAM_SYSTEM_ID = "VIXALE_SMI_FWD"
+const string UAM_STRATEGY_ID = "SMI_HISTOGRAM_V0_4_FWD"
+const string UAM_RESEARCH_VERSION = "0.4-FWD"
+const int UAM_SCHEMA_VERSION = 2
+const float UAM_POSITION_SIZE_PCT = 3.0
+
+// ============================================================================
+// SMI ERGODIC
+// ============================================================================
+
+longLen = input.int(
+     20,
+     "Long Length",
+     minval=1,
+     group="SMI Ergodic"
+)
+
+shortLen = input.int(
+     5,
+     "Short Length",
+     minval=1,
+     group="SMI Ergodic"
+)
+
+sigLen = input.int(
+     5,
+     "Signal Line Length",
+     minval=1,
+     group="SMI Ergodic"
+)
+
+// ============================================================================
+// ENTRY
+// ============================================================================
+
+triggerMode = input.string(
+     "Histogram Tick",
+     "Entry Trigger",
+     options=[
+          "Zero Cross",
+          "Histogram Tick"
+     ],
+     group="Entry"
+)
+
+entryFrequency = input.string(
+     "One Trade Per Cycle",
+     "Entry Frequency",
+     options=[
+          "One Trade Per Cycle",
+          "Continuous Re-Entry"
+     ],
+     group="Entry"
+)
+
+// ============================================================================
+// EXIT
+// ============================================================================
+
+stopMode = input.string(
+     "Opposite Histogram Tick",
+     "Indicator Stop",
+     options=[
+          "Back Through Zero",
+          "Opposite Histogram Tick"
+     ],
+     group="Exit"
+)
+
+atrMult = input.float(
+     1.0,
+     "ATR Target Multiplier",
+     minval=0.1,
+     step=0.1,
+     group="Exit"
+)
+
+// ============================================================================
+// SESSION
+// ============================================================================
+
+sessionMode = input.string(
+     "RTH",
+     "Trading Session",
+     options=[
+          "RTH",
+          "ETH",
+          "FULL"
+     ],
+     group="Session"
+)
+
+rthSession = input.session(
+     "0930-1600",
+     "RTH Session",
+     group="Session"
+)
+
+fullFuturesSession = input.session(
+     "1800-1700",
+     "Full Futures Session",
+     group="Session"
+)
+
+sessionTZ = input.string(
+     "America/New_York",
+     "Session Time Zone",
+     options=[
+          "America/New_York",
+          "America/Chicago",
+          "Etc/UTC"
+     ],
+     group="Session"
+)
+
+// ============================================================================
+// EOD CLOSE
+// ============================================================================
+
+useEodClose = input.bool(
+     false,
+     "Enable EOD Close",
+     group="EOD Close"
+)
+
+eodHour = input.int(
+     15,
+     "EOD Close Hour",
+     minval=0,
+     maxval=23,
+     group="EOD Close"
+)
+
+eodMinute = input.int(
+     59,
+     "EOD Close Minute",
+     minval=0,
+     maxval=59,
+     group="EOD Close"
+)
+
+resumeHour = input.int(
+     18,
+     "Resume Entries Hour",
+     minval=0,
+     maxval=23,
+     group="EOD Close"
+)
+
+resumeMinute = input.int(
+     0,
+     "Resume Entries Minute",
+     minval=0,
+     maxval=59,
+     group="EOD Close"
+)
+
+// ============================================================================
+// MTF EMA FILTER
+// ============================================================================
+
+useMtfFilter = input.bool(
+     false,
+     "Enable 3-of-5 MTF EMA Filter",
+     group="MTF EMA Filter"
+)
+
+emaLen = input.int(
+     200,
+     "EMA Length",
+     minval=1,
+     group="MTF EMA Filter"
+)
+
+// ============================================================================
+// INDICATORS
+// ============================================================================
+
+erg = ta.tsi(close, shortLen, longLen)
+sig = ta.ema(erg, sigLen)
+
+// Histogram being traded.
+osc = erg - sig
+
+// ATR period intentionally hard coded.
+atr14 = ta.atr(14)
+
+// ============================================================================
+// HISTOGRAM DIRECTION
+// ============================================================================
+
+histUptick = osc > osc[1]
+histDowntick = osc < osc[1]
+
+histCrossUpZero = ta.crossover(osc, 0.0)
+histCrossDownZero = ta.crossunder(osc, 0.0)
+
+// ============================================================================
+// HISTOGRAM CYCLE STATE MACHINE
+// ============================================================================
+//
+// +1 = current UP cycle
+// -1 = current DOWN cycle
+//
+// A flat histogram bar does not change cycle.
+//
+// In One Trade Per Cycle:
+// one directional cycle can generate maximum ONE trade.
+// ============================================================================
+
+var int cycleDirection = 0
+var int cycleNumber = 0
+var bool cycleTradeUsed = false
+
+if barstate.isconfirmed
+
+    if histUptick and cycleDirection != 1
+        cycleDirection := 1
+        cycleNumber += 1
+        cycleTradeUsed := false
+
+    else if histDowntick and cycleDirection != -1
+        cycleDirection := -1
+        cycleNumber += 1
+        cycleTradeUsed := false
+
+// ============================================================================
+// ENTRY TRIGGERS
+// ============================================================================
+
+bool rawLongTrigger = false
+bool rawShortTrigger = false
+
+if triggerMode == "Zero Cross"
+
+    rawLongTrigger := histCrossUpZero
+    rawShortTrigger := histCrossDownZero
+
+else
+
+    rawLongTrigger := histUptick
+    rawShortTrigger := histDowntick
+
+// ============================================================================
+// ONE TRADE PER CYCLE
+// ============================================================================
+
+oneTradePerCycle =
+     entryFrequency == "One Trade Per Cycle"
+
+longCycleOK =
+     not oneTradePerCycle or
+     (cycleDirection == 1 and not cycleTradeUsed)
+
+shortCycleOK =
+     not oneTradePerCycle or
+     (cycleDirection == -1 and not cycleTradeUsed)
+
+// ============================================================================
+// INDICATOR STOPS
+// ============================================================================
+
+bool longStopSignal = false
+bool shortStopSignal = false
+
+if stopMode == "Back Through Zero"
+
+    longStopSignal := histCrossDownZero
+    shortStopSignal := histCrossUpZero
+
+else
+
+    longStopSignal := histDowntick
+    shortStopSignal := histUptick
+
+// ============================================================================
+// SESSION
+// ============================================================================
+
+inRTH =
+     not na(
+          time(
+               timeframe.period,
+               rthSession,
+               sessionTZ
+          )
+     )
+
+inFullFutures =
+     not na(
+          time(
+               timeframe.period,
+               fullFuturesSession,
+               sessionTZ
+          )
+     )
+
+inETH =
+     inFullFutures and
+     not inRTH
+
+bool sessionOK = false
+
+if sessionMode == "RTH"
+    sessionOK := inRTH
+else if sessionMode == "ETH"
+    sessionOK := inETH
+else
+    sessionOK := inFullFutures
+
+// ============================================================================
+// EOD BLOCK WINDOW
+// ============================================================================
+
+inClockWindow(currentMinutes, startMinutes, endMinutes) =>
+
+    bool result = false
+
+    if startMinutes < endMinutes
+        result := currentMinutes >= startMinutes and currentMinutes < endMinutes
+
+    else if startMinutes > endMinutes
+        result := currentMinutes >= startMinutes or currentMinutes < endMinutes
+
+    result
+
+barCloseMinutes =
+     hour(time_close, sessionTZ) * 60 +
+     minute(time_close, sessionTZ)
+
+eodMinutes =
+     eodHour * 60 +
+     eodMinute
+
+resumeMinutes =
+     resumeHour * 60 +
+     resumeMinute
+
+eodBlocked =
+     useEodClose and
+     inClockWindow(
+          barCloseMinutes,
+          eodMinutes,
+          resumeMinutes
+     )
+
+// First bar entering EOD blocked period.
+eodCloseBar =
+     useEodClose and
+     eodBlocked and
+     not eodBlocked[1]
+
+// ============================================================================
+// MTF EMA FILTER
+// Uses PREVIOUS COMPLETED HTF bar.
+// ============================================================================
+
+// 15m
+
+close15 = request.security(
+     syminfo.tickerid,
+     "15",
+     close[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+ema15 = request.security(
+     syminfo.tickerid,
+     "15",
+     ta.ema(close, emaLen)[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+bull15 = close15 > ema15
+bear15 = close15 < ema15
+
+// 30m
+
+close30 = request.security(
+     syminfo.tickerid,
+     "30",
+     close[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+ema30 = request.security(
+     syminfo.tickerid,
+     "30",
+     ta.ema(close, emaLen)[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+bull30 = close30 > ema30
+bear30 = close30 < ema30
+
+// 60m
+
+close60 = request.security(
+     syminfo.tickerid,
+     "60",
+     close[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+ema60 = request.security(
+     syminfo.tickerid,
+     "60",
+     ta.ema(close, emaLen)[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+bull60 = close60 > ema60
+bear60 = close60 < ema60
+
+// 4H
+
+close240 = request.security(
+     syminfo.tickerid,
+     "240",
+     close[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+ema240 = request.security(
+     syminfo.tickerid,
+     "240",
+     ta.ema(close, emaLen)[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+bull240 = close240 > ema240
+bear240 = close240 < ema240
+
+// Daily
+
+closeD = request.security(
+     syminfo.tickerid,
+     "D",
+     close[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+emaD = request.security(
+     syminfo.tickerid,
+     "D",
+     ta.ema(close, emaLen)[1],
+     gaps=barmerge.gaps_off,
+     lookahead=barmerge.lookahead_on
+)
+
+bullD = closeD > emaD
+bearD = closeD < emaD
+
+// ============================================================================
+// MTF VOTES
+// ============================================================================
+
+bullVotes =
+     (bull15 ? 1 : 0) +
+     (bull30 ? 1 : 0) +
+     (bull60 ? 1 : 0) +
+     (bull240 ? 1 : 0) +
+     (bullD ? 1 : 0)
+
+bearVotes =
+     (bear15 ? 1 : 0) +
+     (bear30 ? 1 : 0) +
+     (bear60 ? 1 : 0) +
+     (bear240 ? 1 : 0) +
+     (bearD ? 1 : 0)
+
+longMtfOK =
+     not useMtfFilter or
+     bullVotes >= 3
+
+shortMtfOK =
+     not useMtfFilter or
+     bearVotes >= 3
+
+// ============================================================================
+// UAM / VECO SERIALIZATION HELPERS — ENGINEERING ONLY, NO SIGNAL LOGIC
+// ============================================================================
+// Frozen research signal remains authoritative in `signal`.
+// `event` is transport-only so existing Render -> bridge routing can be reused:
+//   BUY        -> SETUP / LONG
+//   SELL       -> SETUP / SHORT
+//   EXIT_LONG  -> CLOSE_STOP / LONG
+//   EXIT_SHORT -> CLOSE_STOP / SHORT
+//   EOD_FLAT   -> EOD_CLOSE / active side
+// The bridge must never recalculate osc/cycle/MTF/session/stop logic.
+
+var string activeUamSetupId = ""
+
+f_json_escape(_value) =>
+    string escaped = str.replace_all(_value, "\\", "\\\\")
+    escaped := str.replace_all(escaped, "\"", "\\\"")
+    escaped := str.replace_all(escaped, "\n", "\\n")
+    escaped := str.replace_all(escaped, "\r", "\\r")
+    escaped := str.replace_all(escaped, "\t", "\\t")
+    escaped
+
+f_json_num(_value) =>
+    na(_value) ? "null" : str.tostring(_value)
+
+f_qty_from_value(_value) =>
+    int(math.max(1, math.floor(math.abs(_value))))
+
+f_entry_qty(_price) =>
+    f_qty_from_value(strategy.default_entry_qty(_price))
+
+f_close_qty() =>
+    f_qty_from_value(strategy.position_size)
+
+f_setup_id(_side, _entrySignalBarTime) =>
+    UAM_STRATEGY_ID + ":" +
+     syminfo.ticker + ":" +
+     timeframe.period + ":" +
+     _side + ":" +
+     str.tostring(_entrySignalBarTime)
+
+f_uam_payload(
+     _signal,
+     _event,
+     _side,
+     _setupId,
+     _entryPrice,
+     _targetPrice,
+     _qty,
+     _reason) =>
+
+    string payloadSecType = syminfo.type == "stock" ? "STK" : "UNSUPPORTED"
+
+    string j = "{"
+    j += "\"source\":\"TradingView\","
+    j += "\"payload_version\":1,"
+    j += "\"schema_version\":" + str.tostring(UAM_SCHEMA_VERSION) + ","
+    j += "\"system_id\":\"" + UAM_SYSTEM_ID + "\","
+    j += "\"strategy\":\"" + UAM_STRATEGY_ID + "\","
+    j += "\"strategy_id\":\"" + UAM_STRATEGY_ID + "\","
+    j += "\"research_version\":\"" + UAM_RESEARCH_VERSION + "\","
+    j += "\"setup_id\":\"" + f_json_escape(_setupId) + "\","
+    j += "\"event\":\"" + f_json_escape(_event) + "\","
+    j += "\"signal\":\"" + f_json_escape(_signal) + "\","
+    j += "\"sec_type\":\"" + payloadSecType + "\","
+    j += "\"asset_class\":\"STOCK\","
+    j += "\"symbol\":\"" + f_json_escape(syminfo.ticker) + "\","
+    j += "\"tickerid\":\"" + f_json_escape(syminfo.tickerid) + "\","
+    j += "\"exchange\":\"SMART\","
+    j += "\"currency\":\"USD\","
+    j += "\"timeframe\":\"" + f_json_escape(timeframe.period) + "\","
+    j += "\"side\":\"" + f_json_escape(_side) + "\","
+    j += "\"entry\":" + f_json_num(_entryPrice) + ","
+    j += "\"price\":" + f_json_num(close) + ","
+    j += "\"target\":" + f_json_num(_targetPrice) + ","
+    j += "\"target_price\":" + f_json_num(_targetPrice) + ","
+    j += "\"target_tif\":\"GTC\","
+    j += "\"target_type\":\"ATR_LIMIT_SMI\","
+    j += "\"stop\":0,"
+    j += "\"stop_type\":\"NONE\","
+    j += "\"entry_order_type\":\"MARKET\","
+    j += "\"qty\":" + str.tostring(_qty) + ","
+    j += "\"qty_source\":\"TV Strategy Properties\","
+    j += "\"position_size_pct\":" + str.tostring(UAM_POSITION_SIZE_PCT) + ","
+    j += "\"signal_bar_time\":" + str.tostring(time) + ","
+    j += "\"signal_bar_close\":" + str.tostring(time_close) + ","
+    j += "\"signal_bar_close_price\":" + f_json_num(close) + ","
+    j += "\"position_size\":" + str.tostring(strategy.position_size) + ","
+    j += "\"position_avg_price\":" + f_json_num(strategy.position_avg_price) + ","
+    j += "\"osc\":" + f_json_num(osc) + ","
+    j += "\"osc_prev\":" + f_json_num(osc[1]) + ","
+    j += "\"cycle_direction\":" + str.tostring(cycleDirection) + ","
+    j += "\"cycle_number\":" + str.tostring(cycleNumber) + ","
+    j += "\"cycle_trade_used\":" + str.tostring(cycleTradeUsed) + ","
+    j += "\"atr14\":" + f_json_num(atr14) + ","
+    j += "\"atr_multiplier\":" + str.tostring(atrMult) + ","
+    j += "\"long_length\":" + str.tostring(longLen) + ","
+    j += "\"short_length\":" + str.tostring(shortLen) + ","
+    j += "\"signal_length\":" + str.tostring(sigLen) + ","
+    j += "\"entry_trigger\":\"" + f_json_escape(triggerMode) + "\","
+    j += "\"entry_frequency\":\"" + f_json_escape(entryFrequency) + "\","
+    j += "\"stop_mode\":\"" + f_json_escape(stopMode) + "\","
+    j += "\"session_mode\":\"" + f_json_escape(sessionMode) + "\","
+    j += "\"session_timezone\":\"" + f_json_escape(sessionTZ) + "\","
+    j += "\"mtf_filter_enabled\":" + str.tostring(useMtfFilter) + ","
+    j += "\"ema_length\":" + str.tostring(emaLen) + ","
+    j += "\"bull_votes\":" + str.tostring(bullVotes) + ","
+    j += "\"bear_votes\":" + str.tostring(bearVotes) + ","
+    j += "\"eod_close_enabled\":" + str.tostring(useEodClose) + ","
+    j += "\"eod_blocked\":" + str.tostring(eodBlocked) + ","
+    j += "\"reason\":\"" + f_json_escape(_reason) + "\""
+    j += "}"
+    j
+
+f_send_uam(
+     _signal,
+     _event,
+     _side,
+     _setupId,
+     _entryPrice,
+     _targetPrice,
+     _qty,
+     _reason) =>
+
+    alert(
+         f_uam_payload(
+              _signal,
+              _event,
+              _side,
+              _setupId,
+              _entryPrice,
+              _targetPrice,
+              _qty,
+              _reason),
+         alert.freq_once_per_bar_close)
+
+// ============================================================================
+// EOD FLATTEN
+// ============================================================================
+
+if barstate.isconfirmed and
+   eodCloseBar and
+   strategy.position_size != 0
+
+    string eodSide = strategy.position_size > 0 ? "LONG" : "SHORT"
+    float eodTarget = strategy.position_size > 0 ? longTargetPrice : shortTargetPrice
+
+    f_send_uam(
+         "EOD_FLAT",
+         "EOD_CLOSE",
+         eodSide,
+         activeUamSetupId,
+         strategy.position_avg_price,
+         eodTarget,
+         f_close_qty(),
+         "EOD_CLOSE"
+    )
+
+    strategy.close_all(
+         comment="EOD Close"
+    )
+
+// ============================================================================
+// FINAL ENTRIES
+// ============================================================================
+
+longCondition =
+     barstate.isconfirmed and
+     strategy.position_size == 0 and
+     sessionOK and
+     not eodBlocked and
+     longMtfOK and
+     rawLongTrigger and
+     longCycleOK
+
+shortCondition =
+     barstate.isconfirmed and
+     strategy.position_size == 0 and
+     sessionOK and
+     not eodBlocked and
+     shortMtfOK and
+     rawShortTrigger and
+     shortCycleOK
+
+// ============================================================================
+// TARGET STORAGE
+// ============================================================================
+
+var float longTargetPrice = na
+var float shortTargetPrice = na
+
+// ============================================================================
+// LONG ENTRY
+// ============================================================================
+
+if longCondition
+
+    longTargetPrice :=
+         close +
+         atr14 * atrMult
+
+    shortTargetPrice := na
+
+    activeUamSetupId := f_setup_id("LONG", time)
+
+    f_send_uam(
+         "BUY",
+         "SETUP",
+         "LONG",
+         activeUamSetupId,
+         close,
+         longTargetPrice,
+         f_entry_qty(close),
+         "VALID_LONG_RESEARCH_SIGNAL"
+    )
+
+    strategy.entry(
+         "Long",
+         strategy.long,
+         comment="SMI Hist Long"
+    )
+
+    strategy.exit(
+         "Long ATR Target",
+         from_entry="Long",
+         limit=longTargetPrice,
+         comment_profit="Long ATR TP"
+    )
+
+    if oneTradePerCycle
+        cycleTradeUsed := true
+
+// ============================================================================
+// SHORT ENTRY
+// ============================================================================
+
+if shortCondition
+
+    shortTargetPrice :=
+         close -
+         atr14 * atrMult
+
+    longTargetPrice := na
+
+    activeUamSetupId := f_setup_id("SHORT", time)
+
+    f_send_uam(
+         "SELL",
+         "SETUP",
+         "SHORT",
+         activeUamSetupId,
+         close,
+         shortTargetPrice,
+         f_entry_qty(close),
+         "VALID_SHORT_RESEARCH_SIGNAL"
+    )
+
+    strategy.entry(
+         "Short",
+         strategy.short,
+         comment="SMI Hist Short"
+    )
+
+    strategy.exit(
+         "Short ATR Target",
+         from_entry="Short",
+         limit=shortTargetPrice,
+         comment_profit="Short ATR TP"
+    )
+
+    if oneTradePerCycle
+        cycleTradeUsed := true
+
+// ============================================================================
+// KEEP TARGETS ACTIVE
+// ============================================================================
+
+if strategy.position_size > 0 and
+   not na(longTargetPrice)
+
+    strategy.exit(
+         "Long ATR Target",
+         from_entry="Long",
+         limit=longTargetPrice,
+         comment_profit="Long ATR TP"
+    )
+
+if strategy.position_size < 0 and
+   not na(shortTargetPrice)
+
+    strategy.exit(
+         "Short ATR Target",
+         from_entry="Short",
+         limit=shortTargetPrice,
+         comment_profit="Short ATR TP"
+    )
+
+// ============================================================================
+// INDICATOR STOPS
+// ============================================================================
+//
+// EOD gets priority if both happen on same bar.
+// ============================================================================
+
+if barstate.isconfirmed and
+   not eodCloseBar and
+   strategy.position_size > 0 and
+   longStopSignal
+
+    f_send_uam(
+         "EXIT_LONG",
+         "CLOSE_STOP",
+         "LONG",
+         activeUamSetupId,
+         strategy.position_avg_price,
+         longTargetPrice,
+         f_close_qty(),
+         "INDICATOR_STOP"
+    )
+
+    strategy.close(
+         "Long",
+         comment="Histogram Stop"
+    )
+
+if barstate.isconfirmed and
+   not eodCloseBar and
+   strategy.position_size < 0 and
+   shortStopSignal
+
+    f_send_uam(
+         "EXIT_SHORT",
+         "CLOSE_STOP",
+         "SHORT",
+         activeUamSetupId,
+         strategy.position_avg_price,
+         shortTargetPrice,
+         f_close_qty(),
+         "INDICATOR_STOP"
+    )
+
+    strategy.close(
+         "Short",
+         comment="Histogram Stop"
+    )
+
+// ============================================================================
+// CLEAR TARGETS
+// ============================================================================
+
+positionJustClosed =
+     strategy.position_size == 0 and
+     strategy.position_size[1] != 0
+
+if positionJustClosed or eodCloseBar
+    longTargetPrice := na
+    shortTargetPrice := na
+    activeUamSetupId := ""
+
+// ============================================================================
+// PRICE-PANE MARKERS
+// ============================================================================
+
+plotshape(
+     longCondition,
+     title="Long Signal",
+     style=shape.triangleup,
+     location=location.belowbar,
+     color=color.green,
+     size=size.small,
+     text="L"
+)
+
+plotshape(
+     shortCondition,
+     title="Short Signal",
+     style=shape.triangledown,
+     location=location.abovebar,
+     color=color.red,
+     size=size.small,
+     text="S"
+)
+
+// ============================================================================
+// ACTIVE TARGETS
+// ============================================================================
+
+activeLongTarget =
+     strategy.position_size > 0
+         ? longTargetPrice
+         : na
+
+activeShortTarget =
+     strategy.position_size < 0
+         ? shortTargetPrice
+         : na
+
+plot(
+     activeLongTarget,
+     title="Long ATR Target",
+     color=color.green,
+     style=plot.style_linebr,
+     linewidth=2
+)
+
+plot(
+     activeShortTarget,
+     title="Short ATR Target",
+     color=color.red,
+     style=plot.style_linebr,
+     linewidth=2
+)
+
+// ============================================================================
+// DATA WINDOW
+// ============================================================================
+
+plot(
+     osc,
+     title="SMI Histogram",
+     display=display.data_window
+)
+
+plot(
+     erg,
+     title="SMI",
+     display=display.data_window
+)
+
+plot(
+     sig,
+     title="SMI Signal",
+     display=display.data_window
+)
+
+plot(
+     atr14,
+     title="ATR 14",
+     display=display.data_window
+)
+
+plot(
+     bullVotes,
+     title="MTF Bull Votes",
+     display=display.data_window
+)
+
+plot(
+     bearVotes,
+     title="MTF Bear Votes",
+     display=display.data_window
+)
+
+plot(
+     cycleDirection,
+     title="Cycle Direction",
+     display=display.data_window
+)
+
+plot(
+     cycleNumber,
+     title="Cycle Number",
+     display=display.data_window
+)
+
+plot(
+     cycleTradeUsed ? 1 : 0,
+     title="Cycle Trade Used",
+     display=display.data_window
+)
+
+plot(
+     eodBlocked ? 1 : 0,
+     title="EOD Entry Block",
+     display=display.data_window
+)
