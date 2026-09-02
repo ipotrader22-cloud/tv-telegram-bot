@@ -143,8 +143,11 @@ jobs:
             position_after_close: 0,
           };
           const closeRow = t.parseJsonTradingViewAlert(close);
-          assert.strictEqual(t.isSmiBrokerExitCallbackShape(close, closeRow), true);
-          assert.strictEqual(t.isPersistentSmiBrokerExitCallback(close, closeRow), true);
+          assert.deepStrictEqual(t.validateSmiForwardTransportContract(close), { ok: true, reason: 'ok' }, 'SMI close transport contract');
+          assert.strictEqual(t.isSmiForwardPayload(close), true, 'SMI close payload identity');
+          assert.strictEqual(t.isSmiForwardRow(closeRow), true, 'SMI parsed close row identity');
+          assert.strictEqual(t.isSmiBrokerExitCallbackShape(close, closeRow), true, 'SMI close callback shape');
+          assert.strictEqual(t.isPersistentSmiBrokerExitCallback(close, closeRow), true, 'SMI close execution evidence');
           assert.strictEqual(t.isPersistentSmiBrokerExitCallback({ ...close, position_after_close: 1 }, closeRow), false);
           console.log('Focused SMI Render routing checks passed');
           NODE
