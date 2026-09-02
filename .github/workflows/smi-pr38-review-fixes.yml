@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch-test-commit:
-    if: ${{ !contains(github.event.head_commit.message, '[smi-pr38-review-fixed]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +34,6 @@ jobs:
                   raise SystemExit(f'{path}: expected exactly one replacement, found {count}')
               p.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          # P1/P2 bridge: strict integer quantities and atomic SMI routing.
           replace_once(
               'bridge/smi_forward_adapter.py',
               'import math\nfrom typing import Any, Dict, Optional, Tuple\n',
@@ -53,10 +51,9 @@ jobs:
           index = text.find(marker)
           if index < 0 or text.find(marker, index + 1) >= 0:
               raise SystemExit('bridge/smi_forward_adapter.py: install marker missing/ambiguous')
-          new_tail = '''def install_smi_forward_adapter(core: Any) -> Any:\n    """Patch exactly one core routing function and preserve ordinary paths.\n\n    SMI ownership checks and SMI broker mutations are serialized under the same\n    ``core.ib_lock`` used by the pre-existing bridge.  A small routing lock also\n    prevents a foreign payload from passing an ownership check while an SMI\n    action is between validation and durable managed-state publication.\n    """\n    if getattr(core, "_smi_forward_adapter_installed", False):\n        return core\n\n    original_handle = core.handle_ib_action\n    routing_lock = asyncio.Lock()\n    pending_smi_symbols = set()\n\n    async def pending_smi_ownership_block(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:\n        symbol = _upper(data, "symbol")\n        event = _upper(data, "event")\n        if (\n            symbol not in pending_smi_symbols\n            or event not in SMI_OWNERSHIP_PROTECTED_EVENTS\n        ):\n            return None\n\n        row = _managed_smi_row(core, symbol)\n        if _managed_row_is_smi(row):\n            return _blocked(\n                data,\n                "smi_managed_symbol_reserved",\n                "Broker-mutating foreign payload blocked because this symbol is owned by an active SMI setup.",\n                managed_setup_id=str(row.get("setup_id") or ""),\n                incoming_system_id=_upper(data, "system_id"),\n                incoming_strategy=_upper(data, "strategy"),\n            )\n\n        position = await core.get_position_size(symbol)\n        working = []\n        for trade in list(core.ib.openTrades() or []):\n            contract_symbol = str(\n                getattr(getattr(trade, "contract", None), "symbol", "") or ""\n            ).upper().strip()\n            if contract_symbol == symbol:\n                working.append(trade)\n\n        if abs(float(position or 0.0)) <= 0.000001 and not working:\n            pending_smi_symbols.discard(symbol)\n            return None\n\n        return _blocked(\n            data,\n            "smi_managed_symbol_reserved",\n            "Broker-mutating foreign payload blocked while an accepted SMI entry still has broker ownership evidence.",\n            managed_setup_id="",\n            incoming_system_id=_upper(data, "system_id"),\n            incoming_strategy=_upper(data, "strategy"),\n        )\n\n    async def handle_ib_action_with_smi(data: Dict[str, Any]) -> Dict[str, Any]:\n        async with routing_lock:\n            if not is_smi_forward_payload(data):\n                # Check SMI ownership while synchronized with all other IB work.\n                # Release before calling original_handle because it acquires the\n                # same non-reentrant core.ib_lock itself.\n                async with core.ib_lock:\n                    ownership_block = _foreign_payload_guard(core, data)\n                    if ownership_block is None:\n                        ownership_block = await pending_smi_ownership_block(data)\n                if ownership_block is not None:\n                    return ownership_block\n                return await original_handle(data)\n\n            contract_error = validate_smi_transport_contract(data)\n            if contract_error is not None:\n                return contract_error\n\n            signal = _upper(data, "signal")\n            symbol = _upper(data, "symbol")\n\n            # Do not call original_handle for SMI while holding core.ib_lock: it\n            # would try to acquire the same asyncio.Lock again.  Reuse the exact\n            # pre-existing core primitives beneath that router instead.\n            async with core.ib_lock:\n                if signal in ("BUY", "SELL"):\n                    guard = await _smi_entry_guard(core, data)\n                    if guard is not None:\n                        return guard\n\n                    result = await core.place_entry_order(data)\n                    status = str(result.get("status") or "").lower()\n                    accepted_statuses = {\n                        str(value).lower()\n                        for value in getattr(core, "SETUP_ACCEPTED_STATUSES", set())\n                    }\n                    accepted = status in accepted_statuses\n                    if accepted and not bool(result.get("dry_run")):\n                        pending_smi_symbols.add(symbol)\n                    if accepted and bool(result.get("entry_filled")):\n                        mark = getattr(core, "mark_managed_position", None)\n                        if callable(mark):\n                            mark(data, result)\n                    return result\n\n                guard, row = _smi_exit_ownership_guard(core, data)\n                if guard is not None:\n                    return guard\n                prepared = await _prepare_smi_exit(core, data, row)\n                if prepared is not None:\n                    return prepared\n\n                result = await core.close_position_market(data)\n\n                # Partial target + market remainder is execution-real but generic\n                # CLOSE_FILL publication would use one price for the whole original row.\n                # Preserve broker safety by flattening the remainder, persist the bridge\n                # close evidence, and fail closed on public publication for manual review.\n                partial_qty = float(data.pop("_smi_partial_target_filled_qty", 0.0) or 0.0)\n                partial_price = data.pop("_smi_partial_target_fill_price", 0)\n                partial_exec_ids = data.pop("_smi_partial_target_exec_ids", [])\n                if partial_qty > 0 and bool(result.get("close_filled")):\n                    persist = getattr(core, "mark_managed_bridge_close", None)\n                    persisted = bool(persist(data, result)) if callable(persist) else False\n                    return {\n                        **result,\n                        "status": "smi_mixed_exit_manual_reconcile",\n                        "smi_partial_target_filled_qty": partial_qty,\n                        "smi_partial_target_fill_price": partial_price,\n                        "smi_partial_target_exec_ids": partial_exec_ids,\n                        "managed_state_persisted": persisted,\n                        "message": "SMI broker position flattened after partial target; automatic public close withheld for evidence-safe reconciliation.",\n                    }\n\n                return result\n\n    core._smi_forward_original_handle_ib_action = original_handle\n    core.handle_ib_action = handle_ib_action_with_smi\n    core._smi_forward_adapter_installed = True\n    return core\n'''
+          new_tail = '''def install_smi_forward_adapter(core: Any) -> Any:\n    """Patch exactly one core routing function and preserve ordinary paths.\n\n    SMI ownership checks and SMI broker mutations are serialized under the same\n    ``core.ib_lock`` used by the pre-existing bridge.  A small routing lock also\n    prevents a foreign payload from passing an ownership check while an SMI\n    action is between validation and durable managed-state publication.\n    """\n    if getattr(core, "_smi_forward_adapter_installed", False):\n        return core\n\n    original_handle = core.handle_ib_action\n    routing_lock = asyncio.Lock()\n    pending_smi_symbols = set()\n\n    async def pending_smi_ownership_block(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:\n        symbol = _upper(data, "symbol")\n        event = _upper(data, "event")\n        if (\n            symbol not in pending_smi_symbols\n            or event not in SMI_OWNERSHIP_PROTECTED_EVENTS\n        ):\n            return None\n\n        row = _managed_smi_row(core, symbol)\n        if _managed_row_is_smi(row):\n            return _blocked(\n                data,\n                "smi_managed_symbol_reserved",\n                "Broker-mutating foreign payload blocked because this symbol is owned by an active SMI setup.",\n                managed_setup_id=str(row.get("setup_id") or ""),\n                incoming_system_id=_upper(data, "system_id"),\n                incoming_strategy=_upper(data, "strategy"),\n            )\n\n        position = await core.get_position_size(symbol)\n        working = []\n        for trade in list(core.ib.openTrades() or []):\n            contract_symbol = str(\n                getattr(getattr(trade, "contract", None), "symbol", "") or ""\n            ).upper().strip()\n            if contract_symbol == symbol:\n                working.append(trade)\n\n        if abs(float(position or 0.0)) <= 0.000001 and not working:\n            pending_smi_symbols.discard(symbol)\n            return None\n\n        return _blocked(\n            data,\n            "smi_managed_symbol_reserved",\n            "Broker-mutating foreign payload blocked while an accepted SMI entry still has broker ownership evidence.",\n            managed_setup_id="",\n            incoming_system_id=_upper(data, "system_id"),\n            incoming_strategy=_upper(data, "strategy"),\n        )\n\n    async def handle_ib_action_with_smi(data: Dict[str, Any]) -> Dict[str, Any]:\n        async with routing_lock:\n            if not is_smi_forward_payload(data):\n                async with core.ib_lock:\n                    ownership_block = _foreign_payload_guard(core, data)\n                    if ownership_block is None:\n                        ownership_block = await pending_smi_ownership_block(data)\n                if ownership_block is not None:\n                    return ownership_block\n                return await original_handle(data)\n\n            contract_error = validate_smi_transport_contract(data)\n            if contract_error is not None:\n                return contract_error\n\n            signal = _upper(data, "signal")\n            symbol = _upper(data, "symbol")\n\n            async with core.ib_lock:\n                if signal in ("BUY", "SELL"):\n                    guard = await _smi_entry_guard(core, data)\n                    if guard is not None:\n                        return guard\n\n                    result = await core.place_entry_order(data)\n                    status = str(result.get("status") or "").lower()\n                    accepted_statuses = {\n                        str(value).lower()\n                        for value in getattr(core, "SETUP_ACCEPTED_STATUSES", set())\n                    }\n                    accepted = status in accepted_statuses\n                    if accepted and not bool(result.get("dry_run")):\n                        pending_smi_symbols.add(symbol)\n                    if accepted and bool(result.get("entry_filled")):\n                        mark = getattr(core, "mark_managed_position", None)\n                        if callable(mark):\n                            mark(data, result)\n                    return result\n\n                guard, row = _smi_exit_ownership_guard(core, data)\n                if guard is not None:\n                    return guard\n                prepared = await _prepare_smi_exit(core, data, row)\n                if prepared is not None:\n                    return prepared\n\n                result = await core.close_position_market(data)\n\n                partial_qty = float(data.pop("_smi_partial_target_filled_qty", 0.0) or 0.0)\n                partial_price = data.pop("_smi_partial_target_fill_price", 0)\n                partial_exec_ids = data.pop("_smi_partial_target_exec_ids", [])\n                if partial_qty > 0 and bool(result.get("close_filled")):\n                    persist = getattr(core, "mark_managed_bridge_close", None)\n                    persisted = bool(persist(data, result)) if callable(persist) else False\n                    return {\n                        **result,\n                        "status": "smi_mixed_exit_manual_reconcile",\n                        "smi_partial_target_filled_qty": partial_qty,\n                        "smi_partial_target_fill_price": partial_price,\n                        "smi_partial_target_exec_ids": partial_exec_ids,\n                        "managed_state_persisted": persisted,\n                        "message": "SMI broker position flattened after partial target; automatic public close withheld for evidence-safe reconciliation.",\n                    }\n\n                return result\n\n    core._smi_forward_original_handle_ib_action = original_handle\n    core.handle_ib_action = handle_ib_action_with_smi\n    core._smi_forward_adapter_installed = True\n    return core\n'''
           adapter.write_text(text[:index] + new_tail, encoding='utf-8')
 
-          # P1 Pine compile/sizing: declarations precede use; never synthesize 1 share.
           replace_once(
               'pine/SMI_Histogram_v0_4_FWD_UAM.pine',
               'var string activeUamSetupId = ""\n\n',
@@ -83,8 +80,6 @@ jobs:
               '''    int shortEntryQty = f_entry_qty(close)\n    if shortEntryQty > 0\n        f_send_uam(\n             "SELL",\n             "SETUP",\n             "SHORT",\n             activeUamSetupId,\n             close,\n             shortTargetPrice,\n             shortEntryQty,\n             "VALID_SHORT_RESEARCH_SIGNAL"\n        )\n\n    strategy.entry(\n''',
           )
 
-          # Existing bridge-isolation fixture must expose the exact core primitives
-          # now used atomically by the adapter.
           replace_once(
               'tests/test_smi_forward_bridge_isolation.py',
               '''    def __init__(self):\n        self.managed = {}\n''',
@@ -101,15 +96,12 @@ jobs:
               '''    assert smi.validate_smi_transport_contract(smi_entry(qty=0))["status"] == "smi_contract_invalid_qty"\n    assert smi.validate_smi_transport_contract(smi_entry(qty=30.5))["status"] == "smi_contract_invalid_qty"\n    assert smi.validate_smi_transport_contract(smi_entry(qty="30.5"))["status"] == "smi_contract_invalid_qty"\n''',
           )
 
-          # Strengthen Pine static contract test around the two reviewed defects.
           replace_once(
               'tests/test_smi_forward_pine_contract.py',
               '''    assert 'f_entry_qty(_price) =>' in text\n    assert 'strategy.default_entry_qty(_price)' in text\n    assert 'math.floor(math.abs(_value))' in text\n''',
               '''    assert 'f_entry_qty(_price) =>' in text\n    assert 'strategy.default_entry_qty(_price)' in text\n    assert 'math.max(1, math.floor(math.abs(_value)))' not in text\n    assert 'na(rawQty) ? 0 : int(math.max(0, math.floor(math.abs(rawQty))))' in text\n    assert 'if longEntryQty > 0' in text\n    assert 'if shortEntryQty > 0' in text\n\n    target_decl = text.index('var float longTargetPrice = na')\n    eod_use = text.index('float eodTarget = strategy.position_size > 0 ? longTargetPrice : shortTargetPrice')\n    assert target_decl < eod_use, 'target storage must be declared before EOD serialization uses it'\n''',
           )
 
-          # Runtime concurrency regression: checks are inside core.ib_lock and a
-          # foreign payload cannot slip through while SMI is in flight.
           concurrency_test = r'''import asyncio
 from types import SimpleNamespace
 
@@ -138,7 +130,6 @@ class RaceCore:
         self.ib = FakeIB()
         self.original_calls = []
         self.entry_calls = 0
-        self.gate_entry = gate_entry
         self.entry_started = asyncio.Event()
         self.entry_release = asyncio.Event()
         if not gate_entry:
@@ -146,10 +137,6 @@ class RaceCore:
 
     def load_managed_positions(self):
         return self.managed
-
-    def save_managed_positions(self, value):
-        self.managed = value
-        return True
 
     async def ensure_ib_connected(self):
         return True
@@ -168,13 +155,6 @@ class RaceCore:
             "side": data["side"],
             "qty": data["qty"],
             "last_payload": dict(data),
-            "ib_target_order_id": result.get("target_order_id"),
-            "target_order": {
-                "order_id": result.get("target_order_id"),
-                "perm_id": result.get("target_perm_id"),
-                "order_ref": result.get("target_order_ref"),
-                "expected_qty": data["qty"],
-            },
         }
 
     async def place_entry_order(self, data):
@@ -184,30 +164,15 @@ class RaceCore:
         symbol = data["symbol"]
         qty = int(data["qty"])
         self.positions[symbol] = qty if data["side"] == "LONG" else -qty
-        target = SimpleNamespace(
-            contract=SimpleNamespace(symbol=symbol),
-            order=SimpleNamespace(orderId=102, permId=202, orderRef=f"TVFVG_{symbol}_{data['side']}_TP"),
-        )
-        self.ib.trades = [target]
         return {
             "status": "submitted_with_attached_target",
             "entry_filled": True,
             "dry_run": False,
-            "order_id": 101,
-            "target_order_id": 102,
-            "target_perm_id": 202,
-            "target_order_ref": target.order.orderRef,
         }
 
     async def close_position_market(self, data):
-        symbol = data["symbol"]
-        self.positions[symbol] = 0
-        return {
-            "status": "submitted",
-            "close_filled": True,
-            "close_status": "Filled",
-            "order_id": 301,
-        }
+        self.positions[data["symbol"]] = 0
+        return {"status": "submitted", "close_filled": True, "close_status": "Filled"}
 
     async def handle_ib_action(self, data):
         async with self.ib_lock:
@@ -249,7 +214,7 @@ async def test_duplicate_smi_is_serialized():
         core.handle_ib_action(smi_entry()),
         core.handle_ib_action(smi_entry()),
     )
-    assert core.entry_calls == 1, "duplicate concurrent SMI SETUP must submit at most one broker entry"
+    assert core.entry_calls == 1
     statuses = {first["status"], second["status"]}
     assert "submitted_with_attached_target" in statuses
     assert any(status.startswith("smi_entry_blocked_") for status in statuses)
@@ -260,24 +225,19 @@ async def test_foreign_payload_cannot_pass_mid_smi_entry():
     smi.install_smi_forward_adapter(core)
     smi_task = asyncio.create_task(core.handle_ib_action(smi_entry()))
     await core.entry_started.wait()
-
-    foreign = {
+    foreign_task = asyncio.create_task(core.handle_ib_action({
         "system_id": "VIXALE_PRIME",
         "strategy": "SHREK_1_4",
         "event": "SETUP",
         "symbol": "AAPL",
         "side": "LONG",
-    }
-    foreign_task = asyncio.create_task(core.handle_ib_action(foreign))
+    }))
     await asyncio.sleep(0)
-    assert core.original_calls == [], "foreign route must wait while SMI owns the atomic routing section"
-
+    assert core.original_calls == []
     core.entry_release.set()
-    smi_result = await smi_task
-    foreign_result = await foreign_task
-    assert smi_result["status"] == "submitted_with_attached_target"
-    assert foreign_result["status"] == "smi_managed_symbol_reserved"
-    assert core.original_calls == [], "foreign broker mutation must be blocked after SMI ownership becomes durable"
+    assert (await smi_task)["status"] == "submitted_with_attached_target"
+    assert (await foreign_task)["status"] == "smi_managed_symbol_reserved"
+    assert core.original_calls == []
 
 
 async def test_guard_observes_state_changed_under_core_lock():
@@ -296,7 +256,7 @@ async def test_guard_observes_state_changed_under_core_lock():
     await scheduler_has_lock.wait()
     smi_task = asyncio.create_task(core.handle_ib_action(smi_entry()))
     await asyncio.sleep(0)
-    assert core.entry_calls == 0, "SMI must not pre-check broker state outside the shared core lock"
+    assert core.entry_calls == 0
     scheduler_release.set()
     result = await smi_task
     await scheduler_task
@@ -316,7 +276,6 @@ if __name__ == "__main__":
 '''
           Path('tests/test_smi_forward_concurrency.py').write_text(concurrency_test, encoding='utf-8')
 
-          # Handbook: make the fail-closed sub-one-share rule explicit.
           replace_once(
               'docs/VECO_DEVELOPER_HANDBOOK.md',
               '''bridge must never recalculate the percentage, substitute `BRIDGE_DEFAULT_QTY`, or\nexecute a missing/invalid SMI quantity.\n''',
