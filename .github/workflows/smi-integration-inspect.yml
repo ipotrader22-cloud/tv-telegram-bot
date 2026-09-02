@@ -1,4 +1,4 @@
-name: SMI Render integration inspect
+name: SMI Render integration patch
 
 on:
   push:
@@ -6,28 +6,429 @@ on:
       - feature/smi-v04-fwd-tws-adapter
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[smi-render-patched]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect exact parser validation and callback ranges
+        with:
+          fetch-depth: 2
+
+      - name: Apply assert-driven SMI routing patch
         shell: python
         run: |
           from pathlib import Path
-          lines = Path('app.js').read_text(encoding='utf-8').splitlines()
-          for lo, hi, label in [
-              (1428, 1615, 'JSON parser'),
-              (11360, 11438, 'execution identities and Edge exit callback'),
-              (11527, 11664, 'bridge validation and forwarder'),
-              (11920, 12095, 'execution-first lifecycle core'),
-          ]:
-              print(f'=== {label}: {lo}-{hi} ===')
-              for i in range(lo-1, min(hi, len(lines))):
-                  print(f'{i+1:05d}: {lines[i][:2200]}')
-      - name: Baseline checks
+
+          path = Path('app.js')
+          text = path.read_text(encoding='utf-8')
+          assert 'SMI_FWD_SYSTEM_ID' not in text, 'SMI Render routing already appears patched'
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              assert count == 1, f'{label}: expected 1 anchor, found {count}'
+              text = text.replace(old, new, 1)
+
+          smi_helpers = r'''
+const SMI_FWD_SYSTEM_ID = 'VIXALE_SMI_FWD';
+const SMI_FWD_STRATEGY_ID = 'SMI_HISTOGRAM_V0_4_FWD';
+const SMI_FWD_RESEARCH_VERSION = '0.4-FWD';
+const SMI_FWD_POSITION_SIZE_PCT = 3;
+const SMI_FWD_QTY_SOURCE = 'TV Strategy Properties';
+
+function isSmiForwardPayload(data) {
+  return Boolean(
+    data &&
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    !Buffer.isBuffer(data) &&
+    String(data.system_id || '').trim().toUpperCase() === SMI_FWD_SYSTEM_ID
+  );
+}
+
+function smiForwardRawRowPayload(row) {
+  if (!row) return {};
+  if (isSmiForwardPayload(row)) return row;
+  return parseRawJsonSafe(row.raw);
+}
+
+function isSmiForwardRow(row) {
+  return isSmiForwardPayload(smiForwardRawRowPayload(row));
+}
+
+function hasValidSmiForwardSetupIdentity(data) {
+  if (!isSmiForwardPayload(data)) return false;
+  const setupId = String(data.setup_id || '').trim();
+  const symbol = normalizeSymbol(data.symbol);
+  const timeframe = String(data.timeframe || '').trim();
+  const side = String(data.side || '').trim().toUpperCase();
+  const parts = setupId.split(':');
+  if (parts.length !== 5) return false;
+  if (parts[0] !== SMI_FWD_STRATEGY_ID) return false;
+  if (normalizeSymbol(parts[1]) !== symbol) return false;
+  if (String(parts[2]).trim() !== timeframe) return false;
+  if (String(parts[3]).trim().toUpperCase() !== side) return false;
+  const identityBarTime = Number(parts[4]);
+  return Boolean(
+    symbol &&
+    timeframe &&
+    ['LONG', 'SHORT'].includes(side) &&
+    Number.isSafeInteger(identityBarTime) &&
+    identityBarTime > 0
+  );
+}
+
+function hasSmiForwardCallbackIdentity(data) {
+  if (!hasValidSmiForwardSetupIdentity(data)) return false;
+  const qty = Number(data.qty);
+  return Boolean(
+    String(data.strategy_id || '').trim().toUpperCase() === SMI_FWD_STRATEGY_ID &&
+    String(data.strategy || '').trim().toUpperCase() === SMI_FWD_STRATEGY_ID &&
+    String(data.research_version || '').trim().toUpperCase() === SMI_FWD_RESEARCH_VERSION &&
+    String(data.sec_type || '').trim().toUpperCase() === 'STK' &&
+    Number(data.position_size_pct) === SMI_FWD_POSITION_SIZE_PCT &&
+    String(data.qty_source || '').trim() === SMI_FWD_QTY_SOURCE &&
+    Number.isInteger(qty) &&
+    qty > 0
+  );
+}
+
+function validateSmiForwardTransportContract(data) {
+  if (!isSmiForwardPayload(data)) {
+    return { ok: false, reason: 'not VIXALE_SMI_FWD' };
+  }
+  if (String(data.source || '').trim().toUpperCase() !== 'TRADINGVIEW') {
+    return { ok: false, reason: 'SMI source must be TradingView' };
+  }
+  if (String(data.strategy_id || '').trim().toUpperCase() !== SMI_FWD_STRATEGY_ID) {
+    return { ok: false, reason: 'SMI strategy_id mismatch' };
+  }
+  if (String(data.strategy || '').trim().toUpperCase() !== SMI_FWD_STRATEGY_ID) {
+    return { ok: false, reason: 'SMI strategy mismatch' };
+  }
+  if (String(data.research_version || '').trim().toUpperCase() !== SMI_FWD_RESEARCH_VERSION) {
+    return { ok: false, reason: 'SMI research_version mismatch' };
+  }
+  if (String(data.sec_type || '').trim().toUpperCase() !== 'STK') {
+    return { ok: false, reason: 'SMI forward-test supports STK only' };
+  }
+  if (Number(data.position_size_pct) !== SMI_FWD_POSITION_SIZE_PCT) {
+    return { ok: false, reason: 'SMI position_size_pct must be exactly 3' };
+  }
+  if (String(data.qty_source || '').trim() !== SMI_FWD_QTY_SOURCE) {
+    return { ok: false, reason: 'SMI qty_source mismatch' };
+  }
+
+  const qty = Number(data.qty);
+  if (!Number.isInteger(qty) || qty <= 0) {
+    return { ok: false, reason: 'SMI qty must be a positive integer snapshot from TradingView' };
+  }
+  if (!hasValidSmiForwardSetupIdentity(data)) {
+    return { ok: false, reason: 'SMI setup identity is invalid' };
+  }
+
+  const signal = String(data.signal || '').trim().toUpperCase();
+  const event = String(data.event || '').trim().toUpperCase();
+  const side = String(data.side || '').trim().toUpperCase();
+  const transport = {
+    BUY: ['SETUP', 'LONG'],
+    SELL: ['SETUP', 'SHORT'],
+    EXIT_LONG: ['CLOSE_STOP', 'LONG'],
+    EXIT_SHORT: ['CLOSE_STOP', 'SHORT'],
+  };
+
+  if (signal === 'EOD_FLAT') {
+    if (event !== 'EOD_CLOSE' || !['LONG', 'SHORT'].includes(side)) {
+      return { ok: false, reason: 'SMI EOD_FLAT must serialize as EOD_CLOSE on the active side' };
+    }
+  } else if (Object.prototype.hasOwnProperty.call(transport, signal)) {
+    const [expectedEvent, expectedSide] = transport[signal];
+    if (event !== expectedEvent || side !== expectedSide) {
+      return { ok: false, reason: `SMI ${signal} must serialize as ${expectedEvent}/${expectedSide}` };
+    }
+  } else {
+    return { ok: false, reason: `unsupported SMI signal: ${signal || '(blank)'}` };
+  }
+
+  if (signal === 'BUY' || signal === 'SELL') {
+    const signalBarTime = Number(data.signal_bar_time);
+    if (!Number.isSafeInteger(signalBarTime) || signalBarTime <= 0) {
+      return { ok: false, reason: 'SMI entry signal_bar_time must be a positive integer' };
+    }
+    const expectedSetupId = `${SMI_FWD_STRATEGY_ID}:${normalizeSymbol(data.symbol)}:${String(data.timeframe || '').trim()}:${side}:${signalBarTime}`;
+    if (String(data.setup_id || '').trim() !== expectedSetupId) {
+      return { ok: false, reason: 'SMI entry setup_id does not match canonical signal identity' };
+    }
+
+    const entry = Number(firstCleanNumber(data.entry, data.price));
+    const target = Number(cleanNumber(data.target));
+    if (!(entry > 0) || !(target > 0)) {
+      return { ok: false, reason: 'SMI entry and frozen ATR target must be positive' };
+    }
+    if (side === 'LONG' && target <= entry) {
+      return { ok: false, reason: 'SMI LONG target must be above signal entry' };
+    }
+    if (side === 'SHORT' && target >= entry) {
+      return { ok: false, reason: 'SMI SHORT target must be below signal entry' };
+    }
+    if (String(data.entry_order_type || '').trim().toUpperCase() !== 'MARKET') {
+      return { ok: false, reason: 'SMI entry_order_type must be MARKET' };
+    }
+    if (String(data.target_tif || '').trim().toUpperCase() !== 'GTC') {
+      return { ok: false, reason: 'SMI target_tif must be GTC' };
+    }
+  }
+
+  return { ok: true, reason: 'ok' };
+}
+
+function isSmiEntryFillBrokerCallback(reqBody, row) {
+  if (!row || String(row.event || '').trim().toUpperCase() !== 'FILL') return false;
+  if (!isSmiForwardPayload(reqBody) || !isSmiForwardRow(row)) return false;
+  if (String(reqBody.source || '').trim().toUpperCase() !== 'IB_BRIDGE') return false;
+  if (String(reqBody.event || '').trim().toUpperCase() !== 'ENTRY_FILL') return false;
+  if (!hasSmiForwardCallbackIdentity(reqBody)) return false;
+  return Boolean(
+    normalizeSymbol(reqBody.symbol) === normalizeSymbol(row.symbol) &&
+    String(reqBody.side || '').trim().toUpperCase() === String(row.side || '').trim().toUpperCase()
+  );
+}
+
+function hasConfirmedSmiEntryExecution(reqBody, row) {
+  if (!isSmiEntryFillBrokerCallback(reqBody, row)) return false;
+  const entryStatus = String(reqBody.ib_entry_status || '').trim().toUpperCase();
+  const fillPrice = cleanNumber(reqBody.ib_entry_fill_price);
+  const fillQty = cleanNumber(reqBody.ib_entry_filled_qty);
+  const publishedPrice = firstCleanNumber(reqBody.entry, reqBody.price);
+  const publishedQty = firstCleanNumber(reqBody.qty, reqBody.size, reqBody.quantity);
+  return Boolean(
+    reqBody.entry_filled === true &&
+    entryStatus === 'FILLED' &&
+    String(reqBody.ib_status || '').trim() &&
+    hasValidBrokerExecutionIdentity(reqBody.entry_execution_id) &&
+    hasBrokerOrderIdentity(reqBody, ['ib_order_id', 'ib_order_perm_id', 'ib_order_ref']) &&
+    hasBrokerOrderIdentity(reqBody, ['ib_target_order_id', 'ib_target_perm_id', 'ib_target_order_ref']) &&
+    fillPrice !== '' && Number(fillPrice) > 0 &&
+    fillQty !== '' && Number(fillQty) > 0 &&
+    Number(publishedPrice) === Number(fillPrice) &&
+    Number(publishedQty) === Number(fillQty) &&
+    cleanNumber(reqBody.target) !== '' && Number(cleanNumber(reqBody.target)) > 0
+  );
+}
+
+function isSmiBrokerExitShape(row) {
+  if (!isSmiForwardRow(row)) return false;
+  const raw = smiForwardRawRowPayload(row);
+  const event = String(row.event || '').trim().toUpperCase();
+  const rawEvent = String(raw.event || row.raw_event || '').trim().toUpperCase();
+  return (
+    (event === 'TP' && rawEvent === 'TP') ||
+    (event === 'SL' && rawEvent === 'CLOSE_STOP') ||
+    (event === 'EOD' && rawEvent === 'EOD_CLOSE')
+  );
+}
+
+function isSmiBrokerExitCallbackShape(reqBody, row) {
+  if (!isSmiBrokerExitShape(row)) return false;
+  if (!isSmiForwardPayload(reqBody) || !isBridgeExecutionCallback(reqBody)) return false;
+  if (!hasSmiForwardCallbackIdentity(reqBody)) return false;
+
+  const source = String(reqBody.source || '').trim().toUpperCase();
+  const sourceOk = source === 'IB_BRIDGE' || (
+    source === 'TRADINGVIEW' && Boolean(reqBody.render_forwarded_at || reqBody.render_safety)
+  );
+  if (!sourceOk) return false;
+
+  const rawEvent = String(reqBody.event || '').trim().toUpperCase();
+  if (!['TP', 'CLOSE_STOP', 'EOD_CLOSE'].includes(rawEvent)) return false;
+  return Boolean(
+    normalizeSymbol(reqBody.symbol) === normalizeSymbol(row.symbol) &&
+    String(reqBody.side || '').trim().toUpperCase() === String(row.side || '').trim().toUpperCase()
+  );
+}
+
+function isPersistentSmiBrokerExitCallback(reqBody, row) {
+  if (!isSmiBrokerExitCallbackShape(reqBody, row)) return false;
+  const rawEvent = String(reqBody.event || '').trim().toUpperCase();
+  const positionAfter = cleanNumber(reqBody.position_after_close);
+  if (positionAfter === '' || Math.abs(Number(positionAfter)) >= 0.000001) return false;
+  if (!hasValidBrokerExecutionIdentity(reqBody.exit_execution_id)) return false;
+
+  if (rawEvent === 'TP') {
+    return Boolean(
+      String(reqBody.source || '').trim().toUpperCase() === 'IB_BRIDGE' &&
+      reqBody.broker_confirmed_flat === true &&
+      hasBrokerOrderIdentity(reqBody, ['ib_target_order_id', 'ib_target_perm_id', 'ib_target_order_ref'])
+    );
+  }
+
+  return Boolean(
+    reqBody.close_filled === true &&
+    String(reqBody.ib_close_status || '').trim().toUpperCase() === 'FILLED' &&
+    String(reqBody.ib_status || '').trim() &&
+    hasBrokerOrderIdentity(reqBody, ['ib_order_id', 'ib_order_perm_id', 'ib_order_ref'])
+  );
+}
+
+'''
+
+          replace_once(
+              'function isOpenOnSetupRow(row) {\n',
+              smi_helpers + 'function isOpenOnSetupRow(row) {\n',
+              'insert SMI helpers'
+          )
+
+          replace_once(
+              "function isOpenOnSetupRow(row) {\n  return isVixaleEdgeV2SetupRow(row) ||\n    isV51IntradayRow(row) ||\n    isOppositeFlipRow(row) ||\n    isEmaPullbackRow(row);\n}",
+              "function isOpenOnSetupRow(row) {\n  return isVixaleEdgeV2SetupRow(row) ||\n    isV51IntradayRow(row) ||\n    isOppositeFlipRow(row) ||\n    isEmaPullbackRow(row) ||\n    isSmiForwardRow(row);\n}",
+              'SMI open-on-setup classification'
+          )
+
+          replace_once(
+              "  const isEmaPullback = isEmaPullbackName(strategyName) || isEmaPullbackName(profileName) || isEmaPullbackName(variantName);\n  const openOnSetup = isV51Intraday || isOppositeFlip || isEmaPullback;",
+              "  const isEmaPullback = isEmaPullbackName(strategyName) || isEmaPullbackName(profileName) || isEmaPullbackName(variantName);\n  const isSmiForward = isSmiForwardPayload(data);\n  const openOnSetup = isV51Intraday || isOppositeFlip || isEmaPullback || isSmiForward;",
+              'parser SMI open-on-setup'
+          )
+
+          replace_once(
+              "  const size = event === 'EXTERNAL_CLOSE'\n    ? suppliedSize\n    : suppliedSize || BRIDGE_DEFAULT_QTY;",
+              "  const size = event === 'EXTERNAL_CLOSE' || isSmiForward\n    ? suppliedSize\n    : suppliedSize || BRIDGE_DEFAULT_QTY;",
+              'parser SMI qty fail-closed'
+          )
+
+          replace_once(
+              "  if (!BRIDGE_FORWARD_ENABLED) {\n    return { ok: false, reason: 'BRIDGE_FORWARD_ENABLED is not true' };\n  }\n\n  const symbol = normalizeSymbol(row.symbol);",
+              "  if (!BRIDGE_FORWARD_ENABLED) {\n    return { ok: false, reason: 'BRIDGE_FORWARD_ENABLED is not true' };\n  }\n\n  if (isSmiForwardPayload(reqBody)) {\n    const smiValidation = validateSmiForwardTransportContract(reqBody);\n    if (!smiValidation.ok) return smiValidation;\n  }\n\n  const symbol = normalizeSymbol(row.symbol);",
+              'SMI forward admission'
+          )
+
+          replace_once(
+              "  if (cleanNumber(payload.qty) === '' && cleanNumber(payload.size) === '' && cleanNumber(payload.quantity) === '') {\n    payload.qty = BRIDGE_DEFAULT_QTY;\n    payload.qty_source = 'Render BRIDGE_DEFAULT_QTY';\n  }",
+              "  if (\n    !isSmiForwardPayload(payload) &&\n    cleanNumber(payload.qty) === '' &&\n    cleanNumber(payload.size) === '' &&\n    cleanNumber(payload.quantity) === ''\n  ) {\n    payload.qty = BRIDGE_DEFAULT_QTY;\n    payload.qty_source = 'Render BRIDGE_DEFAULT_QTY';\n  }",
+              'bridge payload SMI qty isolation'
+          )
+
+          replace_once(
+              "  const qty = cleanNumber(parsedRow?.size || payload?.qty || payload?.quantity || payload?.size);\n\n  if (!symbol)",
+              "  const qty = cleanNumber(parsedRow?.size || payload?.qty || payload?.quantity || payload?.size);\n\n  if (isSmiForwardPayload(payload)) {\n    const smiValidation = validateSmiForwardTransportContract(payload);\n    if (!smiValidation.ok) return smiValidation;\n  }\n\n  if (!symbol)",
+              'bridge validation SMI contract'
+          )
+
+          replace_once(
+              "function isRecognizedTradeWebhook(row, reqBody = null) {\n  if (!row) return false;\n\n  // Canonical Edge v2 identity",
+              "function isRecognizedTradeWebhook(row, reqBody = null) {\n  if (!row) return false;\n\n  if (isSmiForwardPayload(reqBody)) {\n    const rawEvent = String(reqBody?.event || '').trim().toUpperCase();\n    if (isBridgeExecutionCallback(reqBody)) {\n      if (rawEvent === 'ENTRY_FILL') return isSmiEntryFillBrokerCallback(reqBody, row);\n      if (['TP', 'CLOSE_STOP', 'EOD_CLOSE'].includes(rawEvent)) {\n        return isSmiBrokerExitCallbackShape(reqBody, row);\n      }\n      return false;\n    }\n    return validateSmiForwardTransportContract(reqBody).ok;\n  }\n\n  // Canonical Edge v2 identity",
+              'SMI webhook recognition'
+          )
+
+          replace_once(
+              "  const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);",
+              "  const smiEntryFillCallback = isSmiEntryFillBrokerCallback(reqBody, parsedRow);\n  if (smiEntryFillCallback && !hasConfirmedSmiEntryExecution(reqBody, parsedRow)) {\n    const error = new Error('Incomplete SMI broker ENTRY_FILL execution evidence');\n    error.retryable = true;\n    throw error;\n  }\n  const smiBrokerExitCallback = isSmiBrokerExitCallbackShape(reqBody, parsedRow);\n  if (smiBrokerExitCallback && !isPersistentSmiBrokerExitCallback(reqBody, parsedRow)) {\n    const error = new Error('Incomplete SMI broker exit execution evidence');\n    error.retryable = true;\n    throw error;\n  }\n\n  const edgeEntryFillCallback = isEdgeEntryFillBrokerCallback(reqBody, parsedRow);",
+              'SMI callback evidence gates'
+          )
+
+          replace_once(
+              "    durableBridgeCloseCallback ||\n      edgeEntryFillCallback ||",
+              "    durableBridgeCloseCallback ||\n      smiEntryFillCallback ||\n      smiBrokerExitCallback ||\n      edgeEntryFillCallback ||",
+              'SMI durable publication errors'
+          )
+
+          replace_once(
+              "  if (\n    isEdgeBrokerExitShape(parsedRow) &&",
+              "  if (\n    bridgeCallback &&\n    parsedRow.event === 'FILL' &&\n    isSmiForwardRow(parsedRow) &&\n    !hasConfirmedSmiEntryExecution(reqBody, parsedRow)\n  ) {\n    console.log('Ignored unconfirmed or incomplete SMI ENTRY_FILL callback:', bridgeLogPrefix(parsedRow));\n    return;\n  }\n\n  if (\n    bridgeCallback &&\n    isSmiBrokerExitShape(parsedRow) &&\n    !isPersistentSmiBrokerExitCallback(reqBody, parsedRow)\n  ) {\n    console.log('Ignored unconfirmed or incomplete SMI broker-exit callback:', bridgeLogPrefix(parsedRow));\n    return;\n  }\n\n  if (\n    isEdgeBrokerExitShape(parsedRow) &&",
+              'SMI lifecycle core evidence guards'
+          )
+
+          replace_once(
+              "module.exports.__test = {\n  parseJsonTradingViewAlert,",
+              "module.exports.__test = {\n  parseJsonTradingViewAlert,\n  isSmiForwardPayload,\n  isSmiForwardRow,\n  validateSmiForwardTransportContract,\n  isSmiEntryFillBrokerCallback,\n  hasConfirmedSmiEntryExecution,\n  isSmiBrokerExitCallbackShape,\n  isPersistentSmiBrokerExitCallback,\n  bridgePayload,\n  validateBridgePayload,",
+              'SMI test exports'
+          )
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Syntax and focused SMI routing checks
         run: |
           node --check app.js
+          node <<'NODE'
+          const assert = require('assert');
+          const Module = require('module');
+          process.env.BRIDGE_URL = 'http://mock-bridge.test';
+          process.env.BRIDGE_FORWARD_ENABLED = 'true';
+          process.env.BRIDGE_DRY_RUN = 'true';
+          process.env.MAX_BRIDGE_QTY = '1000';
+          function fakeExpress() { return { set(){}, use(){}, get(){}, post(){}, listen(){ throw new Error('no listen'); } }; }
+          fakeExpress.json = fakeExpress.urlencoded = fakeExpress.text = () => (_req,_res,next) => next?.();
+          const originalLoad = Module._load;
+          Module._load = function(request, parent, isMain) {
+            if (request === 'express') return fakeExpress;
+            if (request === 'googleapis') return { google: { auth: { GoogleAuth: class {} }, sheets: () => ({}) } };
+            return originalLoad.call(this, request, parent, isMain);
+          };
+          const t = require('./app.js').__test;
+          Module._load = originalLoad;
+
+          const base = {
+            source: 'TradingView', system_id: 'VIXALE_SMI_FWD',
+            strategy_id: 'SMI_HISTOGRAM_V0_4_FWD', strategy: 'SMI_HISTOGRAM_V0_4_FWD',
+            research_version: '0.4-FWD', sec_type: 'STK', position_size_pct: 3,
+            qty_source: 'TV Strategy Properties', signal: 'BUY', event: 'SETUP',
+            symbol: 'AAPL', timeframe: '60', side: 'LONG', signal_bar_time: 1788379200000,
+            setup_id: 'SMI_HISTOGRAM_V0_4_FWD:AAPL:60:LONG:1788379200000',
+            entry: 100, target: 102, qty: 30, entry_order_type: 'MARKET', target_tif: 'GTC'
+          };
+          assert.deepStrictEqual(t.validateSmiForwardTransportContract(base), { ok: true, reason: 'ok' });
+          assert.strictEqual(t.parseJsonTradingViewAlert(base).size, 30);
+          const missingQty = { ...base }; delete missingQty.qty;
+          assert.strictEqual(t.parseJsonTradingViewAlert(missingQty).size, '');
+          assert.strictEqual(t.validateSmiForwardTransportContract(missingQty).ok, false);
+          const mutatedPct = { ...base, position_size_pct: 4 };
+          assert.strictEqual(t.validateSmiForwardTransportContract(mutatedPct).ok, false);
+          const payloadNoQty = t.bridgePayload(missingQty, t.parseJsonTradingViewAlert(missingQty));
+          assert.strictEqual(Object.prototype.hasOwnProperty.call(payloadNoQty, 'qty'), false, 'Render must not inject BRIDGE_DEFAULT_QTY into SMI');
+
+          const entryFill = {
+            ...base,
+            source: 'IB_BRIDGE', event: 'ENTRY_FILL', entry_filled: true,
+            ib_status: 'submitted', ib_entry_status: 'Filled', ib_entry_fill_price: 100,
+            ib_entry_filled_qty: 30, entry_execution_id: 'EXEC:SMI-ENTRY-1',
+            ib_order_id: 101, ib_target_order_id: 102,
+          };
+          const entryRow = t.parseJsonTradingViewAlert(entryFill);
+          assert.strictEqual(t.isSmiEntryFillBrokerCallback(entryFill, entryRow), true);
+          assert.strictEqual(t.hasConfirmedSmiEntryExecution(entryFill, entryRow), true);
+          assert.strictEqual(t.hasConfirmedSmiEntryExecution({ ...entryFill, ib_target_order_id: 0 }, entryRow), false);
+
+          const close = {
+            ...base, signal: 'EXIT_LONG', event: 'CLOSE_STOP', source: 'TradingView',
+            render_forwarded_at: '2026-09-02 16:00:00', render_safety: { bridge_forward_enabled: true },
+            close_filled: true, ib_status: 'Filled', ib_close_status: 'Filled',
+            ib_order_id: 201, exit_execution_id: 'EXEC:SMI-CLOSE-1', position_after_close: 0,
+          };
+          const closeRow = t.parseJsonTradingViewAlert(close);
+          assert.strictEqual(t.isSmiBrokerExitCallbackShape(close, closeRow), true);
+          assert.strictEqual(t.isPersistentSmiBrokerExitCallback(close, closeRow), true);
+          assert.strictEqual(t.isPersistentSmiBrokerExitCallback({ ...close, position_after_close: 1 }, closeRow), false);
+          console.log('Focused SMI Render routing checks passed');
+          NODE
           python -m py_compile bridge/ib_bridge.py bridge/ib_bridge_core.py bridge/smi_forward_adapter.py
+
+      - name: Prime and Edge regression smoke
+        run: |
+          node tests/test_prime_close_trade_id_fallback.js
+          node tests/test_vixale_edge_pending_lifecycle.js
+          node tests/test_vixale_edge_app_integration.js
+          python tests/test_shrek_eod_watchdog.py
+          python tests/test_vixale_edge_bridge_isolation.py
+
+      - name: Commit Render patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js
+          git diff --cached --check
+          test "$(git diff --cached --name-only)" = "app.js"
+          git commit -m "Route frozen SMI v0.4-FWD through execution-first UAM [smi-render-patched]"
+          git push origin HEAD:feature/smi-v04-fwd-tws-adapter
