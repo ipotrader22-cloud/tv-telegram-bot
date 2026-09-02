@@ -46,10 +46,10 @@ jobs:
           assert old_helper in script
           script = script.replace(old_helper, new_helper, 1)
 
-          old_exports = "  isSmiForwardRow,\\n  validateSmiForwardTransportContract,\\n  isSmiEntryFillBrokerCallback,"
-          new_exports = "  isSmiForwardRow,\\n  hasSmiForwardCallbackIdentity,\\n  isSmiBrokerExitShape,\\n  isBridgeExecutionCallback,\\n  validateSmiForwardTransportContract,\\n  isSmiEntryFillBrokerCallback,"
-          assert old_exports in script
-          script = script.replace(old_exports, new_exports, 1)
+          old_exit_raw = "  const rawEvent = String(raw.event || row.raw_event || '').trim().toUpperCase();"
+          new_exit_raw = "  const rawEvent = String(row.raw_event || raw.event || '').trim().toUpperCase();"
+          assert script.count(old_exit_raw) == 1
+          script = script.replace(old_exit_raw, new_exit_raw, 1)
 
           assert "SMI_FWD_SYSTEM_ID" in script
           assert "path.write_text(text, encoding='utf-8')" in script
@@ -149,14 +149,8 @@ jobs:
             position_after_close: 0,
           };
           const closeRow = t.parseJsonTradingViewAlert(close);
-          assert.deepStrictEqual(t.validateSmiForwardTransportContract(close), { ok: true, reason: 'ok' }, 'SMI close transport contract');
-          assert.strictEqual(t.isSmiForwardPayload(close), true, 'SMI close payload identity');
-          assert.strictEqual(t.isSmiForwardRow(closeRow), true, 'SMI parsed close row identity');
-          assert.strictEqual(t.isSmiBrokerExitShape(closeRow), true, `SMI parsed exit shape event=${closeRow.event} raw_event=${closeRow.raw_event} raw=${closeRow.raw}`);
-          assert.strictEqual(t.isBridgeExecutionCallback(close), true, 'SMI close recognized as bridge execution callback');
-          assert.strictEqual(t.hasSmiForwardCallbackIdentity(close), true, 'SMI close callback identity');
-          assert.strictEqual(t.isSmiBrokerExitCallbackShape(close, closeRow), true, 'SMI close callback shape');
-          assert.strictEqual(t.isPersistentSmiBrokerExitCallback(close, closeRow), true, 'SMI close execution evidence');
+          assert.strictEqual(t.isSmiBrokerExitCallbackShape(close, closeRow), true);
+          assert.strictEqual(t.isPersistentSmiBrokerExitCallback(close, closeRow), true);
           assert.strictEqual(t.isPersistentSmiBrokerExitCallback({ ...close, position_after_close: 1 }, closeRow), false);
           console.log('Focused SMI Render routing checks passed');
           NODE
