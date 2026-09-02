@@ -20,6 +20,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install existing bridge runtime dependencies
+        run: python -m pip install requests python-dotenv fastapi ib_async
+
       - name: Apply review fixes
         run: |
           python .github/smi-pr38-review-fixes.py
