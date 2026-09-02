@@ -1,4 +1,4 @@
-name: SMI integration materialize
+name: SMI Render integration inspect
 
 on:
   push:
@@ -6,152 +6,49 @@ on:
       - feature/smi-v04-fwd-tws-adapter
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  materialize:
-    if: ${{ !contains(github.event.head_commit.message, '[smi-materialized]') }}
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Recover and verify staged archive members
+      - name: Inspect exact app hooks and test surface
         shell: python
         run: |
           from pathlib import Path
-          import base64, hashlib, re, zlib
 
-          root = Path('.')
-          p0 = ''.join((root / '.github/smi-v04-fwd/part00.b64').read_text().split())
-          p1 = ''.join((root / '.github/smi-v04-fwd/part01.b64').read_text().split())
-          p2 = ''.join((root / '.github/smi-v04-fwd/part02.b64').read_text().split())
-          assert (len(p0), len(p1), len(p2)) == (6000, 6001, 6000)
-          assert p1[3712] == '0'
+          def show_hits(path, needles, radius=55):
+              lines = Path(path).read_text(encoding='utf-8').splitlines()
+              print(f'=== {path} lines={len(lines)} ===')
+              for needle in needles:
+                  hits = [i for i, line in enumerate(lines) if needle in line]
+                  print(f'--- {needle!r} hits={len(hits)} ---')
+                  for i in hits[:3]:
+                      lo=max(0,i-radius); hi=min(len(lines),i+radius+1)
+                      print(f'@@ line {i+1} @@')
+                      for j in range(lo,hi):
+                          print(f'{j+1:05d}: {lines[j][:2000]}')
 
-          joined = p0 + p1[:3712] + p1[3713:] + p2
-          compressed = base64.b64decode(joined, validate=True)
-          decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
-          tar_bytes = decoder.decompress(compressed)
-          try:
-              tar_bytes += decoder.flush()
-          except zlib.error:
-              pass
+          show_hits('app.js', [
+              'function parseJsonTradingViewAlert',
+              'function isOpenOnSetupRow',
+              'function requiresBridgeExecutionConfirmation',
+              'function bridgePayload',
+              'function validateBridgePayload',
+              'function isBridgeExecutionCallback',
+              'function hasConfirmedEdgeEntryExecution',
+              'function hasConfirmedCloseExecution',
+              'function isRecognizedTradeWebhook',
+              'async function processRecognizedTradingViewWebhookLifecycleCore',
+              'async function processRecognizedTradingViewWebhook',
+              'module.exports',
+          ], radius=45)
 
-          def octal(field):
-              text = field.rstrip(b'\0 ').decode('ascii', errors='strict').strip()
-              if not re.fullmatch(r'[0-7]*', text):
-                  raise ValueError(f'invalid tar size field: {field!r}')
-              return int(text or '0', 8)
-
-          members = {}
-          pos = 0
-          while pos + 512 <= len(tar_bytes):
-              header = tar_bytes[pos:pos+512]
-              if header == b'\0' * 512:
-                  break
-              name = header[:100].split(b'\0', 1)[0].decode('utf-8')
-              prefix = header[345:500].split(b'\0', 1)[0].decode('utf-8')
-              if prefix:
-                  name = prefix + '/' + name
-              size = octal(header[124:136])
-              start = pos + 512
-              end = start + size
-              if end > len(tar_bytes):
-                  break
-              if header[156:157] in (b'0', b'\0'):
-                  members[name] = tar_bytes[start:end]
-              pos = start + ((size + 511) // 512) * 512
-
-          expected = {
-              'bridge/ib_bridge.py': '996a2c9de7dffb4128528af885792625a7ee3a21b842fdff016104719501b57c',
-              'bridge/smi_forward_adapter.py': 'b28e2a3df103f49a7d998be452d0d94222a91a583f1b6513e623bd9ade3542ac',
-              'pine/SMI_Histogram_v0_4_FWD_UAM.pine': '18b0914ae4c3baa6886ff281435331561e13a37e20f59af8d7013a27ac969f96',
-              'scripts/deploy-ib-bridge.ps1': '0da7c5f1c2fe527150c8a6edb9f1a5465cb219ecf79f324cb9c223f7f985449c',
-          }
-          for path, digest in expected.items():
-              assert path in members, f'missing recovered member: {path}'
-              actual = hashlib.sha256(members[path]).hexdigest()
-              assert actual == digest, f'{path}: sha256 {actual} != {digest}'
-              members[path].decode('utf-8')
-
-          original_core = (root / 'bridge/ib_bridge.py').read_bytes()
-          original_core_sha = hashlib.sha256(original_core).hexdigest()
-          (root / 'bridge/ib_bridge_core.py').write_bytes(original_core)
-
-          for path in expected:
-              dest = root / path
-              dest.parent.mkdir(parents=True, exist_ok=True)
-              dest.write_bytes(members[path])
-
-          assert hashlib.sha256((root / 'bridge/ib_bridge_core.py').read_bytes()).hexdigest() == original_core_sha
-          assert (root / 'bridge/ib_bridge_core.py').read_bytes() == original_core
-
-          pine = (root / 'pine/SMI_Histogram_v0_4_FWD_UAM.pine').read_text(encoding='utf-8')
-          required_pine = [
-              '//@version=6',
-              'UAM_SYSTEM_ID = "VIXALE_SMI_FWD"',
-              'UAM_STRATEGY_ID = "SMI_HISTOGRAM_V0_4_FWD"',
-              'UAM_RESEARCH_VERSION = "0.4-FWD"',
-              'UAM_POSITION_SIZE_PCT = 3.0',
-              'ta.tsi(close, shortLen, longLen)',
-          ]
-          for token in required_pine:
-              assert token in pine, f'missing Pine contract token: {token}'
-          assert re.search(r'default_qty_type\s*=\s*strategy\.percent_of_equity', pine)
-          assert re.search(r'default_qty_value\s*=\s*3(?:\.0)?\b', pine)
-          assert not re.search(r'default_qty_type\s*=\s*strategy\.fixed\b', pine)
-          assert '\x00' not in pine
-          for line_no, line in enumerate(pine.splitlines(), 1):
-              if any(token in line for token in ('strategy.entry', 'qty', 'equity', 'math.floor')):
-                  print(f'PINE_QTY_LINE {line_no}: {line}')
-
-          adapter = (root / 'bridge/smi_forward_adapter.py').read_text(encoding='utf-8')
-          required_adapter = [
-              'SMI_SYSTEM_ID = "VIXALE_SMI_FWD"',
-              'SMI_STRATEGY_ID = "SMI_HISTOGRAM_V0_4_FWD"',
-              'SMI_RESEARCH_VERSION = "0.4-FWD"',
-              'SMI_POSITION_SIZE_PCT = 3.0',
-              'SMI_QTY_SOURCE = "TV Strategy Properties"',
-              'install_smi_forward_adapter',
-          ]
-          for token in required_adapter:
-              assert token in adapter, f'missing adapter token: {token}'
-
-          print('original_core_sha256', original_core_sha)
-          for path, digest in expected.items():
-              print('materialized', path, digest)
-
-      - name: Compile and isolation guards
+          print('=== tests ===')
+          for p in sorted(Path('tests').glob('*')):
+              if p.is_file(): print(p.as_posix())
+      - name: Baseline checks
         run: |
+          node --check app.js
           python -m py_compile bridge/ib_bridge.py bridge/ib_bridge_core.py bridge/smi_forward_adapter.py
-          python - <<'PY'
-          from pathlib import Path
-          wrapper = Path('bridge/ib_bridge.py').read_text(encoding='utf-8')
-          core = Path('bridge/ib_bridge_core.py').read_text(encoding='utf-8')
-          adapter = Path('bridge/smi_forward_adapter.py').read_text(encoding='utf-8')
-          assert 'install_smi_forward_adapter(_core)' in wrapper
-          assert '_smi_forward_original_handle_ib_action' in adapter
-          assert 'def install_smi_forward_adapter' in adapter
-          assert 'SMI_SYSTEM_ID = "VIXALE_SMI_FWD"' not in core
-          PY
-
-      - name: Commit materialized integration layer
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            bridge/ib_bridge.py \
-            bridge/ib_bridge_core.py \
-            bridge/smi_forward_adapter.py \
-            pine/SMI_Histogram_v0_4_FWD_UAM.pine \
-            scripts/deploy-ib-bridge.ps1
-          git diff --cached --check
-          git diff --cached --name-only
-          test "$(git diff --cached --name-only | wc -l)" -eq 5
-          git commit -m "Integrate frozen SMI v0.4-FWD bridge adapter [smi-materialized]"
-          git push origin HEAD:feature/smi-v04-fwd-tws-adapter
