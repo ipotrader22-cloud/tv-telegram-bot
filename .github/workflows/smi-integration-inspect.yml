@@ -1,0 +1,59 @@
+name: SMI integration inspect
+
+on:
+  push:
+    branches:
+      - feature/smi-v04-fwd-tws-adapter
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Inspect routing and bridge hooks
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def show(path, needles, radius=10):
+              text = Path(path).read_text(encoding='utf-8')
+              lines = text.splitlines()
+              print(f'=== {path} lines={len(lines)} chars={len(text)} ===')
+              for needle in needles:
+                  hits = [i for i, line in enumerate(lines) if needle in line]
+                  print(f'--- needle={needle!r} hits={len(hits)} ---')
+                  for i in hits[:8]:
+                      lo = max(0, i-radius)
+                      hi = min(len(lines), i+radius+1)
+                      print(f'@@ line {i+1} @@')
+                      for j in range(lo, hi):
+                          print(f'{j+1:05d}: {lines[j][:1200]}')
+
+          show('app.js', [
+              'app.post("/tv"',
+              "app.post('/tv'",
+              'BRIDGE_FORWARD_ENABLED',
+              'forwardToBridge',
+              'forwardToIbBridge',
+              'ENTRY_FILL',
+              'VIXALE_EDGE',
+              'processLedger',
+          ], radius=8)
+          show('bridge/ib_bridge.py', [
+              'async def tv_webhook',
+              'is_vixale_edge_payload',
+              'classify_strategy_payload',
+              'managed_positions',
+              'placeOrder',
+              'monitor_target_fill',
+          ], radius=8)
+      - name: Baseline syntax
+        run: |
+          node --check app.js
+          python -m py_compile bridge/ib_bridge.py
