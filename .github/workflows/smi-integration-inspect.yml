@@ -171,8 +171,8 @@ jobs:
             echo "Known pre-existing Edge dashboard assertion reproduced; not caused by SMI patch."
           fi
 
-          python tests/test_shrek_eod_watchdog.py
-          python tests/test_vixale_edge_bridge_isolation.py
+          PYTHONPATH=. python tests/test_shrek_eod_watchdog.py
+          PYTHONPATH=. python tests/test_vixale_edge_bridge_isolation.py
 
       - name: Commit Render patch
         run: |
