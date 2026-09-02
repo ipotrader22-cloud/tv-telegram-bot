@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 10
 
       - name: Recover and apply assert-driven SMI routing patch
         shell: bash
@@ -24,8 +24,9 @@ jobs:
           from pathlib import Path
           import subprocess
 
+          source_commit = '5bf9d55e7d2bf897525ceaf7440857d4f14f607f'
           previous = subprocess.check_output(
-              ['git', 'show', 'HEAD~2:.github/workflows/smi-integration-inspect.yml'],
+              ['git', 'show', f'{source_commit}:.github/workflows/smi-integration-inspect.yml'],
               text=True,
           )
           start_marker = "      - name: Apply assert-driven SMI routing patch\n"
@@ -40,27 +41,8 @@ jobs:
               for line in lines
           ) + "\n"
 
-          old_helper = '''def replace_once(old, new, label):
-    global text
-    count = text.count(old)
-    assert count == 1, f'{label}: expected 1 anchor, found {count}'
-    text = text.replace(old, new, 1)
-'''
-          new_helper = '''def replace_once(old, new, label):
-    global text
-    if label == 'SMI callback evidence gates':
-        scope_start = text.index('async function processRecognizedTradingViewWebhook(')
-        scope_end = text.index('async function processRecognizedTradingViewWebhookLifecycle(', scope_start)
-        scope = text[scope_start:scope_end]
-        count = scope.count(old)
-        assert count == 1, f'{label}: expected 1 scoped anchor, found {count}'
-        scope = scope.replace(old, new, 1)
-        text = text[:scope_start] + scope + text[scope_end:]
-        return
-    count = text.count(old)
-    assert count == 1, f'{label}: expected 1 anchor, found {count}'
-    text = text.replace(old, new, 1)
-'''
+          old_helper = "def replace_once(old, new, label):\n    global text\n    count = text.count(old)\n    assert count == 1, f'{label}: expected 1 anchor, found {count}'\n    text = text.replace(old, new, 1)\n"
+          new_helper = "def replace_once(old, new, label):\n    global text\n    if label == 'SMI callback evidence gates':\n        scope_start = text.index('async function processRecognizedTradingViewWebhook(')\n        scope_end = text.index('async function processRecognizedTradingViewWebhookLifecycle(', scope_start)\n        scope = text[scope_start:scope_end]\n        count = scope.count(old)\n        assert count == 1, f'{label}: expected 1 scoped anchor, found {count}'\n        scope = scope.replace(old, new, 1)\n        text = text[:scope_start] + scope + text[scope_end:]\n        return\n    count = text.count(old)\n    assert count == 1, f'{label}: expected 1 anchor, found {count}'\n    text = text.replace(old, new, 1)\n"
           assert old_helper in script
           script = script.replace(old_helper, new_helper, 1)
           assert "SMI_FWD_SYSTEM_ID" in script
