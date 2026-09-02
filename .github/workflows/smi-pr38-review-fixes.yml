@@ -24,6 +24,7 @@ jobs:
         run: |
           python .github/smi-pr38-review-fixes.py
           python .github/smi-pr38-testfix.py
+          python .github/smi-pr38-testfix2.py
 
       - name: Verify syntax and regressions
         shell: bash
@@ -50,7 +51,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/smi-pr38-review-fixes.yml .github/smi-pr38-review-fixes.py .github/smi-pr38-testfix.py
+          git rm .github/workflows/smi-pr38-review-fixes.yml .github/smi-pr38-review-fixes.py .github/smi-pr38-testfix.py .github/smi-pr38-testfix2.py
           git add bridge/smi_forward_adapter.py pine/SMI_Histogram_v0_4_FWD_UAM.pine tests/test_smi_forward_bridge_isolation.py tests/test_smi_forward_pine_contract.py tests/test_smi_forward_concurrency.py docs/VECO_DEVELOPER_HANDBOOK.md
           git diff --cached --check
           git commit -m "Fix PR #38 execution safety review findings [smi-pr38-review-fixed]"
