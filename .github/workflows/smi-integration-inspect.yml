@@ -20,29 +20,30 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import base64, zlib
+          import base64, zlib, hashlib
 
           parts = sorted(Path('.github/smi-v04-fwd').glob('part*.b64'))
-          raw_b64 = ''.join(''.join(p.read_text(encoding='utf-8').split()) for p in parts)
-          print('parts:', [p.name for p in parts])
-          print('base64_chars:', len(raw_b64))
+          chunks = [''.join(p.read_text(encoding='utf-8').split()) for p in parts]
+          print('parts:', [(p.name, len(chunk), chunk[:8], chunk[-8:]) for p, chunk in zip(parts, chunks)])
+          raw_b64 = ''.join(chunks)
           usable = len(raw_b64) - (len(raw_b64) % 4)
           compressed = base64.b64decode(raw_b64[:usable])
-          print('compressed_bytes:', len(compressed))
+          print('base64_chars:', len(raw_b64), 'compressed_bytes:', len(compressed))
 
           decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+          tar_bytes = decoder.decompress(compressed)
           try:
-              tar_bytes = decoder.decompress(compressed)
               tar_bytes += decoder.flush()
           except zlib.error as exc:
-              print('expected_partial_gzip:', exc)
-              tar_bytes = decoder.unconsumed_tail
-              raise
+              print('partial gzip flush:', exc)
           print('decompressed_prefix_bytes:', len(tar_bytes))
 
           def octal(field):
               text = field.rstrip(b'\0 ').decode('ascii', errors='ignore').strip()
-              return int(text or '0', 8)
+              try:
+                  return int(text or '0', 8)
+              except ValueError:
+                  return None
 
           pos = 0
           index = 0
@@ -55,6 +56,9 @@ jobs:
               if prefix:
                   name = prefix + '/' + name
               size = octal(header[124:136])
+              if size is None:
+                  print(f'PARTIAL_TAR_STOP offset={pos} invalid_size_field={header[124:136]!r}')
+                  break
               typeflag = header[156:157]
               data_start = pos + 512
               data_end = data_start + size
@@ -62,44 +66,47 @@ jobs:
               print(f'ARCHIVE_MEMBER {index}: name={name!r} size={size} type={typeflag!r} complete={complete}')
               if complete and size and typeflag in (b'0', b'\0'):
                   body = tar_bytes[data_start:data_end]
-                  try:
-                      text = body.decode('utf-8')
-                  except UnicodeDecodeError:
-                      text = ''
-                  if text:
+                  print('sha256:', hashlib.sha256(body).hexdigest())
+                  text = body.decode('utf-8', errors='replace')
+                  if name in {'bridge/ib_bridge.py', 'bridge/smi_forward_adapter.py', 'pine/SMI_Histogram_v0_4_FWD_UAM.pine'}:
                       print(f'--- BEGIN RECOVERED {name} ---')
-                      print(text[:16000])
-                      if len(text) > 16000:
-                          print(f'--- TRUNCATED RECOVERED {name}: {len(text)} chars ---')
+                      print(text)
                       print(f'--- END RECOVERED {name} ---')
               if not complete:
                   break
               pos = data_start + ((size + 511) // 512) * 512
               index += 1
-      - name: Inspect exact app and bridge ranges
+      - name: Inspect exact integration hooks
         shell: python
         run: |
           from pathlib import Path
 
-          def ranges(path, spans):
+          def show_hits(path, needles, radius=30):
               lines = Path(path).read_text(encoding='utf-8').splitlines()
               print(f'=== {path} lines={len(lines)} ===')
-              for lo, hi, label in spans:
-                  print(f'--- {label}: {lo}-{hi} ---')
-                  for i in range(lo-1, min(hi, len(lines))):
-                      print(f'{i+1:05d}: {lines[i][:1600]}')
+              for needle in needles:
+                  hits = [i for i, line in enumerate(lines) if needle in line]
+                  print(f'--- {needle!r}: hits={len(hits)} ---')
+                  for i in hits[:4]:
+                      lo=max(0,i-radius); hi=min(len(lines),i+radius+1)
+                      print(f'@@ {i+1} @@')
+                      for j in range(lo, hi): print(f'{j+1:05d}: {lines[j][:1600]}')
 
-          ranges('app.js', [
-              (1400, 1510, 'parser event/classifier'),
-              (11380, 11645, 'bridge decision/build/forward'),
-              (11680, 12085, 'recognition and execution-first lifecycle'),
-              (13740, 13811, 'route registration and test exports'),
+          show_hits('app.js', [
+              'function requiresBridgeExecutionConfirmation',
+              'function shouldForwardToBridge',
+              'function buildBridgePayload',
+              'async function forwardToBridge',
+              'async function handleTradingViewWebhook',
+              'async function handleTradingViewWebhookWithDependencies',
+              'async function processRecognizedTradingViewWebhookLifecycleCore',
           ])
-          ranges('bridge/ib_bridge.py', [
-              (470, 590, 'managed position persistence'),
-              (2960, 3350, 'entry execution'),
-              (6150, 6350, 'generic close execution'),
-              (9760, 9893, 'tv webhook dispatcher'),
+          show_hits('bridge/ib_bridge.py', [
+              'def mark_managed_position',
+              'async def place_entry',
+              'async def close_position',
+              'async def process_payload',
+              'async def tv_webhook',
           ])
       - name: Baseline syntax
         run: |
