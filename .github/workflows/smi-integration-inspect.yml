@@ -14,21 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
 
       - name: Recover and apply assert-driven SMI routing patch
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import subprocess
+          from urllib.request import urlopen
 
           source_commit = '5bf9d55e7d2bf897525ceaf7440857d4f14f607f'
-          previous = subprocess.check_output(
-              ['git', 'show', f'{source_commit}:.github/workflows/smi-integration-inspect.yml'],
-              text=True,
-          )
+          source_url = f'https://raw.githubusercontent.com/ipotrader22-cloud/tv-telegram-bot/{source_commit}/.github/workflows/smi-integration-inspect.yml'
+          previous = urlopen(source_url, timeout=20).read().decode('utf-8')
           start_marker = "      - name: Apply assert-driven SMI routing patch\n"
           next_marker = "      - name: Syntax and focused SMI routing checks\n"
           start = previous.index(start_marker)
