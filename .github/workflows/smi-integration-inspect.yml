@@ -13,41 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect exact app hooks and test surface
+      - name: Inspect exact parser validation and callback ranges
         shell: python
         run: |
           from pathlib import Path
-
-          def show_hits(path, needles, radius=55):
-              lines = Path(path).read_text(encoding='utf-8').splitlines()
-              print(f'=== {path} lines={len(lines)} ===')
-              for needle in needles:
-                  hits = [i for i, line in enumerate(lines) if needle in line]
-                  print(f'--- {needle!r} hits={len(hits)} ---')
-                  for i in hits[:3]:
-                      lo=max(0,i-radius); hi=min(len(lines),i+radius+1)
-                      print(f'@@ line {i+1} @@')
-                      for j in range(lo,hi):
-                          print(f'{j+1:05d}: {lines[j][:2000]}')
-
-          show_hits('app.js', [
-              'function parseJsonTradingViewAlert',
-              'function isOpenOnSetupRow',
-              'function requiresBridgeExecutionConfirmation',
-              'function bridgePayload',
-              'function validateBridgePayload',
-              'function isBridgeExecutionCallback',
-              'function hasConfirmedEdgeEntryExecution',
-              'function hasConfirmedCloseExecution',
-              'function isRecognizedTradeWebhook',
-              'async function processRecognizedTradingViewWebhookLifecycleCore',
-              'async function processRecognizedTradingViewWebhook',
-              'module.exports',
-          ], radius=45)
-
-          print('=== tests ===')
-          for p in sorted(Path('tests').glob('*')):
-              if p.is_file(): print(p.as_posix())
+          lines = Path('app.js').read_text(encoding='utf-8').splitlines()
+          for lo, hi, label in [
+              (1428, 1615, 'JSON parser'),
+              (11360, 11438, 'execution identities and Edge exit callback'),
+              (11527, 11664, 'bridge validation and forwarder'),
+              (11920, 12095, 'execution-first lifecycle core'),
+          ]:
+              print(f'=== {label}: {lo}-{hi} ===')
+              for i in range(lo-1, min(hi, len(lines))):
+                  print(f'{i+1:05d}: {lines[i][:2200]}')
       - name: Baseline checks
         run: |
           node --check app.js
