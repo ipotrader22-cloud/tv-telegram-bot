@@ -23,10 +23,10 @@ section = """Existing classification and lifecycle must remain backward compatib
 
 ### 3A.1 SMI Histogram v0.4-FWD
 
-**Research freeze:** `SMI Histogram Strategy v0.4-FWD`  
-**Engineering system ID:** `VIXALE_SMI_FWD`  
-**Engineering strategy ID:** `SMI_HISTOGRAM_V0_4_FWD`  
-**Canonical forward-test Pine:** `/pine/SMI_Histogram_v0_4_FWD_UAM.pine`  
+**Research freeze:** `SMI Histogram Strategy v0.4-FWD`
+**Engineering system ID:** `VIXALE_SMI_FWD`
+**Engineering strategy ID:** `SMI_HISTOGRAM_V0_4_FWD`
+**Canonical forward-test Pine:** `/pine/SMI_Histogram_v0_4_FWD_UAM.pine`
 **Repository status:** forward-test integration only; this section is not evidence of merge, deployment, or TWS activation.
 
 Trading Lab owns the frozen research behavior. Engineering must not derive, optimize,
