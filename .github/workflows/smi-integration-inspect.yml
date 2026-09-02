@@ -94,18 +94,18 @@ jobs:
           pine = (root / 'pine/SMI_Histogram_v0_4_FWD_UAM.pine').read_text(encoding='utf-8')
           required_pine = [
               '//@version=6',
-              'default_qty_type=strategy.percent_of_equity',
-              'default_qty_value=3.0',
               'UAM_SYSTEM_ID = "VIXALE_SMI_FWD"',
               'UAM_STRATEGY_ID = "SMI_HISTOGRAM_V0_4_FWD"',
               'UAM_RESEARCH_VERSION = "0.4-FWD"',
               'UAM_POSITION_SIZE_PCT = 3.0',
               'ta.tsi(close, shortLen, longLen)',
-              'qty=entryQty',
           ]
           for token in required_pine:
               assert token in pine, f'missing Pine contract token: {token}'
-          assert 'default_qty_type=strategy.fixed' not in pine
+          assert re.search(r'default_qty_type\s*=\s*strategy\.percent_of_equity', pine)
+          assert re.search(r'default_qty_value\s*=\s*3(?:\.0)?\b', pine)
+          assert re.search(r'qty\s*=\s*entryQty\b', pine)
+          assert not re.search(r'default_qty_type\s*=\s*strategy\.fixed\b', pine)
           assert '\x00' not in pine
 
           adapter = (root / 'bridge/smi_forward_adapter.py').read_text(encoding='utf-8')
@@ -135,7 +135,6 @@ jobs:
           assert 'install_smi_forward_adapter(_core)' in wrapper
           assert '_smi_forward_original_handle_ib_action' in adapter
           assert 'def install_smi_forward_adapter' in adapter
-          # No SMI implementation is allowed inside the preserved core copy.
           assert 'SMI_SYSTEM_ID = "VIXALE_SMI_FWD"' not in core
           PY
 
