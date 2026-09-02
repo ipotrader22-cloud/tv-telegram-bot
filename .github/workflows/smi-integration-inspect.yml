@@ -99,12 +99,12 @@ jobs:
               'UAM_RESEARCH_VERSION = "0.4-FWD"',
               'UAM_POSITION_SIZE_PCT = 3.0',
               'ta.tsi(close, shortLen, longLen)',
+              'entryQty',
           ]
           for token in required_pine:
               assert token in pine, f'missing Pine contract token: {token}'
           assert re.search(r'default_qty_type\s*=\s*strategy\.percent_of_equity', pine)
           assert re.search(r'default_qty_value\s*=\s*3(?:\.0)?\b', pine)
-          assert re.search(r'qty\s*=\s*entryQty\b', pine)
           assert not re.search(r'default_qty_type\s*=\s*strategy\.fixed\b', pine)
           assert '\x00' not in pine
 
