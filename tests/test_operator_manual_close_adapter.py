@@ -216,5 +216,41 @@ class ExternalCloseAckTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TEAM", core.store)
 
 
+class InstallIsolationTests(unittest.TestCase):
+    def test_install_adds_routes_without_replacing_trading_handler(self):
+        routes = []
+
+        class FakeApp:
+            def get(self, path):
+                return self._decorator("GET", path)
+
+            def post(self, path):
+                return self._decorator("POST", path)
+
+            def _decorator(self, method, path):
+                def wrap(fn):
+                    routes.append((method, path, fn))
+                    return fn
+                return wrap
+
+        core = SimpleNamespace(
+            app=FakeApp(),
+            handle_ib_action=object(),
+            ib_lock=asyncio.Lock(),
+        )
+        original_handle = core.handle_ib_action
+        adapter.install_operator_manual_close_adapter(core)
+
+        self.assertIs(core.handle_ib_action, original_handle)
+        self.assertTrue(core._operator_manual_close_adapter_installed)
+        self.assertEqual(
+            [(method, path) for method, path, _fn in routes],
+            [
+                ("GET", "/ib/operator/external-close-check/{symbol}"),
+                ("POST", "/ib/operator/ack-external-close"),
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
