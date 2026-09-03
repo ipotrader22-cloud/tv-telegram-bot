@@ -68,18 +68,18 @@ def request_is_direct_local(request: Any) -> bool:
 
 
 def managed_identity(row: Dict[str, Any]) -> str:
-    """Return the exact lifecycle identity the operator must echo back."""
+    """Return a durable lifecycle identity that is safe to echo for cleanup.
+
+    Only explicit setup_id/trade_id values are accepted. A SYMBOL_SIDE fallback
+    is intentionally not used because a later trade can reuse the same symbol and
+    side, which would make a stale operator acknowledgement unsafe.
+    """
     if not isinstance(row, dict):
         return ""
     setup_id = _text(row.get("setup_id"))
     if setup_id:
         return setup_id
-    trade_id = _text(row.get("trade_id"))
-    if trade_id:
-        return trade_id
-    symbol = _symbol(row.get("symbol"))
-    side = _symbol(row.get("side"))
-    return f"{symbol}_{side}" if symbol and side else ""
+    return _text(row.get("trade_id"))
 
 
 def _working_orders_for_symbol(core: Any, symbol: str) -> List[Dict[str, Any]]:
@@ -133,13 +133,19 @@ async def inspect_external_close_locked(core: Any, symbol: str) -> Dict[str, Any
             "safe_to_clear": False,
         }
 
+    identity = managed_identity(row)
     position = float(await core.get_position_size(symbol) or 0.0)
     working_orders = _working_orders_for_symbol(core, symbol)
-    safe_to_clear = abs(position) <= _POSITION_EPSILON and not working_orders
-    status = "safe_to_ack_external_close" if safe_to_clear else (
-        "blocked_broker_position_not_flat"
-        if abs(position) > _POSITION_EPSILON
+    position_flat = abs(position) <= _POSITION_EPSILON
+    safe_to_clear = bool(identity) and position_flat and not working_orders
+    status = (
+        "blocked_managed_identity_missing"
+        if not identity
+        else "blocked_broker_position_not_flat"
+        if not position_flat
         else "blocked_working_orders_present"
+        if working_orders
+        else "safe_to_ack_external_close"
     )
 
     return {
@@ -147,7 +153,7 @@ async def inspect_external_close_locked(core: Any, symbol: str) -> Dict[str, Any
         "status": status,
         "symbol": symbol,
         "broker_position": position,
-        "position_flat": abs(position) <= _POSITION_EPSILON,
+        "position_flat": position_flat,
         "working_order_count": len(working_orders),
         "working_orders": working_orders,
         "safe_to_clear": safe_to_clear,
@@ -187,7 +193,14 @@ async def acknowledge_external_close_locked(core: Any, data: Dict[str, Any]) -> 
         }
 
     current_identity = managed_identity(row)
-    if not current_identity or current_identity != expected_identity:
+    if not current_identity:
+        return {
+            "ok": False,
+            "status": "blocked_managed_identity_missing",
+            "symbol": symbol,
+            "cleared": False,
+        }
+    if current_identity != expected_identity:
         return {
             "ok": False,
             "status": "managed_identity_mismatch",
