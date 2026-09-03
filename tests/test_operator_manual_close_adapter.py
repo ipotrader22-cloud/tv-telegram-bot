@@ -178,7 +178,24 @@ class ExternalCloseAckTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("NVDA", core.store)
         self.assertIn("AAPL", core.store)
 
-    async def test_legacy_row_gets_stable_symbol_side_identity(self):
+    async def test_trade_id_is_accepted_as_stable_identity(self):
+        row = {
+            "symbol": "TEAM",
+            "side": "LONG",
+            "trade_id": "TEAM_LONG_20260903_1",
+            "system_id": "VIXALE_PRIME",
+        }
+        core = FakeCore({"TEAM": row}, position=0.0)
+        async with core.ib_lock:
+            result = await adapter.acknowledge_external_close_locked(core, {
+                "symbol": "TEAM",
+                "managed_identity": row["trade_id"],
+                "confirm": adapter.CONFIRM_EXTERNAL_CLOSE,
+            })
+        self.assertTrue(result["ok"])
+        self.assertNotIn("TEAM", core.store)
+
+    async def test_row_without_stable_identity_is_blocked(self):
         row = {
             "symbol": "TEAM",
             "side": "LONG",
@@ -186,13 +203,17 @@ class ExternalCloseAckTests(unittest.IsolatedAsyncioTestCase):
         }
         core = FakeCore({"TEAM": row}, position=0.0)
         async with core.ib_lock:
+            preview = await adapter.inspect_external_close_locked(core, "TEAM")
             result = await adapter.acknowledge_external_close_locked(core, {
                 "symbol": "TEAM",
                 "managed_identity": "TEAM_LONG",
                 "confirm": adapter.CONFIRM_EXTERNAL_CLOSE,
             })
-        self.assertTrue(result["ok"])
-        self.assertNotIn("TEAM", core.store)
+        self.assertFalse(preview["safe_to_clear"])
+        self.assertEqual(preview["status"], "blocked_managed_identity_missing")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "blocked_managed_identity_missing")
+        self.assertIn("TEAM", core.store)
 
 
 if __name__ == "__main__":
