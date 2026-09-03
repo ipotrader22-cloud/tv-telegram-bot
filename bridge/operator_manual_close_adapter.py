@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from fastapi import Request
+
 
 CONFIRM_EXTERNAL_CLOSE = "ACK_EXTERNAL_CLOSE_AND_CLEAR_MANAGED"
 _POSITION_EPSILON = 1e-6
@@ -264,7 +266,7 @@ def install_operator_manual_close_adapter(core: Any) -> Any:
         return core
 
     @core.app.get("/ib/operator/external-close-check/{symbol}")
-    async def operator_external_close_check(symbol: str, request: Any):
+    async def operator_external_close_check(symbol: str, request: Request):
         if not request_is_direct_local(request):
             return {
                 "ok": False,
@@ -275,7 +277,7 @@ def install_operator_manual_close_adapter(core: Any) -> Any:
             return await inspect_external_close_locked(core, symbol)
 
     @core.app.post("/ib/operator/ack-external-close")
-    async def operator_ack_external_close(request: Any):
+    async def operator_ack_external_close(request: Request):
         if not request_is_direct_local(request):
             return {"ok": False, "status": "operator_endpoint_localhost_only"}
         try:
