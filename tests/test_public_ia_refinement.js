@@ -40,9 +40,14 @@ assert(!services.includes("Have an audience? Launch a trading product with Vixal
 assert(services.includes("https://www.vixale.com/services"));
 
 const pricing = renderPricingFromLanding(sample);
-assert(pricing.includes("<title>Vixale | Pricing</title>"));
-assert(pricing.includes("7 Days Free"));
-assert(pricing.includes("Coming Soon"));
+assert(pricing.includes("<title>Vixale | 7 Days Free</title>"));
+assert(pricing.includes("Watch Vixale free for 7 days."));
+assert(pricing.includes('href="/#access">Request 7-Day Access</a>'));
+assert(pricing.includes('href="/trading-systems">Explore Trading Systems</a>'));
+assert(pricing.includes("Access requests are reviewed manually."));
+assert(pricing.includes("Active trade ideas the system is watching."));
+assert(pricing.includes("Watch for 7 days"));
+assert(!pricing.includes("Coming Soon"));
 assert(!pricing.includes("What can we help you with?"));
 assert(pricing.includes("https://www.vixale.com/pricing"));
 
