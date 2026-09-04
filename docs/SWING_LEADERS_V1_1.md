@@ -3,6 +3,7 @@
 **Freeze:** Vixale Swing Leaders v1.1  
 **Approved:** 2026-08-27  
 **Risk/exit rule clarification approved:** 2026-09-03  
+**Daily Model P&L equity curve approved:** 2026-09-03  
 **Trading/research owner:** Trading Lab  
 **Engineering owner:** VIXALE Engineering / Codex  
 **Scope:** public display and server-side data integration only
@@ -59,6 +60,45 @@ The website may calculate presentation-only dollar Model P&L from the frozen $10
 - **Closed Trades / Realized Model P&L:** sum across displayed closed rows using final Trading Lab return values.
 
 No compounding, broker shares, broker P&L, user sizing, or quote-source substitution is permitted.
+
+## Daily Model P&L equity curve
+
+The Swing Leaders hero includes one compact **Model P&L** line chart. On desktop the chart appears to the right of the Swing Leaders hero information. On smaller screens it moves below the hero summary. The chart contains one line, a visible `$0` baseline, date/time context, and point tooltips with `Date` and `Model P&L`.
+
+The authoritative history source is the same workbook, worksheet **`Equity History`**, with these Trading Lab-owned columns:
+
+- `snapshot_date`
+- `snapshot_time_et`
+- `realized_model_pnl`
+- `unrealized_model_pnl`
+- `total_model_pnl`
+- `model_equity`
+- `active_count`
+
+The chart uses **only `total_model_pnl` from immutable Trading Lab Equity History rows**. Engineering must not recalculate historical points from Active Portfolio rows, current prices, model allocations, or any other present-day state.
+
+For the public chart/API, Engineering exposes only:
+
+- `snapshot_date`
+- `snapshot_time_et`
+- `total_model_pnl`
+
+The Trading Lab inception row is explicitly identified by `snapshot_time_et = INCEPTION`. The approved sheet currently represents the inception P&L fields with `-`; Engineering may normalize **only that explicit `INCEPTION` row** to `total_model_pnl = 0` for rendering the required Trading Lab `$0` starting point. A `-` in a normal history row is not a zero and is invalid.
+
+History behavior is strict:
+
+- read the full `Equity History` column range so newly appended Trading Lab rows are discovered without a deployment;
+- validate nonblank rows against the approved column contract;
+- sort valid snapshots chronologically, with the explicit inception point first;
+- never interpolate missing dates;
+- never synthesize replacement dates or P&L values;
+- never overwrite or recompute earlier points because current market prices changed;
+- reject duplicate date/time snapshot identities;
+- the history must begin at the explicit Trading Lab `$0` inception row.
+
+The existing Swing Leaders server-side Google Sheets refresh/cache path owns the read. A normal refresh retrieves the latest appended history row automatically, so **daily Trading Lab Sheet updates require no website deploy**. If an `Equity History` refresh fails after a valid history has been cached, Engineering keeps serving the last valid cached history and logs the refresh failure; it does not clear or fabricate the chart. A Public Feed failure retains the existing whole-snapshot stale-cache behavior.
+
+No Google credentials, workbook access, private history columns, or raw worksheet data are exposed to browser code.
 
 ## Feed contract
 
@@ -124,6 +164,6 @@ No scoring methodology is exposed or inferred by Engineering.
 
 ## Engineering boundary
 
-Engineering may read, validate, whitelist, cache, format, render, and calculate the explicitly approved fixed-allocation Model P&L. Engineering must not independently score, select candidates, create entries/exits, infer exit reasons, change portfolio membership, substitute quotes, or alter Trading Lab strategy logic.
+Engineering may read, validate, whitelist, cache, format, render, and calculate the explicitly approved fixed-allocation Model P&L. Engineering must not independently score, select candidates, create entries/exits, infer exit reasons, change portfolio membership, substitute quotes, alter historical Trading Lab equity rows, or alter Trading Lab strategy logic.
 
 This implementation remains isolated from Pine, TradingView alerts, UAM, TWS/IBKR execution, bridge order/risk logic, and broker lifecycle behavior.
