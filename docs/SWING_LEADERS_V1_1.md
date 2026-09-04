@@ -2,6 +2,7 @@
 
 **Freeze:** Vixale Swing Leaders v1.1  
 **Approved:** 2026-08-27  
+**Risk/exit rule clarification approved:** 2026-09-03  
 **Trading/research owner:** Trading Lab  
 **Engineering owner:** VIXALE Engineering / Codex  
 **Scope:** public display and server-side data integration only
@@ -10,7 +11,7 @@
 
 The public page uses exactly three research/model-portfolio categories:
 
-- **Active Portfolio** — open model positions currently monitored for target, daily-close stop, and ongoing Trading Lab qualification.
+- **Active Portfolio** — open model positions currently monitored for target, scheduled morning-review stop, and ongoing Trading Lab qualification.
 - **Potential Candidates** — potential candidates under active research review. They are not confirmed entries and may never enter the portfolio.
 - **Closed Trades** — completed model positions with final return and Trading Lab-supplied exit reason.
 
@@ -35,11 +36,18 @@ Engineering renders the Trading Lab `brief_reason` text directly and must not re
 
 Each model position uses a fixed **$10,000 allocation at entry**.
 
-- Profit target: **+10% from entry**.
-- Stop loss: evaluated on the **daily closing price**; the approved stop event occurs if the daily close is more than **5% below entry**.
+- Profit target: **+10% from entry** and may trigger **intraday**. If price touches or crosses the +10% target while the model position is open, Trading Lab closes the model trade at exactly the +10% target price.
+- Stop loss: **not intraday**. It is evaluated only during the scheduled **morning review**. If the current price at that review is more than **5% below entry**, Trading Lab closes the model position at the current review price. An intraday move below -5% at any other time does not trigger the stop by itself.
+- The Swing Leaders stop must not be described as an EOD or daily-close rule.
 - Research exit: Trading Lab may remove a position from the Active Portfolio independently of the price stop/target.
 
-Engineering displays these rules but does not execute or infer exits.
+Engineering displays these rules but does not execute, evaluate, or infer exits. The website must not independently compare prices with target/stop thresholds or change portfolio membership.
+
+## Approved public Risk & Exit Rules copy
+
+> **Risk & Exit Rules:** Each model position starts with a $10,000 allocation. The profit target is +10% from entry and may trigger intraday. Stop-losses are evaluated only during the scheduled morning review; if the current review price is more than 5% below entry, the position is closed at that price. A position may also be closed when Trading Lab removes it from the Active Portfolio. **Research Score:** proprietary Vixale research metric shown on a 0–100 scale.
+
+The public website must not use the superseded descriptions `daily closing price is more than 5% below entry`, `intraday -5% stop`, or `EOD stop` for Swing Leaders.
 
 ## Model P&L
 
