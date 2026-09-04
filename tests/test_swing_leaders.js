@@ -5,10 +5,13 @@ const {
   ACTIVE_FIELDS,
   INTERN_FIELDS,
   CLOSED_FIELDS,
+  EQUITY_HISTORY_PUBLIC_FIELDS,
   MODEL_ALLOCATION_PER_POSITION,
   SWING_LEADERS_SPREADSHEET_ID,
   SWING_LEADERS_RANGE,
+  SWING_LEADERS_EQUITY_HISTORY_RANGE,
   parsePublicFeed,
+  parseEquityHistory,
   createSwingLeadersService,
   renderSwingLeadersHtml,
 } = require('../lib/swing-leaders');
@@ -43,6 +46,19 @@ function fixtureRows() {
   ];
 }
 
+function equityHistoryRows() {
+  return [
+    ['snapshot_date', 'snapshot_time_et', 'realized_model_pnl', 'unrealized_model_pnl', 'total_model_pnl', 'model_equity', 'active_count'],
+    ['2026-08-27', 'INCEPTION', '-', '-', '-', '$100,000.00', '0'],
+    ['2026-08-27', '09:49 ET', '-$813.00', '-$157.00', '-$970.00', '$99,030.00', '4'],
+    ['2026-08-28', '09:59 ET', '-$813.00', '-$252.00', '-$1,065.00', '$98,935.00', '4'],
+    ['2026-08-31', '10:00 ET', '-$813.00', '-$252.00', '-$1,065.00', '$98,935.00', '4'],
+    ['2026-09-01', '10:00 ET', '-$1,412.00', '+$572.00', '-$840.00', '$99,160.00', '3'],
+    ['2026-09-02', '10:01 ET', '+$193.00', '-$236.00', '-$43.00', '$99,957.00', '4'],
+    ['2026-09-03', '10:00 ET', '+$193.00', '+$66.00', '+$259.00', '$100,259.00', '4'],
+  ];
+}
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -53,19 +69,62 @@ function assertRejectsRows(mutator, pattern) {
   assert.throws(() => parsePublicFeed(rows), pattern);
 }
 
-async function testCacheFallback() {
-  let shouldFail = false;
+function testEquityHistoryParser() {
+  const unsorted = equityHistoryRows();
+  const row = unsorted.pop();
+  unsorted.splice(2, 0, row);
+  const parsed = parseEquityHistory(unsorted);
+
+  assert.strictEqual(parsed.length, 7);
+  assert.deepStrictEqual(parsed[0], {
+    snapshot_date: '2026-08-27',
+    snapshot_time_et: 'INCEPTION',
+    total_model_pnl: 0,
+  });
+  assert.strictEqual(parsed[parsed.length - 1].snapshot_date, '2026-09-03');
+  assert.strictEqual(parsed[parsed.length - 1].total_model_pnl, 259);
+  assert.deepStrictEqual(Object.keys(parsed[1]), EQUITY_HISTORY_PUBLIC_FIELDS);
+  assert.ok(!parsed.some(point => point.snapshot_date === '2026-08-29'), 'missing dates must remain absent');
+  assert.ok(!parsed.some(point => point.snapshot_date === '2026-08-30'), 'missing dates must remain absent');
+
+  const invalidDash = equityHistoryRows();
+  invalidDash[2][4] = '-';
+  assert.throws(() => parseEquityHistory(invalidDash), /Invalid currency for Equity History total_model_pnl/);
+
+  const noInception = equityHistoryRows().slice(1);
+  noInception[0] = equityHistoryRows()[0];
+  assert.throws(() => parseEquityHistory(noInception), /must start with the Trading Lab \$0 inception row/);
+
+  const nonZeroInception = equityHistoryRows();
+  nonZeroInception[1][4] = '$1.00';
+  assert.throws(() => parseEquityHistory(nonZeroInception), /inception total_model_pnl must be zero/);
+
+  const duplicate = equityHistoryRows();
+  duplicate.push(deepClone(duplicate[2]));
+  assert.throws(() => parseEquityHistory(duplicate), /Duplicate Equity History snapshot/);
+}
+
+async function testCacheFallbackAndDailyAppend() {
+  let publicFeedShouldFail = false;
+  let equityHistoryShouldFail = false;
   let reads = 0;
+  const history = equityHistoryRows().slice(0, 3);
   const client = {
     spreadsheets: {
       values: {
         async get(request) {
           reads += 1;
           assert.strictEqual(request.spreadsheetId, SWING_LEADERS_SPREADSHEET_ID);
-          assert.strictEqual(request.range, SWING_LEADERS_RANGE);
           assert.strictEqual(request.valueRenderOption, 'FORMATTED_VALUE');
-          if (shouldFail) throw new Error('temporary Sheets failure');
-          return { data: { values: fixtureRows() } };
+          if (request.range === SWING_LEADERS_RANGE) {
+            if (publicFeedShouldFail) throw new Error('temporary Public Feed failure');
+            return { data: { values: fixtureRows() } };
+          }
+          if (request.range === SWING_LEADERS_EQUITY_HISTORY_RANGE) {
+            if (equityHistoryShouldFail) throw new Error('temporary Equity History failure');
+            return { data: { values: deepClone(history) } };
+          }
+          throw new Error(`unexpected range ${request.range}`);
         },
       },
     },
@@ -82,14 +141,31 @@ async function testCacheFallback() {
   assert.strictEqual(fresh.stale, false);
   assert.strictEqual(fresh.data.active_count, 2);
   assert.strictEqual(fresh.data.intern_count, 2);
+  assert.strictEqual(fresh.data.equity_history.length, 2);
+  assert.strictEqual(fresh.data.equity_history[0].total_model_pnl, 0);
+  assert.strictEqual(reads, 2);
 
-  shouldFail = true;
+  history.push(['2026-08-28', '09:59 ET', '-$813.00', '-$252.00', '-$1,065.00', '$98,935.00', '4']);
+  const appended = await service.getSnapshot({ force: true });
+  assert.strictEqual(appended.data.equity_history.length, 3, 'new appended Trading Lab row must appear on the next normal refresh');
+  assert.strictEqual(appended.data.equity_history[2].snapshot_date, '2026-08-28');
+  assert.strictEqual(reads, 4);
+
+  equityHistoryShouldFail = true;
+  const cachedHistory = await service.getSnapshot({ force: true });
+  assert.strictEqual(cachedHistory.available, true);
+  assert.strictEqual(cachedHistory.stale, false, 'Equity History failure must not mark a fresh Public Feed snapshot stale');
+  assert.deepStrictEqual(cachedHistory.data.equity_history, appended.data.equity_history, 'Equity History failure must retain the last valid history');
+  assert.ok(logged.some(line => line.includes('Equity History refresh failed')));
+  assert.strictEqual(reads, 6);
+
+  publicFeedShouldFail = true;
   const stale = await service.getSnapshot({ force: true });
   assert.strictEqual(stale.available, true);
   assert.strictEqual(stale.stale, true);
-  assert.deepStrictEqual(stale.data, fresh.data, 'failed refresh must retain the complete last valid snapshot');
-  assert.ok(logged.length >= 1, 'feed failure must be logged server-side');
-  assert.strictEqual(reads, 2);
+  assert.deepStrictEqual(stale.data, cachedHistory.data, 'failed Public Feed refresh must retain the complete last valid snapshot');
+  assert.ok(logged.some(line => line.includes('Public Feed refresh failed')));
+  assert.strictEqual(reads, 7);
 
   const noCacheService = createSwingLeadersService({
     getSheetsClient: async () => ({ spreadsheets: { values: { get: async () => { throw new Error('down'); } } } }),
@@ -136,12 +212,15 @@ async function run() {
   reentryRows[23][0] = 'FCX';
   assert.doesNotThrow(() => parsePublicFeed(reentryRows), 'closed history may contain a ticker that has since been re-entered');
 
+  testEquityHistoryParser();
+
   const candidateReason = 'Energy leadership remains supportive; strong fundamentals and digital/data-center exposure, but entry discipline matters near highs.';
   const displayData = deepClone(parsed);
   displayData.interns[0].ticker = 'SLB';
   displayData.interns[0].score = 84;
   displayData.interns[0].brief_reason = candidateReason;
   displayData.interns[0].review_date = '2026-09-02';
+  displayData.equity_history = parseEquityHistory(equityHistoryRows());
 
   const html = renderSwingLeadersHtml(displayData, { stale: true });
   assert.ok(html.includes('Vixale Swing Leaders'));
@@ -172,6 +251,21 @@ async function run() {
   assert.ok(html.includes('candidate-col-reason'));
   assert.ok(html.includes('width:62%'));
   assert.ok(html.includes('@media(max-width:720px)'));
+  assert.ok(html.includes('class="hero-layout"'));
+  assert.ok(html.includes('grid-template-areas:"hero chart" "summary summary"'));
+  assert.ok(html.includes('grid-template-areas:"hero" "summary" "chart"'));
+  assert.ok(html.includes('class="equity-chart-card"'));
+  assert.ok(html.includes('Model P&amp;L'));
+  assert.ok(html.includes('class="equity-chart-svg"'));
+  assert.ok(html.includes('class="zero-baseline"'));
+  assert.ok(html.includes('class="equity-line"'));
+  assert.ok(html.includes('Model P&amp;L: $0.00'));
+  assert.ok(html.includes('Model P&amp;L: +$259.00'));
+  assert.ok(html.includes('2026-08-27 · Inception'));
+  assert.ok(html.includes('2026-09-03 · 10:00 ET'));
+  assert.ok(!html.includes('realized_model_pnl'));
+  assert.ok(!html.includes('unrealized_model_pnl'));
+  assert.ok(!html.includes('model_equity'));
   assert.ok(!html.includes('PRIVATE'));
   assert.ok(!html.includes('Current Picks'));
   assert.ok(!html.includes('Close to Breakout'));
@@ -182,8 +276,8 @@ async function run() {
   assert.ok(!html.includes('intern-card'));
   assert.ok(!html.includes('intern-grid'));
 
-  await testCacheFallback();
-  console.log('Swing Leaders morning-review risk copy tests passed.');
+  await testCacheFallbackAndDailyAppend();
+  console.log('Swing Leaders daily Model P&L equity curve tests passed.');
 }
 
 run().catch(error => {
