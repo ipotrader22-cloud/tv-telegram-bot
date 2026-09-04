@@ -136,11 +136,18 @@ async function run() {
   reentryRows[23][0] = 'FCX';
   assert.doesNotThrow(() => parsePublicFeed(reentryRows), 'closed history may contain a ticker that has since been re-entered');
 
-  const html = renderSwingLeadersHtml(deepClone(parsed), { stale: true });
+  const candidateReason = 'Energy leadership remains supportive; strong fundamentals and digital/data-center exposure, but entry discipline matters near highs.';
+  const displayData = deepClone(parsed);
+  displayData.interns[0].ticker = 'SLB';
+  displayData.interns[0].score = 84;
+  displayData.interns[0].brief_reason = candidateReason;
+  displayData.interns[0].review_date = '2026-09-02';
+
+  const html = renderSwingLeadersHtml(displayData, { stale: true });
   assert.ok(html.includes('Vixale Swing Leaders'));
   assert.ok(html.includes('How Swing Leaders Works'));
   assert.ok(html.includes('Active Portfolio'));
-  assert.ok(html.includes('Interns'));
+  assert.ok(html.includes('Potential Candidates'));
   assert.ok(html.includes('Potential candidates under active research review.'));
   assert.ok(html.includes('Closed Trades'));
   assert.ok(html.includes('Unrealized Model P&amp;L'));
@@ -153,6 +160,12 @@ async function run() {
   assert.ok(html.includes('09:49 ET'));
   assert.ok(html.includes('Stale — last valid snapshot'));
   assert.ok(html.includes('Quotes may be delayed. This is a swing research/model portfolio, not execution data.'));
+  assert.ok(html.includes('class="candidate-table"'));
+  assert.ok(html.includes('<th>Ticker</th><th>Score</th><th>Why We’re Watching</th><th>Reviewed</th>'));
+  assert.ok(html.includes(candidateReason), 'Trading Lab brief_reason must remain visible verbatim');
+  assert.ok(html.includes('2026-09-02'), 'review_date must remain visible');
+  assert.ok(html.includes('candidate-col-reason'));
+  assert.ok(html.includes('width:62%'));
   assert.ok(html.includes('@media(max-width:720px)'));
   assert.ok(!html.includes('PRIVATE'));
   assert.ok(!html.includes('Current Picks'));
@@ -160,9 +173,12 @@ async function run() {
   assert.ok(!html.includes('READY NOW'));
   assert.ok(!html.includes('approved Public Feed'));
   assert.ok(!html.includes('website does not infer membership'));
+  assert.ok(!html.includes('Interns'), 'Interns must not appear in public-facing HTML');
+  assert.ok(!html.includes('intern-card'));
+  assert.ok(!html.includes('intern-grid'));
 
   await testCacheFallback();
-  console.log('Swing Leaders v1.1 feed, model P&L, sanitization, stale-cache, and responsive rendering tests passed.');
+  console.log('Swing Leaders Potential Candidates compact-row UI tests passed.');
 }
 
 run().catch(error => {

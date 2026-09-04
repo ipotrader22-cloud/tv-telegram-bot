@@ -11,10 +11,25 @@
 The public page uses exactly three research/model-portfolio categories:
 
 - **Active Portfolio** — open model positions currently monitored for target, daily-close stop, and ongoing Trading Lab qualification.
-- **Interns** — potential candidates under active research review. They are not confirmed entries and may never enter the portfolio.
+- **Potential Candidates** — potential candidates under active research review. They are not confirmed entries and may never enter the portfolio.
 - **Closed Trades** — completed model positions with final return and Trading Lab-supplied exit reason.
 
-The former public `Ready Now`, `Close to Breakout`, and `Early Watch` labels are not part of the v1.1 public presentation.
+The former public `Ready Now`, `Close to Breakout`, `Early Watch`, and `Interns` labels are not part of the public presentation.
+
+The Trading Lab `Public Feed` may continue to use the internal `INTERNS` section name and Engineering may continue to use `intern_count` / `interns` internally. Those internal names must not be rendered as public-facing website labels.
+
+## Potential Candidates presentation
+
+Potential Candidates are rendered as a compact row/table section, visually aligned with Active Portfolio.
+
+Desktop columns:
+
+- `Ticker`
+- `Score`
+- `Why We’re Watching`
+- `Reviewed`
+
+Engineering renders the Trading Lab `brief_reason` text directly and must not rewrite, summarize, infer, or hide the reason. The reason receives the widest desktop column and may wrap when needed. Mobile may responsively stack the same four fields while preserving the complete reason and review date.
 
 ## Model methodology
 
@@ -67,7 +82,7 @@ Snapshot fields:
 - `last_review_date`
 - `brief_note`
 
-### INTERNS
+### INTERNS (internal feed name; public UI label: Potential Candidates)
 
 - `ticker`
 - `score`
