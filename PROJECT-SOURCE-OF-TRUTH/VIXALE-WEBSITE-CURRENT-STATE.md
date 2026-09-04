@@ -1,7 +1,7 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest updated:** 2026-08-27  
+**Manifest updated:** 2026-09-03  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
@@ -11,23 +11,21 @@ This manifest records the website/dashboard repository baseline and approved pre
 
 At the latest direct GitHub verification, the latest website-changing merge on `main` is:
 
-- **Website merge SHA:** `c7165c15015089f36f73e446d1f7e9c14de73823`
-- **Observed commit:** `Merge pull request #29 from ipotrader22-cloud/feature/website-swing-trading — Add Swing Trading hierarchy to Trading Systems`
-- **Observed state:** PR #29 merged into `main`
+- **Website merge SHA:** `a2c0393892a70dbfa63ee60830f0aae1c88e4e94`
+- **Observed commit:** `Merge pull request #40 from ipotrader22-cloud/feature/swing-leaders-potential-candidates-ui — Rename Swing Leaders Interns to Potential Candidates`
+- **Observed state:** PR #40 merged into `main`
 
-A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #29.
-
-The observed repository state is **not** a claim that this SHA is deployed to production.
+A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #40.
 
 ### Production / deployment
 
-- **Production deployment SHA:** UNVERIFIED
-- **Deployment status:** UNVERIFIED
+- **Swing Leaders PR #40 deployment status:** CONFIRMED BY OWNER on 2026-09-03 (America/New_York)
+- **Production deployment SHA:** UNVERIFIED independently from Render
 - **Render/runtime configuration:** UNVERIFIED from this manifest
-- **Live Equity Curve verification:** UNVERIFIED until the authenticated dashboard/runtime is checked
-- **Live Trading Systems hierarchy verification:** UNVERIFIED until the public runtime is checked
+- **Independent live `/swing-leaders` fetch:** UNVERIFIED from the current tooling environment
+- **Repository `main`:** directly verified at `a2c0393892a70dbfa63ee60830f0aae1c88e4e94`
 
-Before stating that the Equity Curve, Trading Systems hierarchy, or any other website change is deployed or active, verify the deployment provider/runtime and the live site when accessible.
+The owner confirmation establishes that deployment was performed. Do not infer the exact Render deploy SHA or claim independent live-route verification until those are checked from the runtime/provider or live page.
 
 ## Public Trading Systems information architecture
 
@@ -40,9 +38,72 @@ Repository implementation for the public `/trading-systems` page was merged in P
 - **Market Coverage:** retains the existing Stocks / Futures / Options detail sections and deep links
 - **Repository status:** MERGED to `main` in PR #29
 - **Website merge commit:** `c7165c15015089f36f73e446d1f7e9c14de73823`
-- **Production deployment:** UNVERIFIED / do not claim deployed
 
 This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
+
+## Vixale Swing Leaders public page
+
+The public Swing Leaders display is website/data-integration only and remains isolated from TradingView, UAM, TWS/IBKR, bridge order handling, execution, and strategy logic.
+
+### Repository implementation
+
+- **Route:** `/swing-leaders`
+- **Read-only JSON:** `/api/swing-leaders`
+- **Display contract:** Vixale Swing Leaders v1.1
+- **Latest public UI update:** PR #40
+- **Merge commit:** `a2c0393892a70dbfa63ee60830f0aae1c88e4e94`
+- **Deployment:** CONFIRMED BY OWNER on 2026-09-03; exact Render deploy SHA remains UNVERIFIED
+
+### Public categories
+
+The public UI uses:
+
+- **Active Portfolio** — open model positions
+- **Potential Candidates** — potential candidates under active research review
+- **Closed Trades** — completed model positions with Trading Lab-supplied exit reason
+
+The term **Interns** is internal/feed terminology only and must not appear as a public-facing website label.
+
+Potential Candidates use the existing Trading Lab feed fields:
+
+- `ticker`
+- `score`
+- `brief_reason`
+- `review_date`
+
+Desktop presentation is a compact row/table layout with columns:
+
+`Ticker | Score | Why We’re Watching | Reviewed`
+
+The website renders `brief_reason` directly and does not rewrite, summarize, infer, or generate research reasons.
+
+### Model display rules
+
+- fixed model allocation: **$10,000 per position**
+- profit target: **+10% from entry**
+- stop-loss rule: evaluated on the **daily closing price**; stop event if the daily close is more than **5% below entry**
+- Trading Lab may also remove a position from the Active Portfolio through research disqualification
+- `GOOGLEFINANCE` remains the approved quote source in the Trading Lab feed; quotes may be delayed
+- Active Portfolio header may show **Unrealized Model P&L**
+- Closed Trades header may show **Realized Model P&L**
+
+Engineering may calculate only the approved presentation value:
+
+`Model P&L = $10,000 × Trading Lab-supplied return %`
+
+Engineering must not infer entries, exits, exit reasons, candidate membership, Active Portfolio membership, scoring, or quote substitutions.
+
+### Feed boundary
+
+Internal `Public Feed` compatibility remains unchanged. The feed may continue to use:
+
+- `INTERNS`
+- `intern_count`
+- `interns`
+
+These names are implementation details and are not rendered publicly.
+
+The server keeps the strict field whitelist, validates the full snapshot, uses the existing server-side Google Sheets client, and retains the last complete valid snapshot when refresh fails. With no prior valid snapshot, the page/API fail closed rather than constructing partial data.
 
 ## Repository baseline relevant to the public dashboard
 
@@ -99,11 +160,15 @@ The chart contract is:
 
 The merged implementation is presentation-only. It adds no new Google Sheets request, API route, payload/schema field, environment variable, simulated value, trading logic, or execution logic.
 
+## Documentation conflict
+
+`docs/SWING_LEADERS_V1_1.md` and merged Swing Leaders code reflect the v1.1 public display contract and **Potential Candidates** naming. The older Swing Leaders subsection in `docs/VECO_DEVELOPER_HANDBOOK.md` still contains v1.0 terminology. Until that subsection is safely updated, treat the handbook wording there as a documented conflict rather than as the authoritative Swing Leaders public-label contract.
+
 ## Safety boundary
 
 Website/dashboard work must not alter VECO trading logic, strategy rules, signal generation, order logic, risk logic, broker lifecycle behavior, or TWS/IBKR execution behavior unless explicitly requested by the user.
 
-The Equity Graph is presentation-only and must remain independent of trading/execution logic.
+The Equity Graph and Swing Leaders public display are presentation-only and must remain independent of trading/execution logic.
 
 ## Update procedure
 
