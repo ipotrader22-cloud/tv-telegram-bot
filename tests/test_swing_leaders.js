@@ -154,8 +154,13 @@ async function run() {
   assert.ok(html.includes('Realized Model P&amp;L'));
   assert.ok(html.includes('+$505.00'));
   assert.ok(html.includes('+$1,261.00'));
-  assert.ok(html.includes('profit target is +10% from entry'));
-  assert.ok(html.includes('daily closing price is more than 5% below entry'));
+  assert.ok(html.includes('profit target is +10% from entry and may trigger intraday'));
+  assert.ok(html.includes('Stop-losses are evaluated only during the scheduled morning review'));
+  assert.ok(html.includes('current review price is more than 5% below entry'));
+  assert.ok(html.includes('position is closed at that price'));
+  assert.ok(!html.includes('daily closing price is more than 5% below entry'));
+  assert.ok(!html.includes('intraday −5% stop'));
+  assert.ok(!html.includes('EOD stop'));
   assert.ok(html.includes('proprietary Vixale research metric shown on a 0–100 scale'));
   assert.ok(html.includes('09:49 ET'));
   assert.ok(html.includes('Stale — last valid snapshot'));
@@ -178,7 +183,7 @@ async function run() {
   assert.ok(!html.includes('intern-grid'));
 
   await testCacheFallback();
-  console.log('Swing Leaders Potential Candidates compact-row UI tests passed.');
+  console.log('Swing Leaders morning-review risk copy tests passed.');
 }
 
 run().catch(error => {
