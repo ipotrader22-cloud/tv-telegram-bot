@@ -3,7 +3,8 @@
 const Module = require("module");
 
 const HOME_PATH = "/";
-const HERO_NEEDLE = "Watch the systems live.";
+const HERO_NEEDLE = "Vixale live dashboard";
+const HERO_REQUIRED_MARKER = "Request Dashboard Access";
 const STYLE_ID = "vx-home-conversion-style";
 
 function escapeRegex(value) {
@@ -37,6 +38,23 @@ function findSectionByText(html, text) {
   return range;
 }
 
+function findHomeHeroRange(html) {
+  const range = findSectionByText(html, HERO_NEEDLE);
+  if (!range) return null;
+
+  const openEnd = html.indexOf(">", range.start);
+  if (openEnd < 0 || openEnd >= range.end) return null;
+  const openTag = html.slice(range.start, openEnd + 1);
+  const classMatch = openTag.match(/\bclass=(["'])(.*?)\1/i);
+  if (!classMatch) return null;
+  const classes = new Set(classMatch[2].split(/\s+/).filter(Boolean));
+  if (!classes.has("wrap") || !classes.has("hero")) return null;
+
+  const sectionHtml = html.slice(range.start, range.end);
+  if (!sectionHtml.includes(HERO_REQUIRED_MARKER)) return null;
+  return range;
+}
+
 const homeStyles = `
 <style id="${STYLE_ID}">
   .vx-home-hero{padding:84px 0 76px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 74%);border-bottom:1px solid #e3e9e5}
@@ -64,7 +82,7 @@ function renderHomeHero() {
     <div class="vx-home-hero-kicker">Vixale live dashboard</div>
     <h1>Watch our trading systems live before you trade them.</h1>
     <p class="vx-home-hero-lead">See active trade ideas, open trades, closed trades, and recorded results in one read-only dashboard.</p>
-    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="#access">Request 7-Day Access</a><a class="vx-home-hero-btn" href="/trading-systems">Explore Trading Systems</a></div>
+    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="#password-access">Request 7-Day Access</a><a class="vx-home-hero-btn" href="/trading-systems">Explore Trading Systems</a></div>
     <p class="vx-home-hero-proof">Read-only dashboard · Manual approval · Individual access code</p>
     <p class="vx-home-hero-login">Already have access? <a href="/dashboard">Dashboard Login</a></p>
   </div></div></section>`;
@@ -73,7 +91,7 @@ function renderHomeHero() {
 function refineHomepage(html) {
   if (typeof html !== "string") return html;
   if (html.includes('class="vx-home-hero"')) return injectHomeStyles(html);
-  const range = findSectionByText(html, HERO_NEEDLE);
+  const range = findHomeHeroRange(html);
   if (!range) return html;
   let result = html.slice(0, range.start) + renderHomeHero() + html.slice(range.end);
   result = injectHomeStyles(result);
@@ -127,8 +145,10 @@ Module._load = function vixaleHomeConversionModuleLoad(request, parent, isMain) 
 module.exports = {
   HOME_PATH,
   HERO_NEEDLE,
+  HERO_REQUIRED_MARKER,
   STYLE_ID,
   findSectionByText,
+  findHomeHeroRange,
   injectHomeStyles,
   renderHomeHero,
   refineHomepage,
