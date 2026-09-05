@@ -8,7 +8,7 @@ const SERVICES_PATH = "/services";
 const PRICING_PATH = "/pricing";
 const RISK_PATH = "/risk-management";
 const RISK_NAV_MARKER = "vx-risk-management-nav-link";
-const PRICING_STYLE_ID = "vx-pricing-coming-soon-style";
+const PRICING_STYLE_ID = "vx-pricing-access-style";
 
 const SERVICE_SECTION_NEEDLES = [
   "What can we help you with?",
@@ -148,12 +148,30 @@ function renderServicesFromLanding(html) {
 
 const pricingStyles = `
 <style id="${PRICING_STYLE_ID}">
-  .vx-pricing-coming-soon{min-height:calc(100vh - 170px);display:flex;align-items:center;padding:72px 0 96px;background:linear-gradient(180deg,#f7fbf9 0%,#fff 100%)}
-  .vx-pricing-card{max-width:920px;margin:0 auto;padding:54px 48px;border:1px solid #dbe7e0;border-radius:30px;background:rgba(255,255,255,.88);box-shadow:0 14px 38px rgba(24,54,42,.055);text-align:center}
-  .vx-pricing-kicker{margin-bottom:10px;color:#2d7a58;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
-  .vx-pricing-card h1{margin:0;color:#17211d;font-size:clamp(40px,6vw,64px);line-height:1.04;letter-spacing:-.04em;font-weight:500}
-  .vx-pricing-card p{margin:18px 0 0;color:#6a7771;font-size:17px;line-height:1.6}
-  @media(max-width:640px){.vx-pricing-coming-soon{padding:48px 0 72px}.vx-pricing-card{padding:38px 24px;border-radius:24px}.vx-pricing-card h1{font-size:40px}}
+  .vx-trial-page{min-height:calc(100vh - 170px);padding:76px 0 96px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 58%)}
+  .vx-trial-hero{max-width:940px;margin:0 auto;text-align:center}
+  .vx-trial-kicker{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border:1px solid #bfead5;border-radius:999px;background:#f4fbf7;color:#176442;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
+  .vx-trial-hero h1{max-width:820px;margin:18px auto 0;color:#17211d;font-size:clamp(42px,6vw,68px);line-height:1.02;letter-spacing:-.045em;font-weight:500}
+  .vx-trial-lead{max-width:760px;margin:20px auto 0;color:#68736f;font-size:17px;line-height:1.65}
+  .vx-trial-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:28px}
+  .vx-trial-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border:1px solid #cbdad2;border-radius:999px;background:#fff;color:#17211d;text-decoration:none;font-size:13px;font-weight:650}
+  .vx-trial-btn.primary{border-color:#078f51;background:#078f51;color:#fff}
+  .vx-trial-btn:hover{transform:translateY(-1px)}
+  .vx-trial-review{max-width:720px;margin:16px auto 0;color:#7a8580;font-size:12.5px;line-height:1.55}
+  .vx-trial-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;max-width:1000px;margin:52px auto 0}
+  .vx-trial-card{padding:28px;border:1px solid #dbe7e0;border-radius:24px;background:rgba(255,255,255,.92);box-shadow:0 14px 38px rgba(24,54,42,.05)}
+  .vx-trial-card-kicker{color:#2d7a58;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
+  .vx-trial-card h2{margin:10px 0 0;color:#17211d;font-size:25px;line-height:1.15;letter-spacing:-.025em;font-weight:500}
+  .vx-trial-list{display:grid;gap:10px;margin:20px 0 0;padding:0;list-style:none}
+  .vx-trial-list li{position:relative;padding-left:20px;color:#68736f;font-size:14px;line-height:1.5}
+  .vx-trial-list li:before{content:"";position:absolute;left:0;top:.58em;width:7px;height:7px;border-radius:50%;background:#0bcf74}
+  .vx-trial-steps{display:grid;gap:14px;margin-top:20px}
+  .vx-trial-step{display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:start}
+  .vx-trial-step-number{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #cce8d9;border-radius:50%;background:#f4fbf7;color:#176442;font-size:11px;font-weight:650}
+  .vx-trial-step strong{display:block;color:#17211d;font-size:13.5px;font-weight:650}
+  .vx-trial-step span{display:block;margin-top:4px;color:#68736f;font-size:13px;line-height:1.45}
+  .vx-trial-disclosure{max-width:920px;margin:24px auto 0;padding-top:20px;border-top:1px solid #e3e9e5;color:#7a8580;text-align:center;font-size:12px;line-height:1.55}
+  @media(max-width:760px){.vx-trial-page{padding:52px 0 72px}.vx-trial-grid{grid-template-columns:1fr;margin-top:38px}.vx-trial-card{padding:22px;border-radius:21px}.vx-trial-actions{flex-direction:column;align-items:stretch}.vx-trial-btn{width:100%}.vx-trial-hero h1{font-size:42px}}
 </style>`;
 
 function injectPricingStyles(html) {
@@ -163,12 +181,25 @@ function injectPricingStyles(html) {
 
 function renderPricingFromLanding(html) {
   if (typeof html !== "string") return html;
-  const content = `<section class="vx-pricing-coming-soon"><div class="wrap"><div class="vx-pricing-card"><div class="vx-pricing-kicker">Pricing</div><h1>7 Days Free</h1><p>Coming Soon</p></div></div></section>`;
+  const content = `<section class="vx-trial-page"><div class="wrap">
+    <div class="vx-trial-hero">
+      <div class="vx-trial-kicker">7 Days Free</div>
+      <h1>Watch Vixale free for 7 days.</h1>
+      <p class="vx-trial-lead">Start with the read-only live dashboard. See active trade ideas, open trades, closed trades, and tracked results before deciding whether Vixale is right for you.</p>
+      <div class="vx-trial-actions"><a class="vx-trial-btn primary" href="/#access">Request 7-Day Access</a><a class="vx-trial-btn" href="${SYSTEMS_PATH}">Explore Trading Systems</a></div>
+      <p class="vx-trial-review">Access requests are reviewed manually. Approved viewers receive an individual dashboard code by email.</p>
+    </div>
+    <div class="vx-trial-grid">
+      <article class="vx-trial-card"><div class="vx-trial-card-kicker">What you can see</div><h2>Follow the system before you make a decision.</h2><ul class="vx-trial-list"><li>Active trade ideas the system is watching.</li><li>Open trades currently being tracked.</li><li>Closed trades and recorded results.</li><li>A clear read-only view of the trading process.</li></ul></article>
+      <article class="vx-trial-card"><div class="vx-trial-card-kicker">How it works</div><h2>Three simple steps.</h2><div class="vx-trial-steps"><div class="vx-trial-step"><div class="vx-trial-step-number">1</div><div><strong>Request access</strong><span>Send the short dashboard access form.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">2</div><div><strong>Receive your code</strong><span>Approved viewers receive an individual login code by email.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">3</div><div><strong>Watch for 7 days</strong><span>Follow trade ideas, open positions, closes, and tracked results.</span></div></div></div></article>
+    </div>
+    <div class="vx-trial-disclosure">Dashboard access is read-only and provided for transparency, tracking, education, and research. Trading involves risk and results are not guaranteed.</div>
+  </div></section>`;
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
   result = replaceMainContents(result, content);
   result = injectPricingStyles(result);
-  result = updateTitle(result, "Vixale | Pricing");
+  result = updateTitle(result, "Vixale | 7 Days Free");
   result = updateCanonical(result, PRICING_PATH);
   return result;
 }
