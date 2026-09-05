@@ -274,8 +274,8 @@ For a new Vixale Edge `PENDING_SETUP`, the JSON `stop` field contains the
 current primary SuperTrend `stLine` on the confirmed flip bar: the current
 green/bullish value for LONG and the current red/bearish value for SHORT. This
 value is a candle-close threshold/reference, not a native TWS stop order.
-Broker-confirmed Telegram OPEN renders it as `Close Under <value>` for LONG
-and `Close Over <value>` for SHORT.
+Broker-confirmed Telegram OPEN renders it as `Close Under` for LONG
+and `Close Over` for SHORT.
 
 The frozen `broken_stl` value remains in raw payload data, setup state, the
 status table, and the optional `Broken STL` entry-anchor calculation. It is no
@@ -1749,6 +1749,19 @@ For website output transforms:
 The homepage dashboard-access form currently uses `id="password-access"`, so a
 homepage conversion CTA that scrolls to that existing form must use
 `#password-access` unless the underlying form ID is explicitly changed.
+
+The homepage conversion refinement keeps the public path intentionally compact:
+hero → Live Trade Dashboard → `#password-access` access form → `Start Here` →
+risk/legal footer. On `/` only, it may remove the duplicate watch-first section,
+`See what the system is doing.`, `Simple steps. Clear choices.`, the audience /
+partner pitch, and the final `Start by watching the live system.` CTA. The
+`New to trading systems? Start here.` section remains because the primary
+navigation depends on that destination.
+
+The conversion hero must explicitly neutralize legacy heading no-wrap rules and
+constrain desktop/mobile width and spacing so the H1 wraps instead of clipping.
+Regression coverage should include the legacy `white-space: nowrap` case and
+verify both the retained-section and removed-section contracts.
 
 ---
 
