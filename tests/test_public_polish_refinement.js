@@ -27,13 +27,23 @@ assert(systemsOut.includes("font-size:clamp(19px,5vw,24px)!important"));
 assert(systemsOut.includes(".vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:13px!important"));
 assert(systemsOut.includes("white-space:nowrap!important"));
 assert(systemsOut.includes(".vx-guide-compact .vx-guide-btn.primary{background:#078f51!important;border-color:#078f51!important;color:#fff!important"));
-assert(systemsOut.includes(".vx-category-card{min-height:220px!important;padding-top:22px!important;padding-bottom:22px!important}"));
-assert(systemsOut.includes(".vx-category-card h2{margin-top:9px!important}"));
-assert(systemsOut.includes(".vx-category-card p{margin-top:5px!important}"));
-assert(systemsOut.includes(".vx-category-card span:last-child{padding-top:12px!important}"));
+assert(systemsOut.includes(".vx-category-grid{gap:14px!important;margin-top:34px!important}"));
+assert(systemsOut.includes(".vx-category-card{min-height:0!important;padding:18px 22px!important}"));
+assert(systemsOut.includes(".vx-category-card h2{margin-top:7px!important}"));
+assert(systemsOut.includes(".vx-category-card p{margin-top:4px!important}"));
+assert(systemsOut.includes(".vx-category-card span:last-child{margin-top:12px!important;padding-top:0!important}"));
 for (const path of ["/trading-systems/day-trading", "/trading-systems/swing-trading", "/trading-systems/options"]) {
   assert(refinePublicPolish(systems, path).includes(`id="${STYLE_ID}"`));
 }
+
+const pricing = '<html><head></head><body><section class="vx-watch-page"><div class="vx-watch-hero"><h1>See the performance. Then watch the system live.</h1><p class="vx-watch-lead">This preview uses the same Closed Trades ledger as the dashboard Equity Curve. It shows aggregate performance only — no trade list, symbols, or open positions.</p></div></section></body></html>';
+const pricingOut = refinePublicPolish(pricing, "/pricing");
+assert(pricingOut.includes(`id="${STYLE_ID}"`));
+assert(pricingOut.includes(".vx-watch-hero{max-width:680px!important}"));
+assert(pricingOut.includes(".vx-watch-hero h1,.vx-watch-lead{max-width:640px!important}"));
+assert(pricingOut.includes("font-size:clamp(24px,2.7vw,30px)!important"));
+assert(pricingOut.includes(".vx-watch-lead{margin-top:13px!important;font-size:16px!important;line-height:1.5!important}"));
+assert.strictEqual(refinePublicPolish(pricingOut, "/pricing"), pricingOut);
 assert.strictEqual(refinePublicPolish(systems, "/services"), systems);
 
-console.log("Public typography + performance CTA polish: PASS");
+console.log("Public typography + compact cards + pricing hero polish: PASS");
