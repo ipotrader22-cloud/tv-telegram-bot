@@ -3,6 +3,7 @@
 const Module = require("module");
 
 const HOME_PATH = "/";
+const PRICING_PATH = "/pricing";
 const SYSTEMS_PATH = "/trading-systems";
 const SYSTEM_PATHS = new Set([
   SYSTEMS_PATH,
@@ -39,13 +40,18 @@ const styles = `
   .vx-systems-hero h1{font-size:clamp(20px,2.5vw,31px)!important;line-height:1.15!important;letter-spacing:-.025em!important}
   .vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:13px!important;line-height:1.18!important;letter-spacing:-.012em!important;white-space:nowrap!important}
   .vx-guide-compact .vx-guide-btn.primary{background:#078f51!important;border-color:#078f51!important;color:#fff!important;box-shadow:0 10px 24px rgba(7,143,81,.14)!important}
-  .vx-category-card{min-height:220px!important;padding-top:22px!important;padding-bottom:22px!important}
-  .vx-category-card h2{margin-top:9px!important}
-  .vx-category-card p{margin-top:5px!important}
-  .vx-category-card span:last-child{padding-top:12px!important}
+  .vx-category-grid{gap:14px!important;margin-top:34px!important}
+  .vx-category-card{min-height:0!important;padding:18px 22px!important}
+  .vx-category-card h2{margin-top:7px!important}
+  .vx-category-card p{margin-top:4px!important}
+  .vx-category-card span:last-child{margin-top:12px!important;padding-top:0!important}
+  .vx-watch-hero{max-width:680px!important}
+  .vx-watch-hero h1,.vx-watch-lead{max-width:640px!important}
+  .vx-watch-hero h1{margin-top:14px!important;font-size:clamp(24px,2.7vw,30px)!important;line-height:1.12!important;letter-spacing:-.025em!important}
+  .vx-watch-lead{margin-top:13px!important;font-size:16px!important;line-height:1.5!important}
   @media(max-width:960px){.vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:18px!important;white-space:normal!important}}
   @media(max-width:900px){.vx-category-card{min-height:0!important}}
-  @media(max-width:700px){.vx-systems-hero h1{font-size:clamp(19px,5vw,24px)!important}.vx-home-equity-foot{align-items:stretch}.vx-home-equity-pill,#vx-home-equity-status{width:100%;box-sizing:border-box}}
+  @media(max-width:700px){.vx-systems-hero h1{font-size:clamp(19px,5vw,24px)!important}.vx-home-equity-foot{align-items:stretch}.vx-home-equity-pill,#vx-home-equity-status{width:100%;box-sizing:border-box}.vx-watch-hero h1{font-size:clamp(24px,7vw,28px)!important}.vx-watch-lead{font-size:15px!important}.vx-category-grid{margin-top:28px!important}.vx-category-card{padding:17px 18px!important}}
 </style>`;
 
 const homeScript = `
@@ -100,10 +106,15 @@ function polishSystems(html) {
   return injectStyles(html);
 }
 
+function polishPricing(html) {
+  return injectStyles(html);
+}
+
 function refinePublicPolish(html, path) {
   if (typeof html !== "string") return html;
   if (path === HOME_PATH) return polishHome(html);
   if (SYSTEM_PATHS.has(path)) return polishSystems(html);
+  if (path === PRICING_PATH) return polishPricing(html);
   return html;
 }
 
@@ -111,7 +122,8 @@ function installPublicPolishRefinement(app) {
   app.use((req, res, next) => {
     const path = req.path || req.url.split("?")[0];
     const isRead = req.method === "GET" || req.method === "HEAD";
-    if (!isRead || (path !== HOME_PATH && !SYSTEM_PATHS.has(path))) return next();
+    const isSupported = path === HOME_PATH || path === PRICING_PATH || SYSTEM_PATHS.has(path);
+    if (!isRead || !isSupported) return next();
 
     const originalSend = res.send.bind(res);
     res.send = function sendWithPublicPolish(body) {
@@ -155,6 +167,7 @@ Module._load = function vixalePublicPolishModuleLoad(request, parent, isMain) {
 
 module.exports = {
   HOME_PATH,
+  PRICING_PATH,
   SYSTEMS_PATH,
   SYSTEM_PATHS,
   STYLE_ID,
@@ -164,6 +177,7 @@ module.exports = {
   injectHomeScript,
   polishHome,
   polishSystems,
+  polishPricing,
   refinePublicPolish,
   installPublicPolishRefinement,
   wrapExpress,
