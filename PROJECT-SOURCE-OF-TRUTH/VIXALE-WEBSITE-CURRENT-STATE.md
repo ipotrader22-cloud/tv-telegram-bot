@@ -11,25 +11,49 @@ This manifest records the website/dashboard repository baseline and approved pre
 
 At the latest direct GitHub verification on 2026-09-04, the latest website-changing merge on `main` is:
 
-- **Website merge SHA:** `0c9a6860d1631c489831219d8d5a1c90880ceee6`
-- **Observed commit:** `Merge pull request #46 from ipotrader22-cloud/feature/seven-day-free-access-page — Replace 7 Days Free placeholder with access page`
-- **Observed state:** PR #46 merged into `main`
+- **Website merge SHA:** `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
+- **Observed commit:** `Merge pull request #48 from ipotrader22-cloud/feature/homepage-primary-conversion — Focus homepage hero on 7-day access`
+- **Observed state:** PR #48 merged into `main`
 
-A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #46.
+A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #48.
 
 ### Production / deployment
 
-Direct Render verification on 2026-09-04 found the `tv-telegram-bot` web service configured for `main` with Auto-Deploy enabled. The merge of PR #46 triggered deployment `dep-dadmnfp5efls739alsl0` from commit `0c9a6860d1631c489831219d8d5a1c90880ceee6`, and Render reported that deployment as `live`.
+Direct Render verification on 2026-09-04 found the `tv-telegram-bot` web service configured for `main` with Auto-Deploy enabled. The merge of PR #48 triggered deployment `dep-dadms8vavr4c73aipnm0` from commit `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`, and Render reported that deployment as `live`.
 
-- **Production deployment SHA:** `0c9a6860d1631c489831219d8d5a1c90880ceee6`
-- **Render deployment:** `dep-dadmnfp5efls739alsl0`
+- **Production deployment SHA:** `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
+- **Render deployment:** `dep-dadms8vavr4c73aipnm0`
 - **Deployment status:** LIVE according to Render
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Public `/pricing` user-visible verification:** UNVERIFIED; direct public-page retrieval was not available during this verification pass
+- **Public homepage hero verification:** **CONFLICT / UNVERIFIED** — after Render reported PR #48 live, the public browser fetch still returned the prior hero (`Watch the systems live.` with the older three-way CTA set). Do not claim the new hero is user-visible until a fresh browser/runtime check shows the PR #48 hero.
+- **Public `/pricing` user-visible verification:** UNVERIFIED; exact browser-rendered 7-day page content has not been independently re-confirmed in this pass
 - **Live Equity Curve verification:** UNVERIFIED until the authenticated dashboard/runtime is checked
 
-Do not treat Render `live` status alone as proof of exact browser-rendered page content when the public route has not also been checked.
+Render `live` status proves the deployment record for the commit, but it does not by itself prove the exact page markup currently observed by a browser. When the runtime and public browser disagree, preserve **CONFLICT / UNVERIFIED** until rechecked.
+
+## Public homepage primary conversion hero
+
+PR #48 adds a homepage-only presentation refinement intended to make the 7-day read-only access path the dominant hero conversion action.
+
+Repository contract:
+
+- homepage route remains `/`
+- intended H1: `Watch our trading systems live before you trade them.`
+- primary CTA: `Request 7-Day Access` → existing `#access` form
+- secondary CTA: `Explore Trading Systems` → `/trading-systems`
+- existing-user `Dashboard Login` remains available as a smaller tertiary text link
+- Telegram Signals is removed from the hero only and remains available elsewhere on the site
+- trust line: read-only dashboard, manual approval, individual access code
+- responsive desktop/mobile presentation
+- no new route, API, Google Sheets request/schema field, environment variable, authentication contract, dashboard data source, trading lifecycle, signal, risk, order, TWS/IBKR, or broker-execution behavior changed
+
+Status:
+
+- **Repository implementation:** MERGED to `main` in PR #48
+- **Merge commit:** `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
+- **Render deployment:** LIVE for that commit
+- **Exact public-browser rendering:** **CONFLICT / UNVERIFIED**; latest browser fetch observed the prior hero after Render reported the new commit live
 
 ## Public 7-Day Access page
 
@@ -51,7 +75,7 @@ Status:
 
 - **Repository implementation:** MERGED to `main` in PR #46
 - **Merge commit:** `0c9a6860d1631c489831219d8d5a1c90880ceee6`
-- **Render deployment:** LIVE for that commit
+- **Render deployment:** PR #46 was previously deployed successfully; the service is now on later commit `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
 - **Exact public-browser rendering:** UNVERIFIED during this pass
 
 ## Public Trading Systems information architecture
@@ -127,7 +151,7 @@ The merged implementation is presentation-only. It adds no new Google Sheets req
 
 Website/dashboard work must not alter VECO trading logic, strategy rules, signal generation, order logic, risk logic, broker lifecycle behavior, or TWS/IBKR execution behavior unless explicitly requested by the user.
 
-The Equity Graph and the 7-Day Access page are presentation-only and must remain independent of trading/execution logic.
+The Equity Graph, 7-Day Access page, and homepage conversion hero are presentation-only and must remain independent of trading/execution logic.
 
 ## Update procedure
 
