@@ -11,22 +11,22 @@ This manifest records the website/dashboard repository baseline and approved pre
 
 At the latest direct GitHub verification on 2026-09-04, the latest website-changing merge on `main` is:
 
-- **Website merge SHA:** `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
-- **Observed commit:** `Merge pull request #48 from ipotrader22-cloud/feature/homepage-primary-conversion — Focus homepage hero on 7-day access`
-- **Observed state:** PR #48 merged into `main`
+- **Website merge SHA:** `c9f12c84f3a5f07028fc9f963d4369ccf02e9918`
+- **Observed commit:** `Merge pull request #50 from ipotrader22-cloud/fix/homepage-hero-production-matcher — Fix homepage hero matcher against production markup`
+- **Observed state:** PR #50 merged into `main`
 
-A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #48.
+A later documentation-only manifest commit may advance the branch head without changing website behavior. The website merge SHA above is the authoritative code-change reference for PR #50.
 
 ### Production / deployment
 
-Direct Render verification on 2026-09-04 found the `tv-telegram-bot` web service configured for `main` with Auto-Deploy enabled. The merge of PR #48 triggered deployment `dep-dadms8vavr4c73aipnm0` from commit `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`, and Render reported that deployment as `live`.
+Direct Render verification on 2026-09-04 found the `tv-telegram-bot` web service configured for `main` with Auto-Deploy enabled. The merge of PR #50 triggered deployment `dep-dadn9ics728c73fd5r90` from commit `c9f12c84f3a5f07028fc9f963d4369ccf02e9918`, and Render reported that deployment as `live`.
 
-- **Production deployment SHA:** `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
-- **Render deployment:** `dep-dadms8vavr4c73aipnm0`
+- **Production deployment SHA:** `c9f12c84f3a5f07028fc9f963d4369ccf02e9918`
+- **Render deployment:** `dep-dadn9ics728c73fd5r90`
 - **Deployment status:** LIVE according to Render
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Public homepage hero verification:** **CONFLICT / UNVERIFIED** — after Render reported PR #48 live, the public browser fetch still returned the prior hero (`Watch the systems live.` with the older three-way CTA set). Do not claim the new hero is user-visible until a fresh browser/runtime check shows the PR #48 hero.
+- **Public homepage hero verification:** **CONFLICT / UNVERIFIED** — after Render reported PR #50 live, a fresh public fetch still returned the prior hero (`Watch the systems live.` with the older three-way CTA set). Do not claim the PR #50 hero is user-visible until a fresh browser/runtime check shows the intended replacement.
 - **Public `/pricing` user-visible verification:** UNVERIFIED; exact browser-rendered 7-day page content has not been independently re-confirmed in this pass
 - **Live Equity Curve verification:** UNVERIFIED until the authenticated dashboard/runtime is checked
 
@@ -34,26 +34,28 @@ Render `live` status proves the deployment record for the commit, but it does no
 
 ## Public homepage primary conversion hero
 
-PR #48 adds a homepage-only presentation refinement intended to make the 7-day read-only access path the dominant hero conversion action.
+PR #48 introduced the homepage-only presentation refinement intended to make the 7-day read-only access path the dominant hero conversion action. PR #50 corrects the production matcher to operate on the real serialized homepage structure and points the primary CTA at the existing homepage access form anchor.
 
-Repository contract:
+Repository contract after PR #50:
 
 - homepage route remains `/`
 - intended H1: `Watch our trading systems live before you trade them.`
-- primary CTA: `Request 7-Day Access` → existing `#access` form
+- primary CTA: `Request 7-Day Access` → existing `#password-access` form
 - secondary CTA: `Explore Trading Systems` → `/trading-systems`
 - existing-user `Dashboard Login` remains available as a smaller tertiary text link
-- Telegram Signals is removed from the hero only and remains available elsewhere on the site
+- Telegram Signals is removed from the replacement hero only and remains available elsewhere on the site
 - trust line: read-only dashboard, manual approval, individual access code
 - responsive desktop/mobile presentation
+- matcher identifies the actual serialized `section.wrap.hero` structure and requires stable legacy markers instead of searching only for browser-visible text
+- regression fixture mirrors the actual nested `<span>` hero markup and verifies idempotence / non-hero lookalike safety
 - no new route, API, Google Sheets request/schema field, environment variable, authentication contract, dashboard data source, trading lifecycle, signal, risk, order, TWS/IBKR, or broker-execution behavior changed
 
 Status:
 
-- **Repository implementation:** MERGED to `main` in PR #48
-- **Merge commit:** `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
-- **Render deployment:** LIVE for that commit
-- **Exact public-browser rendering:** **CONFLICT / UNVERIFIED**; latest browser fetch observed the prior hero after Render reported the new commit live
+- **Repository implementation:** MERGED to `main` in PR #50
+- **Merge commit:** `c9f12c84f3a5f07028fc9f963d4369ccf02e9918`
+- **Render deployment:** LIVE for that commit via `dep-dadn9ics728c73fd5r90`
+- **Exact public-browser rendering:** **CONFLICT / UNVERIFIED**; a fresh public fetch after Render reported the PR #50 deployment live still observed the prior hero
 
 ## Public 7-Day Access page
 
@@ -75,7 +77,7 @@ Status:
 
 - **Repository implementation:** MERGED to `main` in PR #46
 - **Merge commit:** `0c9a6860d1631c489831219d8d5a1c90880ceee6`
-- **Render deployment:** PR #46 was previously deployed successfully; the service is now on later commit `1af0ef4f3a3ee79dcbc569d4cef6e315974f2d3f`
+- **Render deployment:** PR #46 was previously deployed successfully; the service is now on later commit `c9f12c84f3a5f07028fc9f963d4369ccf02e9918`
 - **Exact public-browser rendering:** UNVERIFIED during this pass
 
 ## Public Trading Systems information architecture
