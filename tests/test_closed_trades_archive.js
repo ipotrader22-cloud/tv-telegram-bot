@@ -71,6 +71,13 @@ assert(markup.includes('data-outcome="win"'));
 assert(markup.includes('data-outcome="loss"'));
 assert(markup.includes("EOD Close"));
 
+const missingMarkup = archiveContent({
+  stale: false,
+  summary: { total_trades: 1, total_realized_pnl: 0, win_rate: 0, first_close_date: "2026-09-01", last_close_date: "2026-09-01" },
+  trades: [{ close_time: "2026-09-01 10:00:00", symbol: "SPY", side: "LONG", entry: null, exit: null, size: null, result: null, event: "MANUAL_CLOSE" }],
+});
+assert(missingMarkup.includes('<td>—</td>\n      <td>—</td>\n      <td>—</td>\n      <td><span class="vx-pnl neutral">—</span></td>'));
+
 (async () => {
   const cache = { loadedAt: 0, payload: null };
   const fresh = await getClosedTradesArchiveSnapshot({
