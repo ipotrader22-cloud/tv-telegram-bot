@@ -188,21 +188,26 @@ function updateCanonical(html) {
   return html.replace(match[0], updated);
 }
 
+function hasDisplayNumber(value) {
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+}
+
 function formatMoney(value) {
+  if (!hasDisplayNumber(value)) return "—";
   const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
   const sign = n > 0 ? "+" : n < 0 ? "-" : "";
   return `${sign}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatPrice(value) {
+  if (!hasDisplayNumber(value)) return "—";
   const n = Number(value);
-  return Number.isFinite(n) ? `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "—";
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
 
 function formatSize(value) {
+  if (!hasDisplayNumber(value)) return "—";
   const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
   return Number.isInteger(n) ? String(n) : n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
@@ -217,16 +222,15 @@ function prettyEvent(value) {
 }
 
 function pnlClass(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return " neutral";
-  return n > 0 ? " positive" : " negative";
+  if (!hasDisplayNumber(value) || Number(value) === 0) return " neutral";
+  return Number(value) > 0 ? " positive" : " negative";
 }
 
 function archiveRows(trades) {
   if (!Array.isArray(trades) || !trades.length) {
     return `<tr><td class="vx-closed-empty" colspan="8">No closed trades are available yet.</td></tr>`;
   }
-  return trades.map((trade, index) => {
+  return trades.map(trade => {
     const outcome = trade.result === null ? "neutral" : trade.result > 0 ? "win" : trade.result < 0 ? "loss" : "neutral";
     const search = `${trade.symbol} ${trade.side} ${trade.event} ${trade.close_time}`.toLowerCase();
     return `<tr data-archive-row data-search="${escapeHtml(search)}" data-side="${escapeHtml(trade.side.toLowerCase())}" data-outcome="${outcome}">
