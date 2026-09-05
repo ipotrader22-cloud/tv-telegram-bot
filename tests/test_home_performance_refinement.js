@@ -3,8 +3,12 @@
 const assert = require("assert");
 const {
   TELEGRAM_URL,
+  DAY_TRADING_PATH,
+  SWING_TRADING_PATH,
+  OPTIONS_PATH,
   STYLE_ID,
   SCRIPT_ID,
+  DAY_SCOPE_MARKER,
   refineHomePerformance,
   resolveSnapshotWithTimeout,
 } = require("../website_home_performance_refinement");
@@ -45,41 +49,53 @@ const snapshot = {
 const out = refineHomePerformance(sample, "/", snapshot);
 assert(out.includes(`href="${TELEGRAM_URL}">Telegram</a>`));
 assert(!out.includes(">Start Here</a>"));
-assert(out.includes('class="vx-home-live-strip"'));
+assert(out.includes(DAY_SCOPE_MARKER));
+assert(out.includes("Live Day Trading"));
+assert(out.includes("Day Trading System Status"));
+assert(out.includes("Current status and realized performance for Vixale day-trading systems."));
+assert(out.includes("Day Trading only · The status cards and equity curve on this page do not include Swing Trading or Options."));
+assert(out.includes('aria-label="Day Trading system status summary"'));
 assert(out.includes("Open Positions"));
 assert(out.includes("Working Orders"));
 assert(out.includes("Closed Trades Today"));
 assert(out.includes("+$197.46"));
-assert(out.includes("+$21,940.77"));
-assert(out.includes("70.63%"));
-assert(out.indexOf('class="vx-home-live-strip"') < out.indexOf('class="vx-home-split"'));
-assert(out.includes('class="vx-home-split"'));
-assert(out.includes('class="vx-home-equity-preview"'));
-assert(out.includes("Equity Curve — Realized P&amp;L"));
+assert(!out.includes("Win Rate"), "homepage current-status strip should not show Win Rate");
+assert(!out.includes("Total Closed P&amp;L"), "homepage current-status strip should not duplicate total P&L");
+assert(out.includes("+$21,940.77"), "equity card should retain total realized P&L");
+assert(out.includes("Day Trading performance"));
+assert(out.includes("Day Trading closed trades only · Open P&amp;L excluded"));
+assert(out.includes("Day Trading Equity Curve — Realized P&L"));
+assert(out.includes(`href="${DAY_TRADING_PATH}">Day Trading details →</a>`));
+assert(out.includes(`href="${DAY_TRADING_PATH}">Explore Day Trading</a>`));
+assert(out.includes(`href="${SWING_TRADING_PATH}"`));
+assert(out.includes("Explore Swing Trading →"));
+assert(out.includes(`href="${OPTIONS_PATH}"`));
+assert(out.includes("Explore Options →"));
 assert(out.includes("Watch our trading systems live before you trade them."));
-assert(out.indexOf('class="vx-home-equity-preview"') < out.indexOf('class="vx-home-hero-copy"'));
+assert(out.indexOf('class="vx-home-hero"') < out.indexOf('class="vx-home-day-trading"'), "hero must appear before Day Trading status");
+assert(out.indexOf('class="vx-home-day-trading"') < out.indexOf('id="password-access"'), "Day Trading status must appear before access form");
 assert(out.includes('id="vx-home-equity-svg"'));
 assert(out.includes('<path d="M'));
 assert(out.includes("Verified · Closed Trades ledger"));
-assert(!out.includes("Loading verified performance…"));
 assert(out.includes("fetch('/public-performance.json'"));
 assert(out.includes("return sign+'$'+Math.abs"), "inline client script must preserve literal dollar sign");
 assert(!out.includes("return sign+'</html>+Math.abs"), "String.replace must not corrupt inline script via $' replacement token");
 assert(out.includes("setInterval(refresh,60000)"));
 assert(out.includes(`id="${STYLE_ID}"`));
 assert(out.includes(`id="${SCRIPT_ID}"`));
-assert(out.indexOf('class="vx-home-split"') < out.indexOf('id="password-access"'));
-assert.strictEqual(refineHomePerformance(out, "/", snapshot), out, "home live-summary refinement must be idempotent");
+assert.strictEqual(refineHomePerformance(out, "/", snapshot), out, "home Day Trading refinement must be idempotent");
 
 const unavailable = refineHomePerformance(sample, "/", null);
+assert(unavailable.includes("Status unavailable"));
 assert(unavailable.includes("Performance source unavailable"));
 assert(unavailable.includes("No simulated values are shown."));
-assert(!unavailable.includes("Loading verified performance…"));
+
+const stale = refineHomePerformance(sample, "/", { ...snapshot, stale: true });
+assert(stale.includes('id="vx-home-day-badge" class="vx-home-day-badge stale">Last verified</span>'));
 
 const other = refineHomePerformance(sample, "/trading-systems", snapshot);
 assert(other.includes(`href="${TELEGRAM_URL}">Telegram</a>`));
-assert(!other.includes('class="vx-home-live-strip"'));
-assert(!other.includes('class="vx-home-split"'));
+assert(!other.includes(DAY_SCOPE_MARKER));
 assert(!other.includes(`id="${STYLE_ID}"`));
 
 (async () => {
@@ -87,5 +103,5 @@ assert(!other.includes(`id="${STYLE_ID}"`));
   assert.strictEqual(resolved, snapshot);
   const timedOut = await resolveSnapshotWithTimeout(() => new Promise(() => {}), 5);
   assert.strictEqual(timedOut, null);
-  console.log("Homepage server-rendered live summary + equity: PASS");
+  console.log("Homepage Day Trading scope + system navigation: PASS");
 })().catch(error => { console.error(error); process.exitCode = 1; });
