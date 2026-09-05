@@ -37,6 +37,8 @@ const sample = `<!doctype html><html><head><title>Vixale | Watch a Live Trading 
 
 const out = refineHomepage(sample);
 assert(out.includes("Watch our trading systems live before you trade them."));
+assert(out.includes('class="vx-home-hero-kicker" href="/dashboard"'));
+assert(out.includes('aria-label="Open Vixale Live Dashboard"'));
 assert(out.includes('href="#password-access">Request 7-Day Access</a>'));
 assert(out.includes('href="/trading-systems">Explore Trading Systems</a>'));
 assert(out.includes("Read-only dashboard · Manual approval · Individual access code"));
