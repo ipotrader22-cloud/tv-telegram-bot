@@ -6,6 +6,13 @@ const HOME_PATH = "/";
 const HERO_NEEDLE = "Vixale live dashboard";
 const HERO_REQUIRED_MARKER = "Request Dashboard Access";
 const STYLE_ID = "vx-home-conversion-style";
+const HOME_REMOVE_SECTION_NEEDLES = [
+  "You can start without trading anything.",
+  "See what the system is doing.",
+  "Simple steps. Clear choices.",
+  "Have an audience? Launch a trading product with Vixale.",
+  "Start by watching the live system.",
+];
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -55,21 +62,39 @@ function findHomeHeroRange(html) {
   return range;
 }
 
+function removeHomepageSections(html) {
+  const ranges = [];
+  const seen = new Set();
+  for (const text of HOME_REMOVE_SECTION_NEEDLES) {
+    const range = findSectionByText(html, text);
+    if (!range) continue;
+    const key = `${range.start}:${range.end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ranges.push(range);
+  }
+  ranges.sort((a, b) => b.start - a.start);
+  let result = html;
+  for (const range of ranges) result = result.slice(0, range.start) + result.slice(range.end);
+  return result;
+}
+
 const homeStyles = `
 <style id="${STYLE_ID}">
-  .vx-home-hero{padding:84px 0 76px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 74%);border-bottom:1px solid #e3e9e5}
-  .vx-home-hero-copy{max-width:920px;margin:0 auto;text-align:center}
+  .vx-home-hero{padding:56px 0 52px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 74%);border-bottom:1px solid #e3e9e5}
+  .vx-home-hero .wrap{max-width:1180px;margin:0 auto;padding-left:24px;padding-right:24px;box-sizing:border-box}
+  .vx-home-hero-copy{max-width:1040px;margin:0 auto;padding:0 8px;box-sizing:border-box;text-align:center}
   .vx-home-hero-kicker{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border:1px solid #bfead5;border-radius:999px;background:#f4fbf7;color:#176442;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
-  .vx-home-hero h1{max-width:880px;margin:18px auto 0;color:#101413;font-size:clamp(44px,6vw,70px);font-weight:500;line-height:1.02;letter-spacing:-.045em}
-  .vx-home-hero-lead{max-width:760px;margin:22px auto 0;color:#68736f;font-size:18px;line-height:1.65}
-  .vx-home-hero-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:30px}
+  .vx-home-hero h1{max-width:960px;margin:16px auto 0;color:#101413;font-size:clamp(40px,4.8vw,60px);font-weight:500;line-height:1.04;letter-spacing:-.04em;white-space:normal !important;word-break:normal;overflow-wrap:normal;text-wrap:balance}
+  .vx-home-hero-lead{max-width:720px;margin:18px auto 0;color:#68736f;font-size:17px;line-height:1.55}
+  .vx-home-hero-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
   .vx-home-hero-btn{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 20px;border:1px solid #cbdad2;border-radius:999px;background:#fff;color:#17211d;text-decoration:none;font-size:13px;font-weight:650;transition:transform .16s ease,box-shadow .16s ease}
   .vx-home-hero-btn:hover{transform:translateY(-1px)}
   .vx-home-hero-btn.primary{border-color:#078f51;background:#078f51;color:#fff;box-shadow:0 10px 24px rgba(7,143,81,.14)}
-  .vx-home-hero-proof{margin:18px auto 0;color:#78837e;font-size:12.5px;line-height:1.55}
-  .vx-home-hero-login{margin:10px auto 0;color:#8b9691;font-size:12px;line-height:1.5}
+  .vx-home-hero-proof{margin:14px auto 0;color:#78837e;font-size:12.5px;line-height:1.5}
+  .vx-home-hero-login{margin:7px auto 0;color:#8b9691;font-size:12px;line-height:1.5}
   .vx-home-hero-login a{color:#4f5d57;text-underline-offset:3px}
-  @media(max-width:700px){.vx-home-hero{padding:56px 0 58px}.vx-home-hero h1{font-size:42px}.vx-home-hero-lead{font-size:16px}.vx-home-hero-actions{flex-direction:column;align-items:stretch}.vx-home-hero-btn{width:100%}}
+  @media(max-width:700px){.vx-home-hero{padding:42px 0 46px}.vx-home-hero .wrap{padding-left:18px;padding-right:18px}.vx-home-hero-copy{padding:0}.vx-home-hero h1{font-size:clamp(36px,10vw,44px);line-height:1.06}.vx-home-hero-lead{font-size:16px}.vx-home-hero-actions{flex-direction:column;align-items:stretch;margin-top:22px}.vx-home-hero-btn{width:100%;box-sizing:border-box}}
 </style>`;
 
 function injectHomeStyles(html) {
@@ -90,10 +115,14 @@ function renderHomeHero() {
 
 function refineHomepage(html) {
   if (typeof html !== "string") return html;
-  if (html.includes('class="vx-home-hero"')) return injectHomeStyles(html);
-  const range = findHomeHeroRange(html);
-  if (!range) return html;
-  let result = html.slice(0, range.start) + renderHomeHero() + html.slice(range.end);
+  let result = html;
+  const alreadyRefined = result.includes('class="vx-home-hero"');
+  if (!alreadyRefined) {
+    const range = findHomeHeroRange(result);
+    if (!range) return html;
+    result = result.slice(0, range.start) + renderHomeHero() + result.slice(range.end);
+  }
+  result = removeHomepageSections(result);
   result = injectHomeStyles(result);
   return result;
 }
@@ -146,9 +175,11 @@ module.exports = {
   HOME_PATH,
   HERO_NEEDLE,
   HERO_REQUIRED_MARKER,
+  HOME_REMOVE_SECTION_NEEDLES,
   STYLE_ID,
   findSectionByText,
   findHomeHeroRange,
+  removeHomepageSections,
   injectHomeStyles,
   renderHomeHero,
   refineHomepage,
