@@ -84,7 +84,8 @@ const homeStyles = `
   .vx-home-hero{padding:56px 0 52px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 74%);border-bottom:1px solid #e3e9e5}
   .vx-home-hero .wrap{max-width:1180px;margin:0 auto;padding-left:24px;padding-right:24px;box-sizing:border-box}
   .vx-home-hero-copy{max-width:1040px;margin:0 auto;padding:0 8px;box-sizing:border-box;text-align:center}
-  .vx-home-hero-kicker{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border:1px solid #bfead5;border-radius:999px;background:#f4fbf7;color:#176442;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
+  .vx-home-hero-kicker{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border:1px solid #bfead5;border-radius:999px;background:#f4fbf7;color:#176442;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;text-decoration:none;transition:transform .16s ease,background .16s ease}
+  .vx-home-hero-kicker:hover{transform:translateY(-1px);background:#eef9f3}
   .vx-home-hero h1{max-width:960px;margin:16px auto 0;color:#101413;font-size:clamp(40px,4.8vw,60px);font-weight:500;line-height:1.04;letter-spacing:-.04em;white-space:normal !important;word-break:normal;overflow-wrap:normal;text-wrap:balance}
   .vx-home-hero-lead{max-width:720px;margin:18px auto 0;color:#68736f;font-size:17px;line-height:1.55}
   .vx-home-hero-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
@@ -104,7 +105,7 @@ function injectHomeStyles(html) {
 
 function renderHomeHero() {
   return `<section class="vx-home-hero"><div class="wrap"><div class="vx-home-hero-copy">
-    <div class="vx-home-hero-kicker">Vixale live dashboard</div>
+    <a class="vx-home-hero-kicker" href="/dashboard" aria-label="Open Vixale Live Dashboard">Vixale live dashboard</a>
     <h1>Watch our trading systems live before you trade them.</h1>
     <p class="vx-home-hero-lead">See active trade ideas, open trades, closed trades, and recorded results in one read-only dashboard.</p>
     <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="#password-access">Request 7-Day Access</a><a class="vx-home-hero-btn" href="/trading-systems">Explore Trading Systems</a></div>
