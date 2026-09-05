@@ -11,6 +11,7 @@ const SYSTEM_PATHS = new Set([
   `${SYSTEMS_PATH}/options`,
 ]);
 const STYLE_ID = "vx-public-polish-style";
+const SCRIPT_ID = "vx-public-polish-script";
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -33,15 +34,51 @@ const styles = `
 <style id="${STYLE_ID}">
   .vx-home-split h1{font-size:clamp(27px,2.8vw,36px)!important;line-height:1.08!important;letter-spacing:-.032em!important}
   .vx-home-equity-foot{gap:10px;flex-wrap:wrap}
-  .vx-home-equity-pill{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 15px;border:1px solid #d4e0da;border-radius:999px;background:#fff;color:#17211d!important;text-decoration:none!important;font-size:11px;font-weight:650;line-height:1;box-shadow:0 8px 20px rgba(31,67,51,.055);transition:transform .16s ease,box-shadow .16s ease}
-  .vx-home-equity-pill:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(31,67,51,.08)}
+  .vx-home-equity-pill,#vx-home-equity-status{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:0 15px;border:1px solid #d4e0da;border-radius:999px;background:#fff;color:#17211d!important;text-decoration:none!important;font-size:11px;font-weight:650;line-height:1;box-shadow:0 8px 20px rgba(31,67,51,.055);transition:transform .16s ease,box-shadow .16s ease;box-sizing:border-box}
+  .vx-home-equity-pill:hover,#vx-home-equity-status:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(31,67,51,.08)}
   .vx-systems-hero h1{font-size:clamp(20px,2.5vw,31px)!important;line-height:1.15!important;letter-spacing:-.025em!important}
-  @media(max-width:700px){.vx-systems-hero h1{font-size:clamp(19px,5vw,24px)!important}.vx-home-equity-foot{align-items:stretch}.vx-home-equity-pill{width:100%;box-sizing:border-box}}
+  .vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:13px!important;line-height:1.18!important;letter-spacing:-.012em!important;white-space:nowrap!important}
+  .vx-guide-compact .vx-guide-btn.primary{background:#078f51!important;border-color:#078f51!important;color:#fff!important;box-shadow:0 10px 24px rgba(7,143,81,.14)!important}
+  .vx-category-card{min-height:220px!important;padding-top:22px!important;padding-bottom:22px!important}
+  .vx-category-card h2{margin-top:9px!important}
+  .vx-category-card p{margin-top:5px!important}
+  .vx-category-card span:last-child{padding-top:12px!important}
+  @media(max-width:960px){.vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:18px!important;white-space:normal!important}}
+  @media(max-width:900px){.vx-category-card{min-height:0!important}}
+  @media(max-width:700px){.vx-systems-hero h1{font-size:clamp(19px,5vw,24px)!important}.vx-home-equity-foot{align-items:stretch}.vx-home-equity-pill,#vx-home-equity-status{width:100%;box-sizing:border-box}}
 </style>`;
+
+const homeScript = `
+<script id="${SCRIPT_ID}">
+(() => {
+  const promoteLedger = () => {
+    const el = document.getElementById('vx-home-equity-status');
+    if (!el) return;
+    if (el.tagName === 'A') {
+      el.setAttribute('href', '/closed-trades');
+      el.classList.add('vx-home-equity-pill');
+      return;
+    }
+    const link = document.createElement('a');
+    link.id = 'vx-home-equity-status';
+    link.className = 'vx-home-equity-pill';
+    link.href = '/closed-trades';
+    link.textContent = el.textContent || 'Verified · Closed Trades ledger';
+    el.replaceWith(link);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', promoteLedger, { once: true });
+  else promoteLedger();
+})();
+</script>`;
 
 function injectStyles(html) {
   if (html.includes(`id="${STYLE_ID}"`)) return html;
   return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
+}
+
+function injectHomeScript(html) {
+  if (html.includes(`id="${SCRIPT_ID}"`)) return html;
+  return html.includes("</body>") ? html.replace("</body>", `${homeScript}\n</body>`) : `${html}${homeScript}`;
 }
 
 function polishHome(html) {
@@ -55,7 +92,8 @@ function polishHome(html) {
     /<a\s+href=["']\/pricing["']>\s*View performance details\s*<\/a>/i,
     '<a class="vx-home-equity-pill" href="/pricing">View performance details</a>'
   );
-  return injectStyles(result);
+  result = injectStyles(result);
+  return injectHomeScript(result);
 }
 
 function polishSystems(html) {
@@ -120,8 +158,10 @@ module.exports = {
   SYSTEMS_PATH,
   SYSTEM_PATHS,
   STYLE_ID,
+  SCRIPT_ID,
   replaceDirectTextLink,
   injectStyles,
+  injectHomeScript,
   polishHome,
   polishSystems,
   refinePublicPolish,
