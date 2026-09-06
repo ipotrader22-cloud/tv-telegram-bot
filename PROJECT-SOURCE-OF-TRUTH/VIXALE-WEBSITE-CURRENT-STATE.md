@@ -18,13 +18,15 @@ Latest direct verification for the website/dashboard scope:
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment:** `dep-daed8iu7bikc73da04ag`
-- **Production deployment SHA:** `8a5e2b414a32fe849b147ecc0847c61997a703e5`
-- **Deployment status:** LIVE according to Render
+- **Render deployment for PR #68:** `dep-daed8iu7bikc73da04ag`
+- **Latest website-changing deployed SHA:** `8a5e2b414a32fe849b147ecc0847c61997a703e5`
+- **Deployment status:** LIVE according to Render for that website-changing SHA
 - **Authorized UI verification:** USER-VERIFIED after the live deployment on 2026-09-05; user confirmed the separated Day Trading dashboard and dedicated Options page look correct.
 - **Independent unauthenticated route verification:** `/dashboard` presents the access-controlled login flow; authenticated page contents require the owner/viewer session and therefore are not independently visible to an unauthenticated browser.
 
-Render `live` status proves the deployment record for the exact merge SHA. The user confirmation proves the authorized presentation was observed after that deployment. Do not describe authenticated page contents as independently browser-verified unless a viewer/owner session is available to the checking environment.
+A later documentation-only manifest commit may advance `main` and may itself trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above. Record a new website-changing SHA only when website/runtime behavior actually changes.
+
+Render `live` status proves the deployment record for the exact PR #68 merge SHA. The user confirmation proves the authorized presentation was observed after that deployment. Do not describe authenticated page contents as independently browser-verified unless a viewer/owner session is available to the checking environment.
 
 ## Canonical dashboard split — PR #68
 
