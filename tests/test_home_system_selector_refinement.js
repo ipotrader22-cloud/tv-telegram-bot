@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("assert");
+const packageJson = require("../package.json");
 const {
   STYLE_ID,
   TOP_MARKER,
@@ -9,6 +10,9 @@ const {
   OPTIONS_PATH,
   refineHomeSystemSelector,
 } = require("../website_home_system_selector_refinement");
+
+const startCommand = packageJson.scripts.start;
+assert(startCommand.indexOf("-r ./website_home_system_selector_refinement.js") < startCommand.indexOf("-r ./website_home_performance_refinement.js"), "selector preload must be registered before performance so its response transform runs after existing homepage refinements");
 
 const sample = `<!doctype html><html><head><title>Vixale</title></head><body><main>
 <section class="vx-home-hero"><div class="wrap"><div class="vx-home-hero-copy">
