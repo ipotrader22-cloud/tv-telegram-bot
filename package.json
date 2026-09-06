@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "start": "node -r ./website_about_refinement.js -r ./website_navigation_disclosure_refinement.js -r ./website_public_polish_refinement.js -r ./website_trading_guide_style_refinement.js -r ./website_options_straddle_refinement.js -r ./website_trading_guide.js -r ./website_trading_systems_product_refinement.js -r ./website_trading_systems_refinement.js -r ./website_public_performance.js -r ./website_closed_trades_archive.js -r ./website_pricing_performance_fix.js -r ./website_watch_system_refinement.js -r ./website_public_ia_refinement.js -r ./website_home_system_selector_refinement.js -r ./website_home_performance_refinement.js -r ./website_home_equity_empty_fix.js -r ./website_home_conversion_refinement.js app.js"
+    "start": "node -r ./website_about_refinement.js -r ./website_navigation_disclosure_refinement.js -r ./website_public_polish_refinement.js -r ./website_trading_guide_style_refinement.js -r ./website_options_straddle_refinement.js -r ./website_trading_guide.js -r ./website_swing_canonical_refinement.js -r ./website_trading_systems_product_refinement.js -r ./website_trading_systems_refinement.js -r ./website_public_performance.js -r ./website_closed_trades_archive.js -r ./website_pricing_performance_fix.js -r ./website_watch_system_refinement.js -r ./website_public_ia_refinement.js -r ./website_home_system_selector_refinement.js -r ./website_home_performance_refinement.js -r ./website_home_equity_empty_fix.js -r ./website_home_conversion_refinement.js app.js"
   },
   "dependencies": {
     "express": "^4.18.2",

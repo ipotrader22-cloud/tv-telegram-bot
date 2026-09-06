@@ -4,9 +4,22 @@
 **Approved:** 2026-08-27  
 **Risk/exit rule clarification approved:** 2026-09-03  
 **Daily Model P&L equity curve approved:** 2026-09-03  
+**Canonical public-route consolidation approved:** 2026-09-05  
 **Trading/research owner:** Trading Lab  
 **Engineering owner:** VIXALE Engineering / Codex  
 **Scope:** public display and server-side data integration only
+
+## Canonical public route
+
+The canonical public Swing Trading page is:
+
+`/trading-systems/swing-trading`
+
+It reuses the existing Swing Leaders read-only page handler and the same server-side data service. The former public page `/swing-leaders` is a legacy compatibility URL and must return a permanent `301` redirect to `/trading-systems/swing-trading` rather than render a second copy of the portfolio.
+
+The sanitized read-only JSON endpoint remains `/api/swing-leaders` for backward compatibility. No new Swing API, workbook, tab, field, refresh job, scoring path, or Trading Lab writer is introduced by the route consolidation.
+
+The canonical page continues to read the same Trading Lab-owned `Public Feed` and `Equity History` data through the existing service/cache path. Morning Trading Lab updates and newly appended Equity History rows therefore continue to appear without a website deploy. Engineering must not add a website-side writer, recalculate portfolio membership, or interfere with the automation that populates those worksheets.
 
 ## Public categories
 
@@ -164,6 +177,6 @@ No scoring methodology is exposed or inferred by Engineering.
 
 ## Engineering boundary
 
-Engineering may read, validate, whitelist, cache, format, render, and calculate the explicitly approved fixed-allocation Model P&L. Engineering must not independently score, select candidates, create entries/exits, infer exit reasons, change portfolio membership, substitute quotes, alter historical Trading Lab equity rows, or alter Trading Lab strategy logic.
+Engineering may read, validate, whitelist, cache, format, render, and calculate the explicitly approved fixed-allocation Model P&L. Engineering must not independently score, select candidates, create entries/exits, infer exit reasons, change portfolio membership, substitute quotes, alter historical Trading Lab equity rows, alter Trading Lab strategy logic, or modify the morning automation that fills the Swing worksheets.
 
-This implementation remains isolated from Pine, TradingView alerts, UAM, TWS/IBKR execution, bridge order/risk logic, and broker lifecycle behavior.
+This implementation remains isolated from Pine, TradingView alerts, UAM, TWS/IBKR execution, bridge order/risk logic, broker lifecycle behavior, and the owner-managed Option Journal workflow.
