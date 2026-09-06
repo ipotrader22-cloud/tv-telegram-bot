@@ -148,3 +148,104 @@ To roll back only the Swing canonical-route consolidation:
 3. restore the prior Swing route documentation.
 
 The original `/swing-leaders` page handler and `/api/swing-leaders` endpoint remain in `app.js`, so rollback does not require a Swing workbook, Trading Lab automation, Options journal, trading-engine, bridge, TWS, Sheets, or Telegram rollback.
+
+---
+
+## Options viewer separation addendum — 2026-09-06
+
+### Canonical viewer page
+
+The viewer-facing Options page is:
+
+```text
+/trading-systems/options
+```
+
+It reuses the existing `/dashboard` authorization/session boundary. An unauthenticated request follows the existing dashboard login behavior; no second viewer password, entitlement store, cookie, or access-code system is introduced.
+
+After authorization, the page presents:
+
+- an Options-specific viewer hero and navigation;
+- **Options Equity Curve — Realized P&L**;
+- the existing latest-20 Option Journal viewer table, including existing protected brokerage-proof links;
+- the existing IBKR negative-price / opening-credit explanation;
+- `Watch Systems for Free` → `/#password-access`.
+
+The normal `/dashboard` presentation is explicitly **Live Day Trading Dashboard** and no longer renders the viewer Option Journal section, its in-page link, or the Option Straddles strategy note. The owner `/admin/live` Option Journal preview is unchanged.
+
+### Options equity contract
+
+Authoritative source: existing worksheet `Option Journal`, range `A:S`.
+
+The website adds no P&L column and writes nothing back. Closed-trade P&L uses the same formula as the existing application helper:
+
+```text
+Credit: (entry price - exit price) × contracts × multiplier - fees
+Debit:  (exit price - entry price) × contracts × multiplier - fees
+```
+
+The equity curve uses only rows with `Status = Closed`, a valid `Exit Date` in `YYYY-MM-DD`, and finite derived realized P&L. It groups realized P&L by Exit Date, sums same-day closes, sorts dates ascending, and calculates cumulative realized Options P&L. Invalid or missing rows are omitted; no simulated or substituted value is allowed.
+
+Presentation contract:
+
+- X-axis: Exit Date;
+- Y-axis: cumulative realized Options P&L ($);
+- explicit `$0` baseline;
+- tooltip: Date / Daily P&L / Cumulative P&L;
+- latest cumulative value: **Total Realized Options P&L**.
+
+### Manual entry and proof safety boundary
+
+The existing owner mutation routes remain unchanged:
+
+```text
+GET  /admin/options/new
+GET  /admin/options
+POST /admin/options
+GET  /admin/options/:id/edit
+POST /admin/options/:id
+POST /admin/options/:id/delete
+POST /admin/options/:id/proofs
+GET  /admin/options/:id/proofs/:proofId
+POST /admin/options/:id/proofs/:proofId/delete
+```
+
+`Option Journal` A:S, `Option Proofs`, `OPTION_PROOFS_DIR`, validation, create/edit/delete, and proof upload/delete behavior remain unchanged. The existing viewer proof route remains `GET /dashboard/options/:id/proofs/:proofId` and keeps its existing owner/viewer authorization checks.
+
+### Implementation and preload ordering
+
+`website_options_canonical_refinement.js` is a website-only presentation/read layer. It must load before `website_trading_systems_product_refinement.js` so `/trading-systems/options` is passed through the existing dashboard authorization path before the placeholder Options page can rewrite it.
+
+Required relative order:
+
+```text
+... -r ./website_swing_canonical_refinement.js -r ./website_options_canonical_refinement.js -r ./website_trading_systems_product_refinement.js ... app.js
+```
+
+The Options equity calculation performs one read-only `Option Journal!A:S` read using the existing Google Sheets service-account configuration. It creates no worksheet, endpoint, environment variable, writer, schema field, or simulated fallback.
+
+### Validation
+
+Before merge/deployment:
+
+- `node --check website_options_canonical_refinement.js`;
+- `node --check tests/test_options_canonical_refinement.js`;
+- `node tests/test_options_canonical_refinement.js`;
+- verify `/trading-systems/options` reuses the established dashboard authorization path;
+- verify unauthorized redirect responses remain unchanged;
+- verify `/dashboard` no longer renders Option Journal or the Option Straddles viewer note;
+- verify equity uses closed rows only, Exit Date, the existing Credit/Debit formula, same-day aggregation, and cumulative P&L;
+- verify existing protected brokerage-proof links remain intact;
+- verify `/admin/options...` mutation code, Option Journal/Proof schemas, Swing automation, trading, bridge, TWS, Telegram, and broker logic are absent from the branch diff.
+
+### ADR-WEB-002 — Options page separated from Day Trading dashboard
+
+**Decision:** `/dashboard` is the viewer-facing Day Trading dashboard. `/trading-systems/options` is the viewer-facing Options page and reuses the same dashboard authorization/session. Options equity is derived read-only from closed `Option Journal` records by Exit Date using the existing P&L formula. Owner mutations remain exclusively under `/admin/options...`.
+
+**Reason:** Prevent Day Trading live status/performance from being confused with manually entered Options records while preserving one viewer access model and the existing Option Journal workflow.
+
+**Data/execution impact:** No trading, broker, Telegram, owner journal writer, Option Journal schema, proof storage, or Swing automation change.
+
+### PR B rollback
+
+Remove `website_options_canonical_refinement.js` from the preload chain and revert its module/test/documentation commit. Existing `Option Journal` rows, proof files, owner admin routes, and dashboard authorization remain intact; no data or trading rollback is required.
