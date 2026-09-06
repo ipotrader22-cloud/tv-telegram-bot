@@ -1,0 +1,45 @@
+name: SMI hardening branch
+
+on:
+  push:
+    branches:
+      - fix/smi-pre-tuesday-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/smi-pre-tuesday-hardening
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply deterministic app.js hardening
+        run: python scripts/apply_smi_render_hardening.py
+      - name: Python syntax checks
+        run: python -m py_compile bridge/smi_forward_adapter.py bridge/smi_runtime_safety.py bridge/ib_bridge.py tests/test_smi_runtime_safety.py
+      - name: SMI bridge isolation tests
+        run: python tests/test_smi_forward_bridge_isolation.py
+      - name: SMI runtime safety tests
+        run: python tests/test_smi_runtime_safety.py
+      - name: SMI Render integration tests
+        run: node tests/test_smi_forward_render_integration.js
+      - name: Commit patched app.js if needed
+        run: |
+          if git diff --quiet -- app.js; then
+            echo "app.js already hardened"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js
+          git commit -m "Harden SMI dashboard identity and close idempotency"
+          git push origin HEAD:fix/smi-pre-tuesday-hardening
