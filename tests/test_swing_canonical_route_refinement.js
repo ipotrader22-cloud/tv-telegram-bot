@@ -7,6 +7,9 @@ const {
   LEGACY_SWING_PATH,
   CANONICAL_SWING_URL,
   PAGE_MARKER,
+  ACCESS_STYLE_ID,
+  ACCESS_MARKER,
+  ACCESS_PATH,
   refineCanonicalSwingHtml,
   installSwingCanonicalRefinement,
 } = require("../website_swing_canonical_refinement");
@@ -55,6 +58,12 @@ assert(refined.includes(`<link rel="canonical" href="${CANONICAL_SWING_URL}" />`
 assert(refined.includes("Swing Trading · Swing Leaders"));
 assert(refined.includes("<h1>Vixale Swing Trading</h1>"));
 assert(refined.includes("Swing Leaders research/model portfolio"));
+assert(refined.includes(ACCESS_MARKER));
+assert(refined.includes(`id="${ACCESS_STYLE_ID}"`));
+assert(refined.includes(`href="${ACCESS_PATH}">Watch Systems for Free</a>`));
+assert(refined.includes('href="/dashboard">Already have access? Open Dashboard →</a>'));
+assert(refined.includes("One viewer access · Day Trading · Swing Trading · Options"));
+assert.strictEqual((refined.match(/Watch Systems for Free/g) || []).length, 1, "Swing page should render one primary free-access CTA");
 assert.strictEqual(refineCanonicalSwingHtml(refined), refined, "HTML transform must be idempotent");
 
 {
@@ -69,6 +78,7 @@ assert.strictEqual(refineCanonicalSwingHtml(refined), refined, "HTML transform m
   res.send(html);
   assert(res.sent.includes(PAGE_MARKER));
   assert(res.sent.includes(CANONICAL_SWING_URL));
+  assert(res.sent.includes(`href="${ACCESS_PATH}">Watch Systems for Free</a>`));
 }
 
 {
@@ -101,4 +111,4 @@ assert.strictEqual(refineCanonicalSwingHtml(refined), refined, "HTML transform m
   assert.strictEqual(res.redirectArgs, null);
 }
 
-console.log("Swing canonical route consolidation: PASS");
+console.log("Swing canonical route + unified access CTA: PASS");
