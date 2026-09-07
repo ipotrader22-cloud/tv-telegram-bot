@@ -11,32 +11,39 @@ This manifest records repository state, deployment state, and user-visible state
 
 Latest direct verification for the website/dashboard scope:
 
-- **Latest website-changing merge on `main`:** PR #68 — `Separate Options from Day Trading dashboard`
-- **PR #68 head SHA:** `8c5880d76c5e662bdef07740dac2c3f255888ed4`
-- **PR #68 merge SHA / current verified website code reference:** `8a5e2b414a32fe849b147ecc0847c61997a703e5`
+- **Latest website-changing merge on `main`:** PR #69 — `Harden SMI runtime safety and shared symbol ownership`
+- **PR #69 head SHA:** `7a44b1655e21be019ea97abfc505f6a1c7ffcf4a`
+- **PR #69 merge SHA / current verified repository code reference:** `160e7541ae1ad48f98e8b720e0929da3fa469083`
 - **Observed PR state:** MERGED
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
-- **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment for PR #68:** `dep-daed8iu7bikc73da04ag`
-- **Latest website-changing deployed SHA:** `8a5e2b414a32fe849b147ecc0847c61997a703e5`
-- **Deployment status:** LIVE according to Render for that website-changing SHA
-- **Authorized UI verification:** USER-VERIFIED after the live deployment on 2026-09-05; user confirmed the separated Day Trading dashboard and dedicated Options page look correct.
+- **Render Auto-Deploy:** previously verified enabled / commit-triggered
+- **Render deployment for PR #69:** **UNVERIFIED**
+- **Latest independently verified website-changing deployed SHA:** `8a5e2b414a32fe849b147ecc0847c61997a703e5` (PR #68)
+- **Deployment status for PR #69:** **UNVERIFIED** — repository merge does not by itself prove Render deployment/runtime state.
+- **Latest authorized UI verification:** USER-VERIFIED after PR #68 on 2026-09-05; PR #69 user-visible SMI labeling has not yet been independently verified here.
 - **Independent unauthenticated route verification:** `/dashboard` presents the access-controlled login flow; authenticated page contents require the owner/viewer session and therefore are not independently visible to an unauthenticated browser.
 
-A later documentation-only manifest commit may advance `main` and may itself trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above. Record a new website-changing SHA only when website/runtime behavior actually changes.
+A later documentation-only manifest commit may advance `main` and may itself trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above. Record a new deployed website-changing SHA only when website/runtime behavior is directly verified.
 
-Render `live` status proves the deployment record for the exact PR #68 merge SHA. The user confirmation proves the authorized presentation was observed after that deployment. Do not describe authenticated page contents as independently browser-verified unless a viewer/owner session is available to the checking environment.
+## PR #69 — merged repository state
 
-## Pending engineering merge note — PR #69
+PR #69 (`Harden SMI runtime safety and shared symbol ownership`) is merged to `main` at `160e7541ae1ad48f98e8b720e0929da3fa469083`.
 
-PR #69 (`Harden SMI runtime safety and shared symbol ownership`) has been explicitly approved by the user for merge. Its website-facing portion is limited to explicit SMI dashboard labeling and durable close-publication idempotency; the same PR also contains bridge/runtime engineering safety changes. Production deployment status for PR #69 must be verified independently after merge. Do not label PR #69 deployed/live solely from repository merge state.
+Its website-facing changes are limited to:
+
+- explicit SMI dashboard identity (`VIXALE_SMI_FWD` / `SMI_HISTOGRAM_V0_4_FWD` → `SMI Ergodic`)
+- durable close-publication idempotency after Closed Trade persistence
+
+The same PR also contains Engineering-owned bridge/runtime safety changes for SMI EOD fail-safe and shared first-owner-wins symbol ownership across Prime, Edge/Fiona, and SMI. It does not modify Pine research logic or the frozen strategy entry/exit/filter/stop/target/timeframe/session/signal rules.
+
+Production deployment/runtime status for PR #69 remains **UNVERIFIED** until Render and the Windows bridge are independently checked. Do not label PR #69 deployed/live solely from repository merge state.
 
 ## Canonical dashboard split — PR #68
 
 ### `/dashboard` — Live Day Trading Dashboard only
 
-Current intended and deployed presentation contract:
+Current intended and last independently deployed/verified presentation contract:
 
 - `/dashboard` is the Day Trading dashboard.
 - The viewer Option Journal is not shown on `/dashboard`.
@@ -49,7 +56,7 @@ This separation is presentation-only and does not alter trading, signal, risk, o
 
 ### `/trading-systems/options` — dedicated Options page
 
-Current intended and deployed presentation contract:
+Current intended and last independently deployed/verified presentation contract:
 
 - `/trading-systems/options` is the dedicated authenticated Options page.
 - It reuses the same owner/viewer access/session as `/dashboard`; there is no second authentication system.
@@ -133,7 +140,7 @@ Presentation:
 - no Open/unrealized P&L in the curve
 - no simulated replacement values
 
-Repository implementation was originally merged in PR #26 (`f1b38746b17f17bc9ae0ed5f30bc10d65ca107ab`) and is preserved by PR #68.
+Repository implementation was originally merged in PR #26 (`f1b38746b17f17bc9ae0ed5f30bc10d65ca107ab`) and is preserved by later changes.
 
 ## Public Trading Systems information architecture
 
@@ -170,4 +177,4 @@ For every future website-facing change:
 
 Website/dashboard work must not alter VECO trading logic, strategy rules, signal generation, order logic, risk logic, broker lifecycle behavior, TWS/IBKR execution behavior, or trading algorithms unless explicitly requested by the user.
 
-The Day Trading/Options dashboard separation, both realized-equity charts, viewer authentication reuse, and public presentation changes must remain independent of trading/execution logic.
+The Day Trading/Options dashboard separation, realized-equity charts, viewer authentication reuse, and public presentation changes must remain independent of trading/execution logic. PR #69 bridge/runtime safety changes are Engineering-owned execution protections and must not be treated as Trading Lab strategy changes.
