@@ -1,14 +1,16 @@
-"""Runtime safety layer for SMI Histogram v0.4-FWD.
+"""Runtime safety layer for SMI Histogram v0.4-FWD and shared symbol ownership.
 
-This module does not calculate or alter SMI signals.  It only:
+This module does not calculate or alter Prime, Edge, or SMI trading signals. It
+only provides Engineering-owned execution safety:
 
-* optionally requires an explicit SMI-only symbol allowlist before SETUPs can
-  reach the existing SMI adapter; and
-* provides a broker-side EOD execution fallback for an already-enabled SMI EOD
-  policy when TradingView has not delivered the expected EOD_CLOSE.
+* every stock symbol is eligible for Prime, Edge, and SMI; the first active
+  bridge owner keeps exclusive symbol ownership until its managed lifecycle is
+  cleared after broker-flat confirmation; and
+* a broker-side EOD execution fallback for an already-enabled SMI EOD policy
+  when TradingView has not delivered the expected EOD_CLOSE.
 
-Prime/Edge/non-SMI payloads delegate to the previously installed handler
-unchanged.
+There is intentionally no SMI symbol allowlist. Cross-system ownership is the
+runtime safety boundary instead.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import datetime, time as dt_time
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 try:
@@ -29,6 +31,22 @@ SMI_EOD_TIMEZONE = os.getenv("SMI_EOD_FAILSAFE_TIMEZONE", "America/New_York").st
 SMI_EOD_FAILSAFE_TIME = os.getenv("SMI_EOD_FAILSAFE_TIME", "15:59:50").strip() or "15:59:50"
 SMI_EOD_FAILSAFE_POLL_SECONDS = max(1.0, float(os.getenv("SMI_EOD_FAILSAFE_POLL_SECONDS", "2.0") or 2.0))
 
+OWNER_SMI = smi.SMI_SYSTEM_ID
+OWNER_EDGE = "VIXALE_EDGE"
+OWNER_PRIME = "VIXALE_PRIME"
+OWNER_FAMILIES = {OWNER_SMI, OWNER_EDGE, OWNER_PRIME}
+SYMBOL_OWNERSHIP_PROTECTED_EVENTS = {
+    "SETUP",
+    "CANCEL_REPLACE",
+    "EOD_RESET",
+    "NEW_DAY_RESET",
+    "CANCEL",
+    "TP",
+    "CLOSE_STOP",
+    "EOD_CLOSE",
+    "NEW_DAY_EMERGENCY_CLOSE",
+}
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
@@ -37,23 +55,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-SMI_REQUIRE_EXPLICIT_SYMBOL_ALLOWLIST = _env_bool(
-    "SMI_REQUIRE_EXPLICIT_SYMBOL_ALLOWLIST",
-    True,
-)
 SMI_EOD_FAILSAFE_ENABLED = _env_bool("SMI_EOD_FAILSAFE_ENABLED", True)
-
-
-def _symbol_set(value: str) -> Set[str]:
-    return {
-        item.strip().upper()
-        for item in str(value or "").split(",")
-        if item.strip()
-    }
-
-
-def configured_smi_allowed_symbols() -> Set[str]:
-    return _symbol_set(os.getenv("SMI_ALLOWED_SYMBOLS", ""))
 
 
 def _upper(data: Dict[str, Any], key: str) -> str:
@@ -63,6 +65,179 @@ def _upper(data: Dict[str, Any], key: str) -> str:
 def _managed_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     payload = row.get("last_payload")
     return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _managed_payload_for_ownership(core: Any, row: Dict[str, Any]) -> Dict[str, Any]:
+    builder = getattr(core, "managed_payload", None)
+    if callable(builder):
+        try:
+            payload = builder(row)
+            if isinstance(payload, dict):
+                return dict(payload)
+        except Exception:
+            pass
+
+    payload = _managed_payload(row)
+    for key in ("system_id", "strategy", "strategy_id", "variant", "profile", "setup_id"):
+        if row.get(key) not in (None, ""):
+            payload[key] = row.get(key)
+    return payload
+
+
+def _owner_family(core: Any, data: Dict[str, Any]) -> str:
+    if not isinstance(data, dict):
+        return ""
+    if smi.is_smi_forward_payload(data):
+        return OWNER_SMI
+
+    classifier = getattr(core, "classify_strategy_payload", None)
+    if callable(classifier):
+        try:
+            family = str(classifier(data) or "").upper().strip()
+            if family == "VIXALE_EDGE":
+                return OWNER_EDGE
+            if family == "VIXALE_PRIME_OPPOSITE_FLIP":
+                return OWNER_PRIME
+        except Exception:
+            pass
+
+    edge_predicate = getattr(core, "is_vixale_edge_payload", None)
+    if callable(edge_predicate):
+        try:
+            if edge_predicate(data):
+                return OWNER_EDGE
+        except Exception:
+            pass
+
+    prime_predicate = getattr(core, "is_opposite_flip_payload", None)
+    if callable(prime_predicate):
+        try:
+            if prime_predicate(data):
+                return OWNER_PRIME
+        except Exception:
+            pass
+
+    system_id = _upper(data, "system_id")
+    if system_id in OWNER_FAMILIES:
+        return system_id
+    return ""
+
+
+def _ownership_blocked(
+    data: Dict[str, Any],
+    status: str,
+    message: str,
+    **extra: Any,
+) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "dry_run": False,
+        "status": status,
+        "error": message,
+        "message": message,
+        "symbol": _upper(data, "symbol"),
+        "event": _upper(data, "event"),
+        "side": _upper(data, "side"),
+        "setup_id": str(data.get("setup_id") or "").strip(),
+        "incoming_system_id": _upper(data, "system_id"),
+        "incoming_strategy": _upper(data, "strategy"),
+        **extra,
+    }
+
+
+async def cross_system_symbol_ownership_guard(core: Any, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Enforce first-owner-wins across Prime, Edge, and SMI.
+
+    The managed-position row is the durable owner record. Same-owner lifecycle
+    events are left untouched so Prime can keep its existing reversal behavior,
+    Edge keeps its existing one-position lifecycle, and SMI keeps its frozen
+    forward-test behavior. A foreign family cannot enter, close, cancel, or
+    otherwise mutate that symbol.
+
+    When no managed owner exists, an unmanaged broker position or working order
+    blocks a new Prime/Edge/SMI entry fail-closed. This covers the short window
+    after broker acceptance and restart/orphan states without assigning ownership
+    from a guessed orderRef.
+    """
+    event = _upper(data, "event")
+    symbol = _upper(data, "symbol")
+    if event not in SYMBOL_OWNERSHIP_PROTECTED_EVENTS or not symbol:
+        return None
+
+    incoming_owner = _owner_family(core, data)
+    managed = core.load_managed_positions()
+    managed = managed if isinstance(managed, dict) else {}
+    row = dict(managed.get(symbol) or {})
+
+    if row:
+        owner_payload = _managed_payload_for_ownership(core, row)
+        active_owner = _owner_family(core, owner_payload)
+
+        if active_owner and incoming_owner == active_owner:
+            return None
+
+        # If either side is one of the three Vixale execution families, fail
+        # closed rather than allowing a different or unclassified payload to
+        # overwrite/mutate an existing managed symbol.
+        if active_owner or incoming_owner:
+            return _ownership_blocked(
+                data,
+                (
+                    "entry_blocked_symbol_owned_by_other_system"
+                    if event == "SETUP"
+                    else "symbol_mutation_blocked_by_owner"
+                ),
+                "Symbol is already owned by another managed bridge lifecycle; incoming broker mutation blocked.",
+                owner_family=active_owner or "UNKNOWN_MANAGED",
+                owner_system_id=str(row.get("system_id") or owner_payload.get("system_id") or "").upper().strip(),
+                owner_strategy=str(
+                    row.get("strategy")
+                    or row.get("strategy_id")
+                    or owner_payload.get("strategy")
+                    or owner_payload.get("strategy_id")
+                    or ""
+                ).upper().strip(),
+                owner_setup_id=str(row.get("setup_id") or owner_payload.get("setup_id") or "").strip(),
+                incoming_owner_family=incoming_owner or "UNCLASSIFIED",
+            )
+        return None
+
+    # Only SETUPs from the three requested systems claim a free symbol. Other
+    # events without a managed row continue through the pre-existing core logic.
+    if event != "SETUP" or incoming_owner not in OWNER_FAMILIES:
+        return None
+
+    await core.ensure_ib_connected()
+    position = float(await core.get_position_size(symbol) or 0.0)
+    if abs(position) > 0.000001:
+        return _ownership_blocked(
+            data,
+            "entry_blocked_unmanaged_broker_position",
+            "Symbol has a broker position but no managed owner record; new entry blocked fail-closed.",
+            incoming_owner_family=incoming_owner,
+            position_before_entry=position,
+        )
+
+    working_refs = []
+    for trade in list(core.ib.openTrades() or []):
+        contract_symbol = str(
+            getattr(getattr(trade, "contract", None), "symbol", "") or ""
+        ).upper().strip()
+        if contract_symbol != symbol:
+            continue
+        order = getattr(trade, "order", None)
+        working_refs.append(str(getattr(order, "orderRef", "") or ""))
+
+    if working_refs:
+        return _ownership_blocked(
+            data,
+            "entry_blocked_unmanaged_working_orders",
+            "Symbol has working broker orders but no managed owner record; new entry blocked fail-closed.",
+            incoming_owner_family=incoming_owner,
+            working_order_count=len(working_refs),
+        )
+
+    return None
 
 
 def _is_exact_smi_managed_row(row: Dict[str, Any]) -> bool:
@@ -90,30 +265,6 @@ def _blocked(data: Dict[str, Any], status: str, error: str) -> Dict[str, Any]:
         "system_id": _upper(data, "system_id"),
         "strategy": _upper(data, "strategy"),
     }
-
-
-def smi_symbol_policy_guard(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Fail closed for SMI entries unless the symbol is explicitly allowed.
-
-    This is deliberately SETUP-only.  Existing SMI exits are never blocked by
-    the allowlist, and Prime/Edge payloads are not inspected here.
-    """
-    if not smi.is_smi_forward_payload(data) or _upper(data, "event") != "SETUP":
-        return None
-
-    if not SMI_REQUIRE_EXPLICIT_SYMBOL_ALLOWLIST:
-        return None
-
-    symbol = _upper(data, "symbol")
-    allowed = configured_smi_allowed_symbols()
-    if symbol and symbol in allowed:
-        return None
-
-    return _blocked(
-        data,
-        "smi_entry_blocked_symbol_not_allowlisted",
-        "SMI entry blocked: symbol is not in explicit SMI_ALLOWED_SYMBOLS. Prime/Edge remain untouched.",
-    )
 
 
 def _parse_clock(value: str) -> dt_time:
@@ -175,7 +326,7 @@ async def run_smi_eod_fail_safe_once(core: Any, now: Optional[datetime] = None) 
     """Run one fail-closed SMI EOD safety pass.
 
     Only exact SMI managed rows opened on the current NY date and explicitly
-    carrying ``eod_close_enabled=true`` are eligible.  The actual target/order
+    carrying ``eod_close_enabled=true`` are eligible. The actual target/order
     ownership checks and close mechanics remain in the existing SMI adapter.
     """
     if not SMI_EOD_FAILSAFE_ENABLED:
@@ -262,29 +413,34 @@ def install_smi_runtime_safety(core: Any) -> Any:
         return core
 
     existing_handle = core.handle_ib_action
+    routing_lock = asyncio.Lock()
 
     async def handle_ib_action_with_smi_runtime_safety(data: Dict[str, Any]) -> Dict[str, Any]:
-        policy_block = smi_symbol_policy_guard(data)
-        if policy_block is not None:
-            return policy_block
+        # Serialize the ownership decision through delegation. This makes the
+        # first accepted SETUP the owner even when two systems alert together.
+        async with routing_lock:
+            async with core.ib_lock:
+                ownership_block = await cross_system_symbol_ownership_guard(core, data)
+            if ownership_block is not None:
+                return ownership_block
 
-        if data.get("broker_smi_eod_watchdog") is True:
-            if not smi.is_smi_forward_payload(data):
-                return _blocked(data, "smi_eod_failsafe_identity_mismatch", "SMI EOD failsafe requires exact SMI identity.")
-            if _upper(data, "event") != "EOD_CLOSE" or _upper(data, "signal") != "EOD_FLAT":
-                return _blocked(data, "smi_eod_failsafe_event_mismatch", "SMI EOD failsafe accepts EOD_CLOSE/EOD_FLAT only.")
-            # The existing SMI adapter accepts TradingView as its inbound signal
-            # source.  Keep the watchdog payload itself truthfully IB_BRIDGE so
-            # process_signal_background publishes the broker callback with the
-            # correct origin, but delegate a copy through the already-tested SMI
-            # ownership/target/close path.
-            transport = dict(data)
-            transport["source"] = "TradingView"
-            return await existing_handle(transport)
+            if data.get("broker_smi_eod_watchdog") is True:
+                if not smi.is_smi_forward_payload(data):
+                    return _blocked(data, "smi_eod_failsafe_identity_mismatch", "SMI EOD failsafe requires exact SMI identity.")
+                if _upper(data, "event") != "EOD_CLOSE" or _upper(data, "signal") != "EOD_FLAT":
+                    return _blocked(data, "smi_eod_failsafe_event_mismatch", "SMI EOD failsafe accepts EOD_CLOSE/EOD_FLAT only.")
+                # The existing SMI adapter accepts TradingView as its inbound
+                # signal source. Keep the watchdog payload itself truthfully
+                # IB_BRIDGE so publication origin remains correct, but delegate
+                # a copy through the already-tested SMI ownership/target path.
+                transport = dict(data)
+                transport["source"] = "TradingView"
+                return await existing_handle(transport)
 
-        return await existing_handle(data)
+            return await existing_handle(data)
 
     core.handle_ib_action = handle_ib_action_with_smi_runtime_safety
+    core.cross_system_symbol_ownership_guard = lambda data: cross_system_symbol_ownership_guard(core, data)
     core.run_smi_eod_fail_safe_once = lambda now=None: run_smi_eod_fail_safe_once(core, now)
     core._smi_runtime_safety_installed = True
 
