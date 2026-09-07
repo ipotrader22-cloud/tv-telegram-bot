@@ -1,7 +1,7 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest updated:** 2026-09-05 (America/New_York)  
+**Manifest updated:** 2026-09-06 (America/New_York)  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
@@ -27,6 +27,10 @@ Latest direct verification for the website/dashboard scope:
 A later documentation-only manifest commit may advance `main` and may itself trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above. Record a new website-changing SHA only when website/runtime behavior actually changes.
 
 Render `live` status proves the deployment record for the exact PR #68 merge SHA. The user confirmation proves the authorized presentation was observed after that deployment. Do not describe authenticated page contents as independently browser-verified unless a viewer/owner session is available to the checking environment.
+
+## Pending engineering merge note — PR #69
+
+PR #69 (`Harden SMI runtime safety and shared symbol ownership`) has been explicitly approved by the user for merge. Its website-facing portion is limited to explicit SMI dashboard labeling and durable close-publication idempotency; the same PR also contains bridge/runtime engineering safety changes. Production deployment status for PR #69 must be verified independently after merge. Do not label PR #69 deployed/live solely from repository merge state.
 
 ## Canonical dashboard split — PR #68
 
