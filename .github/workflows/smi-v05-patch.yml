@@ -1,0 +1,86 @@
+name: SMI v0.5 EMA stack implementation
+
+on:
+  push:
+    branches:
+      - feature/smi-v05-ema-stack
+
+permissions:
+  contents: write
+
+jobs:
+  implement-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out stacked feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/smi-v05-ema-stack
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install bridge test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f bridge/requirements.txt ]; then python -m pip install -r bridge/requirements.txt; fi
+
+      - name: Apply approved v0.5 strategy and Engineering patch
+        run: python .github/scripts/apply_smi_v05.py
+
+      - name: Normalize generated focused test fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          js = Path('tests/test_smi_v05_render_integration.js')
+          text = js.read_text(encoding='utf-8')
+          text = text.replace("\\'use strict\\';", "'use strict';", 1)
+          js.write_text(text, encoding='utf-8')
+
+          py = Path('tests/test_smi_v05_runtime_safety.py')
+          text = py.read_text(encoding='utf-8')
+          anchor = '            "setup_id": "SMI_HISTOGRAM_V0_5_FWD:AAPL:60:LONG:1788379200000",\n            "eod_close_enabled": True,\n'
+          replacement = '            "setup_id": "SMI_HISTOGRAM_V0_5_FWD:AAPL:60:LONG:1788379200000",\n            "timeframe": "60",\n            "eod_close_enabled": True,\n'
+          if text.count(anchor) != 1:
+              raise SystemExit(f'runtime fixture anchor count={text.count(anchor)}')
+          py.write_text(text.replace(anchor, replacement, 1), encoding='utf-8')
+          PY
+
+      - name: Verify v0.4 Pine freeze untouched
+        run: git diff --exit-code HEAD -- pine/SMI_Histogram_v0_4_FWD_UAM.pine
+
+      - name: Syntax checks
+        run: |
+          node --check app.js
+          node --check tests/test_smi_v05_render_integration.js
+          python -m py_compile bridge/smi_forward_adapter.py bridge/smi_runtime_safety.py tests/test_smi_v05_pine_contract.py tests/test_smi_v05_transport.py tests/test_smi_v05_runtime_safety.py
+
+      - name: Existing SMI regression checks
+        run: |
+          python tests/test_smi_forward_pine_contract.py
+          python tests/test_smi_forward_bridge_isolation.py
+          python tests/test_smi_forward_concurrency.py
+          python tests/test_smi_runtime_safety.py
+          node tests/test_smi_forward_render_integration.js
+
+      - name: New v0.5 focused checks
+        run: |
+          python tests/test_smi_v05_pine_contract.py
+          python tests/test_smi_v05_transport.py
+          python tests/test_smi_v05_runtime_safety.py
+          node tests/test_smi_v05_render_integration.js
+
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Commit final scoped implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git status --short
+          git commit -m "Add SMI v0.5-FWD optional EMA stack filter"
+          git push origin HEAD:feature/smi-v05-ema-stack
