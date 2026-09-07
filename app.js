@@ -403,6 +403,14 @@ function publicSystemLabelFromRaw(...rawValues) {
   const joined = rawValues.map(value => String(value || '')).join('\n');
   const upper = joined.toUpperCase();
 
+  // SMI must never fall through the legacy stop=0 => Vixale Prime classifier.
+  if (
+    upper.includes('VIXALE_SMI_FWD') ||
+    upper.includes('SMI_HISTOGRAM_V0_4_FWD')
+  ) {
+    return 'SMI Ergodic';
+  }
+
   // Prefer explicit public-system identity over shared strategy-family names.
   // Vixale Edge and Prime can both contain "OPPOSITE_FLIP" markers, so those
   // generic markers must never be evaluated before VIXALE_EDGE / FIONA LIMIT.
@@ -2993,12 +3001,33 @@ async function getStandardBridgeClosePublicationState(
 }
 
 async function markStandardBridgeClosePublicationComplete(sheets, row) {
-  const state = await getStandardBridgeClosePublicationState(sheets, row);
-  if (!state.metadata || !state.closed) {
+  // Sheets writes are acknowledged before every replica/read path necessarily
+  // observes the just-written compact Closed Trades row.  A bridge callback
+  // must not be retried (and republished) merely because that immediate read is
+  // briefly stale.  closed_trade_written=true is only persisted after the
+  // Closed Trades append succeeds, so it is valid durable evidence.
+  let state = null;
+  const maxAttempts = 20;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    state = await getStandardBridgeClosePublicationState(sheets, row);
+    const closedWritten = Boolean(
+      state?.metadata?.metadata?.closed_trade_written
+    );
+    if (state?.metadata && (state.closed || closedWritten)) break;
+    if (attempt < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+
+  const closedWritten = Boolean(
+    state?.metadata?.metadata?.closed_trade_written
+  );
+  if (!state?.metadata || (!state.closed && !closedWritten)) {
     throw new Error(
-      `Cannot complete durable bridge close publication: ${state.delivery_id || row?.trade_id || ''}`
+      `Cannot complete durable bridge close publication: ${state?.delivery_id || row?.trade_id || ''}`
     );
   }
+
   const publishedAt = nowNy();
   await updateTradeMetadataRow(sheets, state.metadata.row_number, {
     ...state.metadata.metadata,

@@ -3,6 +3,7 @@ param(
     [string]$SourcePath = (Join-Path $PSScriptRoot "..\bridge\ib_bridge.py"),
     [string]$CoreSourcePath = (Join-Path $PSScriptRoot "..\bridge\ib_bridge_core.py"),
     [string]$SmiAdapterSourcePath = (Join-Path $PSScriptRoot "..\bridge\smi_forward_adapter.py"),
+    [string]$SmiRuntimeSafetySourcePath = (Join-Path $PSScriptRoot "..\bridge\smi_runtime_safety.py"),
     [string]$TargetPath = "C:\ib_bridge\ib_bridge.py",
     [string]$HealthUrl = "http://127.0.0.1:8000/ib/status"
 )
@@ -26,8 +27,9 @@ function Get-BridgeProcess {
 $source = (Resolve-Path -LiteralPath $SourcePath).Path
 $coreSource = (Resolve-Path -LiteralPath $CoreSourcePath).Path
 $smiAdapterSource = (Resolve-Path -LiteralPath $SmiAdapterSourcePath).Path
+$smiRuntimeSafetySource = (Resolve-Path -LiteralPath $SmiRuntimeSafetySourcePath).Path
 
-foreach ($requiredSource in @($source, $coreSource, $smiAdapterSource)) {
+foreach ($requiredSource in @($source, $coreSource, $smiAdapterSource, $smiRuntimeSafetySource)) {
     if (-not (Test-Path -LiteralPath $requiredSource -PathType Leaf)) {
         throw "Bridge source does not exist: $requiredSource"
     }
@@ -38,6 +40,7 @@ if (-not (Test-Path -LiteralPath $targetDirectory -PathType Container)) { throw 
 
 $coreTargetPath = Join-Path $targetDirectory "ib_bridge_core.py"
 $smiAdapterTargetPath = Join-Path $targetDirectory "smi_forward_adapter.py"
+$smiRuntimeSafetyTargetPath = Join-Path $targetDirectory "smi_runtime_safety.py"
 
 $python = Join-Path $targetDirectory ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Existing bridge Python was not found: $python" }
@@ -78,13 +81,15 @@ if ($existingProcesses.Count -eq 1) {
 # Compile every source before touching the running bridge directory.
 Invoke-Compile $python $coreSource
 Invoke-Compile $python $smiAdapterSource
+Invoke-Compile $python $smiRuntimeSafetySource
 Invoke-Compile $python $source
 
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $files = @(
     @{ Source = $source; Target = $TargetPath },
     @{ Source = $coreSource; Target = $coreTargetPath },
-    @{ Source = $smiAdapterSource; Target = $smiAdapterTargetPath }
+    @{ Source = $smiAdapterSource; Target = $smiAdapterTargetPath },
+    @{ Source = $smiRuntimeSafetySource; Target = $smiRuntimeSafetyTargetPath }
 )
 
 foreach ($file in $files) {
@@ -96,14 +101,16 @@ foreach ($file in $files) {
 }
 
 try {
-    # Copy core + adapter first, then the stable entrypoint last. This prevents
-    # a reload watcher from seeing a new entrypoint before its dependencies exist.
+    # Copy all dependencies first, then the stable entrypoint last. This prevents
+    # a reload watcher from seeing a new entrypoint before its imports exist.
     Copy-Item -LiteralPath $coreSource -Destination $coreTargetPath -Force
     Copy-Item -LiteralPath $smiAdapterSource -Destination $smiAdapterTargetPath -Force
+    Copy-Item -LiteralPath $smiRuntimeSafetySource -Destination $smiRuntimeSafetyTargetPath -Force
     Copy-Item -LiteralPath $source -Destination $TargetPath -Force
 
     Invoke-Compile $python $coreTargetPath
     Invoke-Compile $python $smiAdapterTargetPath
+    Invoke-Compile $python $smiRuntimeSafetyTargetPath
     Invoke-Compile $python $TargetPath
 
     if ($launch) {
@@ -142,6 +149,7 @@ try {
     Write-Output "Deployed: $TargetPath"
     Write-Output "Deployed: $coreTargetPath"
     Write-Output "Deployed: $smiAdapterTargetPath"
+    Write-Output "Deployed: $smiRuntimeSafetyTargetPath"
 } catch {
     foreach ($file in $files) {
         if ($file.HadTarget -and (Test-Path -LiteralPath $file.Backup -PathType Leaf)) {
