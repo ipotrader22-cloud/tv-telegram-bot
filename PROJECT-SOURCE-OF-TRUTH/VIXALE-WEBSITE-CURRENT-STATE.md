@@ -17,16 +17,20 @@ Latest direct verification for the website/dashboard scope:
 - **Observed PR state:** MERGED
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
-- **Render Auto-Deploy:** previously verified enabled / commit-triggered
-- **Render deployment for PR #69:** **UNVERIFIED**
-- **Latest independently verified website-changing deployed SHA:** `8a5e2b414a32fe849b147ecc0847c61997a703e5` (PR #68)
-- **Deployment status for PR #69:** **UNVERIFIED** — repository merge does not by itself prove Render deployment/runtime state.
-- **Latest authorized UI verification:** USER-VERIFIED after PR #68 on 2026-09-05; PR #69 user-visible SMI labeling has not yet been independently verified here.
+- **Render Auto-Deploy:** enabled / commit-triggered
+- **Render deployment created for PR #69 merge SHA:** `dep-daf150942hec73cpvob0`
+- **PR #69 merge deployment lifecycle:** completed, then deactivated only because a later documentation-only `main` commit deployed afterward.
+- **Current LIVE Render deployment:** `dep-daf15b8ejobc73a35nu0`
+- **Current LIVE Render commit:** `3db8f6d99237371f10d94225e56243f2221fe4f4` (`Record PR #69 merged repository state`), a documentation-only descendant of PR #69 merge SHA `160e7541ae1ad48f98e8b720e0929da3fa469083`.
+- **Latest website-changing deployed SHA:** `160e7541ae1ad48f98e8b720e0929da3fa469083` (PR #69). The current live Render commit is later but documentation-only and therefore does not replace the website-changing code reference.
+- **Deployment status for PR #69 website/backend code:** LIVE on Render, independently verified from Render deployment state on 2026-09-06.
+- **Windows bridge deployment:** USER-CONFIRMED by the owner on 2026-09-06. Independent verification of the local Windows runtime is not available from this environment.
+- **Latest authorized UI verification:** USER-VERIFIED after PR #68 on 2026-09-05; PR #69 explicit SMI labeling has not yet been separately user-verified in an authenticated dashboard session here.
 - **Independent unauthenticated route verification:** `/dashboard` presents the access-controlled login flow; authenticated page contents require the owner/viewer session and therefore are not independently visible to an unauthenticated browser.
 
-A later documentation-only manifest commit may advance `main` and may itself trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above. Record a new deployed website-changing SHA only when website/runtime behavior is directly verified.
+A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference.
 
-## PR #69 — merged repository state
+## PR #69 — merged and deployed engineering state
 
 PR #69 (`Harden SMI runtime safety and shared symbol ownership`) is merged to `main` at `160e7541ae1ad48f98e8b720e0929da3fa469083`.
 
@@ -37,7 +41,7 @@ Its website-facing changes are limited to:
 
 The same PR also contains Engineering-owned bridge/runtime safety changes for SMI EOD fail-safe and shared first-owner-wins symbol ownership across Prime, Edge/Fiona, and SMI. It does not modify Pine research logic or the frozen strategy entry/exit/filter/stop/target/timeframe/session/signal rules.
 
-Production deployment/runtime status for PR #69 remains **UNVERIFIED** until Render and the Windows bridge are independently checked. Do not label PR #69 deployed/live solely from repository merge state.
+Render independently shows the PR #69 merge deployment followed by a later LIVE documentation-only deployment that contains the PR #69 merge as its parent state. Therefore the PR #69 website/backend code is deployed on Render. The owner separately confirmed the Windows bridge deployment; that local runtime confirmation is recorded as USER-CONFIRMED rather than independently checked.
 
 ## Canonical dashboard split — PR #68
 
