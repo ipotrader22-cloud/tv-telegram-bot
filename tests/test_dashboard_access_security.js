@@ -57,8 +57,21 @@ const APP_PATCH_MARKER = "VIXALE_DASHBOARD_ACCESS_SECURITY_PATCH";
   assert(emailHtml.includes("Confirm Email"));
   assert(!emailHtml.includes("<User>"), "user-controlled names must be escaped");
   assert(!emailHtml.includes("email="), "verification URL must not contain email PII");
-  assert(core.verificationSentHtml({ email: "foo@example.com", name: "<User>" }).includes("manual review"));
-  assert(core.verifiedHtml().includes("Access is not granted automatically"));
+
+  const sentHtml = core.verificationSentHtml({ email: "foo@example.com", name: "<User>" });
+  assert(sentHtml.includes("one-time confirmation link"));
+  assert(sentHtml.includes("Inbox and Spam/Junk"));
+  assert(sentHtml.includes("manual review"));
+  assert(sentHtml.includes("Access is not granted automatically"));
+  const sentHtmlRu = core.verificationSentHtml({ email: "foo@example.com", lang: "ru" });
+  assert(sentHtmlRu.includes("Спам/Нежелательная почта"));
+  assert(sentHtmlRu.includes("ручную проверку"));
+
+  const verifiedHtml = core.verifiedHtml();
+  assert(verifiedHtml.includes("Your email is confirmed."));
+  assert(verifiedHtml.includes("Your access request is awaiting manual review."));
+  assert(verifiedHtml.includes("Access is not granted automatically"));
+  assert(verifiedHtml.includes("personal viewer code"));
 
   const appPath = path.join(__dirname, "..", "app.js");
   let appSource = fs.readFileSync(appPath, "utf8");
