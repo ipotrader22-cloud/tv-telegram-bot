@@ -1,0 +1,34 @@
+name: Verify PR1 corrective
+on:
+  push:
+    branches:
+      - fix/pr1-source-generators
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts
+      - name: Syntax
+        run: |
+          node --check app.js
+          node --check website_public_ia_refinement.js
+          node --check website_watch_system_refinement.js
+          node --check lib/dashboard-access-security.js
+          node --check tests/test_public_ia_refinement.js
+          node --check tests/test_watch_system_refinement.js
+          node --check tests/test_dashboard_access_security.js
+      - name: Regression
+        run: |
+          node tests/test_public_ia_refinement.js
+          node tests/test_watch_system_refinement.js
+          node tests/test_dashboard_access_security.js
+          node tests/test_home_conversion_refinement.js
+      - name: Corrective structure
+        run: |
+          test ! -e website_access_truth_refinement.js
+          test ! -e tests/test_access_truth_refinement.js
+          node -e "const p=require('./package.json'); if(p.scripts.start.includes('website_access_truth_refinement')) process.exit(1); console.log('Corrective preload structure: PASS')"
