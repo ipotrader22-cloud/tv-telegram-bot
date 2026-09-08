@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("assert");
+const accessSecurity = require("../lib/dashboard-access-security");
 const {
   STYLE_ID,
   FLOW_MARKER,
@@ -43,5 +44,14 @@ assert.strictEqual((pricingOut.match(/class="vx-watch-step"/g) || []).length, 4)
 
 assert.strictEqual(refineAccessTruthHtml("<html><body>unchanged</body></html>", "/about"), "<html><body>unchanged</body></html>");
 assert.strictEqual(refineAccessTruthHtml(homeOut, "/"), homeOut, "home access truth refinement must be idempotent");
+
+const verificationSent = accessSecurity.verificationSentHtml({ email: "viewer@example.com", name: "Viewer" });
+assert(verificationSent.includes("Spam/Junk"));
+assert(verificationSent.includes("manual review"));
+const verificationSentRu = accessSecurity.verificationSentHtml({ email: "viewer@example.com", lang: "ru" });
+assert(verificationSentRu.includes("Спам"));
+const verified = accessSecurity.verifiedHtml();
+assert(verified.includes("Your email is confirmed. Your access request is awaiting manual review."));
+assert(verified.includes("Access is not granted automatically"));
 
 console.log("Access truth + Services refinement: PASS");
