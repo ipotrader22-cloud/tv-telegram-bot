@@ -4,9 +4,24 @@ const Module = require("module");
 
 const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
+const GUIDE_PATH = "/trading-guide";
 const GUIDE_BLOCK_HREF = `${SYSTEMS_PATH}#vx-how-to-trade-title`;
 const GUIDE_NAV_TEXT = "How to Trade Vixale";
 const NFA_TEXT = "NFA — Not Financial Advice.";
+const STYLE_ID = "vx-public-navigation-accessibility-style";
+const PUBLIC_NAV_PATHS = new Set([
+  HOME_PATH,
+  SYSTEMS_PATH,
+  `${SYSTEMS_PATH}/day-trading`,
+  `${SYSTEMS_PATH}/swing-trading`,
+  `${SYSTEMS_PATH}/options`,
+  "/services",
+  "/about",
+  "/pricing",
+  "/closed-trades",
+  GUIDE_PATH,
+  "/risk-management",
+]);
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -23,7 +38,7 @@ function findTagRangeFromOpen(html, tagName, openStart) {
   while ((match = tagPattern.exec(html))) {
     const isClose = new RegExp(`^<\\/${escapeRegex(tagName)}\\b`, "i").test(match[0]);
     depth += isClose ? -1 : 1;
-    if (depth === 0) return { start: openStart, end: tagPattern.lastIndex };
+    if (depth === 0) return { start: openStart, end: tagPattern.lastIndex, openEnd: openEnd + 1, closeStart: match.index };
   }
   return null;
 }
@@ -35,19 +50,26 @@ function findTagByClass(html, tagName, className) {
   return findTagRangeFromOpen(html, tagName, match.index);
 }
 
-function insertHomeGuideNavLink(html) {
+function renderPublicNavLinks() {
+  return `<a href="/trading-systems">Trading Systems</a><a href="/#live-day-trading">Performance</a><a href="/services">Services</a><a href="/about">About</a><a href="/trading-guide">Trading Guide</a><a class="vx-public-nav-login" href="/dashboard">Login</a><a class="vx-public-nav-cta" href="/#password-access">Request Free Access</a>`;
+}
+
+function replaceInnerHtml(html, range, inner) {
+  if (!range || !Number.isFinite(range.openEnd) || !Number.isFinite(range.closeStart)) return html;
+  return html.slice(0, range.openEnd) + inner + html.slice(range.closeStart);
+}
+
+function normalizePublicNavigation(html) {
   if (typeof html !== "string") return html;
-  const navStart = html.search(/<nav\b/i);
-  const navRange = findTagRangeFromOpen(html, "nav", navStart);
-  if (!navRange) return html;
+  const standard = findTagByClass(html, "div", "nav-links");
+  if (standard) return replaceInnerHtml(html, standard, renderPublicNavLinks());
+  const guide = findTagByClass(html, "div", "navlinks");
+  if (guide) return replaceInnerHtml(html, guide, renderPublicNavLinks());
+  return html;
+}
 
-  let nav = html.slice(navRange.start, navRange.end);
-  if (new RegExp(`>\\s*${escapeRegex(GUIDE_NAV_TEXT)}\\s*<\\/a>`, "i").test(nav)) return html;
-
-  const systemsLink = /(<a\b[^>]*>\s*Trading Systems\s*<\/a>)/i;
-  if (!systemsLink.test(nav)) return html;
-  nav = nav.replace(systemsLink, `$1<a href="${GUIDE_BLOCK_HREF}">${GUIDE_NAV_TEXT}</a>`);
-  return html.slice(0, navRange.start) + nav + html.slice(navRange.end);
+function insertHomeGuideNavLink(html) {
+  return normalizePublicNavigation(html);
 }
 
 function removeGeneralPerformanceStrip(html) {
@@ -70,6 +92,18 @@ function addSystemsGuideButton(html) {
     `<a class="vx-systems-btn" href="${GUIDE_BLOCK_HREF}">${GUIDE_NAV_TEXT}</a>$1`
   );
   return html.slice(0, range.start) + updated + html.slice(range.end);
+}
+
+function moveGuideBeforeDisclosure(html) {
+  if (typeof html !== "string") return html;
+  const guideRange = findTagByClass(html, "section", "vx-guide-compact");
+  const disclosureRange = findTagByClass(html, "div", "vx-detail-footer");
+  if (!guideRange || !disclosureRange || guideRange.start < disclosureRange.start) return html;
+  const guide = html.slice(guideRange.start, guideRange.end);
+  let result = html.slice(0, guideRange.start) + html.slice(guideRange.end);
+  const disclosureAfterRemoval = findTagByClass(result, "div", "vx-detail-footer");
+  if (!disclosureAfterRemoval) return html;
+  return result.slice(0, disclosureAfterRemoval.start) + guide + result.slice(disclosureAfterRemoval.start);
 }
 
 function prependNfaToClass(html, className) {
@@ -100,14 +134,39 @@ function addNfaToDisclaimers(html) {
   return result;
 }
 
+const styles = `
+<style id="${STYLE_ID}">
+  .nav-links,.navlinks{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .nav-links a,.navlinks a{font-size:12.5px}
+  .vx-public-nav-login{color:#425049!important;font-weight:650!important}
+  .vx-public-nav-cta{display:inline-flex!important;align-items:center;justify-content:center;min-height:38px;padding:0 14px!important;border:1px solid #078f51!important;border-radius:999px;background:#078f51!important;color:#fff!important;text-decoration:none!important;font-weight:700!important;white-space:nowrap}
+  a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #0a7f4b!important;outline-offset:3px!important}
+  .vx-home-hero-lead,.vx-home-hero-proof,.vx-home-hero-login,.vx-home-day-head p,.vx-home-system-card>p,.vx-systems-lead,.vx-category-card p,.vx-detail-card p,.vx-detail-list li,.vx-watch-lead,.vx-trial-review,.vx-guide-copy,.vx-guide-step span,.guide-step p,.section-head p,.quick-item span{color:#56645e!important}
+  .vx-home-day-details-link,.vx-home-day-scope,.vx-home-equity-foot,.vx-home-day-freshness,.vx-home-equity-coverage,.vx-detail-footer,.vx-watch-risk,.vx-trial-disclosure,.footer{color:#5f6d67!important}
+  .vx-home-day-details-link{font-size:12px!important}.vx-home-day-scope,.vx-home-equity-foot,.vx-home-day-freshness,.vx-home-equity-coverage{font-size:12px!important}
+  .vx-home-live-label{color:#5f6d67!important;font-size:11.5px!important}.vx-home-equity-svg text{fill:#5f6d67!important;font-size:11px!important}
+  .vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:18px!important;line-height:1.25!important;white-space:normal!important}
+  .vx-systems-hero h1{font-size:clamp(42px,4.8vw,58px)!important;line-height:1.04!important;letter-spacing:-.038em!important}
+  .vx-watch-hero h1{font-size:clamp(36px,4.4vw,50px)!important;line-height:1.06!important}
+  @media(max-width:900px){.nav-links,.navlinks{gap:8px}.nav-links>a:not(.vx-public-nav-login):not(.vx-public-nav-cta),.navlinks>a:not(.vx-public-nav-login):not(.vx-public-nav-cta){display:none!important}.vx-public-nav-login,.vx-public-nav-cta{display:inline-flex!important}}
+  @media(max-width:700px){.vx-systems-hero h1{font-size:clamp(34px,9vw,44px)!important}.vx-watch-hero h1{font-size:clamp(32px,9vw,40px)!important}.vx-home-live-label{font-size:11px!important}.vx-home-equity-svg text{font-size:10.5px!important}.vx-public-nav-cta{min-height:40px}}
+</style>`;
+
+function injectStyles(html) {
+  if (html.includes(`id="${STYLE_ID}"`)) return html;
+  return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
+}
+
 function refineNavigationAndDisclosure(html, path) {
   if (typeof html !== "string") return html;
   let result = addNfaToDisclaimers(html);
-  if (path === HOME_PATH) result = insertHomeGuideNavLink(result);
+  if (PUBLIC_NAV_PATHS.has(path)) result = normalizePublicNavigation(result);
   if (path === SYSTEMS_PATH) {
     result = removeGeneralPerformanceStrip(result);
     result = addSystemsGuideButton(result);
+    result = moveGuideBeforeDisclosure(result);
   }
+  if (PUBLIC_NAV_PATHS.has(path)) result = injectStyles(result);
   return result;
 }
 
@@ -160,16 +219,23 @@ Module._load = function vixaleNavigationDisclosureModuleLoad(request, parent, is
 module.exports = {
   HOME_PATH,
   SYSTEMS_PATH,
+  GUIDE_PATH,
   GUIDE_BLOCK_HREF,
   GUIDE_NAV_TEXT,
   NFA_TEXT,
+  STYLE_ID,
+  PUBLIC_NAV_PATHS,
   findTagRangeFromOpen,
   findTagByClass,
+  renderPublicNavLinks,
+  normalizePublicNavigation,
   insertHomeGuideNavLink,
   removeGeneralPerformanceStrip,
   addSystemsGuideButton,
+  moveGuideBeforeDisclosure,
   prependNfaToClass,
   addNfaToDisclaimers,
+  injectStyles,
   refineNavigationAndDisclosure,
   installNavigationDisclosureRefinement,
   wrapExpress,

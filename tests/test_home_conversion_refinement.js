@@ -36,13 +36,13 @@ const sample = `<!doctype html><html><head><title>Vixale | Watch a Live Trading 
 </main></body></html>`;
 
 const out = refineHomepage(sample);
-assert(out.includes("Watch our trading systems live before you trade them."));
-assert(out.includes('class="vx-home-hero-kicker" href="/dashboard"'));
-assert(out.includes('aria-label="Open Vixale Live Dashboard"'));
-assert(out.includes('href="#password-access">Request 7-Day Access</a>'));
-assert(out.includes('href="/trading-systems">Explore Trading Systems</a>'));
-assert(out.includes("Read-only dashboard · Manual approval · Individual access code"));
-assert(out.includes('Already have access? <a href="/dashboard">Dashboard Login</a>'));
+assert(out.includes("See how our trading systems perform before you commit."));
+assert(out.includes('class="vx-home-hero-kicker" href="/trading-systems"'));
+assert(out.includes('aria-label="Explore Vixale Trading Systems"'));
+assert(out.includes('href="/#password-access">Request Free Access</a>'));
+assert(out.includes('href="#live-day-trading">Explore Performance</a>'));
+assert(out.includes("Read-only viewer access · Email verification · Manual review"));
+assert(out.includes('Already have access? <a href="/dashboard">Viewer Login</a>'));
 assert(!out.includes("Get Telegram Signals"));
 assert(!out.includes("Request Dashboard Access"));
 assert(!out.includes('Watch the <span class="accent">systems live.</span>'));
@@ -53,7 +53,7 @@ assert(out.includes('id="start-here"'));
 assert(out.includes("New to trading systems? Start here."));
 assert(out.includes("Important Risk Disclosure"));
 for (const needle of HOME_REMOVE_SECTION_NEEDLES) assert(!out.includes(needle), `duplicate homepage section must be removed: ${needle}`);
-const heroIndex = out.indexOf("Watch our trading systems live before you trade them.");
+const heroIndex = out.indexOf("See how our trading systems perform before you commit.");
 const dashboardIndex = out.indexOf("Live Trade Dashboard");
 const accessIndex = out.indexOf("Request access to the live dashboard.");
 const startHereIndex = out.indexOf("New to trading systems? Start here.");
@@ -66,11 +66,11 @@ assert(out.includes(`id="${STYLE_ID}"`));
 assert(out.includes("white-space:normal !important"));
 assert(out.includes("font-size:clamp(40px,4.8vw,60px)"));
 assert(out.includes("padding:56px 0 52px"));
-assert.strictEqual((out.match(/Request 7-Day Access/g) || []).length, 1);
+assert.strictEqual((out.match(/Request Free Access/g) || []).length, 1);
 assert.strictEqual(refineHomepage(out), out, "homepage refinement must be idempotent");
 
 const nonHeroLookalike = sample.replace('class="wrap hero"', 'class="wrap preview"');
 assert.strictEqual(refineHomepage(nonHeroLookalike), nonHeroLookalike, "non-hero lookalikes must not be altered or cleaned up");
 assert.strictEqual(refineHomepage("<html><body>No matching hero</body></html>"), "<html><body>No matching hero</body></html>");
 
-console.log("Homepage hero layout and cleanup refinement: PASS");
+console.log("Homepage customer-value hero refinement: PASS");
