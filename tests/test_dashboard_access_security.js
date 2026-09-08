@@ -151,6 +151,7 @@ app.post('/strategy-review', async (req, res) => { return res.send('strategy'); 
   assert(requestRoute.includes("verification_token_hash: dashboardVerificationTokenHash(rawVerificationToken)"));
   assert(requestRoute.includes("verification_expires_at"));
   assert(requestRoute.includes("'Verification Email Failed'"));
+  assert(requestRoute.includes("updateDashboardAccessRequestById(request.id"));
   assert(requestRoute.includes("subject: 'Confirm your Vixale dashboard request'"));
   assert(!requestRoute.includes("notifyDashboardAccessOwner"));
   assert(!requestRoute.includes("createDashboardViewerCode"));
@@ -165,6 +166,7 @@ app.post('/strategy-review', async (req, res) => { return res.send('strategy'); 
   assert(verifyRoute.indexOf("updateDashboardAccessRequest") < verifyRoute.indexOf("notifyDashboardAccessOwner"));
   assert(!verifyRoute.includes("createDashboardViewerCode"));
 
+  assert(out.includes("async function updateDashboardAccessRequestById"));
   assert(out.includes("app.post('/admin/access/requests/:id/delete'"));
   assert(out.includes("if (String(request.code_id || '').trim())"));
   assert(out.includes("deleteDimension"));
