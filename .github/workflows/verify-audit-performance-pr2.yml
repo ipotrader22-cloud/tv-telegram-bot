@@ -25,5 +25,6 @@ jobs:
       - name: Verify preload and scope
         run: |
           node -e "const p=require('./package.json'); const s=p.scripts.start; if(!s.startsWith('node -r ./website_performance_truth_refinement.js ')) throw new Error('performance truth refinement must be first preload');"
-          if grep -R "working_count" website_public_performance.js tests/test_public_performance.js; then exit 1; fi
-          if grep -R "Working Orders" website_performance_truth_refinement.js tests/test_performance_truth_refinement.js; then true; fi
+          if grep -n "working_count" website_public_performance.js; then exit 1; fi
+          grep -q "pending_count" website_public_performance.js
+          grep -q "Pending Setups" website_performance_truth_refinement.js
