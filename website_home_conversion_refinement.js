@@ -92,9 +92,9 @@ const homeStyles = `
   .vx-home-hero-btn{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 20px;border:1px solid #cbdad2;border-radius:999px;background:#fff;color:#17211d;text-decoration:none;font-size:13px;font-weight:650;transition:transform .16s ease,box-shadow .16s ease}
   .vx-home-hero-btn:hover{transform:translateY(-1px)}
   .vx-home-hero-btn.primary{border-color:#078f51;background:#078f51;color:#fff;box-shadow:0 10px 24px rgba(7,143,81,.14)}
-  .vx-home-hero-proof{margin:14px auto 0;color:#78837e;font-size:12.5px;line-height:1.5}
-  .vx-home-hero-login{margin:7px auto 0;color:#8b9691;font-size:12px;line-height:1.5}
-  .vx-home-hero-login a{color:#4f5d57;text-underline-offset:3px}
+  .vx-home-hero-proof{margin:14px auto 0;color:#5f6d67;font-size:13px;line-height:1.5}
+  .vx-home-hero-login{margin:7px auto 0;color:#5f6d67;font-size:12.5px;line-height:1.5}
+  .vx-home-hero-login a{color:#31443b;text-underline-offset:3px}
   @media(max-width:700px){.vx-home-hero{padding:42px 0 46px}.vx-home-hero .wrap{padding-left:18px;padding-right:18px}.vx-home-hero-copy{padding:0}.vx-home-hero h1{font-size:clamp(36px,10vw,44px);line-height:1.06}.vx-home-hero-lead{font-size:16px}.vx-home-hero-actions{flex-direction:column;align-items:stretch;margin-top:22px}.vx-home-hero-btn{width:100%;box-sizing:border-box}}
 </style>`;
 
@@ -105,12 +105,12 @@ function injectHomeStyles(html) {
 
 function renderHomeHero() {
   return `<section class="vx-home-hero"><div class="wrap"><div class="vx-home-hero-copy">
-    <a class="vx-home-hero-kicker" href="/dashboard" aria-label="Open Vixale Live Dashboard">Vixale live dashboard</a>
-    <h1>Watch our trading systems live before you trade them.</h1>
-    <p class="vx-home-hero-lead">See active trade ideas, open trades, closed trades, and recorded results in one read-only dashboard.</p>
-    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="#password-access">Request 7-Day Access</a><a class="vx-home-hero-btn" href="/trading-systems">Explore Trading Systems</a></div>
-    <p class="vx-home-hero-proof">Read-only dashboard · Manual approval · Individual access code</p>
-    <p class="vx-home-hero-login">Already have access? <a href="/dashboard">Dashboard Login</a></p>
+    <a class="vx-home-hero-kicker" href="/trading-systems" aria-label="Explore Vixale Trading Systems">Vixale trading systems</a>
+    <h1>See how our trading systems perform before you commit.</h1>
+    <p class="vx-home-hero-lead">Follow current activity, examine recorded results, and understand how Day Trading, Swing Trading, and Options are presented before deciding what to do next.</p>
+    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="#live-day-trading">Explore Performance</a></div>
+    <p class="vx-home-hero-proof">Read-only viewer access · Email verification · Manual review</p>
+    <p class="vx-home-hero-login">Already have access? <a href="/dashboard">Viewer Login</a></p>
   </div></div></section>`;
 }
 
