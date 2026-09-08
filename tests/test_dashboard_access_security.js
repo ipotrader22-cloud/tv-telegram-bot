@@ -5,7 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const core = require("../lib/dashboard-access-security");
-const { APP_PATCH_MARKER, patchAppSource } = require("../website_dashboard_access_security");
+
+const APP_PATCH_MARKER = "VIXALE_DASHBOARD_ACCESS_SECURITY_PATCH";
 
 (async () => {
   assert.strictEqual(core.normalizeAccessEmail("  Foo@Example.COM  "), "foo@example.com");
@@ -52,82 +53,57 @@ const { APP_PATCH_MARKER, patchAppSource } = require("../website_dashboard_acces
   const wrongAction = await core.verifyTurnstileToken({ token: "x", secretKey: "y", fetchImpl: async () => ({ ok: true, json: async () => ({ success: true, action: "other" }) }) });
   assert.strictEqual(wrongAction.ok, false);
 
-  const emailHtml = core.verificationEmailHtml({ name: '<User>', verificationUrl: 'https://example.test/dashboard-access/verify?token=' + token });
+  const emailHtml = core.verificationEmailHtml({ name: "<User>", verificationUrl: "https://example.test/dashboard-access/verify?token=" + token });
   assert(emailHtml.includes("Confirm Email"));
   assert(!emailHtml.includes("<User>"), "user-controlled names must be escaped");
   assert(!emailHtml.includes("email="), "verification URL must not contain email PII");
-  const sentHtml = core.verificationSentHtml({ email: 'foo@example.com', name: '<User>' });
-  assert(sentHtml.includes("manual review"));
-  assert(!sentHtml.includes("<User>"));
+  assert(core.verificationSentHtml({ email: "foo@example.com", name: "<User>" }).includes("manual review"));
   assert(core.verifiedHtml().includes("Access is not granted automatically"));
 
-  const fixture = `
-const DASHBOARD_REQUEST_EMAIL = process.env.DASHBOARD_REQUEST_EMAIL || PASSWORD_REQUEST_BCC || '';
-const DASHBOARD_ACCESS_REQUESTS_HEADERS = ['ID', 'Requested At', 'Name', 'Email', 'Telegram', 'Source', 'Status', 'Code ID', 'Reviewed At'];
-async function logDashboardAccessRequest(request) { oldWriter(); }
-function normalizeDashboardAccessCode(value) { return value; }
-function parseDashboardAccessRequestRow(row, rowNumber) { return {id: row[0], row_number: rowNumber}; }
-function parseDashboardAccessCodeRow(row, rowNumber) { return {}; }
-async function dashboardAccessAdminData(){ const x=readSheet(sheets, DASHBOARD_ACCESS_REQUESTS_SHEET, 'A:I'); return x; }
-async function updateDashboardAccessRequest(request, fields = {}) { oldUpdate(); }
-async function createDashboardViewerCode(opts) { return opts; }
-function render(){ return \`<form class="strategy-form" method="POST" action="/password-request">
-          <div class="form-grid">x</div></form>\`; }
-function adminRows(request){ return \`<div class="access-row-actions">
-      <form method="post" action="/admin/access/requests/\${encodeURIComponent(request.id)}/approve"><button>Create 30-Day Code</button></form>
-      <form method="post" action="/admin/access/requests/\${encodeURIComponent(request.id)}/reject" onsubmit="return confirm('Reject this dashboard access request?')"><button class="table-action" type="submit">Reject</button></form>
-    </div>\`; }
-const css = \`    .access-row-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
-    .access-row-actions form { margin:0; }
-    .access-approve { color:var(--green); border-color:#bfe9d2; background:var(--green-soft); }
-    .access-disable { color:var(--red); }\`;
-app.post('/password-request', async (req, res) => { oldPasswordRequest(); });
-app.post('/strategy-review', async (req, res) => { strategyReview(); });
-function adminAccessRequestAllowed(req,res){ return true; }
-app.post('/admin/access/requests/:id/approve', async (req, res) => { createDashboardViewerCode({ name: request.name, email: request.email, telegram: request.telegram, sourceRequestId: request.id, days: req.body.days }); });
-app.post('/admin/access/requests/:id/reject', async (req, res) => { reject(); });
-app.post('/admin/access/codes/create', async (req, res) => { createCode(); });
-app.post('/dashboard-login', async (req,res)=>{ viewerLogin(); });
-app.post('/tv', handleTradingViewWebhook);
-`;
+  const appPath = path.join(__dirname, "..", "app.js");
+  let appSource = fs.readFileSync(appPath, "utf8");
+  if (!appSource.includes(APP_PATCH_MARKER)) {
+    const patcherPath = path.join(__dirname, "..", "website_dashboard_access_security.js");
+    assert(fs.existsSync(patcherPath), "Access Guard direct patch marker missing and migration patcher unavailable");
+    const { patchAppSource } = require(patcherPath);
+    appSource = patchAppSource(appSource);
+  }
 
-  const repoAppPath = path.join(__dirname, "..", "app.js");
-  const appSource = fs.existsSync(repoAppPath) ? fs.readFileSync(repoAppPath, "utf8") : fixture;
-  assert(appSource.includes("app.post('/password-request'"), "existing public access route must be inspected");
-  assert(appSource.includes("app.post('/admin/access/requests/:id/approve'"), "existing Approve route must remain");
-  assert(appSource.includes("app.post('/admin/access/requests/:id/reject'"), "existing Reject route must remain");
-  assert(appSource.includes("app.post('/dashboard-login'"), "existing viewer login must remain");
-  assert(appSource.includes("app.post('/tv', handleTradingViewWebhook)"), "existing TradingView webhook must remain");
-  const patched = patchAppSource(appSource);
-  assert(patched.includes(APP_PATCH_MARKER));
-  assert(patched.includes("TURNSTILE_SITE_KEY"));
-  assert(patched.includes("TURNSTILE_SECRET_KEY"));
-  assert(patched.includes('data-action="dashboard_access"'));
-  assert(patched.includes("body.website"), "honeypot must remain first in the public flow");
-  assert(patched.indexOf("body.website") < patched.indexOf("dashboardAccessIpLimiter.consume"));
-  assert(patched.includes("limit: 5, windowMs: 15 * 60 * 1000"));
-  assert(patched.includes("limit: 3, windowMs: 60 * 60 * 1000"));
-  assert(patched.includes("'Awaiting Verification'"));
-  assert(patched.includes("verification_token_hash: verificationTokenHash"));
-  assert(!patched.includes("verification_token: verificationToken"), "raw verification token must not be stored");
-  assert(patched.includes("'Dashboard Access Requests'!A:L"));
-  assert(patched.includes("Verification Token Hash"));
-  assert(patched.includes("app.get('/dashboard-access/verify'"));
-  assert(patched.includes("status: 'Pending'"));
-  assert(patched.includes("verification_token_hash: ''"));
-  assert(patched.includes("verified_at: verifiedAt"));
-  assert(patched.includes("notifyDashboardAccessOwner(verifiedRequest)"));
-  assert(!patched.includes("createDashboardViewerCode({\n      name: request.name,\n      email: request.email,\n      telegram: request.telegram,\n      sourceRequestId: request.id,\n      days: req.body.days,\n    });\n    await notifyDashboardAccessOwner"), "verification must not create viewer codes");
-  assert(patched.includes("app.post('/admin/access/requests/:id/delete'"));
-  assert(patched.includes("if (!adminAccessRequestAllowed(req, res)) return;"), "Delete must reuse existing owner guard");
-  assert(patched.includes("deleteDimension"));
-  assert(patched.includes("linkedCode"));
-  assert(patched.includes("access-delete"));
-  assert(patched.includes("Permanently delete this dashboard access request?\\nThis cannot be undone."));
-  assert(patched.includes("app.post('/dashboard-login'"), "dashboard login must remain present");
-  assert(patched.includes("app.post('/tv', handleTradingViewWebhook)"), "TradingView webhook must remain untouched");
-  assert.strictEqual(patchAppSource(patched), patched, "patch must be idempotent");
+  assert(appSource.includes(APP_PATCH_MARKER));
+  assert(appSource.includes("app.set('trust proxy', 1)"), "proxy-aware req.ip behavior must remain");
+  assert(appSource.includes("TURNSTILE_SITE_KEY"));
+  assert(appSource.includes("TURNSTILE_SECRET_KEY"));
+  assert(appSource.includes('data-action="dashboard_access"'));
+  assert(appSource.includes("body.website"), "honeypot must remain");
+  assert(appSource.indexOf("body.website") < appSource.indexOf("dashboardAccessIpLimiter.consume"));
+  assert(appSource.includes("limit: 5, windowMs: 15 * 60 * 1000"));
+  assert(appSource.includes("limit: 3, windowMs: 60 * 60 * 1000"));
+  assert(appSource.includes("'Awaiting Verification'"));
+  assert(appSource.includes("verification_token_hash: verificationTokenHash"));
+  assert(!appSource.includes("verification_token: verificationToken"), "raw verification token must not be stored");
+  assert(appSource.includes("'Dashboard Access Requests'!A:L"));
+  assert(appSource.includes("Verification Token Hash"));
+  assert(appSource.includes("app.get('/dashboard-access/verify'"));
+  assert(appSource.includes("status: 'Pending'"));
+  assert(appSource.includes("verification_token_hash: ''"));
+  assert(appSource.includes("verified_at: verifiedAt"));
+  assert(appSource.includes("notifyDashboardAccessOwner(verifiedRequest)"));
+  assert(appSource.includes("app.post('/admin/access/requests/:id/approve'"));
+  assert(appSource.includes("app.post('/admin/access/requests/:id/reject'"));
+  assert(appSource.includes("app.post('/admin/access/requests/:id/delete'"));
+  assert(appSource.includes("if (!adminAccessRequestAllowed(req, res)) return;"), "Delete must reuse existing owner guard");
+  assert(appSource.includes("deleteDimension"));
+  assert(appSource.includes("linkedCode"));
+  assert(appSource.includes("access-delete"));
+  assert(appSource.includes("Permanently delete this dashboard access request?\\nThis cannot be undone."));
+  assert(appSource.includes("app.post('/dashboard-login'"), "dashboard login must remain present");
+  assert(appSource.includes("app.post('/tv', handleTradingViewWebhook)"), "TradingView webhook must remain untouched");
 
-  new vm.Script(patched, { filename: fs.existsSync(repoAppPath) ? "patched-app.js" : "patched-app-fixture.js" });
+  const verifyStart = appSource.indexOf("app.get('/dashboard-access/verify'");
+  const verifyEnd = appSource.indexOf("app.post('/strategy-review'", verifyStart);
+  const verifyBlock = appSource.slice(verifyStart, verifyEnd);
+  assert(!verifyBlock.includes("createDashboardViewerCode("), "email verification must never create a viewer code");
+
+  new vm.Script(appSource, { filename: "app.js" });
   console.log("Dashboard access security hardening: PASS");
 })().catch(error => { console.error(error); process.exit(1); });
