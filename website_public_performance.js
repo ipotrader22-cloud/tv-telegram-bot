@@ -41,16 +41,27 @@ function newYorkDateKey(date = new Date()) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+function meaningfulClosedRows(closedValues) {
+  return (closedValues || []).slice(1).filter(row => Array.isArray(row) && row.some(cell => String(cell ?? "").trim() !== ""));
+}
+
 function buildRealizedEquityCurve(closedValues) {
   const dailyPnlByDate = new Map();
-  for (const row of (closedValues || []).slice(1)) {
+  let includedTradeCount = 0;
+  let omittedRowCount = 0;
+
+  for (const row of meaningfulClosedRows(closedValues)) {
     const date = closedTradeDateKey(row?.[2]);
     const rawResult = row?.[8];
-    if (!date || String(rawResult ?? "").trim() === "") continue;
-    const realizedPnl = cleanNumber(rawResult);
-    if (realizedPnl === "") continue;
+    const realizedPnl = String(rawResult ?? "").trim() === "" ? "" : cleanNumber(rawResult);
+    if (!date || realizedPnl === "") {
+      omittedRowCount += 1;
+      continue;
+    }
+    includedTradeCount += 1;
     dailyPnlByDate.set(date, (dailyPnlByDate.get(date) || 0) + realizedPnl);
   }
+
   let cumulativePnl = 0;
   const points = [...dailyPnlByDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -59,13 +70,22 @@ function buildRealizedEquityCurve(closedValues) {
       cumulativePnl = Number((cumulativePnl + dailyPnl).toFixed(2));
       return { date, daily_pnl: dailyPnl, cumulative_pnl: cumulativePnl };
     });
-  return { points, total_realized_pnl: points.length ? points[points.length - 1].cumulative_pnl : 0 };
+
+  return {
+    points,
+    total_realized_pnl: points.length ? points[points.length - 1].cumulative_pnl : 0,
+    coverage: {
+      first_close_date: points.length ? points[0].date : "",
+      last_close_date: points.length ? points[points.length - 1].date : "",
+      included_trade_count: includedTradeCount,
+      omitted_row_count: omittedRowCount,
+    },
+  };
 }
 
 function buildDashboardSummary(closedValues, openValues, pendingValues, now = new Date()) {
   const openRows = (openValues || []).slice(1).filter(row => String(row?.[0] || "").trim());
   const pendingRows = (pendingValues || []).slice(1).filter(row => String(row?.[0] || "").trim());
-  const workingExitCount = openRows.filter(row => String(row?.[6] ?? "").trim() !== "" && String(row?.[7] ?? "").trim() !== "").length;
   const closedRows = (closedValues || []).slice(1).filter(row => String(row?.[0] || "").trim());
   const pnlRows = closedRows.map(row => ({ row, pnl: cleanNumber(row?.[8]) })).filter(item => String(item.row?.[8] ?? "").trim() !== "" && item.pnl !== "");
   const today = newYorkDateKey(now);
@@ -79,7 +99,7 @@ function buildDashboardSummary(closedValues, openValues, pendingValues, now = ne
   const winRate = pnlRows.length ? (winners / pnlRows.length) * 100 : 0;
   return {
     open_count: openRows.length,
-    working_count: pendingRows.length + workingExitCount,
+    pending_count: pendingRows.length,
     closed_count_today: closedToday.length,
     closed_pnl_today: Number(closedPnlToday.toFixed(2)),
     total_closed_pnl: Number(totalClosedPnl.toFixed(2)),
@@ -184,7 +204,7 @@ Module._load = function vixalePublicPerformanceModuleLoad(request, parent, isMai
 
 module.exports = {
   PERFORMANCE_PATH, OPEN_POSITIONS_SHEET, PENDING_SHEET, CLOSED_TRADES_SHEET, CACHE_MS,
-  cleanNumber, closedTradeDateKey, newYorkDateKey, buildRealizedEquityCurve, buildDashboardSummary,
+  cleanNumber, closedTradeDateKey, newYorkDateKey, meaningfulClosedRows, buildRealizedEquityCurve, buildDashboardSummary,
   buildPublicPerformance, readPublicPerformanceSheets, readClosedTrades, getPublicPerformanceSnapshot,
   handlePublicPerformanceRequest, installPublicPerformance, wrapExpress,
 };
