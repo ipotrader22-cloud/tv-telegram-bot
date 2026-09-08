@@ -9,6 +9,7 @@ const PRICING_PATH = "/pricing";
 const RISK_PATH = "/risk-management";
 const RISK_NAV_MARKER = "vx-risk-management-nav-link";
 const PRICING_STYLE_ID = "vx-pricing-access-style";
+const SERVICES_INTRO_MARKER = "vx-services-intro";
 
 const SERVICE_SECTION_NEEDLES = [
   "What can we help you with?",
@@ -31,11 +32,16 @@ function removeDirectTextNavLink(html, text) {
   return html.replace(pattern, "");
 }
 
+function replaceAllLiteral(html, oldText, newText) {
+  return String(html).split(oldText).join(newText);
+}
+
 function transformPrimaryNav(html) {
   let result = html;
   result = removeDirectTextNavLink(result, "Risk Management");
   result = replaceDirectTextNavLink(result, "Why It Makes Sense", SERVICES_PATH, "Services");
-  result = replaceDirectTextNavLink(result, "Creators", PRICING_PATH, "7 Days Free");
+  result = replaceDirectTextNavLink(result, "Creators", PRICING_PATH, "Watch System for Free");
+  result = replaceDirectTextNavLink(result, "7 Days Free", PRICING_PATH, "Watch System for Free");
   return result;
 }
 
@@ -128,10 +134,39 @@ function normalizeHeaderHashLinksToHome(html) {
   return html.slice(0, navRange.start) + navHtml + html.slice(navRange.end);
 }
 
+function normalizeAccessLinksToHome(html) {
+  return String(html).replace(/href=(["'])(?:\/services)?#password-access\1/gi, 'href="/#password-access"');
+}
+
+function refineHomeAccessCopy(html) {
+  let result = html;
+  const replacements = [
+    ["Request 7-Day Access", "Request Free Access"],
+    ["Read-only dashboard · Manual approval · Individual access code", "Read-only access · Email verification · Manual review"],
+    ["Private dashboard access", "Free viewer access"],
+    ["Request access to the live dashboard.", "Request free access to Vixale."],
+    ["Send a short access request. Every request is reviewed manually before an individual dashboard code is created.", "Submit the form, verify your email, and wait for manual review. If approved, we'll email your individual viewer code."],
+    ["Send a short access request. Approved viewers receive an individual dashboard code by email.", "Submit the form, verify your email, and wait for manual review. If approved, we'll email your individual viewer code."],
+    ["Once approved, you will receive a reply by email with the login instructions.", "After you submit, check your Inbox and Spam/Junk for the one-time verification link."],
+    ["Reviewed. Access is never granted automatically.", "Verify your email. Use the one-time confirmation link we send after you submit."],
+    ["Direct. The approval response goes to your email.", "Manual review. Verified requests are reviewed before access is approved."],
+    ["Private. Every approved viewer receives an individual access code.", "One viewer code. If approved, your code gives viewer access across Vixale systems."],
+    ["Request Dashboard Access", "Request Free Access"],
+    ["Your request is reviewed manually. Trading involves risk and results are not guaranteed.", "Email verification is required. Access is not granted automatically. Trading involves risk and results are not guaranteed."],
+  ];
+  for (const [oldText, newText] of replacements) result = replaceAllLiteral(result, oldText, newText);
+  return result;
+}
+
+function renderServicesIntro() {
+  return `<section class="wrap section ${SERVICES_INTRO_MARKER}" aria-labelledby="vx-services-title"><div class="section-head"><div class="section-kicker">Services</div><h1 id="vx-services-title">Vixale Services</h1><p class="lead">Explore Vixale research, automation, TradingView, and custom development services.</p></div></section>`;
+}
+
 function refineHomeHtml(html) {
   if (typeof html !== "string") return html;
   let result = transformPrimaryNav(html);
   result = removeSectionsByText(result, SERVICE_SECTION_NEEDLES);
+  result = refineHomeAccessCopy(result);
   return result;
 }
 
@@ -140,7 +175,9 @@ function renderServicesFromLanding(html) {
   const sections = SERVICE_SECTION_NEEDLES.map((needle) => extractSectionByText(html, needle)).filter(Boolean);
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
-  if (sections.length) result = replaceMainContents(result, sections.join("\n\n"));
+  if (sections.length) result = replaceMainContents(result, [renderServicesIntro(), ...sections].join("\n\n"));
+  result = normalizeAccessLinksToHome(result);
+  result = replaceAllLiteral(result, "Request Dashboard Access", "Request Free Access");
   result = updateTitle(result, "Vixale | Services");
   result = updateCanonical(result, SERVICES_PATH);
   return result;
@@ -183,23 +220,23 @@ function renderPricingFromLanding(html) {
   if (typeof html !== "string") return html;
   const content = `<section class="vx-trial-page"><div class="wrap">
     <div class="vx-trial-hero">
-      <div class="vx-trial-kicker">7 Days Free</div>
-      <h1>Watch Vixale free for 7 days.</h1>
-      <p class="vx-trial-lead">Start with the read-only live dashboard. See active trade ideas, open trades, closed trades, and tracked results before deciding whether Vixale is right for you.</p>
-      <div class="vx-trial-actions"><a class="vx-trial-btn primary" href="/#access">Request 7-Day Access</a><a class="vx-trial-btn" href="${SYSTEMS_PATH}">Explore Trading Systems</a></div>
-      <p class="vx-trial-review">Access requests are reviewed manually. Approved viewers receive an individual dashboard code by email.</p>
+      <div class="vx-trial-kicker">Free Access</div>
+      <h1>Watch Vixale before you decide.</h1>
+      <p class="vx-trial-lead">Start with read-only viewer access. See active trade ideas, open trades, closed trades, and tracked results before deciding whether Vixale is right for you.</p>
+      <div class="vx-trial-actions"><a class="vx-trial-btn primary" href="/#password-access">Request Free Access</a><a class="vx-trial-btn" href="${SYSTEMS_PATH}">Explore Trading Systems</a></div>
+      <p class="vx-trial-review">Submit the request, verify your email, and wait for manual review. If approved, we'll email your individual viewer code.</p>
     </div>
     <div class="vx-trial-grid">
       <article class="vx-trial-card"><div class="vx-trial-card-kicker">What you can see</div><h2>Follow the system before you make a decision.</h2><ul class="vx-trial-list"><li>Active trade ideas the system is watching.</li><li>Open trades currently being tracked.</li><li>Closed trades and recorded results.</li><li>A clear read-only view of the trading process.</li></ul></article>
-      <article class="vx-trial-card"><div class="vx-trial-card-kicker">How it works</div><h2>Three simple steps.</h2><div class="vx-trial-steps"><div class="vx-trial-step"><div class="vx-trial-step-number">1</div><div><strong>Request access</strong><span>Send the short dashboard access form.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">2</div><div><strong>Receive your code</strong><span>Approved viewers receive an individual login code by email.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">3</div><div><strong>Watch for 7 days</strong><span>Follow trade ideas, open positions, closes, and tracked results.</span></div></div></div></article>
+      <article class="vx-trial-card"><div class="vx-trial-card-kicker">How it works</div><h2>Four simple steps.</h2><div class="vx-trial-steps"><div class="vx-trial-step"><div class="vx-trial-step-number">1</div><div><strong>Request access</strong><span>Send the short access form.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">2</div><div><strong>Verify your email</strong><span>Use the one-time link we send. Check Inbox and Spam/Junk if you do not see it.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">3</div><div><strong>Await manual review</strong><span>Verified requests are reviewed manually. Access is not automatic.</span></div></div><div class="vx-trial-step"><div class="vx-trial-step-number">4</div><div><strong>Receive your code</strong><span>If approved, we'll email your individual viewer code.</span></div></div></div></article>
     </div>
-    <div class="vx-trial-disclosure">Dashboard access is read-only and provided for transparency, tracking, education, and research. Trading involves risk and results are not guaranteed.</div>
+    <div class="vx-trial-disclosure">Viewer access is read-only and provided for transparency, tracking, education, and research. Trading involves risk and results are not guaranteed.</div>
   </div></section>`;
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
   result = replaceMainContents(result, content);
   result = injectPricingStyles(result);
-  result = updateTitle(result, "Vixale | 7 Days Free");
+  result = updateTitle(result, "Vixale | Watch System for Free");
   result = updateCanonical(result, PRICING_PATH);
   return result;
 }
@@ -282,6 +319,10 @@ module.exports = {
   PRICING_PATH,
   RISK_PATH,
   SERVICE_SECTION_NEEDLES,
+  SERVICES_INTRO_MARKER,
+  refineHomeAccessCopy,
+  normalizeAccessLinksToHome,
+  renderServicesIntro,
   refineHomeHtml,
   renderServicesFromLanding,
   renderPricingFromLanding,
