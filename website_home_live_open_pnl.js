@@ -234,7 +234,7 @@ function injectLiveOpenPnl(html, path = HOME_PATH) {
   }
   if (!result.includes(`id="${SCRIPT_ID}"`)) {
     result = result.includes("</body>")
-      ? result.replace("</body>", `${script}\n</body>`)
+      ? result.replace("</body>", () => `${script}\n</body>`)
       : `${result}${script}`;
   }
   return result;

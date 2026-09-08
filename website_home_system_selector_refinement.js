@@ -158,7 +158,7 @@ function injectStyles(html) {
 
 function injectScript(html) {
   if (html.includes(`id="${SCRIPT_ID}"`)) return html;
-  return html.includes("</body>") ? html.replace("</body>", `${script}\n</body>`) : `${html}${script}`;
+  return html.includes("</body>") ? html.replace("</body>", () => `${script}\n</body>`) : `${html}${script}`;
 }
 
 function refineHomeSystemSelector(html, path) {
