@@ -1,7 +1,7 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest updated:** 2026-09-07 (America/New_York)  
+**Manifest updated:** 2026-09-08 (America/New_York)  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
@@ -11,24 +11,49 @@ This manifest records repository state, deployment state, and user-visible state
 
 Latest direct verification for the website/dashboard scope:
 
-- **Latest website-changing merge on `main`:** PR #72 — `Harden dashboard access requests with Turnstile and email verification`
-- **PR #72 final head SHA:** `ad3a270feb68fe05ccfcda3b9fb4b26ac5ce7e35`
-- **PR #72 merge SHA / latest website-changing repository code reference:** `b07aa5db54d24bed02c74e45fe15cd588a257876`
+- **Latest website-changing merge on `main`:** PR #73 — `Add live open P&L to homepage Day Trading status`
+- **PR #73 final head SHA:** `45bf5f6084bf168d21456b35e13642da8266bc06`
+- **PR #73 merge SHA / latest website-changing repository code reference:** `cb3754517668778ccffd194f4f2ffc4ee17294d7`
 - **Observed PR state:** MERGED
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment for PR #72 merge SHA:** `dep-dafmip95efls73b1hk20`
-- **PR #72 Render deployed SHA:** `b07aa5db54d24bed02c74e45fe15cd588a257876`
-- **PR #72 deployment status:** LIVE, independently verified from Render after successful build/startup.
-- **Runtime startup evidence:** Render checked out `b07aa5db54d24bed02c74e45fe15cd588a257876`, ran the production `npm start` path with `website_dashboard_access_security.js` preloaded, and reported `Server running on port 10000`.
-- **Independent unauthenticated live verification:** the public homepage is reachable and continues to render the existing Dashboard Access request form and manual-review copy.
-- **Authorized Dashboard Access E2E verification:** USER-VERIFIED by the owner on 2026-09-07. A real public request passed Turnstile, produced the verification email, the verification link was clicked successfully, and the request then appeared in the authenticated admin workflow as `Pending`.
-- **Server-side email evidence:** Render application logs show the applicant verification email send followed later by the owner notification email after verification; no application-level error logs were observed in that verification window.
-- **Manual approval boundary:** the owner stopped at `Pending`; no automatic dashboard access was intentionally exercised as part of this acceptance test.
-- **Known deliverability issue:** the verification email was received but landed in the recipient's Spam folder. The Access Guard flow is functional, but sender/domain deliverability remains an open operational issue and must not be described as fully resolved.
+- **Render deployment for PR #73 merge SHA:** `dep-dafnsbc9v7es73c9vkb0`
+- **PR #73 Render deployed SHA:** `cb3754517668778ccffd194f4f2ffc4ee17294d7`
+- **PR #73 deployment status:** LIVE, independently verified from Render after successful build/startup.
+- **Public homepage visual verification:** UNVERIFIED from independent web crawl at this update. The available crawl still reflected a prior cached snapshot and did not yet expose the fifth card, so it must not be used to contradict the direct GitHub/Render deployment evidence.
 
 A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above.
+
+## PR #73 — Homepage Live Open P&L merged and deployed
+
+PR #73 (`Add live open P&L to homepage Day Trading status`) is merged to `main` at `cb3754517668778ccffd194f4f2ffc4ee17294d7` and was independently verified LIVE on Render.
+
+Production presentation/data contract:
+
+- Adds a fifth Day Trading summary card labeled exactly **`Live Open P&L`**.
+- Existing four cards remain: Open Positions, Working Orders, Closed Trades Today, Closed P&L Today.
+- The homepage Live Open P&L uses the existing TWS-backed open-P&L calculation path already used by the Day Trading dashboard / owner quote flow.
+- Open Positions membership refreshes from the existing Google Sheet on a 30-second cache.
+- The homepage aggregate polls every 2 seconds while the page is visible.
+- The public endpoint returns only `{ ok, open_pnl }`.
+- Symbols, positions, entry prices, quotes, bid/ask/last, broker metadata, order data, and owner credentials are not exposed by this endpoint.
+- If a complete aggregate cannot be produced, the endpoint fails closed instead of publishing a partial number.
+- Desktop uses five matching cards in one row; existing responsive two-column behavior remains on smaller screens.
+- Positive/negative color behavior follows the existing P&L card convention.
+- No explanatory trading detail was added to the homepage card.
+
+Verification before merge:
+
+- GitHub Actions run `34182496924`: SUCCESS.
+- Syntax/package preload check: PASS.
+- Homepage Live Open P&L aggregate tests: PASS.
+- Homepage performance regression: PASS.
+- Existing public dashboard live-P&L regression: PASS.
+- Existing public-performance regression: PASS.
+- Temporary verification workflow was removed after the successful run.
+
+No Pine, strategy, signal, entry, exit, stop, target, risk, order, bridge, TWS, or IBKR execution behavior is changed by PR #73.
 
 ## PR #72 — Dashboard Access Guard merged and deployed
 
