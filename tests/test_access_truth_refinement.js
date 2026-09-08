@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const accessSecurity = require("../lib/dashboard-access-security");
 const {
   STYLE_ID,
@@ -53,5 +55,9 @@ assert(verificationSentRu.includes("Спам"));
 const verified = accessSecurity.verifiedHtml();
 assert(verified.includes("Your email is confirmed. Your access request is awaiting manual review."));
 assert(verified.includes("Access is not granted automatically"));
+
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+assert(pkg.scripts.start.includes("-r ./website_access_truth_refinement.js app.js"));
+assert(pkg.scripts.start.indexOf("website_home_conversion_refinement.js") < pkg.scripts.start.indexOf("website_access_truth_refinement.js"), "access truth refinement must run after existing homepage transforms");
 
 console.log("Access truth + Services refinement: PASS");
