@@ -15,8 +15,17 @@ let openPositionsCache = { loadedAt: 0, rows: null };
 let sheetsClientPromise = null;
 
 function currentAppTestApi() {
-  const api = require.main && require.main.exports && require.main.exports.__test;
-  return api && typeof api === "object" ? api : null;
+  const mainApi = process.mainModule && process.mainModule.exports && process.mainModule.exports.__test;
+  if (mainApi && typeof mainApi === "object") return mainApi;
+
+  try {
+    const appPath = require.resolve("./app.js");
+    const appModule = require.cache[appPath];
+    const cachedApi = appModule && appModule.exports && appModule.exports.__test;
+    return cachedApi && typeof cachedApi === "object" ? cachedApi : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function getSheetsClient() {
