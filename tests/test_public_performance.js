@@ -47,23 +47,30 @@ const pendingValues = [["Trade ID", "Timestamp"], ["P1", ""], ["P2", ""]];
 const built = buildPublicPerformance(closedValues, new Date("2026-09-04T16:00:00-04:00"), openValues, pendingValues);
 assert.deepStrictEqual(built.summary, {
   open_count: 2,
-  working_count: 3,
+  pending_count: 2,
   closed_count_today: 3,
   closed_pnl_today: 74.75,
   total_closed_pnl: 129.75,
   win_rate: 75,
 });
+assert(!Object.prototype.hasOwnProperty.call(built.summary, "working_count"), "public contract must not expose inferred Working Orders");
 assert.deepStrictEqual(built.equity_curve, {
   points: [
     { date: "2026-09-03", daily_pnl: 50, cumulative_pnl: 50 },
     { date: "2026-09-04", daily_pnl: 1073.75, cumulative_pnl: 1123.75 },
   ],
   total_realized_pnl: 1123.75,
+  coverage: {
+    first_close_date: "2026-09-03",
+    last_close_date: "2026-09-04",
+    included_trade_count: 4,
+    omitted_row_count: 2,
+  },
 });
 assert.strictEqual(buildRealizedEquityCurve(closedValues).total_realized_pnl, 1123.75, "equity must use C/I even when column A is blank");
 
 const serialized = JSON.stringify(built);
-for (const privateField of ["NVDA", "NFLX", "META", "AAPL", "MSFT", "QQQ", "SHOULD_NOT_BE_DROPPED_FROM_EQUITY", "trade_id", "symbol", "entry", "exit", "side"]) {
+for (const privateField of ["NVDA", "NFLX", "META", "AAPL", "MSFT", "QQQ", "SHOULD_NOT_BE_DROPPED_FROM_EQUITY", "trade_id", "symbol", "entry", "exit", "side", "working_count"]) {
   assert(!serialized.includes(privateField), `public performance payload must not expose ${privateField}`);
 }
 
@@ -86,7 +93,8 @@ function responseRecorder() {
   });
   assert.strictEqual(fresh.stale, false);
   assert.strictEqual(fresh.summary.open_count, 2);
-  assert.strictEqual(fresh.summary.working_count, 3);
+  assert.strictEqual(fresh.summary.pending_count, 2);
+  assert.strictEqual(fresh.equity_curve.coverage.included_trade_count, 4);
 
   const stale = await getPublicPerformanceSnapshot({
     cache,
@@ -96,6 +104,7 @@ function responseRecorder() {
   });
   assert.strictEqual(stale.stale, true);
   assert.deepStrictEqual(stale.summary, fresh.summary);
+  assert.strictEqual(stale.updated_at, fresh.updated_at, "stale cached payload must retain the source snapshot timestamp");
 
   const response = responseRecorder();
   await handlePublicPerformanceRequest({}, response, {
@@ -106,7 +115,9 @@ function responseRecorder() {
   });
   assert.strictEqual(response.statusCode, 200);
   assert.strictEqual(response.body.ok, true);
-  assert.strictEqual(response.body.summary.working_count, 3);
+  assert.strictEqual(response.body.summary.pending_count, 2);
+  assert(!Object.prototype.hasOwnProperty.call(response.body.summary, "working_count"));
+  assert.deepStrictEqual(response.body.equity_curve.coverage, built.equity_curve.coverage);
   assert.match(response.headers["Cache-Control"], /no-store/);
 
   const unavailable = responseRecorder();
@@ -116,5 +127,5 @@ function responseRecorder() {
   });
   assert.strictEqual(unavailable.statusCode, 503);
   assert.deepStrictEqual(unavailable.body, { ok: false, error: "performance_unavailable" });
-  console.log("Public performance live-summary contract: PASS");
+  console.log("Public performance pending/freshness/coverage contract: PASS");
 })().catch(error => { console.error(error); process.exitCode = 1; });
