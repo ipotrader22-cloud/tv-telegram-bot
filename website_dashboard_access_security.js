@@ -280,6 +280,13 @@ const UPDATED_REQUEST_FUNCTION = String.raw`async function updateDashboardAccess
   return true;
 }
 
+async function updateDashboardAccessRequestById(id, fields = {}) {
+  const access = await dashboardAccessAdminData();
+  const request = access.requests.find(item => item.id === String(id || ''));
+  if (!request) return false;
+  return updateDashboardAccessRequest(request, fields);
+}
+
 async function deleteDashboardAccessRequest(request) {
   if (!request || !request.row_number) return false;
   if (String(request.code_id || '').trim()) throw new Error('Code-linked dashboard access requests cannot be deleted.');
@@ -380,7 +387,7 @@ const PUBLIC_ROUTES = String.raw`app.post('/password-request', async (req, res) 
     } catch (emailError) {
       console.error('Dashboard access verification email failed:', emailError);
       try {
-        await updateDashboardAccessRequest(request, { status: 'Verification Email Failed' });
+        await updateDashboardAccessRequestById(request.id, { status: 'Verification Email Failed' });
       } catch (updateError) {
         console.error('Dashboard access verification failure status update failed:', updateError);
       }
