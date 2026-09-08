@@ -1,7 +1,7 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest updated:** 2026-09-06 (America/New_York)  
+**Manifest updated:** 2026-09-07 (America/New_York)  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
@@ -11,24 +11,84 @@ This manifest records repository state, deployment state, and user-visible state
 
 Latest direct verification for the website/dashboard scope:
 
-- **Latest website-changing merge on `main`:** PR #69 — `Harden SMI runtime safety and shared symbol ownership`
-- **PR #69 head SHA:** `7a44b1655e21be019ea97abfc505f6a1c7ffcf4a`
-- **PR #69 merge SHA / current verified repository code reference:** `160e7541ae1ad48f98e8b720e0929da3fa469083`
+- **Latest website-changing merge on `main`:** PR #72 — `Harden dashboard access requests with Turnstile and email verification`
+- **PR #72 final head SHA:** `ad3a270feb68fe05ccfcda3b9fb4b26ac5ce7e35`
+- **PR #72 merge SHA / latest website-changing repository code reference:** `b07aa5db54d24bed02c74e45fe15cd588a257876`
 - **Observed PR state:** MERGED
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment created for PR #69 merge SHA:** `dep-daf150942hec73cpvob0`
-- **PR #69 merge deployment lifecycle:** completed, then deactivated only because a later documentation-only `main` commit deployed afterward.
-- **Current LIVE Render deployment:** `dep-daf15b8ejobc73a35nu0`
-- **Current LIVE Render commit:** `3db8f6d99237371f10d94225e56243f2221fe4f4` (`Record PR #69 merged repository state`), a documentation-only descendant of PR #69 merge SHA `160e7541ae1ad48f98e8b720e0929da3fa469083`.
-- **Latest website-changing deployed SHA:** `160e7541ae1ad48f98e8b720e0929da3fa469083` (PR #69). The current live Render commit is later but documentation-only and therefore does not replace the website-changing code reference.
-- **Deployment status for PR #69 website/backend code:** LIVE on Render, independently verified from Render deployment state on 2026-09-06.
-- **Windows bridge deployment:** USER-CONFIRMED by the owner on 2026-09-06. Independent verification of the local Windows runtime is not available from this environment.
-- **Latest authorized UI verification:** USER-VERIFIED after PR #68 on 2026-09-05; PR #69 explicit SMI labeling has not yet been separately user-verified in an authenticated dashboard session here.
-- **Independent unauthenticated route verification:** `/dashboard` presents the access-controlled login flow; authenticated page contents require the owner/viewer session and therefore are not independently visible to an unauthenticated browser.
+- **Render deployment for PR #72 merge SHA:** `dep-dafmip95efls73b1hk20`
+- **PR #72 Render deployed SHA:** `b07aa5db54d24bed02c74e45fe15cd588a257876`
+- **PR #72 deployment status:** LIVE, independently verified from Render after successful build/startup.
+- **Runtime startup evidence:** Render checked out `b07aa5db54d24bed02c74e45fe15cd588a257876`, ran the production `npm start` path with `website_dashboard_access_security.js` preloaded, and reported `Server running on port 10000`.
+- **Independent unauthenticated live verification:** the public homepage is reachable and continues to render the existing Dashboard Access request form and manual-review copy.
+- **Authorized Dashboard Access E2E verification:** USER-VERIFIED by the owner on 2026-09-07. A real public request passed Turnstile, produced the verification email, the verification link was clicked successfully, and the request then appeared in the authenticated admin workflow as `Pending`.
+- **Server-side email evidence:** Render application logs show the applicant verification email send followed later by the owner notification email after verification; no application-level error logs were observed in that verification window.
+- **Manual approval boundary:** the owner stopped at `Pending`; no automatic dashboard access was intentionally exercised as part of this acceptance test.
+- **Known deliverability issue:** the verification email was received but landed in the recipient's Spam folder. The Access Guard flow is functional, but sender/domain deliverability remains an open operational issue and must not be described as fully resolved.
 
-A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference.
+A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above.
+
+## PR #72 — Dashboard Access Guard merged and deployed
+
+PR #72 (`Harden dashboard access requests with Turnstile and email verification`) is merged to `main` at `b07aa5db54d24bed02c74e45fe15cd588a257876` and was independently verified LIVE on Render.
+
+Production Dashboard Access flow:
+
+```text
+Visitor
+-> existing honeypot
+-> bounded per-IP rate limit
+-> normalized-email validation and bounded per-email rate limit
+-> Cloudflare Turnstile server verification (`dashboard_access`)
+-> write request as `Awaiting Verification`
+-> send one-time verification email through existing Resend path
+-> applicant confirms email
+-> request becomes `Pending`
+-> existing owner notification
+-> existing manual owner Approve / Reject workflow
+```
+
+Security and data contract:
+
+- Turnstile is scoped to the public Dashboard Access request form only.
+- `TURNSTILE_SITE_KEY` is browser-visible; `TURNSTILE_SECRET_KEY` remains server-side.
+- Missing Turnstile production configuration fails closed for new public requests.
+- IP limit: 5 attempts / 15 minutes.
+- Normalized-email limit: 3 attempts / 60 minutes.
+- `Dashboard Access Requests` extends from A:I to A:L with `Verification Token Hash`, `Verification Expires At`, and `Verified At`.
+- New requests begin as `Awaiting Verification`.
+- Only a SHA-256 verification-token hash is stored; the raw token is sent only in the email URL.
+- Verification links expire after 60 minutes and are single-use.
+- Successful email verification changes only request review state to `Pending`; it does not create a viewer code.
+- Existing authenticated owner approval remains the sole viewer-code creation path.
+- Existing Reject behavior remains non-access-granting.
+- Owner-only Delete uses the same access-request admin guard and refuses deletion when the request is linked to a viewer code.
+- `/dashboard-login`, existing viewer-code authentication, owner authentication, session cookies, and unrelated dashboard routes remain unchanged.
+
+Environment contract added by PR #72:
+
+```text
+TURNSTILE_SITE_KEY
+TURNSTILE_SECRET_KEY
+```
+
+The owner configured the real Cloudflare Turnstile widget for the Vixale hostnames and saved both variables in Render before PR #72 was merged. Existing `RESEND_API_KEY`, `EMAIL_FROM`, and `SITE_BASE_URL` remain part of the email path.
+
+Acceptance result:
+
+- merge: VERIFIED
+- Render deployment of PR #72 merge SHA: VERIFIED LIVE
+- production process startup: VERIFIED
+- real Turnstile-backed request: USER-VERIFIED
+- verification email receipt: USER-VERIFIED
+- verification-link transition to `Pending`: USER-VERIFIED
+- authenticated Pending visibility: USER-VERIFIED
+- automatic access grant before owner approval: NOT EXERCISED and not part of the intended contract
+- email inbox placement: **ISSUE — verification message landed in Spam**
+
+No trading, bridge, Pine, strategy, signal, order, risk, TWS, or IBKR behavior is changed by PR #72.
 
 ## PR #69 — merged and deployed engineering state
 
@@ -41,7 +101,7 @@ Its website-facing changes are limited to:
 
 The same PR also contains Engineering-owned bridge/runtime safety changes for SMI EOD fail-safe and shared first-owner-wins symbol ownership across Prime, Edge/Fiona, and SMI. It does not modify Pine research logic or the frozen strategy entry/exit/filter/stop/target/timeframe/session/signal rules.
 
-Render independently shows the PR #69 merge deployment followed by a later LIVE documentation-only deployment that contains the PR #69 merge as its parent state. Therefore the PR #69 website/backend code is deployed on Render. The owner separately confirmed the Windows bridge deployment; that local runtime confirmation is recorded as USER-CONFIRMED rather than independently checked.
+Render independently showed the PR #69 merge deployment followed by later deployments that contain the PR #69 merge as parent state. Therefore the PR #69 website/backend code remains part of the deployed code lineage. The owner separately confirmed the Windows bridge deployment; that local runtime confirmation remains recorded as USER-CONFIRMED rather than independently checked.
 
 ## Canonical dashboard split — PR #68
 
