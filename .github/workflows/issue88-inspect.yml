@@ -1,0 +1,51 @@
+name: Issue 87-88 inspection
+
+on:
+  push:
+    branches:
+      - feature/issue88-funnel-measurement
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify issue 87 redirect and TLS
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== apex root headers ==='
+          curl -sS -D - -o /dev/null --max-redirs 0 https://vixale.com/ || true
+          echo '=== apex path/query headers ==='
+          curl -sS -D - -o /dev/null --max-redirs 0 'https://vixale.com/trading-systems/options?probe=87' || true
+          echo '=== apex path/query follow ==='
+          curl -sS -L -o /dev/null -w 'final=%{url_effective}\ncode=%{http_code}\nredirects=%{num_redirects}\nssl_verify=%{ssl_verify_result}\n' 'https://vixale.com/trading-systems/options?probe=87'
+          echo '=== www root ==='
+          curl -sS -L -o /dev/null -w 'final=%{url_effective}\ncode=%{http_code}\nredirects=%{num_redirects}\nssl_verify=%{ssl_verify_result}\n' https://www.vixale.com/
+          echo '=== apex cert ==='
+          openssl s_client -connect vixale.com:443 -servername vixale.com </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+          echo '=== www cert ==='
+          openssl s_client -connect www.vixale.com:443 -servername www.vixale.com </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+          echo '=== canonical root ==='
+          curl -sS https://www.vixale.com/ | grep -o -i '<link[^>]*rel=["'"']canonical["'"'][^>]*>' | head -1 || true
+      - name: Inspect funnel anchors without secrets
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const source = fs.readFileSync('app.js','utf8');
+          const needles = [
+            "app.post('/admin/access/requests/:id/approve'",
+            "app.post('/dashboard-login'",
+            "app.post('/strategy-review'",
+            'id="setup-form"',
+            'id="bot-form"',
+            'id="strategy-form"',
+            'createDashboardViewerCode(',
+          ];
+          for (const needle of needles) {
+            const i = source.indexOf(needle);
+            console.log(`\n=== ${needle} @ ${i} ===`);
+            if (i >= 0) console.log(source.slice(Math.max(0, i - 1200), Math.min(source.length, i + 3600)));
+          }
+          NODE
