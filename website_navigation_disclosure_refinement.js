@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+const { injectFunnelAccessScript } = require("./lib/website-funnel-client");
 
 const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
@@ -166,7 +167,10 @@ function refineNavigationAndDisclosure(html, path) {
     result = addSystemsGuideButton(result);
     result = moveGuideBeforeDisclosure(result);
   }
-  if (PUBLIC_NAV_PATHS.has(path)) result = injectStyles(result);
+  if (PUBLIC_NAV_PATHS.has(path)) {
+    result = injectStyles(result);
+    result = injectFunnelAccessScript(result);
+  }
   return result;
 }
 
