@@ -14139,6 +14139,7 @@ module.exports.__test = {
   parsePendingRow,
   parseOpenPositionRow,
   buildWorkingExitOrders,
+  getDashboardData,
   renderDashboardHtml,
   upsertLiveQuote,
   rememberPublicDashboardPnlPositions,

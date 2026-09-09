@@ -4,10 +4,13 @@ const Module = require("module");
 
 const HOME_PATH = "/";
 const DASHBOARD_PATH = "/dashboard";
+const PUBLIC_DASHBOARD_WIN_RATE_PATH = "/public-dashboard-win-rate.json";
 const STYLE_ID = "vx-dashboard-snapshot-refinement-style";
 const SCRIPT_ID = "vx-dashboard-snapshot-refinement-script";
 const HOME_WIN_RATE_ID = "vx-home-proof-win-rate";
 const DASHBOARD_OPEN_PNL_ID = "vx-dashboard-open-live-pnl";
+const DASHBOARD_HEADER_CLASS = "vx-dashboard-header-grid";
+const DASHBOARD_METRIC_CLASS = "vx-dashboard-metric-row";
 
 const HOME_PREVIEW_COPY = "This preview mirrors the verified Day Trading block below. If the source is unavailable, values remain unavailable rather than being simulated.";
 
@@ -17,6 +20,8 @@ function escapeRegex(value) {
 
 function findTagRangeFromOpen(html, tagName, openStart) {
   if (openStart < 0) return null;
+  const openEnd = html.indexOf(">", openStart);
+  if (openEnd < 0) return null;
   const pattern = new RegExp(`<\\/?${escapeRegex(tagName)}\\b[^>]*>`, "gi");
   pattern.lastIndex = openStart;
   let depth = 0;
@@ -24,7 +29,9 @@ function findTagRangeFromOpen(html, tagName, openStart) {
   while ((match = pattern.exec(html))) {
     const isClose = new RegExp(`^<\\/${escapeRegex(tagName)}\\b`, "i").test(match[0]);
     depth += isClose ? -1 : 1;
-    if (depth === 0) return { start: openStart, end: pattern.lastIndex, closeStart: match.index };
+    if (depth === 0) {
+      return { start: openStart, end: pattern.lastIndex, openEnd: openEnd + 1, closeStart: match.index };
+    }
   }
   return null;
 }
@@ -36,20 +43,111 @@ function findTagByClass(html, tagName, className) {
   return findTagRangeFromOpen(html, tagName, match.index);
 }
 
+function normalizedText(html) {
+  return String(html || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function addClassToOpeningTag(block, className) {
+  if (!block || new RegExp(`\\b${escapeRegex(className)}\\b`).test(block.slice(0, block.indexOf(">") + 1))) return block;
+  return block.replace(/^<([a-z0-9]+)\b([^>]*)>/i, (match, tag, attrs) => {
+    const classMatch = attrs.match(/\bclass=(["'])([^"']*)\1/i);
+    if (!classMatch) return `<${tag}${attrs} class="${className}">`;
+    const nextClass = `${classMatch[2]} ${className}`.trim();
+    return `<${tag}${attrs.replace(classMatch[0], `class=${classMatch[1]}${nextClass}${classMatch[1]}`)}>`;
+  });
+}
+
+function findChildByClassAndText(block, tagName, className, text) {
+  const pattern = new RegExp(`<${escapeRegex(tagName)}\\b[^>]*\\bclass=(["'])[^"']*\\b${escapeRegex(className)}\\b[^"']*\\1[^>]*>`, "gi");
+  let match;
+  while ((match = pattern.exec(block))) {
+    const range = findTagRangeFromOpen(block, tagName, match.index);
+    if (!range) continue;
+    const candidate = block.slice(range.start, range.end);
+    if (normalizedText(candidate).includes(text)) return range;
+    pattern.lastIndex = Math.max(pattern.lastIndex, range.end);
+  }
+  return null;
+}
+
+function removeRanges(block, ranges) {
+  let result = block;
+  for (const range of [...ranges].filter(Boolean).sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, range.start) + result.slice(range.end);
+  }
+  return result;
+}
+
+function currentAppTestApi() {
+  const mainApi = process.mainModule && process.mainModule.exports && process.mainModule.exports.__test;
+  if (mainApi && typeof mainApi === "object") return mainApi;
+  try {
+    const appPath = require.resolve("./app.js");
+    const appModule = require.cache[appPath];
+    const cachedApi = appModule && appModule.exports && appModule.exports.__test;
+    return cachedApi && typeof cachedApi === "object" ? cachedApi : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildDashboardWinRatePayload(data) {
+  const raw = data && data.summary && data.summary.win_rate;
+  if (raw === "" || raw === null || raw === undefined) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  return { ok: true, win_rate: Number(value.toFixed(2)) };
+}
+
+function setNoStoreHeaders(res) {
+  res.set({
+    "Cache-Control": "no-store, max-age=0",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+}
+
+async function handlePublicDashboardWinRateRequest(req, res, dependencies = {}) {
+  try {
+    setNoStoreHeaders(res);
+    const appApi = dependencies.appApi || currentAppTestApi();
+    const getData = dependencies.getDashboardData || (appApi && appApi.getDashboardData);
+    if (typeof getData !== "function") {
+      return res.status(503).json({ ok: false, error: "dashboard_win_rate_unavailable" });
+    }
+    const payload = buildDashboardWinRatePayload(await getData());
+    if (!payload) return res.status(503).json({ ok: false, error: "dashboard_win_rate_unavailable" });
+    return res.status(200).json(payload);
+  } catch (error) {
+    console.error("Public dashboard Win Rate error:", error && error.message ? error.message : error);
+    return res.status(503).json({ ok: false, error: "dashboard_win_rate_unavailable" });
+  }
+}
+
 function injectStyles(html) {
   if (html.includes(`id="${STYLE_ID}"`)) return html;
   const styles = `
 <style id="${STYLE_ID}">
-  .vx-dashboard-top-layout{display:grid;grid-template-columns:minmax(320px,.95fr) minmax(520px,1.35fr);gap:14px;align-items:start;margin-bottom:14px}
-  .vx-dashboard-heading-block{min-width:0;margin:0!important}
-  .vx-dashboard-system-cards-row{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important;margin:0!important;align-items:stretch!important;min-width:0}
-  .vx-dashboard-system-cards-row>*{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important}
-  .vx-dashboard-metric-row{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
-  .vx-dashboard-metric-row>*{min-width:0!important;width:auto!important;max-width:none!important}
+  .${DASHBOARD_HEADER_CLASS}{display:grid;grid-template-columns:minmax(320px,1.15fr) repeat(2,minmax(220px,.85fr));gap:14px;align-items:stretch;margin:0 0 8px}
+  .vx-dashboard-heading-block{min-width:0;margin:0!important;height:100%;align-items:flex-start!important}
+  .vx-dashboard-heading-block .brand{min-width:0}
+  .vx-dashboard-system-card{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important;height:100%}
+  .vx-dashboard-updated{margin:0 0 14px!important}
+  .vx-dashboard-other-system-notes{grid-template-columns:1fr!important;margin:14px 0 0!important}
+  .${DASHBOARD_METRIC_CLASS}{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
+  .${DASHBOARD_METRIC_CLASS}>*{min-width:0!important;width:auto!important;max-width:none!important}
   #${DASHBOARD_OPEN_PNL_ID}.positive{color:#00954f!important}
   #${DASHBOARD_OPEN_PNL_ID}.negative{color:#ef3f4a!important}
-  @media(max-width:1180px){.vx-dashboard-top-layout{grid-template-columns:1fr}.vx-dashboard-metric-row{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
-  @media(max-width:760px){.vx-dashboard-system-cards-row{grid-template-columns:1fr!important}.vx-dashboard-metric-row{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+  #${DASHBOARD_OPEN_PNL_ID}.neutral{color:inherit!important}
+  @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr}.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
+  @media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 </style>`;
   return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
 }
@@ -57,34 +155,6 @@ function injectStyles(html) {
 const browserScript = `
 <script id="${SCRIPT_ID}">
 (() => {
-  const compact = value => String(value || '').replace(/\\s+/g, ' ').trim();
-  const all = selector => Array.from(document.querySelectorAll(selector));
-  const leafByExactText = text => all('body *').find(el => el.children.length === 0 && compact(el.textContent) === text) || null;
-  const leafByPrefix = prefix => all('body *').find(el => el.children.length === 0 && compact(el.textContent).startsWith(prefix)) || null;
-
-  const commonAncestor = (a, b) => {
-    if (!a || !b) return null;
-    const seen = new Set();
-    for (let node = a; node; node = node.parentElement) seen.add(node);
-    for (let node = b; node; node = node.parentElement) if (seen.has(node)) return node;
-    return null;
-  };
-
-  const locateMetricCard = labelText => {
-    const label = leafByExactText(labelText);
-    if (!label) return null;
-    const peerLabels = ['Open Positions', 'Working Orders', 'Closed Trades Today', 'Closed P&L Today', 'Total Closed P&L', 'Win Rate'];
-    let node = label;
-    while (node && node.parentElement && node.parentElement !== document.body) {
-      const parent = node.parentElement;
-      const text = compact(parent.textContent);
-      const peerCount = peerLabels.filter(peer => text.includes(peer)).length;
-      if (peerCount >= 4 && parent.children.length >= 4) return { label, card: node, row: parent };
-      node = parent;
-    }
-    return null;
-  };
-
   const formatMoney = value => {
     const n = Number(value);
     if (!Number.isFinite(n)) return '—';
@@ -95,58 +165,16 @@ const browserScript = `
   const setSignedClass = (el, value) => {
     if (!el) return;
     const n = Number(value);
-    el.classList.remove('positive', 'negative');
-    if (Number.isFinite(n) && n > 0) el.classList.add('positive');
-    else if (Number.isFinite(n) && n < 0) el.classList.add('negative');
+    el.classList.remove('positive', 'negative', 'neutral');
+    if (!Number.isFinite(n) || n === 0) el.classList.add('neutral');
+    else if (n > 0) el.classList.add('positive');
+    else el.classList.add('negative');
   };
 
-  const installDashboardTopLayout = () => {
-    const title = leafByExactText('Vixale Live Day Trading Dashboard');
-    const refreshed = leafByPrefix('Last refreshed:');
-    const prime = leafByExactText('Vixale Prime');
-    const edge = leafByExactText('Vixale Edge');
-    if (!title || !prime || !edge) return;
-
-    const systemsRow = commonAncestor(prime, edge);
-    let headingBlock = refreshed ? commonAncestor(title, refreshed) : title.parentElement;
-    if (!systemsRow || !headingBlock || systemsRow === headingBlock || headingBlock.contains(systemsRow)) return;
-
-    while (headingBlock.parentElement && headingBlock.parentElement !== document.body && headingBlock.parentElement.contains(systemsRow)) {
-      break;
-    }
-
-    if (document.querySelector('.vx-dashboard-top-layout')) return;
-    const parent = headingBlock.parentElement;
-    if (!parent || !parent.contains(systemsRow)) return;
-
-    const layout = document.createElement('div');
-    layout.className = 'vx-dashboard-top-layout';
-    parent.insertBefore(layout, headingBlock);
-    headingBlock.classList.add('vx-dashboard-heading-block');
-    systemsRow.classList.add('vx-dashboard-system-cards-row');
-    layout.appendChild(headingBlock);
-    layout.appendChild(systemsRow);
-  };
-
-  const installDashboardOpenPnlCard = () => {
-    if (document.getElementById('${DASHBOARD_OPEN_PNL_ID}')) return;
-    const located = locateMetricCard('Closed P&L Today');
-    if (!located || !located.card || !located.row) return;
-
-    const clone = located.card.cloneNode(true);
-    const cloneLeaves = Array.from(clone.querySelectorAll('*')).filter(el => el.children.length === 0);
-    const label = cloneLeaves.find(el => compact(el.textContent) === 'Closed P&L Today');
-    if (!label) return;
-    label.textContent = 'Open Live P&L';
-
-    const value = cloneLeaves.filter(el => el !== label && compact(el.textContent)).pop();
-    if (!value) return;
-    value.id = '${DASHBOARD_OPEN_PNL_ID}';
-    value.textContent = '—';
-    value.classList.remove('positive', 'negative');
-
-    located.row.classList.add('vx-dashboard-metric-row');
-    located.card.insertAdjacentElement('afterend', clone);
+  const setDashboardOpenPnlUnavailable = target => {
+    if (!target) return;
+    target.textContent = '—';
+    setSignedClass(target, NaN);
   };
 
   let dashboardPnlTimer = null;
@@ -157,19 +185,34 @@ const browserScript = `
     dashboardPnlBusy = true;
     try {
       const response = await fetch('/dashboard/live-pnl.json', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
-      if (!response.ok) return;
+      if (!response.ok) {
+        setDashboardOpenPnlUnavailable(target);
+        return;
+      }
       const payload = await response.json();
       const positions = Array.isArray(payload && payload.positions) ? payload.positions : null;
-      if (!positions) return;
+      if (!positions) {
+        setDashboardOpenPnlUnavailable(target);
+        return;
+      }
       let total = 0;
       for (const position of positions) {
-        const value = Number(position && position.open_pnl);
-        if (!Number.isFinite(value)) return;
+        const raw = position && position.open_pnl;
+        if (raw === '' || raw === null || raw === undefined) {
+          setDashboardOpenPnlUnavailable(target);
+          return;
+        }
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+          setDashboardOpenPnlUnavailable(target);
+          return;
+        }
         total += value;
       }
       target.textContent = formatMoney(total);
       setSignedClass(target, total);
     } catch (_) {
+      setDashboardOpenPnlUnavailable(target);
     } finally {
       dashboardPnlBusy = false;
       if (dashboardPnlTimer) window.clearTimeout(dashboardPnlTimer);
@@ -181,18 +224,16 @@ const browserScript = `
     const target = document.getElementById('${HOME_WIN_RATE_ID}');
     if (!target || document.hidden) return;
     try {
-      const response = await fetch('/public-performance.json', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+      const response = await fetch('${PUBLIC_DASHBOARD_WIN_RATE_PATH}', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
       if (!response.ok) return;
       const payload = await response.json();
-      const value = Number(payload && payload.summary && payload.summary.win_rate);
+      const value = Number(payload && payload.win_rate);
       if (!Number.isFinite(value)) return;
-      target.textContent = value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + '%';
+      target.textContent = value.toFixed(2) + '%';
     } catch (_) {}
   };
 
   const boot = () => {
-    installDashboardTopLayout();
-    installDashboardOpenPnlCard();
     refreshDashboardOpenPnl();
     refreshHomeWinRate();
   };
@@ -231,8 +272,68 @@ function refineHome(html) {
   return injectScript(result);
 }
 
+function transformDashboardHero(html) {
+  let result = String(html)
+    .replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i, "<h1>Vixale Live Day Trading Dashboard</h1>")
+    .replace(/(<div\b[^>]*\bclass=(["'])[^"']*\bsubtitle\b[^"']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i, "$1Private live day-trading forward-test / paper-trading tracker$3");
+
+  if (result.includes(`class="${DASHBOARD_HEADER_CLASS}"`) || result.includes(`class='${DASHBOARD_HEADER_CLASS}'`)) return result;
+
+  const heroRange = findTagByClass(result, "div", "hero");
+  if (!heroRange) return result;
+  let hero = result.slice(heroRange.start, heroRange.end);
+  const topRange = findTagByClass(hero, "div", "topline");
+  const notesRange = findTagByClass(hero, "div", "strategy-notes");
+  if (!topRange || !notesRange || notesRange.start <= topRange.start) return result;
+
+  let topBlock = hero.slice(topRange.start, topRange.end);
+  const updatedRange = findTagByClass(topBlock, "div", "updated");
+  let updatedBlock = "";
+  if (updatedRange) {
+    updatedBlock = addClassToOpeningTag(topBlock.slice(updatedRange.start, updatedRange.end), "vx-dashboard-updated");
+    topBlock = topBlock.slice(0, updatedRange.start) + topBlock.slice(updatedRange.end);
+  }
+  topBlock = addClassToOpeningTag(topBlock, "vx-dashboard-heading-block");
+
+  const notesBlock = hero.slice(notesRange.start, notesRange.end);
+  const primeRange = findChildByClassAndText(notesBlock, "div", "strategy-note", "Vixale Prime");
+  const edgeRange = findChildByClassAndText(notesBlock, "div", "strategy-note", "Vixale Edge");
+  if (!primeRange || !edgeRange) return result;
+
+  const primeBlock = addClassToOpeningTag(notesBlock.slice(primeRange.start, primeRange.end), "vx-dashboard-system-card");
+  const edgeBlock = addClassToOpeningTag(notesBlock.slice(edgeRange.start, edgeRange.end), "vx-dashboard-system-card");
+  let remainingNotes = removeRanges(notesBlock, [primeRange, edgeRange]);
+  remainingNotes = findTagByClass(remainingNotes, "div", "strategy-note")
+    ? addClassToOpeningTag(remainingNotes, "vx-dashboard-other-system-notes")
+    : "";
+
+  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${primeBlock}${edgeBlock}</div>${updatedBlock}`;
+  hero = hero.slice(0, topRange.start) + header + hero.slice(notesRange.end);
+
+  let cardsRange = findTagByClass(hero, "div", "cards");
+  if (cardsRange) {
+    let cardsBlock = hero.slice(cardsRange.start, cardsRange.end);
+    if (!cardsBlock.includes(`id="${DASHBOARD_OPEN_PNL_ID}"`)) {
+      const closedPnlCard = findChildByClassAndText(cardsBlock, "div", "card", "Closed P&L Today");
+      if (closedPnlCard) {
+        const livePnlCard = `<div class="card vx-dashboard-live-open-pnl-card"><div class="label">Live Open P&amp;L</div><div id="${DASHBOARD_OPEN_PNL_ID}" class="value neutral">—</div></div>`;
+        cardsBlock = cardsBlock.slice(0, closedPnlCard.end) + livePnlCard + cardsBlock.slice(closedPnlCard.end);
+      }
+    }
+    cardsBlock = addClassToOpeningTag(cardsBlock, DASHBOARD_METRIC_CLASS);
+    hero = hero.slice(0, cardsRange.start) + cardsBlock + hero.slice(cardsRange.end);
+    if (remainingNotes) {
+      cardsRange = findTagByClass(hero, "div", DASHBOARD_METRIC_CLASS);
+      if (cardsRange) hero = hero.slice(0, cardsRange.end) + remainingNotes + hero.slice(cardsRange.end);
+    }
+  }
+
+  return result.slice(0, heroRange.start) + hero + result.slice(heroRange.end);
+}
+
 function refineDashboard(html) {
-  let result = injectStyles(String(html));
+  let result = transformDashboardHero(String(html));
+  result = injectStyles(result);
   return injectScript(result);
 }
 
@@ -244,6 +345,7 @@ function refinePage(html, path) {
 }
 
 function installDashboardSnapshotRefinement(app) {
+  app.get(PUBLIC_DASHBOARD_WIN_RATE_PATH, (req, res) => handlePublicDashboardWinRateRequest(req, res));
   app.use((req, res, next) => {
     const path = String(req.originalUrl || req.url || "").split("?")[0];
     const isRead = req.method === "GET" || req.method === "HEAD";
@@ -289,16 +391,26 @@ Module._load = function vixaleDashboardSnapshotRefinementModuleLoad(request, par
 module.exports = {
   HOME_PATH,
   DASHBOARD_PATH,
+  PUBLIC_DASHBOARD_WIN_RATE_PATH,
   STYLE_ID,
   SCRIPT_ID,
   HOME_WIN_RATE_ID,
   DASHBOARD_OPEN_PNL_ID,
+  DASHBOARD_HEADER_CLASS,
+  DASHBOARD_METRIC_CLASS,
   HOME_PREVIEW_COPY,
   findTagRangeFromOpen,
   findTagByClass,
+  normalizedText,
+  addClassToOpeningTag,
+  findChildByClassAndText,
+  currentAppTestApi,
+  buildDashboardWinRatePayload,
+  handlePublicDashboardWinRateRequest,
   injectStyles,
   injectScript,
   refineHome,
+  transformDashboardHero,
   refineDashboard,
   refinePage,
   installDashboardSnapshotRefinement,
