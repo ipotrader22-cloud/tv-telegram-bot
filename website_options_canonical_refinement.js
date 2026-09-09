@@ -149,6 +149,39 @@ function extractOptionJournalSection(html) {
   return range ? html.slice(range.start, range.end) : "";
 }
 
+function findIbkrExplanationRange(optionSection) {
+  if (typeof optionSection !== "string") return null;
+  const titleIndex = optionSection.indexOf("Why IBKR may show BUY");
+  if (titleIndex < 0) return null;
+  const candidates = [];
+  const re = /<div\b[^>]*>/gi;
+  let match;
+  while ((match = re.exec(optionSection)) && match.index < titleIndex) {
+    const range = tagRange(optionSection, "div", match.index);
+    if (!range || range.end <= titleIndex) continue;
+    const block = optionSection.slice(range.start, range.end);
+    if (!block.includes("Why IBKR may show BUY")) continue;
+    candidates.push({ ...range, block });
+  }
+  const complete = candidates.filter(item => /closing transaction/i.test(item.block) && !/<table\b/i.test(item.block));
+  const pool = complete.length ? complete : candidates.filter(item => !/<table\b/i.test(item.block));
+  if (!pool.length) return null;
+  pool.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+  const { block, ...range } = pool[0];
+  return range;
+}
+
+function moveIbkrExplanationBelowJournal(optionSection) {
+  if (typeof optionSection !== "string") return optionSection;
+  const noteRange = findIbkrExplanationRange(optionSection);
+  if (!noteRange) return optionSection;
+  const note = optionSection.slice(noteRange.start, noteRange.end);
+  const withoutNote = optionSection.slice(0, noteRange.start) + optionSection.slice(noteRange.end);
+  const sectionRange = tagRange(withoutNote, "div", 0);
+  if (!sectionRange || sectionRange.closeStart <= 0) return optionSection;
+  return withoutNote.slice(0, sectionRange.closeStart) + note + withoutNote.slice(sectionRange.closeStart);
+}
+
 function refineDayTradingDashboard(html) {
   if (typeof html !== "string" || !html.includes("Vixale Live Strategy Dashboard")) return html;
   let out = html;
@@ -165,7 +198,7 @@ function refineDayTradingDashboard(html) {
 
 function refineOptionsPageFromDashboard(html, curve = { points: [], total_realized_pnl: 0 }, equityError = false) {
   if (typeof html !== "string" || !html.includes("Vixale Live Strategy Dashboard")) return html;
-  const optionSection = extractOptionJournalSection(html);
+  const optionSection = moveIbkrExplanationBelowJournal(extractOptionJournalSection(html));
   if (!optionSection) return html;
   let out = removeMetaRefresh(setCanonical(setTitle(html, "Vixale | Options Trading"), OPTIONS_CANONICAL_URL));
   const body = `<div class="wrap" ${OPTIONS_PAGE_MARKER}="page"><div class="top-actions"><div class="left-links"><a class="home-link" href="/">← Back to Home</a><a class="home-link" href="/dashboard">Day Trading Dashboard</a><a class="home-link" href="/trading-systems/swing-trading">Swing Trading</a><a class="home-link" href="/trading-systems">Trading Systems</a></div><div class="dashboard-links"><a class="dash-btn primary" href="/#password-access">Watch Systems for Free</a><a class="dash-btn" href="/logout">Log Out</a></div></div><div class="hero"><div class="topline"><div class="brand"><h1>Vixale Options</h1><div class="subtitle">Owner-entered Option Journal · open and closed trades · realized P&amp;L</div><div class="updated">Options are recorded manually through the existing owner journal. This page is read-only.</div></div><div class="badge"><span class="dot"></span> OPTIONS JOURNAL</div></div><div class="strategy-notes"><div class="strategy-note"><strong>Manual journal</strong>Trades continue to be entered and updated by the owner through the existing Options admin workflow.</div><div class="strategy-note"><strong>Closed-only equity</strong>The curve changes only when an Option Journal trade is Closed with a valid Exit Date and derived realized P&amp;L.</div><div class="strategy-note"><strong>One viewer access</strong>The same Vixale viewer session used for the Day Trading dashboard opens this Options page and protected brokerage proofs.</div></div></div>${optionsEquitySection(curve, equityError)}${optionSection}<div class="footer"><strong>Options disclosure:</strong> Option Journal entries are owner-entered records. Realized P&amp;L is derived from the recorded Credit/Debit, entry price, exit price, contracts, multiplier, and fees; it is not entered manually. Brokerage screenshots, when present, are owner-provided and may be cropped or redacted. Trading options involves substantial risk and results are not guaranteed.</div></div>${optionsChartScript(curve)}`;
@@ -221,4 +254,4 @@ Module._load = function vixaleOptionsCanonicalModuleLoad(request, parent, isMain
   return request === "express" ? wrapExpress(loaded) : loaded;
 };
 
-module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };
+module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, findIbkrExplanationRange, moveIbkrExplanationBelowJournal, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };
