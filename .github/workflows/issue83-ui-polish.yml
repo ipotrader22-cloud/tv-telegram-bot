@@ -110,6 +110,20 @@ jobs:
           elif new_export not in s:
               raise SystemExit('Options export anchor not found')
           p.write_text(s)
+
+          p = Path('tests/test_home_conversion_refinement.js')
+          s = p.read_text()
+          old = 'assert(out.includes(\'Already have access? <a href="/dashboard">Viewer Login</a>\'));'
+          new = '''const loginIndex = out.indexOf('class="vx-home-hero-btn primary access" href="/dashboard">Login</a>');
+          const requestIndex = out.indexOf('class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a>');
+          const performanceIndex = out.indexOf('href="#live-day-trading">Explore Performance</a>');
+          assert(loginIndex >= 0 && loginIndex < requestIndex && requestIndex < performanceIndex, "hero CTA order must be Login, Request Free Access, Explore Performance");
+          assert(!out.includes("Already have access?"));'''
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif 'hero CTA order must be Login, Request Free Access, Explore Performance' not in s:
+              raise SystemExit('homepage regression login assertion anchor not found')
+          p.write_text(s)
           PY
       - name: Write focused regression
         shell: bash
@@ -156,6 +170,7 @@ jobs:
           node --check website_home_conversion_refinement.js
           node --check website_home_system_selector_refinement.js
           node --check website_options_canonical_refinement.js
+          node --check tests/test_home_conversion_refinement.js
           node --check tests/test_issue83_ui_polish.js
       - name: Focused and existing regressions
         run: |
@@ -172,7 +187,7 @@ jobs:
         run: |
           git config user.name "ipotrader22-cloud"
           git config user.email "ipotrader22@gmail.com"
-          git add website_home_conversion_refinement.js website_home_system_selector_refinement.js website_options_canonical_refinement.js tests/test_issue83_ui_polish.js
+          git add website_home_conversion_refinement.js website_home_system_selector_refinement.js website_options_canonical_refinement.js tests/test_home_conversion_refinement.js tests/test_issue83_ui_polish.js
           if git diff --cached --quiet; then
             echo "No patch changes to commit"
           else
