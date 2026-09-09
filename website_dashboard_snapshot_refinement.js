@@ -155,71 +155,6 @@ function injectStyles(html) {
 const browserScript = `
 <script id="${SCRIPT_ID}">
 (() => {
-  const formatMoney = value => {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '—';
-    const sign = n > 0 ? '+' : n < 0 ? '-' : '';
-    return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const setSignedClass = (el, value) => {
-    if (!el) return;
-    const n = Number(value);
-    el.classList.remove('positive', 'negative', 'neutral');
-    if (!Number.isFinite(n) || n === 0) el.classList.add('neutral');
-    else if (n > 0) el.classList.add('positive');
-    else el.classList.add('negative');
-  };
-
-  const setDashboardOpenPnlUnavailable = target => {
-    if (!target) return;
-    target.textContent = '—';
-    setSignedClass(target, NaN);
-  };
-
-  let dashboardPnlTimer = null;
-  let dashboardPnlBusy = false;
-  const refreshDashboardOpenPnl = async () => {
-    const target = document.getElementById('${DASHBOARD_OPEN_PNL_ID}');
-    if (!target || dashboardPnlBusy || document.hidden) return;
-    dashboardPnlBusy = true;
-    try {
-      const response = await fetch('/dashboard/live-pnl.json', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
-      if (!response.ok) {
-        setDashboardOpenPnlUnavailable(target);
-        return;
-      }
-      const payload = await response.json();
-      const positions = Array.isArray(payload && payload.positions) ? payload.positions : null;
-      if (!positions) {
-        setDashboardOpenPnlUnavailable(target);
-        return;
-      }
-      let total = 0;
-      for (const position of positions) {
-        const raw = position && position.open_pnl;
-        if (raw === '' || raw === null || raw === undefined) {
-          setDashboardOpenPnlUnavailable(target);
-          return;
-        }
-        const value = Number(raw);
-        if (!Number.isFinite(value)) {
-          setDashboardOpenPnlUnavailable(target);
-          return;
-        }
-        total += value;
-      }
-      target.textContent = formatMoney(total);
-      setSignedClass(target, total);
-    } catch (_) {
-      setDashboardOpenPnlUnavailable(target);
-    } finally {
-      dashboardPnlBusy = false;
-      if (dashboardPnlTimer) window.clearTimeout(dashboardPnlTimer);
-      if (!document.hidden) dashboardPnlTimer = window.setTimeout(refreshDashboardOpenPnl, 2000);
-    }
-  };
-
   const refreshHomeWinRate = async () => {
     const target = document.getElementById('${HOME_WIN_RATE_ID}');
     if (!target || document.hidden) return;
@@ -234,7 +169,6 @@ const browserScript = `
   };
 
   const boot = () => {
-    refreshDashboardOpenPnl();
     refreshHomeWinRate();
   };
 
@@ -242,13 +176,7 @@ const browserScript = `
   else boot();
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (dashboardPnlTimer) window.clearTimeout(dashboardPnlTimer);
-      dashboardPnlTimer = null;
-      return;
-    }
-    refreshDashboardOpenPnl();
-    refreshHomeWinRate();
+    if (!document.hidden) refreshHomeWinRate();
   });
 })();
 </script>`;

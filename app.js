@@ -9572,6 +9572,10 @@ function renderMoney(value) {
 
 function renderDashboardHtml(data, locale = 'en') {
   const s = data.summary;
+  const openPnlValues = (data.open_positions || []).map(row => cleanNumber(row.open_pnl));
+  const dashboardOpenPnl = openPnlValues.some(value => value === '')
+    ? ''
+    : Number(openPnlValues.reduce((sum, value) => sum + value, 0).toFixed(2));
   const optionJournal = data.option_journal || {};
   const isRu = String(locale || '').toLowerCase() === 'ru';
   const equityCurve = data.equity_curve || { points: [], total_realized_pnl: 0 };
@@ -9640,10 +9644,11 @@ function renderDashboardHtml(data, locale = 'en') {
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
-      <td class="muted-dash">—</td>
+      <td>${num(row.target) || '—'}</td>
+      <td>${num(row.stop) || '—'}</td>
       <td>${num(row.size, 0)}</td>
       <td class="js-public-pnl ${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl) || '—'}</td>
-      <td><span class="open-position-label">OPEN POSITION</span></td>
+      <td><span class="open-position-label">LIVE POSITION</span></td>
     </tr>
   `).join('');
 
@@ -10402,6 +10407,10 @@ function renderDashboardHtml(data, locale = 'en') {
           <div class="label">Closed P&L Today</div>
           <div class="value ${moneyClass(s.closed_pnl_today)}">${renderMoney(s.closed_pnl_today)}</div>
         </div>
+        <div class="card vx-dashboard-live-open-pnl-card">
+          <div class="label">Live Open P&amp;L</div>
+          <div id="vx-dashboard-open-live-pnl" class="value ${moneyClass(dashboardOpenPnl)}">${renderMoney(dashboardOpenPnl) || '—'}</div>
+        </div>
         <div class="card">
           <div class="label">Total Closed P&L</div>
           <div class="value ${moneyClass(s.total_closed_pnl)}">${renderMoney(s.total_closed_pnl)}</div>
@@ -10436,7 +10445,7 @@ function renderDashboardHtml(data, locale = 'en') {
     <div class="section">
       <div class="section-header">
         <h2>Open Positions</h2>
-        <span>Open P&amp;L updates live. Final exit and result appear after the trade closes.</span>
+        <span>Open P&amp;L updates live. Target and Stop Ref are system reference levels; final exit and result appear after the trade closes.</span>
       </div>
       <div class="table-wrap">
         ${data.open_positions.length ? `
@@ -10450,7 +10459,8 @@ function renderDashboardHtml(data, locale = 'en') {
               <th>Symbol</th>
               <th>Side</th>
               <th>Entry</th>
-              <th>Exit</th>
+              <th>Target</th>
+              <th>Stop Ref</th>
               <th>Qty</th>
               <th>P&amp;L</th>
               <th>Event</th>
@@ -10812,25 +10822,41 @@ function renderDashboardHtml(data, locale = 'en') {
         if (!response.ok) return;
 
         const payload = await response.json();
+        const positions = Array.isArray(payload.positions) ? payload.positions : [];
         const byTradeId = new Map(
-          (payload.positions || []).map(position => [String(position.trade_id || ''), position])
+          positions.map(position => [String(position.trade_id || ''), position])
         );
+        const publicRows = Array.from(document.querySelectorAll('.public-pnl-row'));
+        let aggregateOpenPnl = 0;
+        let aggregateComplete = true;
 
-        document.querySelectorAll('.public-pnl-row').forEach(row => {
+        publicRows.forEach(row => {
           const tradeId = String(row.dataset.tradeId || '');
           const position = byTradeId.get(tradeId);
-          if (!position) return;
+          if (!position || position.open_pnl === '' || position.open_pnl === null || position.open_pnl === undefined) {
+            aggregateComplete = false;
+            return;
+          }
 
-          if (position.open_pnl === '' || position.open_pnl === null || position.open_pnl === undefined) return;
           const pnl = Number(position.open_pnl);
-          if (!Number.isFinite(pnl)) return;
+          if (!Number.isFinite(pnl)) {
+            aggregateComplete = false;
+            return;
+          }
 
+          aggregateOpenPnl += pnl;
           const cell = row.querySelector('.js-public-pnl');
           if (!cell) return;
 
           cell.textContent = publicPnlMoney(pnl);
           setPublicPnlClass(cell, pnl);
         });
+
+        const aggregateCell = document.getElementById('vx-dashboard-open-live-pnl');
+        if (aggregateCell && aggregateComplete) {
+          aggregateCell.textContent = publicPnlMoney(aggregateOpenPnl);
+          setPublicPnlClass(aggregateCell, aggregateOpenPnl);
+        }
       } catch (err) {
         console.warn('Public live P&L refresh failed:', err);
       } finally {

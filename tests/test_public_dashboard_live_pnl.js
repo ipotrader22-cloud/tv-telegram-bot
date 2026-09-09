@@ -147,6 +147,8 @@ function testEmptyStartupAndPollingMarkup() {
     summary: {},
   });
   assert.ok(html.includes("fetch('/dashboard/live-pnl.json'"));
+  assert.ok(html.includes('id="vx-dashboard-open-live-pnl"'), 'Dashboard renderer must emit the aggregate Live Open P&L card natively');
+  assert.ok(html.includes('$0.00'), 'empty-position Dashboard snapshot must render a zero aggregate rather than depend on client insertion');
   assert.ok(html.includes("document.addEventListener('visibilitychange'"));
   assert.ok(html.includes('publicPnlInFlight'));
   assert.ok(html.includes('window.setTimeout(refreshPublicOpenPnl, delay)'));

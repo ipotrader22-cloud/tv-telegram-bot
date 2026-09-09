@@ -61,15 +61,27 @@ function homeFixture() {
 function dashboardFixture() {
   return renderDashboardHtml({
     updated_at: '2026-09-09 16:30:00',
-    open_positions: [],
+    open_positions: [{
+      system: 'Vixale Edge',
+      trade_id: 'XLE_LONG',
+      open_time: '2026-09-09 09:58:26',
+      symbol: 'XLE',
+      side: 'LONG',
+      entry: 65.53,
+      target: 68.25,
+      stop: 64.10,
+      size: 305,
+      open_pnl: -54.90,
+    }],
     working_orders: [],
     pending_orders: [],
     recent_closed_trades: [],
     equity_curve: { points: [], total_realized_pnl: 0 },
     option_journal: { trades: [], error: false },
     summary: {
-      open_count: 11,
+      open_count: 1,
       pending_count: 12,
+      open_pnl: -54.90,
       closed_count_today: 13,
       closed_pnl_today: 14.15,
       total_closed_pnl: 1617.18,
@@ -144,12 +156,15 @@ function testDashboardRefinement() {
 
   assert.strictEqual((metrics.match(/Live Open P&amp;L/g) || []).length, 1, 'dashboard must contain exactly one Live Open P&L card');
   assert.strictEqual((metrics.match(new RegExp(`id="${DASHBOARD_OPEN_PNL_ID}"`, 'g')) || []).length, 1);
+  assert.ok(metrics.includes('-$54.90'), 'Live Open P&L must render the same valid server snapshot shown by the open row before polling starts');
   const closedTodayIndex = metrics.indexOf('Closed P&L Today');
   const liveIndex = metrics.indexOf('Live Open P&amp;L');
   const totalIndex = metrics.indexOf('Total Closed P&L');
   assert.ok(closedTodayIndex >= 0 && closedTodayIndex < liveIndex && liveIndex < totalIndex, 'metric order must be Closed P&L Today → Live Open P&L → Total Closed P&L');
 
-  assert.ok(html.includes("fetch('/dashboard/live-pnl.json'"));
+  assert.strictEqual((html.match(/fetch\('\/dashboard\/live-pnl\.json'/g) || []).length, 1, 'Dashboard must use one live-P&L polling path');
+  assert.ok(html.includes("const aggregateCell = document.getElementById('vx-dashboard-open-live-pnl')"));
+  assert.ok(!html.includes('setDashboardOpenPnlUnavailable'), 'a transient refresh failure must not erase a valid server-rendered P&L snapshot');
   assert.ok(html.includes("classList.remove('positive', 'negative', 'neutral')"));
   assert.ok(html.includes("el.classList.add('positive')"));
   assert.ok(html.includes("el.classList.add('negative')"));
@@ -157,6 +172,21 @@ function testDashboardRefinement() {
   assert.ok(!html.includes('cloneNode('), 'dashboard card insertion must not depend on runtime DOM cloning');
   assert.ok(!html.includes('locateMetricCard'), 'dashboard card insertion must not use heuristic runtime card detection');
   assert.ok(!html.includes('leafByExactText'), 'dashboard layout must not depend on exact runtime text selectors');
+
+  const openSectionStart = html.indexOf('<h2>Open Positions</h2>');
+  const openSectionEnd = html.indexOf('<h2>Pending / Working Orders</h2>');
+  assert.ok(openSectionStart >= 0 && openSectionEnd > openSectionStart, 'Open Positions section must be present');
+  const openSection = html.slice(openSectionStart, openSectionEnd);
+  assert.ok(openSection.includes('<th>Target</th>'));
+  assert.ok(openSection.includes('<th>Stop Ref</th>'));
+  assert.ok(!openSection.includes('<th>Exit</th>'), 'open positions must show Stop Ref instead of a future Exit field');
+  assert.ok(openSection.indexOf('<th>Entry</th>') < openSection.indexOf('<th>Target</th>'));
+  assert.ok(openSection.indexOf('<th>Target</th>') < openSection.indexOf('<th>Stop Ref</th>'));
+  assert.ok(openSection.indexOf('<th>Stop Ref</th>') < openSection.indexOf('<th>Qty</th>'));
+  assert.ok(openSection.includes('68.25'), 'Target must mirror the authoritative open-position target');
+  assert.ok(openSection.includes('64.10'), 'Stop Ref must mirror the authoritative open-position stop reference');
+  assert.ok(openSection.includes('LIVE POSITION'));
+  assert.ok(!openSection.includes('OPEN POSITION'));
 
   assert.ok(html.includes(`grid-template-columns:repeat(7,minmax(0,1fr))`));
   assert.ok(html.includes(`@media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr}`));
