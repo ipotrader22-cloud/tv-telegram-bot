@@ -1,0 +1,46 @@
+name: Temporary Dashboard syntax patch
+
+on:
+  push:
+    branches: [fix/dashboard-snapshot-follow-up]
+    paths:
+      - .github/workflows/temporary-dashboard-syntax-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Correct over-escaped regex literals
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('website_dashboard_snapshot_refinement.js')
+          source = path.read_text()
+          replacements = {
+              r'.replace(/\\s+/g, " ")': r'.replace(/\s+/g, " ")',
+              r'block.replace(/^<([a-z0-9]+)\\b([^>]*)>/i': r'block.replace(/^<([a-z0-9]+)\b([^>]*)>/i',
+              r'attrs.match(/\\bclass=(["\'])([^"\']*)\\1/i)': r'attrs.match(/\bclass=(["\'])([^"\']*)\1/i)',
+              r'.replace(/<h1>\\s*Vixale Live Strategy Dashboard\\s*<\\/h1>/i': r'.replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i',
+              r'.replace(/(<div\\b[^>]*\\bclass=(["\'])[^"\']*\\bsubtitle\\b[^"\']*\\2[^>]*>)\\s*Private live forward-test \\/ paper-trading tracker\\s*(<\\/div>)/i': r'.replace(/(<div\b[^>]*\bclass=(["\'])[^"\']*\bsubtitle\b[^"\']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i',
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one match for {old!r}, found {count}')
+              source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+          node --check website_dashboard_snapshot_refinement.js
+          git diff --check
+          git diff -- website_dashboard_snapshot_refinement.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add website_dashboard_snapshot_refinement.js
+          git commit -m "Fix snapshot refinement regex literals"
+          git push origin HEAD:fix/dashboard-snapshot-follow-up
