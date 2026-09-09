@@ -45,13 +45,13 @@ const script = `
     if(!coverage)return;
     const c=data&&data.equity_curve&&data.equity_curve.coverage||{};
     const first=dateLabel(c.first_close_date),last=dateLabel(c.last_close_date);
-    const included=Number(c.included_trade_count),omitted=Number(c.omitted_row_count);
-    if(!Number.isFinite(included)||!Number.isFinite(omitted)){
-      coverage.textContent='Coverage unavailable · Open P&L excluded';
+    const included=Number(c.included_trade_count);
+    if(!Number.isFinite(included)){
+      coverage.textContent='Coverage unavailable';
       return;
     }
     const range=first&&last?(first===last?first:first+' – '+last):'No included realized closes yet';
-    coverage.textContent='Coverage: '+range+' · '+included+' included closed trade'+(included===1?'':'s')+' · '+omitted+' omitted row'+(omitted===1?'':'s')+' · Open P&L excluded';
+    coverage.textContent=range+'. '+included+' closed trade'+(included===1?'':'s');
   };
   const apply=data=>{
     failures=0;
@@ -111,7 +111,7 @@ function transformHomepagePerformanceTruth(html, path = HOME_PATH) {
 
   if (!result.includes('id="vx-home-equity-coverage"')) {
     const marker = '<p>Day Trading closed trades only · Open P&amp;L excluded</p>';
-    if (result.includes(marker)) result = result.replace(marker, `${marker}<p id="vx-home-equity-coverage" class="vx-home-equity-coverage">Coverage: awaiting Closed Trades ledger · Open P&amp;L excluded</p>`);
+    if (result.includes(marker)) result = result.replace(marker, `${marker}<p id="vx-home-equity-coverage" class="vx-home-equity-coverage">Awaiting Closed Trades ledger</p>`);
   }
 
   if (!result.includes(`id="${STYLE_ID}"`)) result = result.includes("</head>") ? result.replace("</head>", `${styles}\n</head>`) : `${styles}${result}`;
