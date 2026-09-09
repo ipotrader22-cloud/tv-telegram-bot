@@ -20,6 +20,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Scope patch to public Open Positions header
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/patch_dashboard_live_position.py')
+          source = path.read_text()
+          old = '''app = replace_once(
+              app,
+              "              <th>Entry</th>\\n              <th>Exit</th>\\n              <th>Qty</th>",
+              "              <th>Entry</th>\\n              <th>Target</th>\\n              <th>Stop Ref</th>\\n              <th>Qty</th>",
+              'open positions headers',
+          )'''
+          new = '''helper_marker = "Open P&amp;L updates live. Target and Stop Ref are system reference levels; final exit and result appear after the trade closes."
+          helper_index = app.find(helper_marker)
+          section_start = app.rfind('<h2>Open Positions</h2>', 0, helper_index)
+          section_end = app.find('<h2>Pending / Working Orders</h2>', helper_index)
+          if helper_index < 0 or section_start < 0 or section_end < 0:
+              raise SystemExit('public Open Positions section markers not found')
+          public_section = app[section_start:section_end]
+          public_section = replace_once(
+              public_section,
+              "              <th>Entry</th>\\n              <th>Exit</th>\\n              <th>Qty</th>",
+              "              <th>Entry</th>\\n              <th>Target</th>\\n              <th>Stop Ref</th>\\n              <th>Qty</th>",
+              'public open positions headers',
+          )
+          app = app[:section_start] + public_section + app[section_end:]'''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one header patch block, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          PY
       - name: Apply targeted patch
         run: python .github/scripts/patch_dashboard_live_position.py
       - name: Install dependencies
