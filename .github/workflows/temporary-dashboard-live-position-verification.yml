@@ -52,6 +52,17 @@ jobs:
           PY
       - name: Apply targeted patch
         run: python .github/scripts/patch_dashboard_live_position.py
+      - name: Normalize Live Open P&L HTML label
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app.js')
+          source = path.read_text()
+          old = '<div class="label">Live Open P&L</div>'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one native Live Open P&L label, found {source.count(old)}')
+          path.write_text(source.replace(old, '<div class="label">Live Open P&amp;L</div>', 1))
+          PY
       - name: Install dependencies
         run: npm install --ignore-scripts
       - name: Syntax checks
