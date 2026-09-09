@@ -11,19 +11,48 @@ This manifest records repository state, deployment state, and user-visible state
 
 Latest direct verification for the website/dashboard scope:
 
-- **Latest website-changing merge on `main`:** PR #73 — `Add live open P&L to homepage Day Trading status`
-- **PR #73 final head SHA:** `45bf5f6084bf168d21456b35e13642da8266bc06`
-- **PR #73 merge SHA / latest website-changing repository code reference:** `cb3754517668778ccffd194f4f2ffc4ee17294d7`
+- **Latest website-changing merge on `main`:** PR #81 — `Add public Options intro and clarify Services paths`
+- **PR #81 final head SHA:** `dbf039a4285aeb40a7f8d99f2508f1c285259419`
+- **PR #81 merge SHA / latest website-changing repository code reference:** `69f748ec5150d8c61b87941d9a8c1812d0c5b8c9`
 - **Observed PR state:** MERGED
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment for PR #73 merge SHA:** `dep-dafnsbc9v7es73c9vkb0`
-- **PR #73 Render deployed SHA:** `cb3754517668778ccffd194f4f2ffc4ee17294d7`
-- **PR #73 deployment status:** LIVE, independently verified from Render after successful build/startup.
-- **Public homepage visual verification:** UNVERIFIED from independent web crawl at this update. The available crawl still reflected a prior cached snapshot and did not yet expose the fifth card, so it must not be used to contradict the direct GitHub/Render deployment evidence.
+- **Render deployment for PR #81 merge SHA:** `dep-dagaa2btqb8s73bejb70`
+- **PR #81 Render deployed SHA:** `69f748ec5150d8c61b87941d9a8c1812d0c5b8c9`
+- **PR #81 deployment status:** LIVE, independently verified from Render after successful build/startup.
+- **Public website user-visible verification:** **CONFLICT / UNVERIFIED** from independent crawl at this update. The available `vixale.com` crawler still returned stale pre-PR81 content for `/services` and `/closed-trades` and could not fetch `/trading-systems/options`. That stale crawl must not be used to contradict the exact GitHub/Render deployment evidence.
 
 A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above.
+
+## PR #81 — Options public intro + commercial IA merged and deployed
+
+PR #81 (`Add public Options intro and clarify Services paths`) is merged to `main` at `69f748ec5150d8c61b87941d9a8c1812d0c5b8c9` and was independently verified LIVE on Render as deployment `dep-dagaa2btqb8s73bejb70`.
+
+Production repository/deployment contract:
+
+- `/trading-systems/options` is the public Options explainer before login.
+- `/trading-systems/options/viewer` is the protected Options viewer and internally reuses the existing `/dashboard` owner/viewer authorization and session path. No second auth system is introduced.
+- The protected viewer continues to use the existing Option Journal viewer table, closed-only Options equity calculation, and existing protected brokerage-proof URLs.
+- `/admin/options` manual owner create/edit/delete and proof workflows remain unchanged.
+- Existing Options data contract remains `Option Journal!A:S`; existing Credit/Debit P&L formulas and closed-only eligibility remain unchanged.
+- `/services` adds a no-price commercial overview for Viewer Access, Signals & Research Access, Automation Setup, and Custom Development while preserving the existing service forms. Custom development remains quote-based; no standardized price or paid plan is introduced.
+- Services copy explicitly states that Vixale does not trade or manage customer brokerage accounts.
+- Closed Trades archive event names are normalized only for customer-facing display (`Take Profit`, `Stop Loss`, `End-of-Day Close`, `Manual Close`); raw worksheet/event values are not rewritten.
+- No Pine, strategy rules, signals, entries/exits/stops/targets, risk, Telegram lifecycle, bridge, TWS/IBKR execution, broker-order behavior, Sheets writer/schema, Swing automation, or Options owner-entry behavior is changed by PR #81.
+
+Validation before merge:
+
+- GitHub Actions run `34293569480`: SUCCESS on the code-change commit.
+- `node --check app.js`: PASS.
+- Syntax checks for all four changed website modules and focused tests: PASS.
+- Options public/viewer routing and dashboard-auth reuse regression: PASS.
+- Trading Systems public Options regression: PASS.
+- Services/public-IA regression: PASS.
+- Closed Trades archive regression: PASS.
+- shared navigation/public-polish/PR3 homepage regressions: PASS.
+
+User-visible crawl verification is not yet independent because the available web crawl was stale/unavailable after deployment. Treat repository/deployment state as verified and public browser presentation as **CONFLICT / UNVERIFIED** until a fresh browser or owner visual check confirms it.
 
 ## PR #73 — Homepage Live Open P&L merged and deployed
 
