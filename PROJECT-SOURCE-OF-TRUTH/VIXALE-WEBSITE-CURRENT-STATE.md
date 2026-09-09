@@ -11,23 +11,54 @@ This manifest records repository state, deployment state, and user-visible state
 
 Latest direct verification for the website/dashboard scope:
 
-- **Latest website-changing merge on `main`:** PR #95 — `Fix Day Trading snapshot and dashboard metric layout`
-- **PR #95 final head SHA:** `82caa2283c7f8636f8cc59c728615bfda5330a35`
-- **PR #95 merge SHA / latest website-changing repository code reference:** `29b0c0be5b98ff0fe774edcdc00f6ed235883136`
+- **Latest website-changing merge on `main`:** PR #97 — `Fix Dashboard live position fields and open P&L`
+- **PR #97 final head SHA:** `6b9fe23a7f279585b5456b18e12398710011ba7c`
+- **PR #97 merge SHA / latest website-changing repository code reference:** `19181954688f5b8e50beff1a4fc015d002a9df67`
 - **Observed PR state:** MERGED
-- **Focused verification:** GitHub Actions run `34405078945` — SUCCESS after the regex correction; all syntax checks, six focused regressions, and `git diff --check origin/main...HEAD` passed.
+- **Focused verification:** GitHub Actions run `34409940706` — SUCCESS; focused syntax/regression checks and `git diff --check` passed before merge.
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment for PR #95 merge SHA:** `dep-dagsmpbl550s73d88pag`
-- **PR #95 Render deployed SHA:** `29b0c0be5b98ff0fe774edcdc00f6ed235883136`
-- **PR #95 deployment status:** LIVE, independently verified from Render. Render logs also verify checkout of the exact PR #95 merge SHA, successful build, startup with `website_dashboard_snapshot_refinement.js` preloaded, `Server running on port 10000`, and service-live transition.
-- **Public Homepage visual verification:** **CONFLICT / UNVERIFIED**. The available independent web crawler continued to return cached pre-PR-#95 Homepage content after the exact PR #95 Render deploy was LIVE, including the preview sentence that PR #95 removes. Because the crawler result is not demonstrably fresh, it is not used to contradict the direct GitHub/Render deployment evidence and does not certify current public presentation.
-- **Public `/public-dashboard-win-rate.json` live-response verification:** **UNVERIFIED** from an independent fresh HTTP client in this update. Repository regression coverage verifies the narrow `{ ok, win_rate }` projection from the existing Dashboard `getDashboardData().summary.win_rate` path.
-- **Authenticated `/dashboard` visual verification:** **UNVERIFIED** independently in this update because no authenticated owner/viewer browser session was available to the verification tooling. Repository regression coverage uses the real `renderDashboardHtml()` output and verifies the seven-card order, Prime/Edge header composition, responsive CSS, and unchanged `/dashboard/live-pnl.json` contract.
-- **Safety boundary:** no strategy, signal, entry/exit, stop/target, risk, order, bridge, TWS/IBKR execution, Google Sheets schema/writer, or trading-lifecycle behavior changed in PR #95.
+- **Render deployment for PR #97 merge SHA:** `dep-dagthgs9v7es73ekn3vg`
+- **PR #97 Render deployed SHA:** `19181954688f5b8e50beff1a4fc015d002a9df67`
+- **PR #97 deployment status:** LIVE, independently verified from Render.
+- **User-visible production verification:** USER-VERIFIED on 2026-09-09 by the owner (`verified live-yes`).
+- **Dashboard presentation contract:** Live Open P&L is rendered from the existing Open Positions `open_pnl` snapshot and refreshed through the existing authenticated `/dashboard/live-pnl.json` path; Open Positions now shows Target and Stop Ref from existing authoritative fields and uses the `LIVE POSITION` state label.
+- **Safety boundary:** no strategy, signal, entry/exit, stop/target behavior, risk, order, bridge, TWS/IBKR execution, Google Sheets schema/writer, or trading-lifecycle behavior changed in PR #97.
 
 A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above.
+
+## PR #97 — Dashboard live position fields / open P&L merged and deployed
+
+PR #97 (`Fix Dashboard live position fields and open P&L`) is merged to `main` at `19181954688f5b8e50beff1a4fc015d002a9df67`. Render independently verified that exact website-changing SHA LIVE as deploy `dep-dagthgs9v7es73ekn3vg`. The owner subsequently confirmed the production result as USER-VERIFIED (`verified live-yes`).
+
+Presentation/data-binding contract established by PR #97:
+
+- Dashboard `Live Open P&L` is emitted natively from the server-rendered Open Positions snapshot instead of depending on client-side card insertion.
+- The initial aggregate uses existing `open_pnl` values only when the server snapshot is complete; no simulated fallback is introduced.
+- The existing authenticated `/dashboard/live-pnl.json` polling path refreshes both row P&L and the aggregate card; the duplicate Dashboard polling loop in `website_dashboard_snapshot_refinement.js` was removed.
+- A transient incomplete/unavailable refresh does not erase a valid server-rendered aggregate.
+- Open Positions column order is `Entry → Target → Stop Ref → Qty`.
+- `Target` mirrors the existing authoritative `row.target`; `Stop Ref` mirrors the existing authoritative `row.stop`. The website does not calculate either level.
+- The Open Positions state badge reads `LIVE POSITION` instead of `OPEN POSITION`.
+- Helper copy describes Target and Stop Ref as system reference levels without changing or describing execution rules beyond the existing data contract.
+- Existing Dashboard authentication and `/dashboard/live-pnl.json` response contract remain unchanged.
+
+Verification before merge:
+
+- GitHub Actions run `34409940706`: SUCCESS.
+- `npm install --ignore-scripts`: PASS.
+- Focused syntax checks: PASS.
+- Dashboard snapshot refinement regression: PASS.
+- Public Dashboard live-P&L regression: PASS.
+- Homepage live open-P&L regression: PASS.
+- Public-performance regression: PASS.
+- Dashboard access-security regression: PASS.
+- Homepage performance regression: PASS.
+- `git diff --check`: PASS.
+- Final feature diff: `app.js`, `website_dashboard_snapshot_refinement.js`, `tests/test_dashboard_snapshot_refinement.js`, and `tests/test_public_dashboard_live_pnl.js`.
+
+No Pine, strategy, signal, entry, exit, stop/target behavior, risk, order, bridge, TWS/IBKR execution, Google Sheets schema/writer, or trading-lifecycle behavior changed in PR #97.
 
 ## PR #95 — Day Trading snapshot / Dashboard follow-up merged and deployed
 
