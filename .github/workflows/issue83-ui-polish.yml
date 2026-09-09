@@ -19,8 +19,9 @@ jobs:
         with:
           node-version: 20
       - name: Apply focused UI polish
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
 
           p = Path('website_home_conversion_refinement.js')
@@ -109,9 +110,12 @@ jobs:
           elif new_export not in s:
               raise SystemExit('Options export anchor not found')
           p.write_text(s)
-
-          test = Path('tests/test_issue83_ui_polish.js')
-          test.write_text(r'''"use strict";
+          PY
+      - name: Write focused regression
+        shell: bash
+        run: |
+          cat > tests/test_issue83_ui_polish.js <<'EOF'
+          "use strict";
 
           const assert = require("assert");
           const fs = require("fs");
@@ -146,7 +150,7 @@ jobs:
           assert(options.includes('data-vx-options-canonical="page"'), "protected Options viewer identity must remain intact");
 
           console.log("Issue #83 UI polish: PASS");
-          ''').replace(/^          /gm, ''))
+          EOF
       - name: Syntax checks
         run: |
           node --check website_home_conversion_refinement.js
