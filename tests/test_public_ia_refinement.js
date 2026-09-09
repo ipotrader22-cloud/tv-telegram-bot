@@ -13,14 +13,14 @@ const {
   injectRiskManagementNav,
 } = require("../website_public_ia_refinement");
 
-const sample = `<!doctype html><html><head><title>Vixale | Watch a Live Trading System</title><link rel="canonical" href="https://www.vixale.com/"><style>.wrap{max-width:1180px}</style></head><body>
+const sample = `<!doctype html><html><head><title>Vixale | Watch a Live Trading System</title><link rel="canonical" href="https://www.vixale.com/"><style>.wrap{max-width:1180px}section[id]{scroll-margin-top:142px}</style></head><body>
 <nav><div class="nav-links"><a href="#live">Live System</a><a href="/trading-systems">Trading Systems</a><a href="/risk-management">Risk Management</a><a href="#start">Start Here</a><a href="#why">Why It Makes Sense</a><a href="#creators">Creators</a></div></nav>
 <main>
 <section id="hero"><h1>Watch live</h1><a href="#password-access">Request 7-Day Access</a><p>Read-only dashboard · Manual approval · Individual access code</p></section>
 <section id="password-access"><div>Private dashboard access</div><h2>Request access to the live dashboard.</h2><p>Send a short access request. Every request is reviewed manually before an individual dashboard code is created.</p><p>Once approved, you will receive a reply by email with the login instructions.</p><div>Reviewed. Access is never granted automatically.</div><div>Direct. The approval response goes to your email.</div><div>Private. Every approved viewer receives an individual access code.</div><button>Request Dashboard Access</button><small>Your request is reviewed manually. Trading involves risk and results are not guaranteed.</small></section>
-<section id="help"><h2>What can we help you with?</h2><div>01 / Watch</div><a href="#password-access">Request Dashboard Access</a><a href="#setup-call">Book Setup Call</a><a href="#bot-builder">Start Bot Builder Chat</a><a href="#strategy-rules">Test My Strategy</a></section>
-<section id="setup-call"><h2>Book a quick setup call.</h2><form id="setup-form"></form></section>
-<section id="bot-builder"><h2>Describe the trading bot you want.</h2><form id="bot-form"></form></section>
+<section id="help"><h2>What can we help you with?</h2><div>01 / Watch</div><a href="#password-access">Request Dashboard Access</a><a href="#appointment">Book Setup Call</a><a href="#bot-request">Start Bot Builder Chat</a><a href="#strategy-rules">Test My Strategy</a></section>
+<section id="appointment"><h2>Book a quick setup call.</h2><form class="strategy-form" method="POST" action="/appointment-request"></form></section>
+<section id="bot-request"><h2>Describe the trading bot you want.</h2><form class="strategy-form" method="POST" action="/bot-request"></form></section>
 <section id="strategy-rules"><h2>Send us your trading rules.</h2><form id="strategy-form"></form></section>
 <section id="steps"><h2>Simple steps. Clear choices.</h2></section>
 <section id="creators"><h2>Have an audience? Launch a trading product with Vixale.</h2></section>
@@ -52,23 +52,30 @@ assert(services.includes('<h1 id="vx-services-title">Vixale Services</h1>'));
 assert(services.includes(`class="${SERVICES_OFFER_MARKER}"`));
 for (const heading of ["Viewer Access", "Signals &amp; Research Access", "Automation Setup", "Custom Development"]) assert(services.includes(heading));
 assert(services.includes('href="/#password-access">Request Free Access →</a>'));
-assert(services.includes('href="#setup-call">Discuss research access →</a>'));
-assert(services.includes('href="#setup-call">Book setup consultation →</a>'));
-assert(services.includes('href="#bot-builder">Request a quote →</a>'));
+assert(services.includes('href="#appointment">Discuss research access →</a>'));
+assert(services.includes('href="#appointment">Book setup consultation →</a>'));
+assert(services.includes('href="#bot-request">Request a quote →</a>'));
 assert(services.includes("scope, delivery/access method, and onboarding next steps"));
 assert(services.includes("assumptions, deliverables, dependencies, and a quote"));
 assert(services.includes("Vixale does not trade or manage customer brokerage accounts"));
 assert(!services.includes("$99") && !services.includes("per month") && !services.includes("monthly price"));
 for (const needle of SERVICE_SECTION_NEEDLES) assert(services.includes(needle));
-assert(services.includes('id="setup-form"'));
+assert(services.includes('id="appointment"'));
+assert(services.includes('id="bot-request"'));
 assert(services.includes('href="/#live"'));
-assert(services.includes('href="#setup-call"'));
 assert(services.includes('href="/#password-access">Request Free Access</a>'));
+assert(!services.includes('href="#setup-call"'));
+assert(!services.includes('href="#bot-builder"'));
 assert(!services.includes('href="#password-access"'));
 assert(!services.includes('href="/services#password-access"'));
 assert(!services.includes("Simple steps. Clear choices."));
 assert(!services.includes("Have an audience? Launch a trading product with Vixale."));
 assert(services.includes("https://www.vixale.com/services"));
+
+const samePageFragments = [...services.matchAll(/href="#([^"]+)"/g)].map((match) => match[1]);
+for (const fragment of samePageFragments) {
+  assert(services.includes(`id="${fragment}"`), `Services fragment #${fragment} must resolve to a rendered target`);
+}
 
 const pricing = renderPricingFromLanding(sample);
 assert(pricing.includes("<title>Vixale | Watch System for Free</title>"));
