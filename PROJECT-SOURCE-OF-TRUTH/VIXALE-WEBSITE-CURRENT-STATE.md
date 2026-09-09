@@ -11,19 +11,45 @@ This manifest records repository state, deployment state, and user-visible state
 
 Latest direct verification for the website/dashboard scope:
 
-- **Latest website-changing merge on `main`:** PR #73 — `Add live open P&L to homepage Day Trading status`
-- **PR #73 final head SHA:** `45bf5f6084bf168d21456b35e13642da8266bc06`
-- **PR #73 merge SHA / latest website-changing repository code reference:** `cb3754517668778ccffd194f4f2ffc4ee17294d7`
+- **Latest website-changing merge on `main`:** PR #84 — `Polish homepage CTAs and Options journal note`
+- **PR #84 final head SHA:** `69c9ad13301b94ce44fbc55f1da513e3d8d51d80`
+- **PR #84 merge SHA / latest website-changing repository code reference:** `d8f606e65cb8c4c3de21272e7895c3d7eeab9e29`
 - **Observed PR state:** MERGED
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deployment for PR #73 merge SHA:** `dep-dafnsbc9v7es73c9vkb0`
-- **PR #73 Render deployed SHA:** `cb3754517668778ccffd194f4f2ffc4ee17294d7`
-- **PR #73 deployment status:** LIVE, independently verified from Render after successful build/startup.
-- **Public homepage visual verification:** UNVERIFIED from independent web crawl at this update. The available crawl still reflected a prior cached snapshot and did not yet expose the fifth card, so it must not be used to contradict the direct GitHub/Render deployment evidence.
+- **Render deployment for PR #84 merge SHA:** `dep-dagbj5e417fc738lsu3g`
+- **PR #84 Render deployed SHA:** `d8f606e65cb8c4c3de21272e7895c3d7eeab9e29`
+- **PR #84 deployment status:** LIVE, independently verified from Render after successful build/startup.
+- **Public homepage visual verification:** UNVERIFIED from independent web crawl at this update. The available crawl was two days old and still reflected pre-PR #84 homepage copy, so it must not be used to contradict the direct GitHub/Render deployment evidence.
 
 A later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior. Such a docs-only deploy does not replace the latest website-changing code reference above.
+
+## PR #84 — Homepage/UI polish merged and deployed
+
+PR #84 (`Polish homepage CTAs and Options journal note`) is merged to `main` at `d8f606e65cb8c4c3de21272e7895c3d7eeab9e29` and was independently verified LIVE on Render.
+
+Production presentation contract introduced by PR #84:
+
+- Homepage hero CTA order is `Login` → `Request Free Access` → `Explore Performance`.
+- `Login` and `Request Free Access` use the same green primary-pill treatment and existing destinations.
+- Homepage helper copy reads exactly: **`After successful registration dashboard access will be emailed within 24 hours`**.
+- Homepage Day / Swing / Options selector cards use the refined subtle light-green/white gradient treatment.
+- Protected Options viewer keeps the existing `Why IBKR may show BUY` explanation once, below the Option Journal table.
+- Day Trading performance coverage is shortened to `<date range>. <count> closed trades`.
+- Coverage dates and closed-trade count remain dynamic from the existing performance payload; they are not hardcoded.
+- `omitted_row_count` is no longer displayed in that homepage sentence, but the source performance contract is unchanged.
+
+Verification before merge:
+
+- Original Issue #83 GitHub Actions run `34296836640`: SUCCESS.
+- Final copy follow-up GitHub Actions run `34297812274`: SUCCESS.
+- Focused homepage/Options regressions: PASS.
+- Syntax checks for the changed website modules/tests: PASS.
+- Safety-boundary diff confirmed no `app.js`, `package.json`, `bridge`, `pine`, or `lib` changes in the PR.
+- Final branch differed from the tested SHA only by removal of the temporary verification workflow.
+
+No Sheet schema, API response, environment variable, auth/session, live-data calculation, Pine, strategy, signal, entry, exit, stop, target, risk, order, bridge, TWS, or IBKR execution behavior is changed by PR #84.
 
 ## PR #73 — Homepage Live Open P&L merged and deployed
 
