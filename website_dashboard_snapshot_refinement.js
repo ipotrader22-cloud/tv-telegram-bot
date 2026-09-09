@@ -50,14 +50,14 @@ function normalizedText(html) {
     .replace(/&nbsp;/gi, " ")
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&quot;/gi, '"')
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 function addClassToOpeningTag(block, className) {
   if (!block || new RegExp(`\\b${escapeRegex(className)}\\b`).test(block.slice(0, block.indexOf(">") + 1))) return block;
-  return block.replace(/^<([a-z0-9]+)\\b([^>]*)>/i, (match, tag, attrs) => {
-    const classMatch = attrs.match(/\\bclass=(["'])([^"']*)\\1/i);
+  return block.replace(/^<([a-z0-9]+)\b([^>]*)>/i, (match, tag, attrs) => {
+    const classMatch = attrs.match(/\bclass=(["'])([^"']*)\1/i);
     if (!classMatch) return `<${tag}${attrs} class="${className}">`;
     const nextClass = `${classMatch[2]} ${className}`.trim();
     return `<${tag}${attrs.replace(classMatch[0], `class=${classMatch[1]}${nextClass}${classMatch[1]}`)}>`;
@@ -274,8 +274,8 @@ function refineHome(html) {
 
 function transformDashboardHero(html) {
   let result = String(html)
-    .replace(/<h1>\\s*Vixale Live Strategy Dashboard\\s*<\\/h1>/i, "<h1>Vixale Live Day Trading Dashboard</h1>")
-    .replace(/(<div\\b[^>]*\\bclass=(["'])[^"']*\\bsubtitle\\b[^"']*\\2[^>]*>)\\s*Private live forward-test \/ paper-trading tracker\\s*(<\\/div>)/i, "$1Private live day-trading forward-test / paper-trading tracker$3");
+    .replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i, "<h1>Vixale Live Day Trading Dashboard</h1>")
+    .replace(/(<div\b[^>]*\bclass=(["'])[^"']*\bsubtitle\b[^"']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i, "$1Private live day-trading forward-test / paper-trading tracker$3");
 
   if (result.includes(`class="${DASHBOARD_HEADER_CLASS}"`) || result.includes(`class='${DASHBOARD_HEADER_CLASS}'`)) return result;
 
