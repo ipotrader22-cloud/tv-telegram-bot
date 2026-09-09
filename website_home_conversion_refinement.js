@@ -92,6 +92,7 @@ const homeStyles = `
   .vx-home-hero-btn{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 20px;border:1px solid #cbdad2;border-radius:999px;background:#fff;color:#17211d;text-decoration:none;font-size:13px;font-weight:650;transition:transform .16s ease,box-shadow .16s ease}
   .vx-home-hero-btn:hover{transform:translateY(-1px)}
   .vx-home-hero-btn.primary{border-color:#078f51;background:#078f51;color:#fff;box-shadow:0 10px 24px rgba(7,143,81,.14)}
+  .vx-home-hero-btn.access{min-width:168px;box-sizing:border-box}
   .vx-home-hero-proof{margin:14px auto 0;color:#5f6d67;font-size:13px;line-height:1.5}
   .vx-home-hero-login{margin:7px auto 0;color:#5f6d67;font-size:12.5px;line-height:1.5}
   .vx-home-hero-login a{color:#31443b;text-underline-offset:3px}
@@ -108,9 +109,8 @@ function renderHomeHero() {
     <a class="vx-home-hero-kicker" href="/trading-systems" aria-label="Explore Vixale Trading Systems">Vixale trading systems</a>
     <h1>See how our trading systems perform before you commit.</h1>
     <p class="vx-home-hero-lead">Follow current activity, examine recorded results, and understand how Day Trading, Swing Trading, and Options are presented before deciding what to do next.</p>
-    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="#live-day-trading">Explore Performance</a></div>
-    <p class="vx-home-hero-proof">Read-only viewer access · Email verification · Manual review</p>
-    <p class="vx-home-hero-login">Already have access? <a href="/dashboard">Viewer Login</a></p>
+    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary access" href="/dashboard">Login</a><a class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="#live-day-trading">Explore Performance</a></div>
+    <p class="vx-home-hero-proof">After successful registration dashboard access will be emailed within 24 hours</p>
   </div></div></section>`;
 }
 

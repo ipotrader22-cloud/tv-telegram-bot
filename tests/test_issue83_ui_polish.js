@@ -1,0 +1,17 @@
+"use strict";
+const assert=require("assert");
+const fs=require("fs"),path=require("path");
+const {renderHomeHero}=require("../website_home_conversion_refinement");
+const {refineHomeSystemSelector}=require("../website_home_system_selector_refinement");
+const {moveIbkrExplanationBelowJournal,refineOptionsPageFromDashboard}=require("../website_options_canonical_refinement");
+const hero=renderHomeHero();
+const login=hero.indexOf('class="vx-home-hero-btn primary access" href="/dashboard">Login</a>'),request=hero.indexOf('class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a>'),performance=hero.indexOf('href="#live-day-trading">Explore Performance</a>');
+assert(login>=0&&login<request&&request<performance); assert(!hero.includes("Already have access?"));
+assert(fs.readFileSync(path.join(__dirname,"..","website_home_conversion_refinement.js"),"utf8").includes(".vx-home-hero-btn.access{min-width:168px"));
+const shell='<!doctype html><html><head></head><body><section class="vx-home-hero"><div class="wrap"><div class="vx-home-hero-copy">HERO</div></div></section><section class="vx-home-day-trading"><section class="vx-home-other-systems">OLD</section></section></body></html>';
+const home=refineHomeSystemSelector(shell,"/"); assert.strictEqual((home.match(/class="vx-home-system-card"/g)||[]).length,3); assert(home.includes("background:linear-gradient(145deg,#eefaf4 0%,#f8fdf9 52%,#ffffff 100%)"));
+const journal='<div class="section" id="option-journal"><div class="section-header"><h2>Option Journal</h2></div><div class="strategy-note ibkr-note"><strong>Why IBKR may show BUY</strong><p>IBKR may display the opening combo as BUY at a negative price; the negative value is the credit received, not a debit.</p><span>BUY -48.50 = credit received · SELL -38.65 = closing transaction</span></div><div class="table-wrap"><table><tbody><tr><td>SPY</td></tr></tbody></table></div></div>';
+const moved=moveIbkrExplanationBelowJournal(journal); assert(moved.indexOf('<div class="table-wrap">')<moved.indexOf("Why IBKR may show BUY")); assert.strictEqual((moved.match(/Why IBKR may show BUY/g)||[]).length,1);
+const dashboard=`<!doctype html><html><head><title>Vixale Live Strategy Dashboard</title></head><body><div class="wrap"><div class="hero"><h1>Vixale Live Strategy Dashboard</h1></div>${journal}<div class="footer">OLD</div></div></body></html>`;
+const options=refineOptionsPageFromDashboard(dashboard,{points:[],total_realized_pnl:0},false); assert(options.indexOf('<div class="table-wrap">')<options.indexOf("Why IBKR may show BUY")); assert.strictEqual((options.match(/Why IBKR may show BUY/g)||[]).length,1); assert(options.includes('data-vx-options-canonical="page"'));
+console.log("Issue #83 UI polish: PASS");
