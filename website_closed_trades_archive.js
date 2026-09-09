@@ -30,6 +30,7 @@ function escapeHtml(value) {
 function cleanNumber(value) {
   if (value === undefined || value === null) return "";
   const text = String(value).replace(/\$/g, "").replace(/,/g, "").replace(/\+/g, "").trim();
+  if (!text) return "";
   const number = Number(text);
   return Number.isFinite(number) ? number : "";
 }
@@ -42,6 +43,32 @@ function closedTradeDateKey(value) {
   const us = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (us) return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
   return "";
+}
+
+function closedTradeTimestampKey(value) {
+  const text = String(value || "").trim();
+  const date = closedTradeDateKey(text);
+  if (!date) return null;
+
+  const time = text.match(/(?:^|[T\s])(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*(AM|PM)?$/i);
+  let hour = 0;
+  let minute = 0;
+  let second = 0;
+  if (time) {
+    hour = Number(time[1]);
+    minute = Number(time[2]);
+    second = Number(time[3] || 0);
+    const meridiem = String(time[4] || "").toUpperCase();
+    if (meridiem) {
+      if (hour < 1 || hour > 12) return null;
+      if (meridiem === "AM") hour = hour === 12 ? 0 : hour;
+      else if (meridiem === "PM") hour = hour === 12 ? 12 : hour + 12;
+    }
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+  }
+
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year, month - 1, day, hour, minute, second);
 }
 
 function buildClosedTradesArchive(closedValues, now = new Date()) {
@@ -65,6 +92,9 @@ function buildClosedTradesArchive(closedValues, now = new Date()) {
     })
     .filter(row => row.close_time || row.symbol || row.result !== null)
     .sort((a, b) => {
+      const timestampA = closedTradeTimestampKey(a.close_time);
+      const timestampB = closedTradeTimestampKey(b.close_time);
+      if (timestampA !== null && timestampB !== null && timestampA !== timestampB) return timestampB - timestampA;
       const dateA = closedTradeDateKey(a.close_time);
       const dateB = closedTradeDateKey(b.close_time);
       if (dateA !== dateB) return dateB.localeCompare(dateA);
@@ -437,6 +467,7 @@ module.exports = {
   CACHE_MS,
   cleanNumber,
   closedTradeDateKey,
+  closedTradeTimestampKey,
   buildClosedTradesArchive,
   readClosedTradesArchive,
   getClosedTradesArchiveSnapshot,
