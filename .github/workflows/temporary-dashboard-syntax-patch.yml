@@ -20,21 +20,34 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+
           path = Path('website_dashboard_snapshot_refinement.js')
-          source = path.read_text()
-          replacements = {
-              r'.replace(/\\s+/g, " ")': r'.replace(/\s+/g, " ")',
-              r'block.replace(/^<([a-z0-9]+)\\b([^>]*)>/i': r'block.replace(/^<([a-z0-9]+)\b([^>]*)>/i',
-              r'attrs.match(/\\bclass=(["\'])([^"\']*)\\1/i)': r'attrs.match(/\bclass=(["\'])([^"\']*)\1/i)',
-              r'.replace(/<h1>\\s*Vixale Live Strategy Dashboard\\s*<\\/h1>/i': r'.replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i',
-              r'.replace(/(<div\\b[^>]*\\bclass=(["\'])[^"\']*\\bsubtitle\\b[^"\']*\\2[^>]*>)\\s*Private live forward-test \\/ paper-trading tracker\\s*(<\\/div>)/i': r'.replace(/(<div\b[^>]*\bclass=(["\'])[^"\']*\bsubtitle\b[^"\']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i',
-          }
-          for old, new in replacements.items():
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f'Expected exactly one match for {old!r}, found {count}')
-              source = source.replace(old, new, 1)
-          path.write_text(source)
+          lines = path.read_text().splitlines()
+          targets = [
+              ('normalized whitespace', lambda line: '.replace(/' in line and 's+/g, " ")' in line),
+              ('opening tag regex', lambda line: 'return block.replace(/^<([a-z0-9]+)' in line),
+              ('class attribute regex', lambda line: 'const classMatch = attrs.match(/' in line),
+              ('dashboard h1 regex', lambda line: '.replace(/<h1>' in line and 'Vixale Live Strategy Dashboard' in line),
+              ('dashboard subtitle regex', lambda line: '.replace(/(<div' in line and 'Private live forward-test' in line),
+          ]
+
+          changed = []
+          for label, predicate in targets:
+              indexes = [i for i, line in enumerate(lines) if predicate(line)]
+              if len(indexes) != 1:
+                  raise SystemExit(f'{label}: expected exactly one line, found {len(indexes)}')
+              index = indexes[0]
+              before = lines[index]
+              after = before.replace('\\\\', '\\')
+              if after == before:
+                  raise SystemExit(f'{label}: expected an over-escaped regex literal')
+              lines[index] = after
+              changed.append(label)
+
+          if len(changed) != 5:
+              raise SystemExit(f'expected 5 corrections, got {len(changed)}')
+          path.write_text('\n'.join(lines) + '\n')
+          print('Corrected:', ', '.join(changed))
           PY
           node --check website_dashboard_snapshot_refinement.js
           git diff --check
