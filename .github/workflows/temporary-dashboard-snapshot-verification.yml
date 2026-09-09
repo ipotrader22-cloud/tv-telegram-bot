@@ -27,3 +27,4 @@ jobs:
       - run: node tests/test_public_performance.js
       - run: node tests/test_dashboard_access_security.js
       - run: node tests/test_home_performance_refinement.js
+      - run: git diff --check origin/main...HEAD
