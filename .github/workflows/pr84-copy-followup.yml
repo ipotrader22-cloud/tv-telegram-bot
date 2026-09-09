@@ -1,0 +1,37 @@
+name: PR84 copy follow-up
+
+on:
+  push:
+    branches:
+      - polish/issue83-ui-polish
+
+permissions:
+  contents: read
+
+jobs:
+  verify-copy-followup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Syntax checks
+        run: |
+          node --check website_home_conversion_refinement.js
+          node --check website_performance_truth_refinement.js
+          node --check tests/test_home_conversion_refinement.js
+          node --check tests/test_performance_truth_refinement.js
+      - name: Focused regressions
+        run: |
+          node tests/test_home_conversion_refinement.js
+          node tests/test_performance_truth_refinement.js
+          node tests/test_issue83_ui_polish.js
+          node tests/test_home_performance_refinement.js
+          node tests/test_audit_pr3_home_composition.js
+          node tests/test_public_performance.js
+      - name: Safety boundary
+        run: |
+          git diff --exit-code origin/main...HEAD -- app.js package.json bridge pine lib
