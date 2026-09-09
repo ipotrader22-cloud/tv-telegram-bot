@@ -1,0 +1,39 @@
+name: Verify dashboard and home live metrics
+
+on:
+  push:
+    branches:
+      - ui/dashboard-home-live-metrics
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --ignore-scripts
+      - name: Syntax checks
+        run: |
+          node --check website_dashboard_home_metrics_refinement.js
+          node --check tests/test_dashboard_home_metrics_refinement.js
+          node --check app.js
+      - name: Focused regressions
+        run: |
+          node tests/test_dashboard_home_metrics_refinement.js
+          node tests/test_home_system_selector_refinement.js
+          node tests/test_home_live_open_pnl.js
+          node tests/test_public_dashboard_live_pnl.js
+          node tests/test_public_performance.js
+          node tests/test_audit_pr3_home_composition.js
+      - name: Safety boundary
+        run: |
+          git diff --name-only origin/main...HEAD | tee /tmp/changed.txt
+          if grep -Eq '^(app\.js|bridge/|pine/|lib/)' /tmp/changed.txt; then
+            echo 'Forbidden trading/runtime file changed' >&2
+            exit 1
+          fi
