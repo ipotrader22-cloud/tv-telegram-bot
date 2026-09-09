@@ -9,6 +9,7 @@ const {
   STYLE_ID,
   SCRIPT_ID,
   DAY_SCOPE_MARKER,
+  dateLabel,
   refineHomePerformance,
   resolveSnapshotWithTimeout,
 } = require("../website_home_performance_refinement");
@@ -39,12 +40,21 @@ const snapshot = {
   equity_curve: {
     total_realized_pnl: 21940.77,
     points: [
-      { date: "2026-05-26", daily_pnl: 2000, cumulative_pnl: 2000 },
+      { date: "2026-05-27", daily_pnl: 2000, cumulative_pnl: 2000 },
       { date: "2026-06-17", daily_pnl: 9000, cumulative_pnl: 11000 },
-      { date: "2026-09-03", daily_pnl: 10940.77, cumulative_pnl: 21940.77 },
+      { date: "2026-09-09", daily_pnl: 10940.77, cumulative_pnl: 21940.77 },
     ],
   },
 };
+
+const originalTz = process.env.TZ;
+for (const timezone of ["UTC", "America/New_York"]) {
+  process.env.TZ = timezone;
+  assert.strictEqual(dateLabel("2026-05-27"), "May 27", `server date-only labels must not shift in ${timezone}`);
+  assert.strictEqual(dateLabel("2026-09-09"), "Sep 9", `server date-only labels must not shift in ${timezone}`);
+}
+if (originalTz === undefined) delete process.env.TZ;
+else process.env.TZ = originalTz;
 
 const out = refineHomePerformance(sample, "/", snapshot);
 assert(out.includes(`href="${TELEGRAM_URL}">Telegram</a>`));
@@ -76,10 +86,13 @@ assert(out.indexOf('class="vx-home-hero"') < out.indexOf('class="vx-home-day-tra
 assert(out.indexOf('class="vx-home-day-trading"') < out.indexOf('id="password-access"'), "Day Trading status must appear before access form");
 assert(out.includes('id="vx-home-equity-svg"'));
 assert(out.includes('<path d="M'));
+assert(out.includes("May 27"), "initial server-rendered SVG must keep the first calendar date");
+assert(out.includes("Sep 9"), "initial server-rendered SVG must keep the latest calendar date");
 assert(out.includes("Verified · Closed Trades ledger"));
 assert(out.includes("fetch('/public-performance.json'"));
 assert(out.includes("return sign+'$'+Math.abs"), "inline client script must preserve literal dollar sign");
 assert(!out.includes("return sign+'</html>+Math.abs"), "String.replace must not corrupt inline script via $' replacement token");
+assert(out.includes("timeZone:'UTC'"), "refreshed browser SVG date labels must format date-only keys in UTC");
 assert(out.includes("setInterval(refresh,60000)"));
 assert(out.includes(`id="${STYLE_ID}"`));
 assert(out.includes(`id="${SCRIPT_ID}"`));

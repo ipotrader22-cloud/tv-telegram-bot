@@ -13,6 +13,8 @@ Module._load = function loadWithGoogleStub(request, parent, isMain) {
 
 const {
   ARCHIVE_PATH,
+  cleanNumber,
+  closedTradeTimestampKey,
   buildClosedTradesArchive,
   getClosedTradesArchiveSnapshot,
   refineGlobalArchiveLinks,
@@ -36,6 +38,38 @@ assert.strictEqual(built.summary.first_close_date, "2026-09-02");
 assert.strictEqual(built.summary.last_close_date, "2026-09-04");
 assert.strictEqual(built.trades[0].symbol, "NVDA");
 assert.strictEqual(built.trades[2].symbol, "META", "archive must not require Trade ID / column A");
+
+assert.strictEqual(cleanNumber("   "), "", "whitespace-only numeric cells must remain missing");
+assert.strictEqual(cleanNumber("0"), 0, "a legitimate numeric zero must remain zero");
+assert(closedTradeTimestampKey("2026-09-09 12:12:06") > closedTradeTimestampKey("2026-09-09 9:45:09"));
+
+const sameDaySort = buildClosedTradesArchive([
+  closedValues[0],
+  ["MORNING", "", "2026-09-09 9:45:09", "AAA", "LONG", "10", "11", "1", "1", "TARGET"],
+  ["NOON", "", "2026-09-09 12:12:06", "BBB", "SHORT", "10", "9", "1", "1", "TARGET"],
+]);
+assert.strictEqual(sameDaySort.trades[0].symbol, "BBB", "later same-day close must sort before an earlier unpadded hour");
+assert.strictEqual(sameDaySort.trades[1].symbol, "AAA");
+
+const missingAndZero = buildClosedTradesArchive([
+  closedValues[0],
+  ["BLANK", "", "2026-09-09 10:00:00", "BLANK", "LONG", "   ", " ", " ", "   ", "MANUAL_CLOSE"],
+  ["ZERO", "", "2026-09-09 11:00:00", "ZERO", "LONG", "0", "0", "0", "0", "EOD_CLOSE"],
+  ["WIN", "", "2026-09-09 12:00:00", "WIN", "LONG", "10", "11", "1", "1", "TARGET"],
+]);
+const blankTrade = missingAndZero.trades.find(trade => trade.symbol === "BLANK");
+const zeroTrade = missingAndZero.trades.find(trade => trade.symbol === "ZERO");
+assert.strictEqual(blankTrade.entry, null);
+assert.strictEqual(blankTrade.exit, null);
+assert.strictEqual(blankTrade.size, null);
+assert.strictEqual(blankTrade.result, null, "blank P&L must not become a fabricated zero");
+assert.strictEqual(zeroTrade.entry, 0);
+assert.strictEqual(zeroTrade.exit, 0);
+assert.strictEqual(zeroTrade.size, 0);
+assert.strictEqual(zeroTrade.result, 0, "legitimate zero P&L must remain eligible numeric data");
+assert.strictEqual(missingAndZero.summary.total_trades, 3);
+assert.strictEqual(missingAndZero.summary.total_realized_pnl, 1);
+assert.strictEqual(missingAndZero.summary.win_rate, 50, "win-rate denominator must include numeric zero but exclude missing P&L");
 
 const serialized = JSON.stringify(built);
 assert(!serialized.includes('"trade_id"'));
