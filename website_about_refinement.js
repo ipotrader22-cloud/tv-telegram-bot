@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+require("./website_about_copy_polish");
 
 const HOME_PATH = "/";
 const ABOUT_PATH = "/about";
