@@ -110,7 +110,7 @@ function renderHomeHero() {
     <h1>See how our trading systems perform before you commit.</h1>
     <p class="vx-home-hero-lead">Follow current activity, examine recorded results, and understand how Day Trading, Swing Trading, and Options are presented before deciding what to do next.</p>
     <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary access" href="/dashboard">Login</a><a class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="#live-day-trading">Explore Performance</a></div>
-    <p class="vx-home-hero-proof">After successful registration, dashboard access will be emailed within 24 hours.</p>
+    <p class="vx-home-hero-proof">After successful registration dashboard access will be emailed within 24 hours</p>
   </div></div></section>`;
 }
 
