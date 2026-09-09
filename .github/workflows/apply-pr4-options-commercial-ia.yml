@@ -1,0 +1,50 @@
+name: Apply and verify PR4 Options commercial IA
+on:
+  push:
+    branches:
+      - polish/audit-options-commercial-ia-pr4
+permissions:
+  contents: write
+jobs:
+  apply-and-verify:
+    if: github.event.head_commit.message != 'Apply PR4 website audit fixes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: python scripts/apply_pr4_patch.py
+      - run: npm install --ignore-scripts
+      - run: node --check app.js
+      - run: node --check website_options_canonical_refinement.js
+      - run: node --check website_trading_systems_product_refinement.js
+      - run: node --check website_public_ia_refinement.js
+      - run: node --check website_closed_trades_archive.js
+      - run: node --check tests/test_options_canonical_refinement.js
+      - run: node --check tests/test_trading_systems_product_refinement.js
+      - run: node --check tests/test_public_ia_refinement.js
+      - run: node --check tests/test_closed_trades_archive.js
+      - run: node tests/test_options_canonical_refinement.js
+      - run: node tests/test_trading_systems_product_refinement.js
+      - run: node tests/test_public_ia_refinement.js
+      - run: node tests/test_closed_trades_archive.js
+      - run: node tests/test_navigation_disclosure_refinement.js
+      - run: node tests/test_public_polish_refinement.js
+      - run: node tests/test_audit_pr3_home_composition.js
+      - name: Verify narrow safety boundary
+        run: |
+          test -z "$(git diff --name-only origin/main...HEAD | grep -E '^(app\.js|package\.json|bridge/|pine/)' || true)"
+          git diff -- app.js package.json bridge pine
+          grep -q 'const OPTIONS_VIEWER_PATH = `${OPTIONS_PATH}/viewer`' website_options_canonical_refinement.js
+          grep -q 'Vixale does not trade or manage customer brokerage accounts' website_public_ia_refinement.js
+          grep -q 'End-of-Day Close' website_closed_trades_archive.js
+      - name: Commit verified PR4 changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add website_options_canonical_refinement.js website_trading_systems_product_refinement.js website_public_ia_refinement.js website_closed_trades_archive.js tests/test_options_canonical_refinement.js tests/test_trading_systems_product_refinement.js tests/test_public_ia_refinement.js tests/test_closed_trades_archive.js
+          git commit -m "Apply PR4 website audit fixes"
+          git push origin HEAD:polish/audit-options-commercial-ia-pr4
