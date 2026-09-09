@@ -10,6 +10,8 @@ const RISK_PATH = "/risk-management";
 const RISK_NAV_MARKER = "vx-risk-management-nav-link";
 const PRICING_STYLE_ID = "vx-pricing-access-style";
 const SERVICES_INTRO_MARKER = "vx-services-intro";
+const SERVICES_OFFER_MARKER = "vx-services-offer";
+const SERVICES_OFFER_STYLE_ID = "vx-services-offer-style";
 
 const SERVICE_SECTION_NEEDLES = [
   "What can we help you with?",
@@ -162,6 +164,26 @@ function renderServicesIntro() {
   return `<section class="wrap section ${SERVICES_INTRO_MARKER}" aria-labelledby="vx-services-title"><div class="section-head"><div class="section-kicker">Services</div><h1 id="vx-services-title">Vixale Services</h1><p class="lead">Explore Vixale research, automation, TradingView, and custom development services.</p></div></section>`;
 }
 
+const servicesOfferStyles = `
+<style id="${SERVICES_OFFER_STYLE_ID}">
+  .${SERVICES_OFFER_MARKER}{max-width:1180px;margin:0 auto;padding:0 24px 44px;box-sizing:border-box}.vx-services-offer-head{max-width:760px}.vx-services-offer-head h2{margin:0;color:#17211d;font-size:clamp(28px,3.4vw,40px);font-weight:520;letter-spacing:-.035em}.vx-services-offer-head p{margin:12px 0 0;color:#56645e;font-size:15px;line-height:1.6}.vx-services-offer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}.vx-services-offer-card{display:flex;min-height:238px;flex-direction:column;padding:24px;border:1px solid #dbe7e0;border-radius:23px;background:#fff;box-shadow:0 14px 38px rgba(24,54,42,.045)}.vx-services-offer-card>span{color:#287153;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.vx-services-offer-card h3{margin:10px 0 0;color:#17211d;font-size:24px;font-weight:550;letter-spacing:-.025em}.vx-services-offer-card p{margin:9px 0 0;color:#56645e;font-size:13.5px;line-height:1.55}.vx-services-offer-card a{display:inline-flex;align-items:center;margin-top:auto;padding-top:18px;color:#176442;font-size:12.5px;font-weight:700;text-decoration:none}.vx-services-boundary{margin-top:16px;padding:16px 18px;border:1px solid #dce8e1;border-radius:17px;background:#f6faf8;color:#4d5c55;font-size:12.8px;line-height:1.55}.vx-services-boundary strong{color:#17211d}@media(max-width:760px){.${SERVICES_OFFER_MARKER}{padding:0 16px 36px}.vx-services-offer-grid{grid-template-columns:1fr}.vx-services-offer-card{min-height:0;padding:21px}}
+</style>`;
+
+function injectServicesOfferStyles(html) {
+  if (html.includes(`id="${SERVICES_OFFER_STYLE_ID}"`)) return html;
+  return html.includes("</head>") ? html.replace("</head>", () => `${servicesOfferStyles}
+</head>`) : `${servicesOfferStyles}${html}`;
+}
+
+function renderServicesOffer() {
+  return `<section class="${SERVICES_OFFER_MARKER}" aria-labelledby="vx-services-offer-title"><div class="vx-services-offer-head"><h2 id="vx-services-offer-title">Choose the kind of help you need.</h2><p>Start with free read-only access, or use a consultation to define research access, automation setup, or custom development. Custom work is scoped and quoted before it starts.</p></div><div class="vx-services-offer-grid">
+    <article class="vx-services-offer-card"><span>Observe</span><h3>Viewer Access</h3><p>Review the public performance evidence and, if approved, use read-only viewer access for the Day Trading and Options evidence pages.</p><a href="/#password-access">Request Free Access →</a></article>
+    <article class="vx-services-offer-card"><span>Research</span><h3>Signals &amp; Research Access</h3><p>Discuss the signals and research access currently available for your use case. The consultation clarifies supported scope, delivery/access method, and onboarding next steps.</p><a href="#setup-call">Discuss research access →</a></article>
+    <article class="vx-services-offer-card"><span>Setup</span><h3>Automation Setup</h3><p>Get help planning supported TradingView alert, webhook, and automation setup. A setup consultation produces an implementation checklist and identifies any custom work that needs a quote before it starts.</p><a href="#setup-call">Book setup consultation →</a></article>
+    <article class="vx-services-offer-card"><span>Build</span><h3>Custom Development</h3><p>Scope a bot, dashboard, or integration around documented requirements. The scoping conversation produces assumptions, deliverables, dependencies, and a quote before development begins.</p><a href="#bot-builder">Request a quote →</a></article>
+  </div><div class="vx-services-boundary"><strong>Important boundary:</strong> Vixale does not trade or manage customer brokerage accounts. Services cover read-only access, research, setup assistance, and scoped development.</div></section>`;
+}
+
 function refineHomeHtml(html) {
   if (typeof html !== "string") return html;
   let result = transformPrimaryNav(html);
@@ -175,8 +197,9 @@ function renderServicesFromLanding(html) {
   const sections = SERVICE_SECTION_NEEDLES.map((needle) => extractSectionByText(html, needle)).filter(Boolean);
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
-  if (sections.length) result = replaceMainContents(result, [renderServicesIntro(), ...sections].join("\n\n"));
+  if (sections.length) result = replaceMainContents(result, [renderServicesIntro(), renderServicesOffer(), ...sections].join("\n\n"));
   result = normalizeAccessLinksToHome(result);
+  result = injectServicesOfferStyles(result);
   result = replaceAllLiteral(result, "Request Dashboard Access", "Request Free Access");
   result = updateTitle(result, "Vixale | Services");
   result = updateCanonical(result, SERVICES_PATH);
@@ -320,6 +343,10 @@ module.exports = {
   RISK_PATH,
   SERVICE_SECTION_NEEDLES,
   SERVICES_INTRO_MARKER,
+  SERVICES_OFFER_MARKER,
+  SERVICES_OFFER_STYLE_ID,
+  renderServicesOffer,
+  injectServicesOfferStyles,
   refineHomeAccessCopy,
   normalizeAccessLinksToHome,
   renderServicesIntro,

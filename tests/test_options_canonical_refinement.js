@@ -4,6 +4,7 @@ const assert = require("assert");
 const packageJson = require("../package.json");
 const {
   OPTIONS_PATH,
+  OPTIONS_VIEWER_PATH,
   DASHBOARD_PATH,
   OPTIONS_CANONICAL_URL,
   OPTION_JOURNAL_RANGE,
@@ -30,6 +31,7 @@ const values = [
 ];
 const trades = parseOptionJournalRows(values);
 assert.strictEqual(OPTION_JOURNAL_RANGE, "'Option Journal'!A:S");
+assert.strictEqual(OPTIONS_VIEWER_PATH, `${OPTIONS_PATH}/viewer`);
 assert.strictEqual(trades.length, 5);
 assert.strictEqual(optionPnl(trades[0]), 590);
 assert.strictEqual(optionPnl(trades[1]), 145);
@@ -89,7 +91,17 @@ function responseHarness() {
 (async () => {
   let loadCalls = 0;
   const middleware = capture({ loadOptionsEquityFromSheets: async () => { loadCalls += 1; return curve; } });
-  const req = { method: "GET", path: OPTIONS_PATH, url: `${OPTIONS_PATH}?key=test`, _parsedUrl: {} };
+  const publicReq = { method: "GET", path: OPTIONS_PATH, url: OPTIONS_PATH, _parsedUrl: {} };
+  const publicRes = responseHarness();
+  let publicNextCalls = 0;
+  middleware(publicReq, publicRes, () => { publicNextCalls += 1; });
+  assert.strictEqual(publicNextCalls, 1);
+  assert.strictEqual(publicReq.url, OPTIONS_PATH, "public Options overview must not be rewritten through dashboard auth");
+  publicRes.send("<p>public Options overview shell</p>");
+  assert.strictEqual(publicRes.sent, "<p>public Options overview shell</p>");
+  assert.strictEqual(loadCalls, 0, "public Options overview must not read protected Option Journal equity");
+
+  const req = { method: "GET", path: OPTIONS_VIEWER_PATH, url: `${OPTIONS_VIEWER_PATH}?key=test`, _parsedUrl: {} };
   const res = responseHarness();
   let nextCalls = 0;
   middleware(req, res, () => { nextCalls += 1; });
@@ -109,7 +121,7 @@ function responseHarness() {
   assert(dayRes.sent.includes("Live Day Trading Dashboard"));
   assert(!dayRes.sent.includes('id="option-journal"'));
 
-  const redirectReq = { method: "GET", path: OPTIONS_PATH, url: OPTIONS_PATH };
+  const redirectReq = { method: "GET", path: OPTIONS_VIEWER_PATH, url: OPTIONS_VIEWER_PATH };
   const redirectRes = responseHarness();
   redirectRes.statusCode = 302;
   const redirectMiddleware = capture({ loadOptionsEquityFromSheets: async () => { loadCalls += 100; return curve; } });

@@ -69,7 +69,11 @@ assert(!page.includes("Trade ID"));
 const markup = archiveContent({ ...built, stale: false });
 assert(markup.includes('data-outcome="win"'));
 assert(markup.includes('data-outcome="loss"'));
-assert(markup.includes("EOD Close"));
+assert(markup.includes("Take Profit"));
+assert(markup.includes("Stop Loss"));
+assert(markup.includes("End-of-Day Close"));
+assert(!markup.includes(">Close Stop<"));
+assert(!markup.includes(">EOD Close<"));
 
 const missingMarkup = archiveContent({
   stale: false,
