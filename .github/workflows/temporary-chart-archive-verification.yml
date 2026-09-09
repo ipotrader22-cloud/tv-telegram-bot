@@ -1,0 +1,21 @@
+name: Temporary chart and archive verification
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts
+      - run: node --check website_home_performance_refinement.js
+      - run: node --check tests/test_home_performance_refinement.js
+      - run: node --check website_closed_trades_archive.js
+      - run: node --check tests/test_closed_trades_archive.js
+      - run: node tests/test_home_performance_refinement.js
+      - run: node tests/test_closed_trades_archive.js
