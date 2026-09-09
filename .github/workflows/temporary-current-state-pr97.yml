@@ -1,0 +1,51 @@
+name: Temporary PR97 current-state update
+
+on:
+  push:
+    branches: [docs/current-state-pr97]
+    paths:
+      - .github/workflows/temporary-current-state-pr97.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Update website current-state manifest
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE.md')
+          source = path.read_text()
+
+          start_marker = 'Latest direct verification for the website/dashboard scope:\n\n'
+          end_marker = '\nA later documentation-only manifest commit may advance `main` and trigger Render Auto-Deploy without changing website behavior.'
+          start = source.find(start_marker)
+          end = source.find(end_marker)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('Could not locate verification-status block')
+
+          replacement = '''Latest direct verification for the website/dashboard scope:\n\n- **Latest website-changing merge on `main`:** PR #97 — `Fix Dashboard live position fields and open P&L`\n- **PR #97 final head SHA:** `6b9fe23a7f279585b5456b18e12398710011ba7c`\n- **PR #97 merge SHA / latest website-changing repository code reference:** `19181954688f5b8e50beff1a4fc015d002a9df67`\n- **Observed PR state:** MERGED\n- **Focused verification:** GitHub Actions run `34409940706` — SUCCESS; focused syntax/regression checks and `git diff --check` passed before merge.\n- **Render service:** `tv-telegram-bot`\n- **Render branch:** `main`\n- **Render Auto-Deploy:** enabled / commit-triggered\n- **Render deployment for PR #97 merge SHA:** `dep-dagthgs9v7es73ekn3vg`\n- **PR #97 Render deployed SHA:** `19181954688f5b8e50beff1a4fc015d002a9df67`\n- **PR #97 deployment status:** LIVE, independently verified from Render.\n- **User-visible production verification:** USER-VERIFIED on 2026-09-09 by the owner (`verified live-yes`).\n- **Dashboard presentation contract:** Live Open P&L is rendered from the existing Open Positions `open_pnl` snapshot and refreshed through the existing authenticated `/dashboard/live-pnl.json` path; Open Positions now shows Target and Stop Ref from existing authoritative fields and uses the `LIVE POSITION` state label.\n- **Safety boundary:** no strategy, signal, entry/exit, stop/target behavior, risk, order, bridge, TWS/IBKR execution, Google Sheets schema/writer, or trading-lifecycle behavior changed in PR #97.\n'''
+          source = source[:start] + replacement + source[end:]
+
+          anchor = '## PR #95 — Day Trading snapshot / Dashboard follow-up merged and deployed\n'
+          if anchor not in source:
+              raise SystemExit('Could not locate PR #95 section anchor')
+
+          pr97_section = '''## PR #97 — Dashboard live position fields / open P&L merged and deployed\n\nPR #97 (`Fix Dashboard live position fields and open P&L`) is merged to `main` at `19181954688f5b8e50beff1a4fc015d002a9df67`. Render independently verified that exact website-changing SHA LIVE as deploy `dep-dagthgs9v7es73ekn3vg`. The owner subsequently confirmed the production result as USER-VERIFIED (`verified live-yes`).\n\nPresentation/data-binding contract established by PR #97:\n\n- Dashboard `Live Open P&L` is emitted natively from the server-rendered Open Positions snapshot instead of depending on client-side card insertion.\n- The initial aggregate uses existing `open_pnl` values only when the server snapshot is complete; no simulated fallback is introduced.\n- The existing authenticated `/dashboard/live-pnl.json` polling path refreshes both row P&L and the aggregate card; the duplicate Dashboard polling loop in `website_dashboard_snapshot_refinement.js` was removed.\n- A transient incomplete/unavailable refresh does not erase a valid server-rendered aggregate.\n- Open Positions column order is `Entry → Target → Stop Ref → Qty`.\n- `Target` mirrors the existing authoritative `row.target`; `Stop Ref` mirrors the existing authoritative `row.stop`. The website does not calculate either level.\n- The Open Positions state badge reads `LIVE POSITION` instead of `OPEN POSITION`.\n- Helper copy describes Target and Stop Ref as system reference levels without changing or describing execution rules beyond the existing data contract.\n- Existing Dashboard authentication and `/dashboard/live-pnl.json` response contract remain unchanged.\n\nVerification before merge:\n\n- GitHub Actions run `34409940706`: SUCCESS.\n- `npm install --ignore-scripts`: PASS.\n- Focused syntax checks: PASS.\n- Dashboard snapshot refinement regression: PASS.\n- Public Dashboard live-P&L regression: PASS.\n- Homepage live open-P&L regression: PASS.\n- Public-performance regression: PASS.\n- Dashboard access-security regression: PASS.\n- Homepage performance regression: PASS.\n- `git diff --check`: PASS.\n- Final feature diff: `app.js`, `website_dashboard_snapshot_refinement.js`, `tests/test_dashboard_snapshot_refinement.js`, and `tests/test_public_dashboard_live_pnl.js`.\n\nNo Pine, strategy, signal, entry, exit, stop/target behavior, risk, order, bridge, TWS/IBKR execution, Google Sheets schema/writer, or trading-lifecycle behavior changed in PR #97.\n\n'''
+          source = source.replace(anchor, pr97_section + anchor, 1)
+          path.write_text(source)
+          PY
+          git diff --check
+          git diff -- PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE.md
+          git commit -m "Update website current state for PR #97"
+          git push origin HEAD:docs/current-state-pr97
