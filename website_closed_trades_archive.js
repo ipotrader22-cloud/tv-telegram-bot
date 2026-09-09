@@ -214,11 +214,23 @@ function formatSize(value) {
 function prettyEvent(value) {
   const text = String(value || "").trim();
   if (!text) return "—";
-  return text
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, letter => letter.toUpperCase())
-    .replace(/\bEod\b/g, "EOD");
+  const key = text.toUpperCase().replace(/\s+/g, "_");
+  const labels = {
+    TP: "Take Profit",
+    TARGET: "Take Profit",
+    TAKE_PROFIT: "Take Profit",
+    CLOSE_STOP: "Stop Loss",
+    FLIP_CLOSE: "Stop Loss",
+    SL: "Stop Loss",
+    STOP_LOSS: "Stop Loss",
+    EOD: "End-of-Day Close",
+    EOD_CLOSE: "End-of-Day Close",
+    END_OF_DAY_CLOSE: "End-of-Day Close",
+    EXTERNAL_CLOSE: "Manual Close",
+    MANUAL_CLOSE: "Manual Close",
+  };
+  if (labels[key]) return labels[key];
+  return text.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 }
 
 function pnlClass(value) {

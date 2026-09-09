@@ -3,6 +3,7 @@
 const Module = require("module");
 
 const OPTIONS_PATH = "/trading-systems/options";
+const OPTIONS_VIEWER_PATH = `${OPTIONS_PATH}/viewer`;
 const DASHBOARD_PATH = "/dashboard";
 const OPTIONS_CANONICAL_URL = "https://www.vixale.com/trading-systems/options";
 const OPTION_JOURNAL_RANGE = "'Option Journal'!A:S";
@@ -176,7 +177,7 @@ function installOptionsCanonicalRefinement(app, dependencies = {}) {
   app.use((req, res, next) => {
     const originalPath = req.path || req.url.split("?")[0];
     const isRead = req.method === "GET" || req.method === "HEAD";
-    if (!isRead || (originalPath !== OPTIONS_PATH && originalPath !== DASHBOARD_PATH)) return next();
+    if (!isRead || (originalPath !== OPTIONS_VIEWER_PATH && originalPath !== DASHBOARD_PATH)) return next();
     const send = res.send.bind(res);
     res.send = function sendWithOptionsRefinement(body) {
       const contentType = String(res.getHeader?.("Content-Type") || "");
@@ -186,7 +187,7 @@ function installOptionsCanonicalRefinement(app, dependencies = {}) {
       Promise.resolve().then(() => loadCurve()).then(curve => send(refineOptionsPageFromDashboard(body, curve, false))).catch(error => { console.error("Options equity load error:", error); send(refineOptionsPageFromDashboard(body, { points: [], total_realized_pnl: 0 }, true)); });
       return res;
     };
-    if (originalPath === OPTIONS_PATH) {
+    if (originalPath === OPTIONS_VIEWER_PATH) {
       const queryIndex = req.url.indexOf("?");
       const query = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
       req.url = `${DASHBOARD_PATH}${query}`;
@@ -220,4 +221,4 @@ Module._load = function vixaleOptionsCanonicalModuleLoad(request, parent, isMain
   return request === "express" ? wrapExpress(loaded) : loaded;
 };
 
-module.exports = { OPTIONS_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };
+module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };

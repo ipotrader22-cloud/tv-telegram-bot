@@ -4,6 +4,7 @@ const assert = require("assert");
 const {
   SERVICE_SECTION_NEEDLES,
   SERVICES_INTRO_MARKER,
+  SERVICES_OFFER_MARKER,
   refineHomeAccessCopy,
   normalizeAccessLinksToHome,
   refineHomeHtml,
@@ -48,6 +49,16 @@ const services = renderServicesFromLanding(sample);
 assert(services.includes("<title>Vixale | Services</title>"));
 assert(services.includes(`class="wrap section ${SERVICES_INTRO_MARKER}"`));
 assert(services.includes('<h1 id="vx-services-title">Vixale Services</h1>'));
+assert(services.includes(`class="${SERVICES_OFFER_MARKER}"`));
+for (const heading of ["Viewer Access", "Signals &amp; Research Access", "Automation Setup", "Custom Development"]) assert(services.includes(heading));
+assert(services.includes('href="/#password-access">Request Free Access →</a>'));
+assert(services.includes('href="#setup-call">Discuss research access →</a>'));
+assert(services.includes('href="#setup-call">Book setup consultation →</a>'));
+assert(services.includes('href="#bot-builder">Request a quote →</a>'));
+assert(services.includes("scope, delivery/access method, and onboarding next steps"));
+assert(services.includes("assumptions, deliverables, dependencies, and a quote"));
+assert(services.includes("Vixale does not trade or manage customer brokerage accounts"));
+assert(!services.includes("$99") && !services.includes("per month") && !services.includes("monthly price"));
 for (const needle of SERVICE_SECTION_NEEDLES) assert(services.includes(needle));
 assert(services.includes('id="setup-form"'));
 assert(services.includes('href="/#live"'));
