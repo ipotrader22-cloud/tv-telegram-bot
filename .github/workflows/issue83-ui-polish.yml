@@ -1,0 +1,177 @@
+name: Issue 83 UI polish
+
+on:
+  push:
+    branches:
+      - polish/issue83-ui-polish
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply focused UI polish
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('website_home_conversion_refinement.js')
+          s = p.read_text()
+          old = '  .vx-home-hero-btn.primary{border-color:#078f51;background:#078f51;color:#fff;box-shadow:0 10px 24px rgba(7,143,81,.14)}\n'
+          new = old + '  .vx-home-hero-btn.access{min-width:168px;box-sizing:border-box}\n'
+          if 'vx-home-hero-btn.access' not in s:
+              if old not in s: raise SystemExit('hero primary CSS anchor not found')
+              s = s.replace(old, new, 1)
+          old_actions = '    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="#live-day-trading">Explore Performance</a></div>\n    <p class="vx-home-hero-proof">Read-only viewer access · Email verification · Manual review</p>\n    <p class="vx-home-hero-login">Already have access? <a href="/dashboard">Viewer Login</a></p>'
+          new_actions = '    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary access" href="/dashboard">Login</a><a class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="#live-day-trading">Explore Performance</a></div>\n    <p class="vx-home-hero-proof">Read-only viewer access · Email verification · Manual review</p>'
+          if old_actions in s:
+              s = s.replace(old_actions, new_actions, 1)
+          elif new_actions not in s:
+              raise SystemExit('hero action markup anchor not found')
+          p.write_text(s)
+
+          p = Path('website_home_system_selector_refinement.js')
+          s = p.read_text()
+          old = 'border:1px solid #dce7e1;border-radius:22px;background:#fff;color:#17211d;'
+          new = 'border:1px solid #dce7e1;border-radius:22px;background:linear-gradient(145deg,#eefaf4 0%,#f8fdf9 52%,#ffffff 100%);color:#17211d;'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit('system card background anchor not found')
+          p.write_text(s)
+
+          p = Path('website_options_canonical_refinement.js')
+          s = p.read_text()
+          old = '''function extractOptionJournalSection(html) {
+            const range = elementRangeById(html, "div", "option-journal");
+            return range ? html.slice(range.start, range.end) : "";
+          }
+          '''
+          new = '''function extractOptionJournalSection(html) {
+            const range = elementRangeById(html, "div", "option-journal");
+            return range ? html.slice(range.start, range.end) : "";
+          }
+
+          function findIbkrExplanationRange(optionSection) {
+            if (typeof optionSection !== "string") return null;
+            const titleIndex = optionSection.indexOf("Why IBKR may show BUY");
+            if (titleIndex < 0) return null;
+            const candidates = [];
+            const re = /<div\\b[^>]*>/gi;
+            let match;
+            while ((match = re.exec(optionSection)) && match.index < titleIndex) {
+              const range = tagRange(optionSection, "div", match.index);
+              if (!range || range.end <= titleIndex) continue;
+              const block = optionSection.slice(range.start, range.end);
+              if (!block.includes("Why IBKR may show BUY")) continue;
+              candidates.push({ ...range, block });
+            }
+            const complete = candidates.filter(item => /closing transaction/i.test(item.block) && !/<table\\b/i.test(item.block));
+            const pool = complete.length ? complete : candidates.filter(item => !/<table\\b/i.test(item.block));
+            if (!pool.length) return null;
+            pool.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+            const { block, ...range } = pool[0];
+            return range;
+          }
+
+          function moveIbkrExplanationBelowJournal(optionSection) {
+            if (typeof optionSection !== "string") return optionSection;
+            const noteRange = findIbkrExplanationRange(optionSection);
+            if (!noteRange) return optionSection;
+            const note = optionSection.slice(noteRange.start, noteRange.end);
+            const withoutNote = optionSection.slice(0, noteRange.start) + optionSection.slice(noteRange.end);
+            const sectionRange = tagRange(withoutNote, "div", 0);
+            if (!sectionRange || sectionRange.closeStart <= 0) return optionSection;
+            return withoutNote.slice(0, sectionRange.closeStart) + note + withoutNote.slice(sectionRange.closeStart);
+          }
+          '''
+          if 'function moveIbkrExplanationBelowJournal' not in s:
+              if old not in s: raise SystemExit('Option Journal extraction anchor not found')
+              s = s.replace(old, new, 1)
+          old_line = '  const optionSection = extractOptionJournalSection(html);'
+          new_line = '  const optionSection = moveIbkrExplanationBelowJournal(extractOptionJournalSection(html));'
+          if old_line in s:
+              s = s.replace(old_line, new_line, 1)
+          elif new_line not in s:
+              raise SystemExit('Options section assignment anchor not found')
+          old_export = 'module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };'
+          new_export = 'module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, findIbkrExplanationRange, moveIbkrExplanationBelowJournal, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };'
+          if old_export in s:
+              s = s.replace(old_export, new_export, 1)
+          elif new_export not in s:
+              raise SystemExit('Options export anchor not found')
+          p.write_text(s)
+
+          test = Path('tests/test_issue83_ui_polish.js')
+          test.write_text(r'''"use strict";
+
+          const assert = require("assert");
+          const fs = require("fs");
+          const path = require("path");
+          const { renderHomeHero } = require("../website_home_conversion_refinement");
+          const { refineHomeSystemSelector } = require("../website_home_system_selector_refinement");
+          const { moveIbkrExplanationBelowJournal, refineOptionsPageFromDashboard } = require("../website_options_canonical_refinement");
+
+          const hero = renderHomeHero();
+          const login = hero.indexOf('class="vx-home-hero-btn primary access" href="/dashboard">Login</a>');
+          const request = hero.indexOf('class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a>');
+          const performance = hero.indexOf('href="#live-day-trading">Explore Performance</a>');
+          assert(login >= 0 && login < request && request < performance, "hero actions must be Login, Request Free Access, Explore Performance");
+          assert(!hero.includes("Already have access?"), "redundant small Viewer Login line must be removed");
+          const heroSource = fs.readFileSync(path.join(__dirname, "..", "website_home_conversion_refinement.js"), "utf8");
+          assert(heroSource.includes(".vx-home-hero-btn.access{min-width:168px"), "Login and Request Free Access must share fixed primary CTA dimensions");
+
+          const shell = '<!doctype html><html><head></head><body><section class="vx-home-hero"><div class="wrap"><div class="vx-home-hero-copy">HERO</div></div></section><section class="vx-home-day-trading"><section class="vx-home-other-systems">OLD</section></section></body></html>';
+          const home = refineHomeSystemSelector(shell, "/");
+          assert.strictEqual((home.match(/class="vx-home-system-card"/g) || []).length, 3, "three system cards must remain");
+          assert(home.includes("background:linear-gradient(145deg,#eefaf4 0%,#f8fdf9 52%,#ffffff 100%)"), "system cards must use the requested subtle green gradient");
+
+          const journal = '<div class="section" id="option-journal"><div class="section-header"><h2>Option Journal</h2></div><div class="strategy-note ibkr-note"><strong>Why IBKR may show BUY</strong><p>IBKR may display the opening combo as BUY at a negative price; the negative value is the credit received, not a debit.</p><span>BUY -48.50 = credit received · SELL -38.65 = closing transaction</span></div><div class="table-wrap"><table><tbody><tr><td>SPY</td></tr></tbody></table></div></div>';
+          const moved = moveIbkrExplanationBelowJournal(journal);
+          assert(moved.indexOf('<div class="table-wrap">') < moved.indexOf("Why IBKR may show BUY"), "IBKR explanation must appear after the Option Journal table");
+          assert.strictEqual((moved.match(/Why IBKR may show BUY/g) || []).length, 1, "IBKR explanation must appear exactly once");
+
+          const dashboard = `<!doctype html><html><head><title>Vixale Live Strategy Dashboard</title></head><body><div class="wrap"><div class="hero"><h1>Vixale Live Strategy Dashboard</h1></div>${journal}<div class="footer">OLD</div></div></body></html>`;
+          const options = refineOptionsPageFromDashboard(dashboard, { points: [], total_realized_pnl: 0 }, false);
+          assert(options.indexOf('<div class="table-wrap">') < options.indexOf("Why IBKR may show BUY"), "protected Options viewer must render the IBKR note below its journal");
+          assert.strictEqual((options.match(/Why IBKR may show BUY/g) || []).length, 1, "protected Options viewer must keep one IBKR note");
+          assert(options.includes('data-vx-options-canonical="page"'), "protected Options viewer identity must remain intact");
+
+          console.log("Issue #83 UI polish: PASS");
+          ''').replace(/^          /gm, ''))
+      - name: Syntax checks
+        run: |
+          node --check website_home_conversion_refinement.js
+          node --check website_home_system_selector_refinement.js
+          node --check website_options_canonical_refinement.js
+          node --check tests/test_issue83_ui_polish.js
+      - name: Focused and existing regressions
+        run: |
+          node tests/test_issue83_ui_polish.js
+          node tests/test_home_conversion_refinement.js
+          node tests/test_home_system_selector_refinement.js
+          node tests/test_audit_pr3_home_composition.js
+          node tests/test_options_canonical_refinement.js
+          node tests/test_navigation_disclosure_refinement.js
+      - name: Safety boundary
+        run: |
+          git diff --exit-code -- app.js package.json bridge pine lib || (echo 'Unexpected non-presentation change' && exit 1)
+      - name: Commit generated patch
+        run: |
+          git config user.name "ipotrader22-cloud"
+          git config user.email "ipotrader22@gmail.com"
+          git add website_home_conversion_refinement.js website_home_system_selector_refinement.js website_options_canonical_refinement.js tests/test_issue83_ui_polish.js
+          if git diff --cached --quiet; then
+            echo "No patch changes to commit"
+          else
+            git commit -m "Polish hero CTAs, system cards, and Options note"
+            git push origin HEAD:polish/issue83-ui-polish
+          fi
