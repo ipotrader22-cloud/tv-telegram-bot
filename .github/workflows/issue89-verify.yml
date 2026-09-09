@@ -1,0 +1,94 @@
+name: Issue 89 preload consolidation verification
+
+on:
+  push:
+    branches:
+      - refactor/issue89-about-preload-cluster
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply explicit About cluster ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('website_about_refinement.js')
+          s = p.read_text()
+          anchor = 'const Module = require("module");'
+          dependency = 'require("./website_about_copy_polish");'
+          if dependency not in s:
+              if anchor not in s:
+                  raise SystemExit('About refinement Module anchor missing')
+              s = s.replace(anchor, anchor + '\n' + dependency, 1)
+              p.write_text(s)
+          PY
+
+          if ! git diff --quiet -- website_about_refinement.js; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add website_about_refinement.js
+            git commit -m "refactor: make About refinement own copy polish"
+            git push origin HEAD:refactor/issue89-about-preload-cluster
+          fi
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Syntax and startup checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check app.js
+          node --check website_about_refinement.js
+          node --check website_about_copy_polish.js
+          node --check tests/test_issue89_about_preload_consolidation.js
+          node - <<'NODE'
+          const pkg = require('./package.json');
+          const start = String(pkg.scripts.start || '');
+          const preloads = [...start.matchAll(/-r \.\/(website_[^ ]+\.js)/g)].map(m => m[1]);
+          if (preloads.length !== 22) throw new Error(`expected 22 website preloads, got ${preloads.length}`);
+          if (preloads.includes('website_about_copy_polish.js')) throw new Error('copy polish still top-level preload');
+          if (!preloads.includes('website_about_refinement.js')) throw new Error('About refinement preload missing');
+          console.log('Top-level website preloads:', preloads.length);
+          NODE
+
+      - name: Focused regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/test_issue89_about_preload_consolidation.js
+          node tests/test_about_copy_polish.js
+          node tests/test_about_refinement.js
+          node tests/test_navigation_disclosure_refinement.js
+          node tests/test_audit_pr3_home_composition.js
+          node tests/test_public_polish_refinement.js
+
+      - name: Safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          changed="$(git diff --name-only origin/main...HEAD)"
+          printf '%s\n' "$changed"
+          allowed='^(package\.json|website_about_refinement\.js|tests/test_issue89_about_preload_consolidation\.js|docs/VECO_DEVELOPER_HANDBOOK_WEBSITE_PRELOAD_CONSOLIDATION_ADDENDUM\.md|\.github/workflows/issue89-verify\.yml)$'
+          unexpected="$(printf '%s\n' "$changed" | grep -Ev "$allowed" || true)"
+          if [ -n "$unexpected" ]; then
+            echo 'Unexpected file(s) in Issue #89 diff:' >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          if printf '%s\n' "$changed" | grep -Eq '^(bridge/|pine/|app\.js$)'; then
+            echo 'Trading/execution/app.js file changed unexpectedly' >&2
+            exit 1
+          fi
