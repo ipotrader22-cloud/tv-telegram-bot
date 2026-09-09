@@ -10,10 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify issue 87 redirect and TLS
+      - name: Verify issue 87 redirect DNS TLS and canonical
         shell: bash
         run: |
           set -euo pipefail
+          echo '=== DNS apex A ==='
+          dig +short vixale.com A
+          echo '=== DNS apex NS ==='
+          dig +short vixale.com NS
+          echo '=== DNS www CNAME ==='
+          dig +short www.vixale.com CNAME
+          echo '=== DNS www A ==='
+          dig +short www.vixale.com A
           echo '=== apex root headers ==='
           curl -sS -D - -o /dev/null --max-redirs 0 https://vixale.com/ || true
           echo '=== apex path/query headers ==='
@@ -27,7 +35,7 @@ jobs:
           echo '=== www cert ==='
           openssl s_client -connect www.vixale.com:443 -servername www.vixale.com </dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
           echo '=== canonical root ==='
-          curl -sS https://www.vixale.com/ | grep -o -i '<link[^>]*rel=["'"']canonical["'"'][^>]*>' | head -1 || true
+          curl -sS https://www.vixale.com/ | grep -i 'rel="canonical"' | head -1 || true
       - name: Inspect funnel anchors without secrets
         shell: bash
         run: |
