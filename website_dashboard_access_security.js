@@ -27,10 +27,11 @@ function replaceBlockOnce(source, startNeedle, endNeedle, replacement, label) {
 }
 
 const { ACCESS_HELPERS, NEW_PASSWORD_AND_VERIFY_ROUTES, DELETE_ROUTE } = require("./lib/dashboard-access-security-source-blocks");
+const websiteFunnelSourcePatch = require("./lib/website-funnel-source-patch");
 
 function patchAppSource(source) {
   if (typeof source !== "string") throw new TypeError("app source must be a string");
-  if (source.includes(APP_PATCH_MARKER)) return source;
+  if (source.includes(APP_PATCH_MARKER)) return websiteFunnelSourcePatch.patchAppSource(source);
   let out = source;
 
   out = replaceOnce(
@@ -141,6 +142,7 @@ function patchAppSource(source) {
     "access action responsive styles"
   );
 
+  out = websiteFunnelSourcePatch.patchAppSource(out);
   return out;
 }
 
