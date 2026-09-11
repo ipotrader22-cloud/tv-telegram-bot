@@ -2,6 +2,7 @@
 param(
     [string]$SourcePath = (Join-Path $PSScriptRoot "..\bridge\ib_bridge.py"),
     [string]$CoreSourcePath = (Join-Path $PSScriptRoot "..\bridge\ib_bridge_core.py"),
+    [string]$RenderCallbackCompatSourcePath = (Join-Path $PSScriptRoot "..\bridge\render_callback_compat.py"),
     [string]$SmiAdapterSourcePath = (Join-Path $PSScriptRoot "..\bridge\smi_forward_adapter.py"),
     [string]$SmiRuntimeSafetySourcePath = (Join-Path $PSScriptRoot "..\bridge\smi_runtime_safety.py"),
     [string]$TargetPath = "C:\ib_bridge\ib_bridge.py",
@@ -26,10 +27,11 @@ function Get-BridgeProcess {
 
 $source = (Resolve-Path -LiteralPath $SourcePath).Path
 $coreSource = (Resolve-Path -LiteralPath $CoreSourcePath).Path
+$renderCallbackCompatSource = (Resolve-Path -LiteralPath $RenderCallbackCompatSourcePath).Path
 $smiAdapterSource = (Resolve-Path -LiteralPath $SmiAdapterSourcePath).Path
 $smiRuntimeSafetySource = (Resolve-Path -LiteralPath $SmiRuntimeSafetySourcePath).Path
 
-foreach ($requiredSource in @($source, $coreSource, $smiAdapterSource, $smiRuntimeSafetySource)) {
+foreach ($requiredSource in @($source, $coreSource, $renderCallbackCompatSource, $smiAdapterSource, $smiRuntimeSafetySource)) {
     if (-not (Test-Path -LiteralPath $requiredSource -PathType Leaf)) {
         throw "Bridge source does not exist: $requiredSource"
     }
@@ -39,6 +41,7 @@ $targetDirectory = Split-Path -Parent $TargetPath
 if (-not (Test-Path -LiteralPath $targetDirectory -PathType Container)) { throw "Bridge target directory does not exist: $targetDirectory" }
 
 $coreTargetPath = Join-Path $targetDirectory "ib_bridge_core.py"
+$renderCallbackCompatTargetPath = Join-Path $targetDirectory "render_callback_compat.py"
 $smiAdapterTargetPath = Join-Path $targetDirectory "smi_forward_adapter.py"
 $smiRuntimeSafetyTargetPath = Join-Path $targetDirectory "smi_runtime_safety.py"
 
@@ -80,6 +83,7 @@ if ($existingProcesses.Count -eq 1) {
 
 # Compile every source before touching the running bridge directory.
 Invoke-Compile $python $coreSource
+Invoke-Compile $python $renderCallbackCompatSource
 Invoke-Compile $python $smiAdapterSource
 Invoke-Compile $python $smiRuntimeSafetySource
 Invoke-Compile $python $source
@@ -88,6 +92,7 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $files = @(
     @{ Source = $source; Target = $TargetPath },
     @{ Source = $coreSource; Target = $coreTargetPath },
+    @{ Source = $renderCallbackCompatSource; Target = $renderCallbackCompatTargetPath },
     @{ Source = $smiAdapterSource; Target = $smiAdapterTargetPath },
     @{ Source = $smiRuntimeSafetySource; Target = $smiRuntimeSafetyTargetPath }
 )
@@ -104,11 +109,13 @@ try {
     # Copy all dependencies first, then the stable entrypoint last. This prevents
     # a reload watcher from seeing a new entrypoint before its imports exist.
     Copy-Item -LiteralPath $coreSource -Destination $coreTargetPath -Force
+    Copy-Item -LiteralPath $renderCallbackCompatSource -Destination $renderCallbackCompatTargetPath -Force
     Copy-Item -LiteralPath $smiAdapterSource -Destination $smiAdapterTargetPath -Force
     Copy-Item -LiteralPath $smiRuntimeSafetySource -Destination $smiRuntimeSafetyTargetPath -Force
     Copy-Item -LiteralPath $source -Destination $TargetPath -Force
 
     Invoke-Compile $python $coreTargetPath
+    Invoke-Compile $python $renderCallbackCompatTargetPath
     Invoke-Compile $python $smiAdapterTargetPath
     Invoke-Compile $python $smiRuntimeSafetyTargetPath
     Invoke-Compile $python $TargetPath
@@ -148,6 +155,7 @@ try {
     }
     Write-Output "Deployed: $TargetPath"
     Write-Output "Deployed: $coreTargetPath"
+    Write-Output "Deployed: $renderCallbackCompatTargetPath"
     Write-Output "Deployed: $smiAdapterTargetPath"
     Write-Output "Deployed: $smiRuntimeSafetyTargetPath"
 } catch {
