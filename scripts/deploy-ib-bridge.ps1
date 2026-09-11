@@ -1,15 +1,39 @@
 [CmdletBinding()]
 param(
-    [string]$SourcePath = (Join-Path $PSScriptRoot "..\bridge\ib_bridge.py"),
-    [string]$CoreSourcePath = (Join-Path $PSScriptRoot "..\bridge\ib_bridge_core.py"),
-    [string]$RenderCallbackCompatSourcePath = (Join-Path $PSScriptRoot "..\bridge\render_callback_compat.py"),
-    [string]$SmiAdapterSourcePath = (Join-Path $PSScriptRoot "..\bridge\smi_forward_adapter.py"),
-    [string]$SmiRuntimeSafetySourcePath = (Join-Path $PSScriptRoot "..\bridge\smi_runtime_safety.py"),
+    [string]$SourcePath = "",
+    [string]$CoreSourcePath = "",
+    [string]$RenderCallbackCompatSourcePath = "",
+    [string]$SmiAdapterSourcePath = "",
+    [string]$SmiRuntimeSafetySourcePath = "",
     [string]$TargetPath = "C:\ib_bridge\ib_bridge.py",
     [string]$HealthUrl = "http://127.0.0.1:8000/ib/status"
 )
 
 $ErrorActionPreference = "Stop"
+
+$scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
+    $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
+}
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
+    throw "Could not resolve the deploy script directory."
+}
+
+if ([string]::IsNullOrWhiteSpace($SourcePath)) {
+    $SourcePath = Join-Path $scriptRoot "..\bridge\ib_bridge.py"
+}
+if ([string]::IsNullOrWhiteSpace($CoreSourcePath)) {
+    $CoreSourcePath = Join-Path $scriptRoot "..\bridge\ib_bridge_core.py"
+}
+if ([string]::IsNullOrWhiteSpace($RenderCallbackCompatSourcePath)) {
+    $RenderCallbackCompatSourcePath = Join-Path $scriptRoot "..\bridge\render_callback_compat.py"
+}
+if ([string]::IsNullOrWhiteSpace($SmiAdapterSourcePath)) {
+    $SmiAdapterSourcePath = Join-Path $scriptRoot "..\bridge\smi_forward_adapter.py"
+}
+if ([string]::IsNullOrWhiteSpace($SmiRuntimeSafetySourcePath)) {
+    $SmiRuntimeSafetySourcePath = Join-Path $scriptRoot "..\bridge\smi_runtime_safety.py"
+}
 
 function Invoke-Compile([string]$Python, [string]$Path) {
     & $Python -m py_compile $Path
