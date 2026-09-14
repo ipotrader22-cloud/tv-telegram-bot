@@ -61,9 +61,12 @@ assert(refined.includes("Swing Leaders research/model portfolio"));
 assert(refined.includes(ACCESS_MARKER));
 assert(refined.includes(`id="${ACCESS_STYLE_ID}"`));
 assert(refined.includes(`href="${ACCESS_PATH}">Watch Systems for Free</a>`));
-assert(refined.includes('href="/dashboard">Already have access? Open Dashboard →</a>'));
+assert(refined.includes('class="vx-swing-access-primary" href="/dashboard">Watch Swings</a>'));
+assert(!refined.includes("Already have access? Open Dashboard"));
 assert(refined.includes("One viewer access · Day Trading · Swing Trading · Options"));
 assert.strictEqual((refined.match(/Watch Systems for Free/g) || []).length, 1, "Swing page should render one primary free-access CTA");
+assert.strictEqual((refined.match(/class="vx-swing-access-primary"/g) || []).length, 2, "Swing hero actions should share the canonical filled CTA class");
+assert(refined.includes("@media(max-width:640px){.vx-swing-access{align-items:stretch;flex-direction:column}.vx-swing-access-primary{width:100%"), "Swing CTA layout should remain mobile-safe");
 assert.strictEqual(refineCanonicalSwingHtml(refined), refined, "HTML transform must be idempotent");
 
 {
@@ -79,6 +82,7 @@ assert.strictEqual(refineCanonicalSwingHtml(refined), refined, "HTML transform m
   assert(res.sent.includes(PAGE_MARKER));
   assert(res.sent.includes(CANONICAL_SWING_URL));
   assert(res.sent.includes(`href="${ACCESS_PATH}">Watch Systems for Free</a>`));
+  assert(res.sent.includes('href="/dashboard">Watch Swings</a>'), "Watch Swings must preserve the existing dashboard destination");
 }
 
 {
