@@ -52,7 +52,7 @@ function insertSwingAccess(html) {
   if (copyIndex < 0) return html;
   const paragraphEnd = html.indexOf("</p>", copyIndex);
   if (paragraphEnd < 0) return html;
-  const access = `<div class="vx-swing-access"><a class="vx-swing-access-primary" href="${ACCESS_PATH}">Watch Systems for Free</a><a class="vx-swing-access-login" href="/dashboard">Already have access? Open Dashboard →</a><span class="vx-swing-access-note">One viewer access · Day Trading · Swing Trading · Options</span></div>`;
+  const access = `<div class="vx-swing-access"><a class="vx-swing-access-primary" href="${ACCESS_PATH}">Watch Systems for Free</a><a class="vx-swing-access-primary" href="/dashboard">Watch Swings</a><span class="vx-swing-access-note">One viewer access · Day Trading · Swing Trading · Options</span></div>`;
   const insertAt = paragraphEnd + 4;
   return html.slice(0, insertAt) + access + html.slice(insertAt);
 }
