@@ -1,111 +1,118 @@
 # VECO Developer Handbook — Website Trading Guide Addendum
 
-**Applies to:** Vixale public website / Trading Systems presentation only  
-**Added:** 2026-08-30  
-**Updated:** 2026-08-30  
-**Related routes:** `/trading-systems`, `/trading-guide`, `/swing-leaders`
+**Applies to:** Vixale public website / Trading Systems presentation only
+**Added:** 2026-08-30
+**Updated:** 2026-09-14
+**Related routes:** `/trading-systems`, `/trading-systems/swing-trading`, `/trading-guide`, `/download/trading-guide.pdf`
 
 ## Beginner Trading Guide presentation
 
-The public website includes a beginner-facing execution guide without exposing strategy-generation rules.
-
-Public presentation routes:
+The public website includes beginner-facing execution education without exposing strategy-generation rules. Public presentation routes are:
 
 ```text
 /trading-systems
+/trading-systems/swing-trading
 /trading-guide
 /download/trading-guide.pdf
 ```
 
-`/website_trading_guide.js` adds the compact **How to Trade Vixale** panel to the generated Trading Systems HTML and serves the dedicated Trading Guide page.
+`/website_trading_guide.js` adds the compact **How to Trade Vixale** panel to the Trading Systems HTML and serves the dedicated Trading Guide page.
 
-`/website_trading_systems_refinement.js` is a website-only presentation refinement for `/trading-systems`. It adds a visible **Beginner Guide** link to the upper navigation and replaces the older generic Swing placeholder with the approved single-system Swing card.
+`/website_trading_systems_refinement.js` is a website-only presentation refinement for `/trading-systems`. It adds the visible **Beginner Guide** link and renders the public Swing summary card.
 
-`/website_options_straddle_refinement.js` is a website-only presentation correction applied to `/trading-systems` and `/trading-guide`. It changes the beginner Options workflow from a long/debit example to the approved ES short-straddle credit workflow. It also serves the aligned downloadable PDF from the verified base64 source `/Vixale_Trading_Guide.pdf.b64`. It does not calculate or place any live order.
+`/website_options_straddle_refinement.js` remains the authoritative PDF-serving layer. It serves `/download/trading-guide.pdf` from the verified base64 source `/Vixale_Trading_Guide.pdf.b64` after validating the `%PDF-` signature. It also preserves the approved ES short-straddle public copy correction. It does not calculate or place any live order.
 
-`/website_trading_guide_style_refinement.js` is a presentation-only visual layer for `/trading-guide`. It aligns the guide with the broader Vixale website design without changing guide copy, strategy instructions, routes, PDF content, or data flow.
+`/website_trading_guide_style_refinement.js` is a presentation-only visual layer for `/trading-guide` and continues to align the guide with the Vixale visual system.
 
-The Node start command preloads the presentation refinements before `/app.js`:
+`/website_swing_instructional_refinement.js` is a presentation-only preload that aligns the public Swing timing/copy, injects the beginner instructional-video card on the canonical Swing page, and serves the generated media routes. `/website_swing_canonical_refinement.js` continues to own canonical routing. The instructional-video integration does not read or write the Swing feed and does not implement any portfolio logic.
 
-```text
-node -r ./website_trading_guide_style_refinement.js -r ./website_options_straddle_refinement.js -r ./website_trading_guide.js -r ./website_trading_systems_refinement.js app.js
-```
+These presentation layers must not modify TradingView strategy logic or payloads, signal generation, scoring, selection, Trading Lab automation, Google Sheets trading lifecycle, bridge/TWS/IBKR execution, VECO order/risk logic, or the Swing public JSON schema.
 
-These presentation layers must not modify:
+## Swing Trading public education contract — 2026-09-14
 
-- TradingView strategy logic or payloads;
-- signal generation or lifecycle classification;
-- bridge / TWS execution;
-- Telegram publishing logic;
-- Google Sheets trade lifecycle;
-- Swing Leaders public JSON schema or feed selection.
-
-## Trading Guide visual integration contract
-
-The dedicated `/trading-guide` page should visually read as part of the main Vixale website rather than as a separate marketing microsite.
-
-Approved visual direction:
-
-- use the same restrained green / neutral palette as the public Trading Systems experience;
-- use lighter, calmer heading weights rather than heavy display-bold typography;
-- keep the main `How to Trade Vixale` heading materially smaller than the former oversized 74px treatment;
-- use section headings around the same visual hierarchy as other Vixale public-page headings;
-- keep cards softly bordered with restrained shadows and consistent rounded corners;
-- preserve generous whitespace and desktop/mobile responsiveness;
-- do not alter instructional copy or examples as part of visual-only refinements.
-
-The style refinement is idempotent and applies only to `/trading-guide` HTML responses.
-
-## Trading Systems navigation contract
-
-The `/trading-systems` upper navigation includes a visible **Beginner Guide** link to `/trading-guide`. The link is intended to remain immediately discoverable without requiring the user to scroll to the lower guide panel.
-
-## Swing Trading public card contract
-
-The public Trading Systems page currently presents one Swing product card:
+The approved public Swing timing is:
 
 ```text
-Vixale Swing System
+Portfolio update: once per trading day.
+Expected publication/update window: 10:00-11:00 AM ET.
+After publication: review Active Portfolio for additions and removals.
+Action timing: additions and removals should be acted upon as soon as practical.
 ```
 
-The card links to:
+This replaces the older public `9:45-10:00 AM ET` wording. Day Trading and Options timing is not changed by this update.
+
+The public Swing sections mean:
 
 ```text
-/swing-leaders
-/trading-guide#swing-trading
+Potential Candidates = WATCH. Research review only; not trade entries.
+Active Portfolio = ACT. A new symbol appearing there is the actionable addition.
+Closed Trades = completed model positions with recorded exit reasons.
 ```
 
-Do not present the older generic `ATR / % based targets` or `No Daily / Weekly split` placeholder copy in this card.
+Do not invent a separate public `NEW`, `READY NOW`, or equivalent status. The relevant event is the symbol appearing in Active Portfolio.
 
-The approved user-facing Swing execution framework is:
+The approved user-facing Swing risk and exit framework is:
 
 ```text
 Profit target: +10% from the user's actual entry price.
-Defined risk: 5% stop level, evaluated on the daily close.
-Portfolio review: each trading morning, 9:45–10:00 AM ET.
-Additions: new positions may be added when the scanner identifies symbols that meet the system's selection criteria.
-Removals: holdings that no longer meet the selection criteria may be removed from Active Portfolio and should be closed according to the published portfolio update.
+Formula: Actual Entry Price x 1.10 = Profit Target.
+Typical user action: GTC SELL LIMIT.
+The +10% target may execute intraday.
+
+Stop reference: 5% below the user's actual entry price.
+Formula: Actual Entry Price x 0.95 = 5% Stop Reference.
+The stop is evaluated during the scheduled morning review.
+It is NOT an automatic intraday stop order, NOT an EOD stop, and NOT a daily-close stop.
+If the current review price is more than 5% below entry, close at market as soon as practical.
+
+Research removal: removal from Active Portfolio is an independent exit instruction.
+Close at market as soon as practical; do not wait for target or stop.
 ```
 
-This wording explains user actions and portfolio maintenance only. It must not expose the proprietary selection/scoring rules used to decide why a symbol qualifies or stops qualifying.
-
-Beginner instructions must use the current Active Portfolio model. Do not invent a public `NEW` or `READY NOW` status. A new addition is communicated by the symbol appearing in Active Portfolio.
-
-## Day Trading copy contract
-
-Prime / Edge beginner instructions explain the user workflow only:
+Research Score may only be described publicly as:
 
 ```text
-signal -> broker execution -> published target -> Stop Ref monitoring
+A proprietary Vixale research metric shown on a 0-100 scale.
 ```
 
-`Stop Ref` is presented as the applicable close-based reference when the signal specifies it, not as a native broker stop order or a simple intrabar touch.
+Do not disclose, reverse-engineer, speculate about, or visually imply the Score formula, factors, weights, thresholds, indicators, or selection methodology.
+
+## Swing instructional video
+
+The canonical Swing page includes **How to Follow Vixale Swing Trading** directly below the hero/summary block and before the detailed portfolio sections. The web asset contract is:
+
+```text
+MP4 / H.264 primary
+960x540 encoded delivery, 16:9
+English voice-over
+native controls
+no autoplay
+preload="metadata"
+playsinline
+English WebVTT captions
+poster image
+responsive width within viewport
+```
+
+Media routes:
+
+```text
+/assets/swing-trading/how-to-follow-vixale-swing-trading.mp4
+/assets/swing-trading/how-to-follow-vixale-swing-trading.en.vtt
+/assets/swing-trading/how-to-follow-vixale-swing-trading-poster.jpg
+```
+
+The maintained generation source is `/generate_swing_media_assets.py`; it generates the video, captions, poster, and five-page Trading Guide PDF source from the reviewed public education contract. The educational examples use HOOD for the +10% target path, FCX for the scheduled morning-stop path, and MU for research removal. No exact trade price/date/return is shown unless sourced from authoritative Swing history; the 2026-09-14 video intentionally shows no fabricated exact market values.
+
+## Trading Guide HTML and PDF alignment
+
+The Swing section on `/trading-guide` and the downloadable PDF must match the same public contract above. The PDF source-of-truth served by the website is `/Vixale_Trading_Guide.pdf.b64`. The maintained generator is `/generate_swing_media_assets.py`.
+
+The five-page PDF must preserve the approved Day Trading and ES short-straddle instructions while using the Swing 10:00-11:00 AM ET window and morning-review stop semantics. Focused regression coverage should verify both the HTML guide and decoded PDF source do not contain the obsolete Swing `9:45-10:00 AM ET` wording.
 
 ## Options copy contract
 
-The beginner Options workflow is the ES **short straddle** credit workflow. Public copy must not describe it as a long/debit straddle.
-
-Approved workflow:
+The beginner Options workflow remains the ES **short straddle** credit workflow:
 
 ```text
 watch 6:00-8:30 PM ET
@@ -115,48 +122,14 @@ watch 6:00-8:30 PM ET
 -> follow later hedge / adjustment / exit instructions
 ```
 
-Approved illustrative example:
-
-```text
-SELL 1 ES straddle @ 33.00 credit
-ES multiplier = 50
-10% calculation: 33.00 x 0.90 = 29.70
-Rounded BUY TO CLOSE target: 29.75
-Credit received: 33.00 x 50 = $1,650.00
-Buyback cost: 29.75 x 50 = $1,487.50
-Illustrative profit if filled: (33.00 - 29.75) x 50 = $162.50
-```
-
-The proprietary hedge / adjustment / exit decision rules remain internal. This website copy is explanatory only and does not alter Options strategy, order, margin, or execution logic.
-
-## PDF
-
-`/download/trading-guide.pdf` returns the five-page public Trading Guide with download filename `Vixale_Trading_Guide.pdf`. The checked source is `/Vixale_Trading_Guide.pdf.b64`; `/website_options_straddle_refinement.js` decodes it to PDF bytes after validating the `%PDF-` signature. Website copy and PDF copy must remain aligned with the same public execution contracts.
-
-The ES page in the PDF uses the same example as the website: 33.00 credit, 29.70 theoretical 10% buyback, 29.75 target after rounding to the nearest 0.25, multiplier 50, and +$162.50 illustrative profit if filled.
+The existing illustrative ES example remains 33.00 credit, 29.70 theoretical 10% buyback, 29.75 rounded target, multiplier 50, and +$162.50 illustrative profit if filled.
 
 ## Rollback
 
-For only the Trading Guide visual refinement:
+For the Swing instructional-video/timing presentation change only:
 
-1. remove `/website_trading_guide_style_refinement.js` from the preload command;
-2. remove the visual refinement module and its focused test.
+1. revert the Swing instructional refinement, Trading Guide, Trading Systems Swing presentation, PDF base64 source, media assets, generator, focused tests, and this handbook addendum to the prior reviewed commit;
+2. redeploy the prior confirmed website commit;
+3. do not change or roll back Trading Lab, Swing feed generation, scoring/selection logic, bridge/TWS/IBKR, VECO, Pine, or Google Sheets lifecycle code because none of those components is part of this change.
 
-For only the ES short-straddle copy correction:
-
-1. restore the prior start command without `/website_options_straddle_refinement.js`;
-2. restore the prior `Vixale_Trading_Guide.pdf` asset from Git history;
-3. remove `/Vixale_Trading_Guide.pdf.b64` and the focused ES short-straddle presentation test.
-
-For only the Trading Systems refinement:
-
-1. restore the start command to `node -r ./website_trading_guide.js app.js`;
-2. remove `/website_trading_systems_refinement.js` and its focused test.
-
-For the complete Beginner Trading Guide feature:
-
-1. restore the original application start command (`node app.js`);
-2. remove the website presentation preload modules and guide PDF source;
-3. remove the related presentation tests.
-
-No trading-engine, bridge, TWS, Sheets, Telegram, or Swing feed rollback is required.
+The repository merge does not by itself prove production deployment. Update `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE.md` only after merge, Render deployment verification, and public verification of the canonical Swing page, HTML Trading Guide, and downloadable PDF.
