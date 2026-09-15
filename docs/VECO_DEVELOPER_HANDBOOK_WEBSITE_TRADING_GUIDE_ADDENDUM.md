@@ -1,8 +1,8 @@
 # VECO Developer Handbook — Website Trading Guide Addendum
 
-**Applies to:** Vixale public website / Trading Systems presentation only
-**Added:** 2026-08-30
-**Updated:** 2026-09-14
+**Applies to:** Vixale public website / Trading Systems presentation only  
+**Added:** 2026-08-30  
+**Updated:** 2026-09-15  
 **Related routes:** `/trading-systems`, `/trading-systems/swing-trading`, `/trading-guide`, `/download/trading-guide.pdf`
 
 ## Beginner Trading Guide presentation
@@ -24,7 +24,7 @@ The public website includes beginner-facing execution education without exposing
 
 `/website_trading_guide_style_refinement.js` is a presentation-only visual layer for `/trading-guide` and continues to align the guide with the Vixale visual system.
 
-`/website_swing_instructional_refinement.js` is a presentation-only preload that aligns the public Swing timing/copy, injects the beginner instructional-video card on the canonical Swing page, and serves the generated media routes. `/website_swing_canonical_refinement.js` continues to own canonical routing. The instructional-video integration does not read or write the Swing feed and does not implement any portfolio logic.
+`/website_swing_instructional_refinement.js` remains a presentation-only preload for public Swing timing/copy alignment on `/trading-systems`, `/trading-systems/swing-trading`, and `/trading-guide`. It does **not** inject or serve an instructional video. `/website_swing_canonical_refinement.js` continues to own canonical routing.
 
 These presentation layers must not modify TradingView strategy logic or payloads, signal generation, scoring, selection, Trading Lab automation, Google Sheets trading lifecycle, bridge/TWS/IBKR execution, VECO order/risk logic, or the Swing public JSON schema.
 
@@ -77,36 +77,19 @@ A proprietary Vixale research metric shown on a 0-100 scale.
 
 Do not disclose, reverse-engineer, speculate about, or visually imply the Score formula, factors, weights, thresholds, indicators, or selection methodology.
 
-## Swing instructional video
+## Swing instructional video status — 2026-09-15
 
-The canonical Swing page includes **How to Follow Vixale Swing Trading** directly below the hero/summary block and before the detailed portfolio sections. The web asset contract is:
+The generated instructional video introduced with PR #102 has been removed from the website at the owner's request. The canonical Swing page currently has **no instructional video integration**.
 
-```text
-MP4 / H.264 primary
-960x540 encoded delivery, 16:9
-English voice-over
-native controls
-no autoplay
-preload="metadata"
-playsinline
-English WebVTT captions
-poster image
-responsive width within viewport
-```
+The generated MP4 parts, generated poster, generated WebVTT captions, and `/generate_swing_media_assets.py` are not part of the maintained website implementation after this removal.
 
-Media routes:
+A future Swing instructional video may be added only from an owner-approved supplied media asset. When that happens, Engineering may implement the presentation/serving layer without altering Swing trading behavior, scoring, selection, or lifecycle rules.
 
-```text
-/assets/swing-trading/how-to-follow-vixale-swing-trading.mp4
-/assets/swing-trading/how-to-follow-vixale-swing-trading.en.vtt
-/assets/swing-trading/how-to-follow-vixale-swing-trading-poster.jpg
-```
-
-The maintained generation source is `/generate_swing_media_assets.py`; it generates the video, captions, poster, and five-page Trading Guide PDF source from the reviewed public education contract. The educational examples use HOOD for the +10% target path, FCX for the scheduled morning-stop path, and MU for research removal. No exact trade price/date/return is shown unless sourced from authoritative Swing history; the 2026-09-14 video intentionally shows no fabricated exact market values.
+Do not recreate, regenerate, or substitute a synthetic narration/video asset unless the owner explicitly requests it.
 
 ## Trading Guide HTML and PDF alignment
 
-The Swing section on `/trading-guide` and the downloadable PDF must match the same public contract above. The PDF source-of-truth served by the website is `/Vixale_Trading_Guide.pdf.b64`. The maintained generator is `/generate_swing_media_assets.py`.
+The Swing section on `/trading-guide` and the downloadable PDF must match the same public contract above. The PDF source served by the website remains `/Vixale_Trading_Guide.pdf.b64`.
 
 The five-page PDF must preserve the approved Day Trading and ES short-straddle instructions while using the Swing 10:00-11:00 AM ET window and morning-review stop semantics. Focused regression coverage should verify both the HTML guide and decoded PDF source do not contain the obsolete Swing `9:45-10:00 AM ET` wording.
 
@@ -124,12 +107,13 @@ watch 6:00-8:30 PM ET
 
 The existing illustrative ES example remains 33.00 credit, 29.70 theoretical 10% buyback, 29.75 rounded target, multiplier 50, and +$162.50 illustrative profit if filled.
 
-## Rollback
+## Rollback / replacement boundary
 
-For the Swing instructional-video/timing presentation change only:
+For the Swing public timing/copy presentation layer only:
 
-1. revert the Swing instructional refinement, Trading Guide, Trading Systems Swing presentation, PDF base64 source, media assets, generator, focused tests, and this handbook addendum to the prior reviewed commit;
-2. redeploy the prior confirmed website commit;
-3. do not change or roll back Trading Lab, Swing feed generation, scoring/selection logic, bridge/TWS/IBKR, VECO, Pine, or Google Sheets lifecycle code because none of those components is part of this change.
+1. preserve the approved 10:00-11:00 AM ET timing and morning-review stop semantics unless the owner explicitly changes that contract;
+2. do not reintroduce the removed generated instructional video or media routes;
+3. a future owner-supplied MP4 may be integrated as a separate website-only change after the asset is provided and reviewed;
+4. do not change Trading Lab, Swing feed generation, scoring/selection logic, bridge/TWS/IBKR, VECO, Pine, or Google Sheets lifecycle code as part of media presentation work.
 
-The repository merge does not by itself prove production deployment. Update `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE.md` only after merge, Render deployment verification, and public verification of the canonical Swing page, HTML Trading Guide, and downloadable PDF.
+The repository merge does not by itself prove production deployment. Update `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE.md` only after merge, Render deployment verification, and public verification of the canonical Swing page.
