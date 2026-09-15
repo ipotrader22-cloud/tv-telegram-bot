@@ -5,6 +5,7 @@ on:
     branches:
       - feature/swing-instructional-video-review-window
     paths:
+      - .github/workflows/verify-swing-instructional.yml
       - assets/swing-trading/**
       - Vixale_Trading_Guide.pdf.b64
       - website_swing_instructional_refinement.js
@@ -52,11 +53,15 @@ jobs:
           poster=base64.b64decode((root/'assets'/'swing-trading'/'how-to-follow-vixale-swing-trading-poster.jpg.b64').read_text().strip())
           assert poster[:2] == b'\xff\xd8'
           captions=(root/'assets'/'swing-trading'/'how-to-follow-vixale-swing-trading.en.vtt').read_text()
-          assert captions.startswith('WEBVTT') and '10:00' in captions
+          assert captions.startswith('WEBVTT')
+          for phrase in ('Potential Candidates', 'Active Portfolio', 'HOOD'):
+              assert phrase in captions, phrase
           pdf=base64.b64decode((root/'Vixale_Trading_Guide.pdf.b64').read_text().strip())
           assert pdf.startswith(b'%PDF-') and len(pdf)>5000
           (root/'tmp-guide.pdf').write_bytes(pdf)
-          text='\n'.join(page.extract_text() or '' for page in PdfReader(root/'tmp-guide.pdf').pages)
+          reader=PdfReader(root/'tmp-guide.pdf')
+          assert len(reader.pages)==5
+          text='\n'.join(page.extract_text() or '' for page in reader.pages)
           assert '10:00-11:00 AM ET' in text
           assert '9:45-10:00 AM ET' not in text
           assert '6:00-8:30 PM ET' in text
