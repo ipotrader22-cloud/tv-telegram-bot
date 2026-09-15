@@ -1,0 +1,26 @@
+name: Verify PR103 live Swing video removal
+
+on:
+  push:
+    branches:
+      - verify/pr103-video-removed-live
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify public Swing page and removed media route
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 --retry-delay 2 https://www.vixale.com/trading-systems/swing-trading -o /tmp/swing.html
+          grep -q 'Vixale Swing Trading' /tmp/swing.html
+          ! grep -q '<video' /tmp/swing.html
+          ! grep -q 'How to Follow Vixale Swing Trading' /tmp/swing.html
+          ! grep -q 'how-to-follow-vixale-swing-trading' /tmp/swing.html
+          grep -q '10:00' /tmp/swing.html
+          code=$(curl -sS -o /dev/null -w '%{http_code}' https://www.vixale.com/assets/swing-trading/how-to-follow-vixale-swing-trading.mp4)
+          test "$code" = "404"
+          echo "live Swing page video removal: PASS"
