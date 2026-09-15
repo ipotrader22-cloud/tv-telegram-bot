@@ -97,7 +97,11 @@ assert.strictEqual(video.subarray(4, 8).toString("ascii"), "ftyp");
 const poster = readPosterBuffer();
 assert.strictEqual(poster[0], 0xff);
 assert.strictEqual(poster[1], 0xd8);
-assert(readCaptions().startsWith("WEBVTT"));
+const captions = readCaptions();
+assert(captions.startsWith("WEBVTT"));
+for (const exampleTicker of ["HOOD", "F C X", "M U"]) {
+  assert(captions.includes(exampleTicker), `captions missing educational example: ${exampleTicker}`);
+}
 
 assert.deepStrictEqual(parseByteRange("bytes=0-99", 1000), { start: 0, end: 99 });
 assert.deepStrictEqual(parseByteRange("bytes=900-", 1000), { start: 900, end: 999 });
