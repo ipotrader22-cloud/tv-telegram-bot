@@ -1,8 +1,8 @@
 # VECO Developer Handbook — Website Trading Guide Addendum
 
-**Applies to:** Vixale public website / Trading Systems presentation only  
-**Added:** 2026-08-30  
-**Updated:** 2026-09-15  
+**Applies to:** Vixale public website / Trading Systems presentation only
+**Added:** 2026-08-30
+**Updated:** 2026-09-15
 **Related routes:** `/trading-systems`, `/trading-systems/swing-trading`, `/trading-guide`, `/download/trading-guide.pdf`
 
 ## Beginner Trading Guide presentation
