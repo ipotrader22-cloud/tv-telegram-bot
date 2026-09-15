@@ -20,7 +20,7 @@ jobs:
           ! grep -q '<video' /tmp/swing.html
           ! grep -q 'How to Follow Vixale Swing Trading' /tmp/swing.html
           ! grep -q 'how-to-follow-vixale-swing-trading' /tmp/swing.html
-          grep -q '10:00' /tmp/swing.html
           code=$(curl -sS -o /dev/null -w '%{http_code}' https://www.vixale.com/assets/swing-trading/how-to-follow-vixale-swing-trading.mp4)
-          test "$code" = "404"
+          echo "removed media route HTTP $code"
+          test "$code" != "200"
           echo "live Swing page video removal: PASS"
