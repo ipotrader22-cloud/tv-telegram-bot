@@ -1,0 +1,32 @@
+name: Verify Swing video removal
+
+on:
+  push:
+    branches:
+      - fix/remove-swing-instructional-video
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Verify removal and regressions
+        run: |
+          node --check website_swing_instructional_refinement.js
+          node tests/test_swing_instructional_refinement.js
+          node tests/test_trading_systems_refinement.js
+          node tests/test_trading_guide.js
+          node tests/test_swing_canonical_route_refinement.js
+          test ! -e generate_swing_media_assets.py
+          test -z "$(git ls-files 'assets/swing-trading/*')"
+          ! grep -q '<video' website_swing_instructional_refinement.js
+          ! grep -q 'how-to-follow-vixale-swing-trading' website_swing_instructional_refinement.js
+          git diff --check origin/main...HEAD
