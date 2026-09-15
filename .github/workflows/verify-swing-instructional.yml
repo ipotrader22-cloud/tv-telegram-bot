@@ -1,0 +1,69 @@
+name: Verify Swing instructional integration
+
+on:
+  push:
+    branches:
+      - feature/swing-instructional-video-review-window
+    paths:
+      - assets/swing-trading/**
+      - Vixale_Trading_Guide.pdf.b64
+      - website_swing_instructional_refinement.js
+      - tests/test_swing_instructional_refinement.js
+      - package.json
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install dependencies
+        run: |
+          npm install --ignore-scripts
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --disable-pip-version-check pypdf
+      - name: Syntax and focused regressions
+        run: |
+          node --check website_swing_instructional_refinement.js
+          node tests/test_swing_instructional_refinement.js
+          node tests/test_trading_systems_refinement.js
+          node tests/test_trading_guide.js
+          node tests/test_options_straddle_refinement.js
+          node tests/test_swing_canonical_route_refinement.js
+      - name: Verify media and PDF contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          from pypdf import PdfReader
+          root=Path('.')
+          out=root/'tmp-swing.mp4'
+          parts=sorted((root/'assets'/'swing-trading').glob('how-to-follow-vixale-swing-trading.mp4.b64.part*'))
+          assert len(parts) >= 2, parts
+          data=base64.b64decode(''.join(p.read_text().strip() for p in parts))
+          assert len(data) > 500000 and data[4:8] == b'ftyp'
+          out.write_bytes(data)
+          poster=base64.b64decode((root/'assets'/'swing-trading'/'how-to-follow-vixale-swing-trading-poster.jpg.b64').read_text().strip())
+          assert poster[:2] == b'\xff\xd8'
+          captions=(root/'assets'/'swing-trading'/'how-to-follow-vixale-swing-trading.en.vtt').read_text()
+          assert captions.startswith('WEBVTT') and '10:00' in captions
+          pdf=base64.b64decode((root/'Vixale_Trading_Guide.pdf.b64').read_text().strip())
+          assert pdf.startswith(b'%PDF-') and len(pdf)>5000
+          (root/'tmp-guide.pdf').write_bytes(pdf)
+          text='\n'.join(page.extract_text() or '' for page in PdfReader(root/'tmp-guide.pdf').pages)
+          assert '10:00-11:00 AM ET' in text
+          assert '9:45-10:00 AM ET' not in text
+          assert '6:00-8:30 PM ET' in text
+          assert '29.75' in text and '$162.50' in text
+          print('asset/PDF contract: PASS')
+          PY
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of default=nw=1 tmp-swing.mp4
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,channels -of default=nw=1 tmp-swing.mp4
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
