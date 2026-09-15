@@ -55,5 +55,7 @@ jobs:
             echo "Generated assets already current"
           else
             git commit -m "Generate Swing instructional media and Trading Guide PDF"
+            git fetch origin feature/swing-instructional-video-review-window
+            git rebase origin/feature/swing-instructional-video-review-window
             git push origin HEAD:feature/swing-instructional-video-review-window
           fi
