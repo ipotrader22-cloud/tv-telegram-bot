@@ -87,9 +87,36 @@ function testEquityHistoryParser() {
   assert.ok(!parsed.some(point => point.snapshot_date === '2026-08-29'), 'missing dates must remain absent');
   assert.ok(!parsed.some(point => point.snapshot_date === '2026-08-30'), 'missing dates must remain absent');
 
+  const accountingRows = equityHistoryRows();
+  accountingRows.push(
+    ['2026-09-14', '10:12 ET', '$1,330.42', '$171.05', '$1,501.47', '$101,501.47', '2'],
+    ['2026-09-15', '10:02 ET', '$1,330.42', '($99.95)', '$1,230.46', '$101,230.46', '2'],
+    ['2026-09-16', '10:02 ET', '$1,330.42', '$209.05', '$1,539.47', '$101,539.47', '2'],
+  );
+  const accountingParsed = parseEquityHistory(accountingRows);
+  assert.strictEqual(accountingParsed.length, 10, 'accounting-formatted negative cells must not discard newer valid history');
+  assert.deepStrictEqual(accountingParsed.slice(-3).map(point => [point.snapshot_date, point.total_model_pnl]), [
+    ['2026-09-14', 1501.47],
+    ['2026-09-15', 1230.46],
+    ['2026-09-16', 1539.47],
+  ]);
+
+  const accountingNegativeTotal = equityHistoryRows();
+  accountingNegativeTotal.push(['2026-09-04', '10:02 ET', '$0.00', '$0.00', '($1,234.56)', '$98,765.44', '0']);
+  const accountingNegativeParsed = parseEquityHistory(accountingNegativeTotal);
+  assert.strictEqual(accountingNegativeParsed[accountingNegativeParsed.length - 1].total_model_pnl, -1234.56);
+
   const invalidDash = equityHistoryRows();
   invalidDash[2][4] = '-';
   assert.throws(() => parseEquityHistory(invalidDash), /Invalid currency for Equity History total_model_pnl/);
+
+  const malformedAccounting = equityHistoryRows();
+  malformedAccounting[2][3] = '($157.00';
+  assert.throws(() => parseEquityHistory(malformedAccounting), /Invalid currency for Equity History unrealized_model_pnl/);
+
+  const misplacedDollar = equityHistoryRows();
+  misplacedDollar[2][3] = '$(157.00)';
+  assert.throws(() => parseEquityHistory(misplacedDollar), /Invalid currency for Equity History unrealized_model_pnl/);
 
   const noInception = equityHistoryRows().slice(1);
   noInception[0] = equityHistoryRows()[0];
@@ -143,19 +170,29 @@ async function testCacheFallbackAndDailyAppend() {
   assert.strictEqual(fresh.data.intern_count, 2);
   assert.strictEqual(fresh.data.equity_history.length, 2);
   assert.strictEqual(fresh.data.equity_history[0].total_model_pnl, 0);
+  assert.strictEqual(fresh.data.equity_history_stale, false);
+  assert.strictEqual(fresh.data.equity_history_latest_date, '2026-08-27');
   assert.strictEqual(reads, 2);
 
   history.push(['2026-08-28', '09:59 ET', '-$813.00', '-$252.00', '-$1,065.00', '$98,935.00', '4']);
   const appended = await service.getSnapshot({ force: true });
   assert.strictEqual(appended.data.equity_history.length, 3, 'new appended Trading Lab row must appear on the next normal refresh');
   assert.strictEqual(appended.data.equity_history[2].snapshot_date, '2026-08-28');
+  assert.strictEqual(appended.data.equity_history_stale, false);
+  assert.strictEqual(appended.data.equity_history_latest_date, '2026-08-28');
+  assert.ok(!renderSwingLeadersHtml(appended.data).includes('Equity History temporarily stale — showing last valid snapshot'));
   assert.strictEqual(reads, 4);
 
   equityHistoryShouldFail = true;
   const cachedHistory = await service.getSnapshot({ force: true });
   assert.strictEqual(cachedHistory.available, true);
   assert.strictEqual(cachedHistory.stale, false, 'Equity History failure must not mark a fresh Public Feed snapshot stale');
+  assert.strictEqual(cachedHistory.data.equity_history_stale, true, 'Equity History failure must be tracked independently');
+  assert.strictEqual(cachedHistory.data.equity_history_latest_date, '2026-08-28');
   assert.deepStrictEqual(cachedHistory.data.equity_history, appended.data.equity_history, 'Equity History failure must retain the last valid history');
+  const cachedHistoryHtml = renderSwingLeadersHtml(cachedHistory.data, { stale: cachedHistory.stale });
+  assert.ok(cachedHistoryHtml.includes('Equity History temporarily stale — showing last valid snapshot'));
+  assert.ok(!cachedHistoryHtml.includes('Stale — last valid snapshot'), 'fresh Public Feed must not inherit the Equity History stale warning');
   assert.ok(logged.some(line => line.includes('Equity History refresh failed')));
   assert.strictEqual(reads, 6);
 
@@ -221,6 +258,8 @@ async function run() {
   displayData.interns[0].brief_reason = candidateReason;
   displayData.interns[0].review_date = '2026-09-02';
   displayData.equity_history = parseEquityHistory(equityHistoryRows());
+  displayData.equity_history_stale = false;
+  displayData.equity_history_latest_date = '2026-09-03';
 
   const html = renderSwingLeadersHtml(displayData, { stale: true });
   assert.ok(html.includes('Vixale Swing Leaders'));
@@ -243,6 +282,7 @@ async function run() {
   assert.ok(html.includes('proprietary Vixale research metric shown on a 0–100 scale'));
   assert.ok(html.includes('09:49 ET'));
   assert.ok(html.includes('Stale — last valid snapshot'));
+  assert.ok(!html.includes('Equity History temporarily stale — showing last valid snapshot'));
   assert.ok(html.includes('Quotes may be delayed. This is a swing research/model portfolio, not execution data.'));
   assert.ok(html.includes('class="candidate-table"'));
   assert.ok(html.includes('<th>Ticker</th><th>Score</th><th>Why We’re Watching</th><th>Reviewed</th>'));
@@ -275,6 +315,12 @@ async function run() {
   assert.ok(!html.includes('Interns'), 'Interns must not appear in public-facing HTML');
   assert.ok(!html.includes('intern-card'));
   assert.ok(!html.includes('intern-grid'));
+
+  const equityStaleDisplayData = deepClone(displayData);
+  equityStaleDisplayData.equity_history_stale = true;
+  const equityStaleHtml = renderSwingLeadersHtml(equityStaleDisplayData, { stale: false });
+  assert.ok(equityStaleHtml.includes('Equity History temporarily stale — showing last valid snapshot'));
+  assert.ok(!equityStaleHtml.includes('Stale — last valid snapshot'), 'Equity History warning must remain independent from Public Feed freshness');
 
   await testCacheFallbackAndDailyAppend();
   console.log('Swing Leaders daily Model P&L equity curve tests passed.');
