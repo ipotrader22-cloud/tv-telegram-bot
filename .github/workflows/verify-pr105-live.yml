@@ -1,0 +1,48 @@
+name: Verify PR105 live Swing equity history
+
+on:
+  push:
+    branches:
+      - verify/pr105-live
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify live Swing API and page
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --max-time 20 \
+            https://www.vixale.com/api/swing-leaders -o /tmp/swing.json
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --max-time 20 \
+            https://www.vixale.com/trading-systems/swing-trading -o /tmp/swing.html
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('/tmp/swing.json').read_text())
+          assert data['snapshot_date'] == '2026-09-16', data.get('snapshot_date')
+          assert data['snapshot_time_et'] == '10:02 ET', data.get('snapshot_time_et')
+          assert data.get('stale') is False, data.get('stale')
+          assert data.get('equity_history_stale') is False, data.get('equity_history_stale')
+          assert data.get('equity_history_latest_date') == '2026-09-16', data.get('equity_history_latest_date')
+
+          history = data.get('equity_history') or []
+          by_date = {row.get('snapshot_date'): row for row in history}
+          assert '2026-09-15' in by_date, [row.get('snapshot_date') for row in history]
+          assert '2026-09-16' in by_date, [row.get('snapshot_date') for row in history]
+          assert abs(float(by_date['2026-09-15']['unrealized_model_pnl']) - (-99.95)) < 1e-9, by_date['2026-09-15']
+          assert abs(float(by_date['2026-09-15']['total_model_pnl']) - 1230.46) < 1e-9, by_date['2026-09-15']
+          assert abs(float(by_date['2026-09-16']['total_model_pnl']) - 1539.47) < 1e-9, by_date['2026-09-16']
+          assert history[-1].get('snapshot_date') == '2026-09-16', history[-1]
+
+          html = Path('/tmp/swing.html').read_text()
+          assert '2026-09-16' in html
+          assert '10:02 ET' in html
+          assert '1,539.47' in html
+          assert 'Equity History temporarily stale' not in html
+          print('PR105 live Swing verification passed')
+          PY
