@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-09-07
+**Last updated:** 2026-09-16
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -2728,3 +2728,10 @@ A handbook is not considered implemented until it is committed at its canonical 
 - The server caches the last complete validated snapshot in memory for display resilience. A failed or invalid refresh keeps that snapshot and marks it stale; if no valid snapshot has yet been loaded, the page/API fail closed with HTTP 503 instead of constructing a partial portfolio.
 - The displayed Last Updated value always comes from `snapshot_date` + `snapshot_time_et` in the feed. Website fetch time is not substituted for the research snapshot time.
 - This integration is website/data-display only and must remain isolated from TradingView alerts, UAM, TWS/IBKR execution, VECO order/risk logic, and broker lifecycle behavior.
+
+### Swing Equity History parsing and freshness gotcha (2026-09-16)
+
+- `Equity History` is a separate Google Sheets read from `Public Feed` and must have independent freshness state. If its refresh fails, the server may retain the last validated chart history, but a successful `Public Feed` refresh stays independently fresh and the chart must visibly disclose that cached Equity History is stale.
+- The Equity History read remains `FORMATTED_VALUE`. Its strict currency parser must accept legitimate Google Sheets formats such as `$99.95`, `+$99.95`, `-$99.95`, `$1,234.56`, `($99.95)`, and `($1,234.56)`, with accounting parentheses interpreted as negative values. Malformed currency text remains invalid.
+- Do not switch the complete Equity History range blindly to `UNFORMATTED_VALUE`; its date/time display contract also depends on formatted values. A malformed nonblank historical row still fails that Equity History refresh. The website must not interpolate, reconstruct, or synthesize missing history.
+- This is a Swing website/data-display concern only. It does not modify the Trading Lab writer, Sheet schema, scoring or membership logic, strategy rules, Pine, bridge, TWS/IBKR, or other trading systems.
