@@ -25,17 +25,18 @@ jobs:
           path = Path('docs/VECO_DEVELOPER_HANDBOOK.md')
           text = path.read_text()
           text = text.replace('**Last updated:** 2026-09-07', '**Last updated:** 2026-09-16', 1)
-          note = '''
-
-### Swing Equity History parsing and freshness gotcha (2026-09-16)
-
-- `Equity History` is a separate Google Sheets read from `Public Feed` and must have independent freshness state. If its refresh fails, the server may retain the last validated chart history, but a successful `Public Feed` refresh stays independently fresh and the chart must visibly disclose that cached Equity History is stale.
-- The Equity History read remains `FORMATTED_VALUE`. Its strict currency parser must accept legitimate Google Sheets formats such as `$99.95`, `+$99.95`, `-$99.95`, `$1,234.56`, `($99.95)`, and `($1,234.56)`, with accounting parentheses interpreted as negative values. Malformed currency text remains invalid.
-- Do not switch the complete Equity History range blindly to `UNFORMATTED_VALUE`; its date/time display contract also depends on formatted values. A malformed nonblank historical row still fails that Equity History refresh. The website must not interpolate, reconstruct, or synthesize missing history.
-- This is a Swing website/data-display concern only. It does not modify the Trading Lab writer, Sheet schema, scoring or membership logic, strategy rules, Pine, bridge, TWS/IBKR, or other trading systems.
-'''
+          note_lines = [
+              '',
+              '### Swing Equity History parsing and freshness gotcha (2026-09-16)',
+              '',
+              '- `Equity History` is a separate Google Sheets read from `Public Feed` and must have independent freshness state. If its refresh fails, the server may retain the last validated chart history, but a successful `Public Feed` refresh stays independently fresh and the chart must visibly disclose that cached Equity History is stale.',
+              '- The Equity History read remains `FORMATTED_VALUE`. Its strict currency parser must accept legitimate Google Sheets formats such as `$99.95`, `+$99.95`, `-$99.95`, `$1,234.56`, `($99.95)`, and `($1,234.56)`, with accounting parentheses interpreted as negative values. Malformed currency text remains invalid.',
+              '- Do not switch the complete Equity History range blindly to `UNFORMATTED_VALUE`; its date/time display contract also depends on formatted values. A malformed nonblank historical row still fails that Equity History refresh. The website must not interpolate, reconstruct, or synthesize missing history.',
+              '- This is a Swing website/data-display concern only. It does not modify the Trading Lab writer, Sheet schema, scoring or membership logic, strategy rules, Pine, bridge, TWS/IBKR, or other trading systems.',
+              '',
+          ]
           if '### Swing Equity History parsing and freshness gotcha (2026-09-16)' not in text:
-              text = text.rstrip() + note
+              text = text.rstrip() + '\n' + '\n'.join(note_lines)
           path.write_text(text)
           PY
           git diff --check -- docs/VECO_DEVELOPER_HANDBOOK.md
