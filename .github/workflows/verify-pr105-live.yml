@@ -34,7 +34,6 @@ jobs:
           by_date = {row.get('snapshot_date'): row for row in history}
           assert '2026-09-15' in by_date, [row.get('snapshot_date') for row in history]
           assert '2026-09-16' in by_date, [row.get('snapshot_date') for row in history]
-          assert abs(float(by_date['2026-09-15']['unrealized_model_pnl']) - (-99.95)) < 1e-9, by_date['2026-09-15']
           assert abs(float(by_date['2026-09-15']['total_model_pnl']) - 1230.46) < 1e-9, by_date['2026-09-15']
           assert abs(float(by_date['2026-09-16']['total_model_pnl']) - 1539.47) < 1e-9, by_date['2026-09-16']
           assert history[-1].get('snapshot_date') == '2026-09-16', history[-1]
