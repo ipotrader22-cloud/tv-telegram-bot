@@ -9,15 +9,15 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #133 — `Issue #123 PR 5: implement pricing and manual subscription requests`
-- **PR #133 merge SHA:** `342e941fb71a0e027b70bed8e96e1cd55cde3bca`
+- **Latest website-changing merge:** PR #135 — `Issue #123 PR 6: clarify Telegram trial access and custom services`
+- **PR #135 merge SHA:** `b532741a5162e7a580fc97a9b9519f1d003f3bd7`
 - **Observed PR state:** MERGED
-- **Pre-merge verification:** branch 0 behind fresh `main`; exactly five intended pricing/offer/test/handbook/preload files; no configured GitHub Actions/status checks; focused regression source added
-- **Render deploy:** `dep-damicm6gekts73ebpc1g`
-- **Render deployed website-changing SHA:** `342e941fb71a0e027b70bed8e96e1cd55cde3bca`
+- **Pre-merge verification:** branch 0 behind fresh `main`; exactly four intended presentation/test/handbook/preload files; no configured GitHub Actions/status checks; focused source regression added
+- **Render deploy:** `dep-damiejh7lnhs73ccm940`
+- **Render deployed website-changing SHA:** `b532741a5162e7a580fc97a9b9519f1d003f3bd7`
 - **Render deployment status:** LIVE
-- **Render verification:** exact SHA built and started successfully
-- **Fresh public-origin visual verification:** **UNVERIFIED** until direct origin/owner-visible verification; stale crawler output is not origin truth.
+- **Render verification:** exact SHA checked out; build successful; `npm start` begins with `website_conversion_access_services_refinement.js`; server bound port 10000; Render reported the service live
+- **Fresh public-origin visual verification:** **UNVERIFIED** until a direct origin/owner-visible check is available; stale crawler output is not treated as origin truth.
 
 ## Active Issue #123 product contract
 
@@ -31,19 +31,28 @@ Latest directly verified website-changing state:
 - bespoke setup/development/automation remain separate Services;
 - no unsupported checkout, card, automatic billing, renewal, or trial-to-paid behavior may be invented.
 
-## PR #133 — Pricing / subscription-request production contract
+## PR #135 — Telegram / Access / Services production contract
 
-- `/pricing` now presents the approved 30-day / $49 / $99 / $147 / $48 values from `lib/website-commercial-offer.js`;
-- the Day trial remains Day Trading Telegram signals only and uses the established Vixale Telegram DM destination;
-- paid Single System and Bundle CTAs are **manual onboarding requests**, not fake checkout/payment actions;
-- selected Single System requests identify Day Trading, Swing Trading, or Options explicitly;
-- the Bundle request identifies exactly all three systems;
-- free read-only viewer access is explicitly separate from the Day Telegram trial and paid subscriptions;
-- no Swing/Options Telegram-delivery promise is added;
-- no card form, auto-renew, automatic Day-31 billing, or automatic trial conversion is claimed.
+### Day Trading Telegram example
+- the public Day page includes an illustrative placeholder example matching the existing Prime-open formatter field structure: strategy/side, ticker, Entry, Target, Stop Ref;
+- placeholder values such as `[TICKER]`, `[entry]`, `[target]`, and `[stop]` are used;
+- the example is explicitly not a live trade, recommendation, ticker, price, target, stop, or result;
+- production Telegram publication code is unchanged;
+- the 30-day trial remains Day Trading Telegram signals only.
+
+### Viewer access
+- `/access` retains the existing secured request form and backend behavior;
+- public copy now separates free read-only viewer access from the Day Trading Telegram trial and from paid `$49` / `$99` subscriptions;
+- email verification/manual review and existing auth/session behavior remain unchanged.
+
+### Services
+- `/services` retains the four existing bespoke paths/forms: Signals & Research; Automation / Setup; Strategy Review / Development; Custom Bot / Integration;
+- custom Services are explicitly separate from standard trading-system subscriptions and free viewer access;
+- existing form actions/request schemas remain unchanged.
 
 ## Prior Issue #123 production slices
 
+- **PR #133 — Pricing:** merge `342e941fb71a0e027b70bed8e96e1cd55cde3bca`; Render `dep-damicm6gekts73ebpc1g` LIVE. Approved 30-day / $49 / $99 offer with manual onboarding requests only.
 - **PR #131 — Results:** merge `931442c4b3957789d3c11095bdfec6ae14cb7f3e`; Render `dep-damian97lnhs73cci9ng` LIVE. Data-first Day/Swing evidence, Options protected, no combined Vixale total.
 - **PR #129 — System pages:** merge `9fdfff07160a3ec21b314d114c1d2c25b46b5295`; Render `dep-dami7hcs728c73c3ojmg` LIVE. Working-product-first Day/Swing/Options pages.
 - **PR #126 — Homepage:** merge `f510f60f2fe8aab8ec22ff5115c7c187deb8d3d6`; Render `dep-dami2j3ncjis73dk94kg` LIVE. Working Day/Swing/Options preview.
@@ -59,7 +68,7 @@ Do not combine unlike sources, fabricate missing values, convert model results i
 
 ## Safety boundary
 
-Issue #123 through PR #133 does **not** change VECO strategy logic, signal timing, entries/exits/filters/stops/targets/risk, Pine, bridge/TWS/IBKR execution, Telegram trade lifecycle publication, Swing Trading Lab scoring/selection/writer behavior, Option Journal writes/P&L calculation, Google Sheet trading schemas/calculations, protected viewer auth, or `app.js`.
+Issue #123 through PR #135 does **not** change VECO strategy logic, signal timing, entries/exits/filters/stops/targets/risk, Pine, bridge/TWS/IBKR execution, Telegram trade lifecycle publication, Swing Trading Lab scoring/selection/writer behavior, Option Journal writes/P&L calculation, Google Sheet trading schemas/calculations, protected viewer auth, or `app.js`.
 
 Issue #89 remains the owner of broad preload/HTML-rewrite consolidation.
 
