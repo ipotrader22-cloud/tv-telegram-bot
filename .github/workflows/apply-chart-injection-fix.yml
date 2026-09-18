@@ -35,24 +35,45 @@ jobs:
                   raise SystemExit(f"{filename}: expected exactly one target, found {count}")
               path.write_text(text.replace(old, new, 1))
               print(f"patched {filename}")
-      - name: Dump emitted chart scripts
+      - name: Diagnose emitted results script
         run: |
           node <<'NODE'
           const fs=require('fs');
-          const home=require('./website_conversion_home_refinement');
           const results=require('./website_conversion_results_refinement');
-          const finalQa=require('./website_conversion_final_qa_refinement');
           const base='<!doctype html><html><head></head><body><main>fixture</main></body></html>';
-          const extract=(html,id)=>{const m=String(html).match(new RegExp(`<script id=["']${id}["']>([\\s\\S]*?)<\\/script>`)); if(!m)throw new Error('missing '+id); return m[1];};
-          fs.writeFileSync('/tmp/home.js',extract(home.injectAssets(base),home.SCRIPT_ID));
-          fs.writeFileSync('/tmp/results.js',extract(results.injectAssets(base),results.SCRIPT_ID));
-          fs.writeFileSync('/tmp/final.js',extract(finalQa.refineHomeHtml(base),'vx-issue123-pr7-final-script'));
+          const m=results.injectAssets(base).match(new RegExp(`<script id=["']${results.SCRIPT_ID}["']>([\\s\\S]*?)<\\/script>`));
+          if(!m) throw new Error('missing results script');
+          fs.writeFileSync('/tmp/results.js',m[1]);
           NODE
-          for f in /tmp/home.js /tmp/results.js /tmp/final.js; do
-            echo "===== $f ====="
-            node --check "$f" || true
-            nl -ba "$f" | sed -n '1,40p'
-          done
+          python <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/results.js').read_text()
+          # Diagnostic only: make the long generated program readable without changing tokens.
+          out=[]
+          quote=None
+          esc=False
+          for ch in s:
+              out.append(ch)
+              if quote:
+                  if esc:
+                      esc=False
+                  elif ch=='\\':
+                      esc=True
+                  elif ch==quote:
+                      quote=None
+                  continue
+              if ch in ("'", '"', '`'):
+                  quote=ch
+              elif ch in '{};':
+                  out.append('\n')
+          Path('/tmp/results-readable.js').write_text(''.join(out))
+          PY
+          echo '===== raw check ====='
+          node --check /tmp/results.js || true
+          echo '===== readable check ====='
+          node --check /tmp/results-readable.js || true
+          echo '===== readable program ====='
+          nl -ba /tmp/results-readable.js | sed -n '1,180p'
       - name: Syntax and focused regressions
         run: |
           node --check website_conversion_home_refinement.js
