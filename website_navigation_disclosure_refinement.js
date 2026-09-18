@@ -95,7 +95,7 @@ function ensureSecondaryAboutLink(html) {
   const footer = findFirstTag(html, "footer");
   if (!footer) return html;
   const block = html.slice(footer.start, footer.end);
-  if (/href=["']\\/about(?:["'#?])/i.test(block)) return html;
+  if (/href=["']\/about(?:["'#?])/i.test(block)) return html;
   const secondary = '<nav class="vx-public-secondary-nav" aria-label="Secondary navigation"><a href="/about">About</a></nav>';
   return html.slice(0, footer.closeStart) + secondary + html.slice(footer.closeStart);
 }
