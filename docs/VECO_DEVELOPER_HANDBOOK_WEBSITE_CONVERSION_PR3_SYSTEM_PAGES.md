@@ -108,3 +108,19 @@ After merge, Render must check out the exact merge SHA, build successfully, star
 ## Rollback
 
 Revert the PR 3 merge and restore the prior `package.json` preload order. No trading, broker, Sheet, auth, or customer-data rollback is required.
+
+## 2026-09-18 Swing readability follow-up
+
+Owner-directed public Swing presentation changes are handled by `website_swing_readability_refinement.js`, loaded before the existing public refinements so it receives the fully composed Swing HTML on response unwind.
+
+The follow-up is presentation-only and applies to `/trading-systems/swing-trading`:
+
+- `Follow a portfolio reviewed every day.` uses the same responsive `30–42px` hero-title range used by the approved homepage hierarchy;
+- the public `Swing evidence context` panel is removed from the final Swing page;
+- `How Swing Leaders Works` occupies the former Market Posture summary position and uses beginner-friendly language with approximately 50% larger instructional text than the prior 12px/13px copy;
+- Market Posture moves into the former full-width How block position;
+- Model Allocation is rendered as `$10K / position` so the amount and unit cannot visually collapse together.
+
+The beginner copy may simplify wording but must preserve the existing approved Swing behavior: Active Portfolio is the current model portfolio, Potential Candidates are not positions, Closed Trades are completed model positions, each model position uses the existing $10,000 allocation, the +10% target may execute intraday, the 5% downside reference is evaluated only during the scheduled morning review, Trading Lab removal remains an exit instruction, and Research Score remains the existing 0–100 research metric.
+
+This follow-up must not alter Trading Lab data, scoring, selection, feed fields, Equity History, P&L calculations, refresh/cache behavior, targets/stops, trading logic, Sheets, Telegram, authentication, bridge, TWS, or IBKR behavior. Rollback is limited to removing the Swing readability preload and reverting its presentation regression coverage.
