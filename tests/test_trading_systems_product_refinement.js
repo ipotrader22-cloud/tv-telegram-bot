@@ -58,7 +58,7 @@ assert.strictEqual(OPTIONS_VIEWER_PATH,`${OPTIONS_PATH}/viewer`);
 assert(options.includes("Options: journal-based evidence with protected detail."));
 inOrder(options,["How it differs","What you will see","Available publicly now","What viewer access adds","Options evidence.","Want to inspect the protected Options journal?"],"Options page teaching sequence");
 assert(options.includes("owner-entered Option Journal"));
-assert(options.includes("Closed-only realized P&L equity grouped by Exit Date"));
+assert(options.includes("closed-only realized P&L equity grouped by Exit Date"));
 assert(options.includes("owner-provided brokerage screenshots"));
 assert(options.includes(`href="${RESULTS_PATH}#options">Options Results</a>`));
 assert(options.includes(`href="${OPTIONS_VIEWER_PATH}">Options Viewer</a>`));
