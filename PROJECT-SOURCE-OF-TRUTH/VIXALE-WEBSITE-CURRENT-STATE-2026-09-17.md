@@ -1,7 +1,7 @@
 # VIXALE Website — Current-State Manifest
 
 **Project:** VIXALE — Website / Design / Copy / Public Pages  
-**Manifest updated:** 2026-09-17 (America/New_York)  
+**Manifest updated:** 2026-09-18 (America/New_York)  
 **Repository:** `ipotrader22-cloud/tv-telegram-bot`  
 **Default branch:** `main`
 
@@ -9,20 +9,41 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #117 — `Issue #107 PR 5: simplify Services and preserve intent`
-- **PR #117 merge SHA:** `726311d5d69bf4c54cb6d4da160106cced7826b0`
+- **Latest website-changing merge:** PR #119 — `Issue #107 PR 6: clarify evidence credibility and freshness`
+- **PR #119 merge SHA:** `782d150cdf64a604b6e186a306a8cb31bc36c399`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** source/test syntax PASS; focused PR 5 Services regressions PASS (33 assertions); PR patch whitespace/conflict scan PASS
+- **Feature-branch verification before merge:** new refinement Node syntax PASS; focused PR 6 semantic fixture checks PASS; branch 0 behind main; no configured GitHub Actions/status checks
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-damas4mk1f9s73e802n0`
-- **Render deployed website-changing SHA:** `726311d5d69bf4c54cb6d4da160106cced7826b0`
+- **Render deploy:** `dep-damgaeks728c73c1phmg`
+- **Render deployed website-changing SHA:** `782d150cdf64a604b6e186a306a8cb31bc36c399`
 - **Render deployment status:** LIVE
-- **Fresh public HTML verification:** **UNVERIFIED**
-  - the available external browser could not access the cache-busted `/services` URL during verification;
-  - GitHub + Render deployment/runtime state is verified independently.
+- **Render startup verification:** build successful; Render checked out the exact PR #119 merge SHA; `npm start` launched `website_evidence_credibility_refinement.js` first in the existing preload chain; server reported port 10000; Render reported the service live
+- **Fresh public HTML verification for PR #119:** **UNVERIFIED**
+  - deployment/runtime state is independently verified from GitHub + Render;
+  - a fresh public-origin/user-visible verification has not yet been recorded for PR #119.
 - **Prior owner verification:** PR #110 homepage behavior was explicitly verified by the owner after deployment.
+
+## PR #119 — Issue #107 PR 6
+
+PR #119 clarifies evidence provenance, coverage, fee treatment, and freshness without changing underlying evidence calculations or sources.
+
+Production contract:
+- generic `Verified performance` wording is replaced on the targeted evidence surfaces with source-specific language;
+- Day Trading public realized evidence is identified as Closed Trades ledger data;
+- existing Day coverage metadata is surfaced with first/last close date, included closed-trade count, and omitted source rows when material;
+- Day public realized presentation explicitly excludes open P&L and states that the website uses stored Closed Trades P&L without applying a separate website fee/commission adjustment;
+- Day freshness labels describe source refresh success/staleness only and do not imply the market is open or a trade is active;
+- the legacy `/pricing` evidence preview consumes the same existing public coverage metadata and no longer uses generic `Verified performance` wording;
+- Swing evidence is explicitly Trading Lab research/model portfolio evidence, not broker execution or brokerage-account performance;
+- Swing coverage context is summarized only from already-rendered public Equity History snapshots and displayed Closed Trades rows; existing stale/cached and delayed-quote notices remain authoritative;
+- Swing active positions remain model unrealized P&L and closed positions remain model realized P&L; the website does not add a separate commission/fee adjustment to the Trading Lab model series;
+- Options public evidence is explicitly the owner-entered Option Journal; protected realized equity is described as Closed-journal evidence with open records excluded;
+- Options fee wording matches the existing traced formula: the stored Fees field is subtracted after contracts and multiplier; no separate fee estimate is invented;
+- Options manual-record/page freshness is not described as market or trade activity;
+- no simulated fallback values are introduced;
+- maximum drawdown was intentionally not added because it was optional and would introduce a new metric/calculation outside the presentation-only repair needed for PR 6.
 
 ## PR #117 — Issue #107 PR 5
 
@@ -133,7 +154,7 @@ Production code contract after the merge:
 
 ## Safety boundary
 
-PR #108, PR #110, PR #113, PR #115, and PR #117 do **not** change:
+PR #108, PR #110, PR #113, PR #115, PR #117, and PR #119 do **not** change:
 
 - VECO strategy logic
 - signal generation
@@ -159,4 +180,4 @@ The prior verified website state remains available at:
 
 `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-16.md`
 
-Use this manifest for the latest merged/deployed website-changing code state. PR #110 homepage behavior is owner-verified. PR #113 public HTML remains UNVERIFIED until a fresh origin/user check confirms the deployed system-page presentation.
+Use this manifest for the latest merged/deployed website-changing code state. PR #110 homepage behavior is owner-verified. PR #119 deployment/runtime is verified; its fresh user-visible public HTML remains UNVERIFIED until a direct origin/user check is recorded.
