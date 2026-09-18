@@ -8,25 +8,68 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe public origins
+      - name: Probe headers and payloads
         shell: bash
         run: |
-          set -u
-          for base in https://www.vixale.com https://tv-telegram-bot-a7t0.onrender.com; do
-            echo "=== BASE: $base ==="
-            for path in / /results /public-performance.json /public-live-open-pnl.json /api/swing-leaders; do
-              echo "--- $path ---"
-              code=$(curl -sS -L --max-time 20 -o /tmp/body -w '%{http_code}' "$base$path" || true)
-              echo "HTTP $code"
-              head -c 2400 /tmp/body || true
-              echo
-              if [[ "$path" == "/" ]]; then
-                echo "markers:"
-                grep -o 'vx-issue123-pr7-final-script\|vx-conversion-home-script\|vx-home-equity-svg\|vx-conversion-day-chart' /tmp/body | sort | uniq -c || true
-              fi
-              if [[ "$path" == "/results" ]]; then
-                echo "markers:"
-                grep -o 'vx-conversion-results-script\|vx-results-day-chart\|public-performance.json' /tmp/body | sort | uniq -c || true
-              fi
-            done
+          set -euo pipefail
+          for path in / /results /public-performance.json; do
+            echo "=== HEADERS $path ==="
+            curl -sS -L -D - -o /tmp/body "https://www.vixale.com$path" | sed -n '1,60p'
+            echo "=== BODY MARKERS $path ==="
+            if [[ "$path" == "/" ]]; then
+              grep -o 'vx-issue123-pr7-final-script\|vx-conversion-home-script\|vx-home-equity-svg\|vx-conversion-day-chart' /tmp/body | sort | uniq -c || true
+            elif [[ "$path" == "/results" ]]; then
+              grep -o 'vx-conversion-results-script\|vx-results-day-chart\|public-performance.json' /tmp/body | sort | uniq -c || true
+            else
+              head -c 1200 /tmp/body; echo
+            fi
+          done
+      - name: Check inline script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/live-scripts
+          for page in home results; do
+            url="https://www.vixale.com/"
+            [[ "$page" == "results" ]] && url="https://www.vixale.com/results"
+            curl -sS -L "$url" -o "/tmp/$page.html"
+            PAGE="$page" python - <<'PY'
+          import os,re,pathlib
+          page=os.environ['PAGE']
+          text=pathlib.Path(f'/tmp/{page}.html').read_text(errors='replace')
+          scripts=re.findall(r'<script\b[^>]*>([\s\S]*?)</script>',text,re.I)
+          print(page,'scripts',len(scripts))
+          out=pathlib.Path('/tmp/live-scripts')
+          for i,s in enumerate(scripts):
+              p=out/f'{page}-{i:02d}.js'
+              p.write_text(s)
+              print(p, 'chars', len(s), 'ids', re.findall(r'id=["\']([^"\']+)', s)[:3])
+          PY
+          done
+          failed=0
+          for f in /tmp/live-scripts/*.js; do
+            echo "--- node --check $f ---"
+            if ! node --check "$f"; then failed=1; fi
+          done
+          exit $failed
+      - name: Run headless Chrome against live pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)
+          echo "Chrome=$CHROME"
+          if [[ -z "$CHROME" ]]; then exit 0; fi
+          for page in home results; do
+            url="https://www.vixale.com/"
+            [[ "$page" == "results" ]] && url="https://www.vixale.com/results"
+            echo "=== BROWSER $page ==="
+            "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=8000 --dump-dom "$url" > "/tmp/$page.dom" 2> "/tmp/$page.chrome.log" || true
+            echo "DOM markers:"
+            if [[ "$page" == "home" ]]; then
+              grep -o 'vx-conversion-day-equity-svg\|vx-home-equity-svg\|Loading realized-results chart…\|Realized-results chart unavailable\.' "/tmp/$page.dom" | sort | uniq -c || true
+            else
+              grep -o 'vx-results-day-chart\|Loading Day Trading realized history…\|No realized history is available\.' "/tmp/$page.dom" | sort | uniq -c || true
+            fi
+            echo "Chrome errors:"
+            grep -Ei 'uncaught|syntaxerror|referenceerror|typeerror|content security|refused to execute|failed to load|console' "/tmp/$page.chrome.log" | tail -80 || true
           done
