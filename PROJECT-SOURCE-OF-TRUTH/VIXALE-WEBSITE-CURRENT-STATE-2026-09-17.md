@@ -9,21 +9,50 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #108 — `Issue #107 PR 1: unify public navigation and results destinations`
-- **PR #108 merge SHA:** `a5b87b9546e07d9ed84d5777b9d42ce7d49fbd7f`
+- **Latest website-changing merge:** PR #110 — `Issue #107 PR 2: make homepage intuitive for first-time visitors`
+- **PR #110 merge SHA:** `bc45c8f0156a1c851b822ff165de603b1e54c6c7`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** changed-JS syntax compilation PASS; focused navigation/CTA regressions PASS (103 assertions); PR patch whitespace/conflict scan PASS
+- **Feature-branch verification before merge:** changed-JS syntax compilation PASS; focused homepage/navigation regressions PASS (56 assertions); PR patch whitespace/conflict scan PASS
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-dama0a3ncjis73cdoo50`
-- **Render deployed website-changing SHA:** `a5b87b9546e07d9ed84d5777b9d42ce7d49fbd7f`
+- **Render deploy:** `dep-damag3n40ujc73at0hlg`
+- **Render deployed website-changing SHA:** `bc45c8f0156a1c851b822ff165de603b1e54c6c7`
 - **Render deployment status:** LIVE
-- **Render startup verification:** build successful; `npm start` launched the expected website preload chain and service reported LIVE
-- **Fresh public HTML verification:** **UNVERIFIED / CONFLICT**
-  - the available external web crawler returned a pre-deploy cached snapshot containing the old navigation and CTA labels;
-  - those crawler fetches did not appear in Render request logs after deployment, so they are not accepted as evidence of the new origin response;
-  - current user-visible HTML must therefore not be inferred from that cached snapshot.
+- **Render startup verification:** build successful; Render checked out the exact PR #110 merge SHA, `npm start` launched the expected website preload chain, the server reported port 10000, and Render reported the service LIVE
+- **Fresh public HTML verification:** **UNVERIFIED**
+  - the external browser fetch could not access the public host during this verification;
+  - the sandbox runtime also had temporary DNS resolution failure for both the public custom domain and the Render service URL;
+  - deployment/runtime state is therefore verified from GitHub + Render, but current rendered public HTML is not independently claimed here.
+
+## PR #110 — Issue #107 PR 2
+
+PR #110 implements only the homepage first-time-visitor hierarchy layer from Issue #107.
+
+Production code contract after the merge:
+
+- the approved H1 remains **See how our trading systems perform before you commit.**;
+- the hero has one primary acquisition CTA, **Request Free Access**, plus secondary **Explore Results**;
+- returning-user **Log In** remains in the shared header instead of competing as a full-size hero CTA;
+- the top homepage sequence is:
+  - Hero
+  - How It Works
+  - Day / Swing / Options comparison
+  - authentic Day Trading evidence preview
+  - existing detailed Day Trading evidence
+  - existing access/downstream content;
+- the How It Works section explains:
+  - explore systems;
+  - review available evidence;
+  - request viewer access if useful;
+  - viewer access is read-only;
+  - setup / automation / custom development are separate services;
+  - Vixale does not trade or manage customer brokerage accounts;
+- the homepage comparison is category-first and uses beginner-facing dimensions such as holding horizon, how often to check, public evidence, and viewer-access boundary;
+- internal strategy names are intentionally deferred until the visitor reaches the system pages;
+- Day Trading copy does not falsely imply that every Day Trading position must close intraday;
+- the homepage evidence preview reuses the existing Day Trading source/freshness mirrors and does not synthesize replacement values;
+- the older lower **New to trading systems? Start here.** block is removed to avoid duplicate beginner guidance.
 
 ## PR #108 — Issue #107 PR 1
 
@@ -58,7 +87,7 @@ Production code contract after the merge:
 
 ## Safety boundary
 
-PR #108 does **not** change:
+PR #108 and PR #110 do **not** change:
 
 - VECO strategy logic
 - signal generation
@@ -84,4 +113,4 @@ The prior verified website state remains available at:
 
 `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-16.md`
 
-Use this manifest for the latest merged/deployed website-changing code state. For user-visible HTML claims, preserve the **UNVERIFIED / CONFLICT** status until a fresh origin response is directly verified.
+Use this manifest for the latest merged/deployed website-changing code state. For user-visible HTML claims after PR #110, preserve **UNVERIFIED** status until a fresh public-origin response is independently verified.
