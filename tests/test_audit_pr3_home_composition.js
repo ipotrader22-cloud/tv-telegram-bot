@@ -73,9 +73,11 @@ assert(out.includes("Awaiting Closed Trades ledger"));
 assert(!out.includes("Coverage: awaiting Closed Trades ledger"));
 assert(out.includes('id="vx-home-live-open-pnl"'));
 assert(out.includes('href="/#password-access">Request Free Access</a>'));
+assert(out.includes('href="/results">Explore Results</a>'));
+assert(out.includes('href="/trading-systems/day-trading"'), "Day Trading card must use the public intro route");
 assert(!out.includes("7-Day"));
 assert(!out.includes("7 days"));
-for (const navText of ["Trading Systems", "Performance", "Services", "About", "Trading Guide", "Login", "Request Free Access"]) {
+for (const navText of ["How It Works", "Trading Systems", "Results", "Services", "Help", "Log In", "Request Free Access"]) {
   assert(out.includes(`>${navText}</a>`), `missing final navigation item ${navText}`);
 }
 assert.strictEqual((out.match(/class="vx-home-system-card"/g) || []).length, 3);
