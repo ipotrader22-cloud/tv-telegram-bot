@@ -46,12 +46,14 @@ const script = `
     const c=data&&data.equity_curve&&data.equity_curve.coverage||{};
     const first=dateLabel(c.first_close_date),last=dateLabel(c.last_close_date);
     const included=Number(c.included_trade_count);
+    const omitted=Number(c.omitted_row_count);
     if(!Number.isFinite(included)){
       coverage.textContent='Coverage unavailable';
       return;
     }
     const range=first&&last?(first===last?first:first+' – '+last):'No included realized closes yet';
-    coverage.textContent=range+'. '+included+' closed trade'+(included===1?'':'s');
+    const omittedText=Number.isFinite(omitted)&&omitted>0?' · '+omitted+' omitted row'+(omitted===1?'':'s')+' missing a valid close date or Result':'';
+    coverage.textContent=range+' · '+included+' included closed trade'+(included===1?'':'s')+omittedText;
   };
   const apply=data=>{
     failures=0;
@@ -60,10 +62,10 @@ const script = `
     setCoverage(data);
     if(data&&data.stale){
       setBadge('Update delayed','stale');
-      if(equityStatus)equityStatus.textContent='Last verified snapshot · update delayed';
+      if(equityStatus)equityStatus.textContent='Cached Closed Trades snapshot · update delayed';
     }else{
       setBadge('Data current','fresh');
-      if(equityStatus)equityStatus.textContent='Verified · Closed Trades ledger';
+      if(equityStatus)equityStatus.textContent='Closed Trades ledger · data current';
     }
   };
   const fail=()=>{
