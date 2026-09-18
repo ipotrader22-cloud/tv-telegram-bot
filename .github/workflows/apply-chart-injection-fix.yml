@@ -18,48 +18,32 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply minimal callback-replacer fix
+      - name: Apply minimal chart script fixes
         shell: python
         run: |
           from pathlib import Path
           replacements = {
-              "website_conversion_home_refinement.js": ('out.replace("</body>",`${script}\\n</body>`)', 'out.replace("</body>",() => `${script}\\n</body>`)'),
-              "website_conversion_results_refinement.js": ('out.replace("</body>",`${script}\\n</body>`)', 'out.replace("</body>",() => `${script}\\n</body>`)'),
-              "website_conversion_final_qa_refinement.js": ('out.replace("</body>", `${homeChartScript}\\n</body>`)', 'out.replace("</body>", () => `${homeChartScript}\\n</body>`)'),
+              "website_conversion_home_refinement.js": [
+                  ('out.replace("</body>",`${script}\\n</body>`)', 'out.replace("</body>",() => `${script}\\n</body>`)'),
+              ],
+              "website_conversion_results_refinement.js": [
+                  ('out.replace("</body>",`${script}\\n</body>`)', 'out.replace("</body>",() => `${script}\\n</body>`)'),
+                  ("+(d.stale?' · last validated snapshot':'')}}});", "+(d.stale?' · last validated snapshot':'')}});"),
+              ],
+              "website_conversion_final_qa_refinement.js": [
+                  ('out.replace("</body>", `${homeChartScript}\\n</body>`)', 'out.replace("</body>", () => `${homeChartScript}\\n</body>`)'),
+              ],
           }
-          for filename, (old, new) in replacements.items():
+          for filename, pairs in replacements.items():
               path = Path(filename)
               text = path.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{filename}: expected exactly one target, found {count}")
-              path.write_text(text.replace(old, new, 1))
+              for old, new in pairs:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f"{filename}: expected exactly one target, found {count}: {old}")
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
               print(f"patched {filename}")
-      - name: Diagnose emitted results script
-        run: |
-          node <<'NODE'
-          const fs=require('fs');
-          const results=require('./website_conversion_results_refinement');
-          const base='<!doctype html><html><head></head><body><main>fixture</main></body></html>';
-          const m=results.injectAssets(base).match(new RegExp(`<script id=["']${results.SCRIPT_ID}["']>([\\s\\S]*?)<\\/script>`));
-          if(!m) throw new Error('missing results script');
-          fs.writeFileSync('/tmp/results.js',m[1]);
-          NODE
-          npm install --no-save --ignore-scripts acorn@8 >/dev/null 2>&1
-          node <<'NODE'
-          const fs=require('fs');
-          const acorn=require('acorn');
-          const s=fs.readFileSync('/tmp/results.js','utf8');
-          try { acorn.parse(s,{ecmaVersion:'latest'}); console.log('acorn parse PASS'); }
-          catch(e) {
-            console.log('ACORN ERROR', e.message, 'pos', e.pos, 'loc', e.loc);
-            const start=Math.max(0,e.pos-260), end=Math.min(s.length,e.pos+260);
-            console.log('CONTEXT START');
-            console.log(JSON.stringify(s.slice(start,end)));
-            console.log('CONTEXT END');
-          }
-          NODE
-          node --check /tmp/results.js || true
       - name: Syntax and focused regressions
         run: |
           node --check website_conversion_home_refinement.js
@@ -70,7 +54,9 @@ jobs:
           node tests/test_home_runtime_script_injection.js
           node tests/test_issue123_pr7_final_qa.js
       - name: Review diff
-        run: git diff --check && git diff -- website_conversion_home_refinement.js website_conversion_results_refinement.js website_conversion_final_qa_refinement.js tests/test_chart_inline_script_injection.js
+        run: |
+          git diff --check
+          git diff -- website_conversion_home_refinement.js website_conversion_results_refinement.js website_conversion_final_qa_refinement.js tests/test_chart_inline_script_injection.js
       - name: Commit source fix
         run: |
           git config user.name "github-actions[bot]"
