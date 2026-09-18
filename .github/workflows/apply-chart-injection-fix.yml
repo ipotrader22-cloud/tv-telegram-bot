@@ -1,0 +1,66 @@
+name: Apply chart injection fix
+
+on:
+  push:
+    branches: [fix/live-chart-script-injection]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.event.head_commit.message == 'Add temporary chart fix workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/live-chart-script-injection
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply minimal callback-replacer fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+              "website_conversion_home_refinement.js": (
+                  'out.replace("</body>",`${script}\\n</body>`)',
+                  'out.replace("</body>",() => `${script}\\n</body>`)',
+              ),
+              "website_conversion_results_refinement.js": (
+                  'out.replace("</body>",`${script}\\n</body>`)',
+                  'out.replace("</body>",() => `${script}\\n</body>`)',
+              ),
+              "website_conversion_final_qa_refinement.js": (
+                  'out.replace("</body>", `${homeChartScript}\\n</body>`)',
+                  'out.replace("</body>", () => `${homeChartScript}\\n</body>`)',
+              ),
+          }
+
+          for filename, (old, new) in replacements.items():
+              path = Path(filename)
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{filename}: expected exactly one target, found {count}")
+              path.write_text(text.replace(old, new, 1))
+              print(f"patched {filename}")
+      - name: Syntax and focused regressions
+        run: |
+          node --check website_conversion_home_refinement.js
+          node --check website_conversion_results_refinement.js
+          node --check website_conversion_final_qa_refinement.js
+          node --check tests/test_chart_inline_script_injection.js
+          node tests/test_chart_inline_script_injection.js
+          node tests/test_home_runtime_script_injection.js
+          node tests/test_issue123_pr7_final_qa.js
+      - name: Review diff
+        run: git diff --check && git diff -- website_conversion_home_refinement.js website_conversion_results_refinement.js website_conversion_final_qa_refinement.js tests/test_chart_inline_script_injection.js
+      - name: Commit source fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add website_conversion_home_refinement.js website_conversion_results_refinement.js website_conversion_final_qa_refinement.js
+          git commit -m "Apply chart injection fix"
+          git push origin HEAD:fix/live-chart-script-injection
