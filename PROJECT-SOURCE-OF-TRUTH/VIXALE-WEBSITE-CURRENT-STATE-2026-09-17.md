@@ -9,20 +9,35 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #110 — `Issue #107 PR 2: make homepage intuitive for first-time visitors`
-- **PR #110 merge SHA:** `bc45c8f0156a1c851b822ff165de603b1e54c6c7`
+- **Latest website-changing merge:** PR #113 — `Issue #107 PR 3: standardize public system pages`
+- **PR #113 merge SHA:** `d66f527a86dad2f41bdd83d1e30ee35a05f5a489`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** changed-JS syntax compilation PASS; focused homepage/navigation regressions PASS (56 assertions); PR patch whitespace/conflict scan PASS
+- **Feature-branch verification before merge:** changed-JS syntax compilation PASS; focused PR 3 regressions PASS (53 assertions); shared-navigation regression PASS (21 assertions); PR patch whitespace/conflict scan PASS
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-damag3n40ujc73at0hlg`
-- **Render deployed website-changing SHA:** `bc45c8f0156a1c851b822ff165de603b1e54c6c7`
+- **Render deploy:** `dep-damal50ae00c73aj3tj0`
+- **Render deployed website-changing SHA:** `d66f527a86dad2f41bdd83d1e30ee35a05f5a489`
 - **Render deployment status:** LIVE
-- **Render startup verification:** build successful; Render checked out the exact PR #110 merge SHA, `npm start` launched the expected website preload chain, the server reported port 10000, and Render reported the service LIVE
-- **Fresh public HTML verification:** **OWNER VERIFIED**
-  - after the PR #110 deployment, the owner explicitly confirmed the new homepage behavior was verified in production;
-  - GitHub + Render deployment/runtime evidence remains independently verified as recorded above.
+- **Render startup verification:** exact PR #113 merge SHA deployed successfully and Render reported the service LIVE
+- **Fresh public HTML verification:** **UNVERIFIED**
+  - the available external browser could not access cache-busted public system-page URLs during this verification;
+  - deployment/runtime state is verified from GitHub + Render, but PR #113 rendered public HTML is not independently claimed here.
+- **Prior owner verification:** PR #110 homepage behavior was explicitly verified by the owner after deployment.
+
+## PR #113 — Issue #107 PR 3
+
+PR #113 standardizes the public system-page teaching sequence while preserving each system's existing evidence and auth owners.
+
+Production code contract after the merge:
+
+- Trading Systems landing is category-first and compares Day / Swing / Options by holding horizon, how often to check, public availability, and viewer-access boundary before internal strategy names;
+- Day Trading explains the category before Prime / Edge, keeps Day-specific evidence links, and states accurately that approved Edge positions can remain open overnight;
+- Swing keeps the existing public research/model portfolio and data feed intact, adds explanation before the live portfolio, keeps delayed/model disclosures, and makes **View Swing Portfolio** the page-specific next action;
+- Swing viewer login is not presented as a prerequisite for the public Active Portfolio;
+- Options explains that its evidence comes from the owner-entered Option Journal and keeps protected journal rows, closed-only realized equity, and owner-provided proofs behind the existing viewer auth;
+- each system page follows the semantic order: what it is → how it differs → what the visitor sees → what is public → what viewer access adds → system-specific evidence/results → one clear page-specific next action;
+- no Day / Swing / Options evidence sources are merged or recalculated.
 
 ## PR #110 — Issue #107 PR 2
 
@@ -86,7 +101,7 @@ Production code contract after the merge:
 
 ## Safety boundary
 
-PR #108 and PR #110 do **not** change:
+PR #108, PR #110, and PR #113 do **not** change:
 
 - VECO strategy logic
 - signal generation
@@ -112,4 +127,4 @@ The prior verified website state remains available at:
 
 `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-16.md`
 
-Use this manifest for the latest merged/deployed website-changing code state. PR #110 user-visible homepage behavior is owner-verified; future website changes still require their own post-deploy verification.
+Use this manifest for the latest merged/deployed website-changing code state. PR #110 homepage behavior is owner-verified. PR #113 public HTML remains UNVERIFIED until a fresh origin/user check confirms the deployed system-page presentation.
