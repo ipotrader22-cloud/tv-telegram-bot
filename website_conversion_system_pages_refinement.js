@@ -88,7 +88,7 @@ Promise.allSettled([fetch('${PUBLIC_PERFORMANCE_PATH}',{credentials:'same-origin
 function injectAssets(html, path) {
   let out = html;
   if (!out.includes(`id="${STYLE_ID}"`)) out = out.includes("</head>") ? out.replace("</head>", `${styles}\n</head>`) : `${styles}${out}`;
-  if (path === DAY_PATH && !out.includes(`id="${DAY_SCRIPT_ID}"`)) out = out.includes("</body>") ? out.replace("</body>", `${dayScript}\n</body>`) : `${out}${dayScript}`;
+  if (path === DAY_PATH && !out.includes(`id="${DAY_SCRIPT_ID}"`)) out = out.includes("</body>") ? out.replace("</body>", () => `${dayScript}\n</body>`) : `${out}${dayScript}`;
   return out;
 }
 function refineSystemPage(html, path) {
