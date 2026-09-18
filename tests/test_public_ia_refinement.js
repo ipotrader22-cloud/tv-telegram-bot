@@ -97,7 +97,7 @@ assert(access.includes("Inbox and Spam/Junk"));
 assert(access.includes("read-only Day Trading dashboard"));
 assert(access.includes("protected Options viewer"));
 assert(access.includes("Swing research/model portfolio is already public"));
-assert(access.includes("Viewer codes can expire"));
+assert(access.includes("Each approved viewer code has its own expiration date"));
 assert(access.includes('href="/login">Log In with your viewer code</a>'));
 assert(access.includes('action="/password-request"'));
 assert(access.includes('name="source" value="Access page · Options"'));
