@@ -22,22 +22,11 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-
           replacements = {
-              "website_conversion_home_refinement.js": (
-                  'out.replace("</body>",`${script}\\n</body>`)',
-                  'out.replace("</body>",() => `${script}\\n</body>`)',
-              ),
-              "website_conversion_results_refinement.js": (
-                  'out.replace("</body>",`${script}\\n</body>`)',
-                  'out.replace("</body>",() => `${script}\\n</body>`)',
-              ),
-              "website_conversion_final_qa_refinement.js": (
-                  'out.replace("</body>", `${homeChartScript}\\n</body>`)',
-                  'out.replace("</body>", () => `${homeChartScript}\\n</body>`)',
-              ),
+              "website_conversion_home_refinement.js": ('out.replace("</body>",`${script}\\n</body>`)', 'out.replace("</body>",() => `${script}\\n</body>`)'),
+              "website_conversion_results_refinement.js": ('out.replace("</body>",`${script}\\n</body>`)', 'out.replace("</body>",() => `${script}\\n</body>`)'),
+              "website_conversion_final_qa_refinement.js": ('out.replace("</body>", `${homeChartScript}\\n</body>`)', 'out.replace("</body>", () => `${homeChartScript}\\n</body>`)'),
           }
-
           for filename, (old, new) in replacements.items():
               path = Path(filename)
               text = path.read_text()
@@ -46,6 +35,24 @@ jobs:
                   raise SystemExit(f"{filename}: expected exactly one target, found {count}")
               path.write_text(text.replace(old, new, 1))
               print(f"patched {filename}")
+      - name: Dump emitted chart scripts
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const home=require('./website_conversion_home_refinement');
+          const results=require('./website_conversion_results_refinement');
+          const finalQa=require('./website_conversion_final_qa_refinement');
+          const base='<!doctype html><html><head></head><body><main>fixture</main></body></html>';
+          const extract=(html,id)=>{const m=String(html).match(new RegExp(`<script id=["']${id}["']>([\\s\\S]*?)<\\/script>`)); if(!m)throw new Error('missing '+id); return m[1];};
+          fs.writeFileSync('/tmp/home.js',extract(home.injectAssets(base),home.SCRIPT_ID));
+          fs.writeFileSync('/tmp/results.js',extract(results.injectAssets(base),results.SCRIPT_ID));
+          fs.writeFileSync('/tmp/final.js',extract(finalQa.refineHomeHtml(base),'vx-issue123-pr7-final-script'));
+          NODE
+          for f in /tmp/home.js /tmp/results.js /tmp/final.js; do
+            echo "===== $f ====="
+            node --check "$f" || true
+            nl -ba "$f" | sed -n '1,40p'
+          done
       - name: Syntax and focused regressions
         run: |
           node --check website_conversion_home_refinement.js
