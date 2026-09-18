@@ -55,6 +55,7 @@ assert(out.includes("Viewer access is read-only."));
 assert(out.includes("Vixale does not trade or manage customer brokerage accounts."));
 assert(out.includes('href="/services">Explore separate services →</a>'));
 assert(out.includes("Holding horizon"));
+assert(out.includes("some Day Trading positions can remain open overnight"), "Day Trading comparison must not imply every position closes intraday");
 assert(out.includes("How often to check"));
 assert(out.includes("Public evidence"));
 assert(out.includes("Viewer access"));
