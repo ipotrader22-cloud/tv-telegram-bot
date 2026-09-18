@@ -2811,6 +2811,36 @@ The Trading Systems landing page is category-first. Its comparison uses beginner
 
 **Rollback:** Revert the Issue #107 PR 3 website/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, Swing workbook, Option Journal, viewer-code, or customer-data rollback is required.
 
+### ADR-021 — Dedicated public access journey (Issue #107 PR 4)
+
+**Decision:** The canonical public acquisition route is `/access`. It is a presentation/routing layer over the existing secured dashboard-access form and workflow; it does not create a parallel access backend.
+
+The customer-facing process is:
+
+```text
+Request access
+-> verify email
+-> manual owner review
+-> receive individual viewer code if approved
+-> log in with that code
+```
+
+The dedicated page must explain before form submission that access is free and read-only, the email verification link expires after 60 minutes, approval is manual, the viewer code is used on the Log In page, and users should check Inbox plus Spam/Junk when the verification email is not visible. Approved viewer access opens the protected Day Trading dashboard and Options viewer; the Swing research/model portfolio remains public without login.
+
+**Duration policy:** Public copy does not promise a fixed viewer-code duration. Runtime code supports configurable code expiry through `DASHBOARD_VIEWER_DEFAULT_DAYS` and per-code expiration/extension. Until the owner freezes a public duration policy, customer-facing copy remains neutral: access is free, each issued code has its own expiration date, and an expired code no longer logs in. This decision does not change expiry logic or Render environment configuration.
+
+**Form and schema reuse:** `/access` reuses the existing `POST /password-request` form, Turnstile challenge, email-verification workflow, manual approval, code creation, sessions, and authorization. The already-approved `Dashboard Access Requests.Source` field stores presentation context such as `Access page · Day Trading`, `Access page · Swing Trading`, or `Access page · Options`; no new Sheet/API field is added.
+
+System-origin context may be carried in the public URL query (for example `/access?system=day-trading`) only to choose the allowed presentation label and existing Source value. Unknown values fall back to generic `Access page`.
+
+**Backward compatibility:** Legacy `/#password-access` links and the homepage access form remain functional for existing bookmarks/emails. New acquisition CTAs use `/access`. Funnel measurement must count both the dedicated route and the legacy fragment through the same privacy-preserving `access_cta_click` event.
+
+**Architecture ownership:** `website_public_ia_refinement.js` owns the synthetic `/access` composition by reusing the existing landing-page access section. `website_navigation_disclosure_refinement.js` owns shared-nav access destinations and system context. `lib/website-funnel-client.js` owns client-side CTA measurement compatibility. Access security remains owned by `website_dashboard_access_security.js` and `lib/dashboard-access-security-*.js`.
+
+**Execution/trading impact:** None. This decision does not modify Turnstile, verification tokens, email delivery logic, owner approval, viewer-code creation/expiry/session behavior, protected route authorization, Google Sheet schemas, strategy logic, Pine, bridge/TWS/IBKR execution, Swing Trading Lab behavior, or Option Journal writes.
+
+**Rollback:** Revert the Issue #107 PR 4 website/handbook commit(s) and redeploy the prior confirmed website commit. Legacy homepage-fragment access remains available without broker, trading, Pine, workbook, Option Journal, viewer-code, or customer-data rollback.
+
 ## Public Swing Leaders display feed (2026-08-27)
 
 - Frozen contract: **Research/Data Display Freeze: Vixale Swing Leaders v1.0**. Trading Lab remains the authority for Morning Leader scoring, Ready Now / Close to Breakout / Early Watch classification, portfolio membership, entry/exit values, market posture, research notes, and cash state.
