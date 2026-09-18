@@ -40,8 +40,11 @@ const out = refineSwingHtml(fixture);
 assert(out.includes(PAGE_MARKER));
 assert(out.includes(`id="${STYLE_ID}"`));
 assert(out.includes("font-size:clamp(30px,3.5vw,42px)!important"));
-assert(out.includes(".vx-swing-how-card h2{margin:0 0 16px;font-size:33px"));
+assert(out.includes(".vx-swing-how-block h2{margin:0 0 18px;font-size:33px"));
+assert(out.includes("grid-template-columns:repeat(4,minmax(0,1fr))"));
 assert(out.includes("font-size:18px;line-height:1.5"));
+assert(out.includes(".vx-swing-market-posture h2{margin-bottom:6px;font-size:16.5px!important"));
+assert(out.includes(".vx-swing-posture-copy{margin:0;color:#17211d;font-size:12px"));
 
 assert(!out.includes("Swing evidence context"));
 assert(!out.includes('data-vx-evidence-credibility="swing"'));
@@ -54,14 +57,25 @@ assert(out.includes("They are not open positions and may never be added."));
 assert(out.includes("The 5% stop reference is checked during the scheduled morning review, not as an automatic intraday stop."));
 assert(out.includes("$10K / position"));
 assert(!out.includes("$10K</strong><span>per position"));
+assert(out.includes("<small>Candidates</small>"));
+assert(out.includes("<strong>Candidates</strong>"));
+assert(!out.includes("<small>Potential Candidates</small>"));
+assert(!out.includes("<strong>Potential Candidates</strong>"));
 
 const howIndex = out.indexOf('data-vx-swing-how="beginner"');
+const summaryIndex = out.indexOf('aria-label="Swing Leaders summary"');
 const activeMetricIndex = out.indexOf("<small>Active Portfolio</small>");
 const movedPostureIndex = out.indexOf('data-vx-swing-market-posture="1"');
 const allocationIndex = out.indexOf("$10K / position");
-assert(howIndex >= 0 && howIndex < activeMetricIndex, "How block should occupy the former Market Posture position in the summary");
-assert(movedPostureIndex > allocationIndex, "Market Posture should move to the former How block position below the summary");
+assert(howIndex >= 0 && howIndex < summaryIndex, "How block should sit above the horizontal summary row");
+assert(summaryIndex >= 0 && summaryIndex < activeMetricIndex, "Active Portfolio should remain inside the summary row below How");
+assert(movedPostureIndex > allocationIndex, "Market Posture should remain below the summary row");
 assert(out.includes('<p class="vx-swing-posture-copy">Selective / risk-aware</p>'));
+
+const summaryMatch = out.match(/<section\b[^>]*class=["'][^"']*\bsummary\b[^"']*["'][^>]*aria-label=["']Swing Leaders summary["'][^>]*>[\s\S]*?<\/section>/i);
+assert(summaryMatch, "Swing summary row should remain present");
+assert(!summaryMatch[0].includes('data-vx-swing-how="beginner"'), "How block must not occupy a metric-card slot");
+assert(!summaryMatch[0].includes("Market Posture"), "Market Posture should not occupy a metric-card slot");
 
 assert.strictEqual(refineSwingHtml(out), out, "Swing UI refinement must be idempotent");
 assert.strictEqual(SWING_PATH, "/trading-systems/swing-trading");

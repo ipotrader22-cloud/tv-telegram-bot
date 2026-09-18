@@ -15,25 +15,29 @@ The final public Swing page should:
 
 - use the same restrained headline scale as the main conversion homepage for `Follow a portfolio reviewed every day.`: responsive `30–42px` rather than the older oversized Swing hero scale;
 - remove the public `Swing evidence context` panel entirely;
-- place a beginner-friendly `How Swing Leaders Works` card in the summary position previously occupied by `Market Posture`;
-- move `Market Posture` into the larger page block previously occupied by `How Swing Leaders Works`;
-- make the beginner `How Swing Leaders Works` text materially easier to read: 33px heading, approximately 19.5px item labels, and 18px body copy on desktop, with modest mobile reductions;
-- explain Active Portfolio, Potential Candidates, Closed Trades, position size, targets, morning stop review, and Trading Lab removals in plain language without changing their underlying meaning;
+- render `How Swing Leaders Works` as a full-width block above the Swing summary metrics rather than occupying one metric-card slot;
+- lay out the four beginner explanations horizontally on desktop, with responsive two-column and one-column fallbacks on narrower screens;
+- keep the summary metrics in their own horizontal row beneath the How block: `Active Portfolio`, `Candidates`, `Cash`, and `Model Allocation`;
+- use `Candidates` as the visible compact label instead of `Potential Candidates`, without changing the Trading Lab feed field or candidate-selection logic;
+- keep `Market Posture` in the larger page block that replaced the old How section, but reduce the PR #143 Market Posture typography by 50%: 16.5px heading and 12px body on desktop, with proportional mobile reductions;
+- keep the beginner `How Swing Leaders Works` text materially easy to read: 33px heading, approximately 19.5px item labels, and 18px body copy on desktop, with modest mobile reductions;
+- explain Active Portfolio, Candidates, Closed Trades, position size, targets, morning stop review, and Trading Lab removals in plain language without changing their underlying meaning;
 - render model allocation with an explicit separator as `$10K / position`, avoiding the visually merged `$10Kper position` presentation.
 
 ## Implementation boundary
 
 `website_swing_ui_refinement.js` is a route-scoped final HTML presentation refinement for the canonical Swing route. It is loaded immediately after the two established outer presentation preloads so it receives the fully composed Swing HTML after later Swing/evidence layers and can enforce the owner-approved final layout without modifying the Trading Lab renderer or data contract.
 
-The refinement must remain idempotent and must not invent, recompute, replace, or suppress Swing feed values other than removing the owner-rejected explanatory evidence panel from public display.
+The refinement must remain idempotent and must not invent, recompute, replace, or suppress Swing feed values other than removing the owner-rejected explanatory evidence panel from public display. Renaming the visible `Potential Candidates` label to `Candidates` is presentation-only; the underlying feed and semantics remain unchanged.
 
 ## Verification
 
 Regression coverage should confirm:
 
 - `Swing evidence context` and its Swing evidence marker are absent from final Swing HTML;
-- the How card appears where Market Posture previously appeared;
-- Market Posture appears in the former How-section location;
+- the How block appears before the Swing summary row and is not inside a summary-card slot;
+- the summary row remains horizontal on desktop and contains Active Portfolio, Candidates, Cash, and Model Allocation;
+- Market Posture remains below the summary and uses the reduced typography;
 - `$10K / position` is emitted;
 - the hero and beginner-copy font rules are present;
 - the transform is idempotent;
@@ -41,4 +45,4 @@ Regression coverage should confirm:
 
 ## Rollback
 
-Rollback is presentation-only: remove the Swing UI preload and revert `website_swing_ui_refinement.js` plus its tests/docs. No Trading Lab, Sheet, model-P&L, broker, Telegram, or authentication rollback is required.
+Rollback is presentation-only: revert the Swing UI refinement and its tests/docs. No Trading Lab, Sheet, model-P&L, broker, Telegram, or authentication rollback is required.
