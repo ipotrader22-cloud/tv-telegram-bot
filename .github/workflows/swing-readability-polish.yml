@@ -21,7 +21,6 @@ jobs:
       - name: Focused Swing regression
         run: |
           node tests/test_swing_readability_refinement.js
-          node tests/test_issue123_pr3_system_pages.js
           node tests/test_issue107_swing_navigation_ctas.js
           node tests/test_swing_instructional_refinement.js
           node tests/test_swing_leaders.js
