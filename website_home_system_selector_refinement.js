@@ -73,7 +73,7 @@ function renderSystemSelector() {
         <span>Swing Trading</span><strong>Multi-session positions</strong>
         <div class="vx-home-system-fact"><b>Holding horizon</b><p>Positions can remain active across multiple sessions.</p></div>
         <div class="vx-home-system-fact"><b>How often to check</b><p>Review the public portfolio and its daily updates.</p></div>
-        <div class="vx-home-system-fact"><b>Public evidence</b><p>Swing Leaders model portfolio and Swing equity history.</p></div>
+        <div class="vx-home-system-fact"><b>Public evidence</b><p>Public research/model portfolio and swing equity history.</p></div>
         <div class="vx-home-system-fact"><b>Viewer access</b><p>The public Swing portfolio remains viewable without login.</p></div>
         <em>Learn about Swing Trading →</em>
       </a>
