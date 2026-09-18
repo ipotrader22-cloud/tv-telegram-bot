@@ -20,10 +20,9 @@ Latest directly verified website-changing state:
 - **Render deployed website-changing SHA:** `bc45c8f0156a1c851b822ff165de603b1e54c6c7`
 - **Render deployment status:** LIVE
 - **Render startup verification:** build successful; Render checked out the exact PR #110 merge SHA, `npm start` launched the expected website preload chain, the server reported port 10000, and Render reported the service LIVE
-- **Fresh public HTML verification:** **UNVERIFIED**
-  - the external browser fetch could not access the public host during this verification;
-  - the sandbox runtime also had temporary DNS resolution failure for both the public custom domain and the Render service URL;
-  - deployment/runtime state is therefore verified from GitHub + Render, but current rendered public HTML is not independently claimed here.
+- **Fresh public HTML verification:** **OWNER VERIFIED**
+  - after the PR #110 deployment, the owner explicitly confirmed the new homepage behavior was verified in production;
+  - GitHub + Render deployment/runtime evidence remains independently verified as recorded above.
 
 ## PR #110 — Issue #107 PR 2
 
@@ -113,4 +112,4 @@ The prior verified website state remains available at:
 
 `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-16.md`
 
-Use this manifest for the latest merged/deployed website-changing code state. For user-visible HTML claims after PR #110, preserve **UNVERIFIED** status until a fresh public-origin response is independently verified.
+Use this manifest for the latest merged/deployed website-changing code state. PR #110 user-visible homepage behavior is owner-verified; future website changes still require their own post-deploy verification.
