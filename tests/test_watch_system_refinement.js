@@ -20,7 +20,7 @@ assert(out.includes("Open P&amp;L excluded"));
 assert(out.includes("fetch('/public-performance.json'"));
 assert(out.includes('href="/access">Request Free Access</a>'));
 assert(out.includes('href="/dashboard">Dashboard Login</a>'));
-assert(out.includes('href="/access">Request Dashboard Access</a>'));
+assert(out.includes('href="/access">Request Free Access</a>'));
 assert(!out.includes('href="/access">Watch System for Free</a>'));
 assert(out.includes("Read-only access · Email verification · Manual review"));
 assert(out.includes("Four") === false, "watch page uses four numbered cards without adding a redundant heading");
