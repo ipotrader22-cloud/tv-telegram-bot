@@ -41,18 +41,58 @@ function findTagByClass(html, tagName, className, from = 0, to = html.length) {
   return range;
 }
 
+function renderHowItWorks() {
+  return `<section class="vx-home-how" aria-labelledby="vx-home-how-title">
+    <div class="vx-home-section-kicker">How It Works</div>
+    <h2 id="vx-home-how-title">Understand Vixale before you request anything.</h2>
+    <p class="vx-home-section-lead">Vixale provides trading-system research, signals and data visibility, plus separate software and setup services. You can inspect what is public first and decide whether read-only viewer access or another service is useful.</p>
+    <ol class="vx-home-how-steps">
+      <li><b>1</b><div><strong>Explore systems</strong><span>Start with Day Trading, Swing Trading, or Options based on how you want to follow the market.</span></div></li>
+      <li><b>2</b><div><strong>Review available evidence</strong><span>Use the public results and system pages to understand what is visible for that category.</span></div></li>
+      <li><b>3</b><div><strong>Request viewer access if useful</strong><span>Viewer access is read-only. Setup, automation, and custom development are separate services.</span></div></li>
+    </ol>
+    <div class="vx-home-how-boundary">Vixale does not trade or manage customer brokerage accounts. <a href="/services">Explore separate services →</a></div>
+  </section>`;
+}
+
 function renderSystemSelector() {
-  return `<nav class="vx-home-system-stack" aria-label="Explore Vixale systems">
-    <a class="vx-home-system-card" href="${DAY_TRADING_PATH}"><span>Intraday stocks</span><strong>Day Trading</strong><p>Live status, realized performance, and the Day Trading viewer dashboard.</p><b>Explore Day Trading →</b></a>
-    <a class="vx-home-system-card" href="${SWING_TRADING_PATH}"><span>Multi-session</span><strong>Swing Trading</strong><p>Active Portfolio, Swing Leaders, and the dedicated swing equity history.</p><b>Explore Swing Trading →</b></a>
-    <a class="vx-home-system-card" href="${OPTIONS_PATH}"><span>Options</span><strong>Options</strong><p>Options Journal evidence and realized Options performance after viewer access.</p><b>Explore Options →</b></a>
-  </nav>`;
+  return `<section class="vx-home-compare" aria-labelledby="vx-home-compare-title">
+    <div class="vx-home-section-kicker">Compare Trading Systems</div>
+    <h2 id="vx-home-compare-title">Choose the category before you choose a strategy.</h2>
+    <p class="vx-home-section-lead">The three categories differ in holding horizon, how you follow them, and what evidence is available. Internal strategy names come later on the system pages.</p>
+    <nav class="vx-home-system-stack" aria-label="Compare Vixale trading systems">
+      <a class="vx-home-system-card" href="${DAY_TRADING_PATH}">
+        <span>Day Trading</span><strong>Intraday activity</strong>
+        <div class="vx-home-system-fact"><b>Holding horizon</b><p>Generally within the trading day.</p></div>
+        <div class="vx-home-system-fact"><b>How often to check</b><p>During the market session when you want current status.</p></div>
+        <div class="vx-home-system-fact"><b>Public evidence</b><p>Day Trading status plus realized closed-trade results.</p></div>
+        <div class="vx-home-system-fact"><b>Viewer access</b><p>Adds read-only dashboard detail after approval.</p></div>
+        <em>Learn about Day Trading →</em>
+      </a>
+      <a class="vx-home-system-card" href="${SWING_TRADING_PATH}">
+        <span>Swing Trading</span><strong>Multi-session positions</strong>
+        <div class="vx-home-system-fact"><b>Holding horizon</b><p>Positions can remain active across multiple sessions.</p></div>
+        <div class="vx-home-system-fact"><b>How often to check</b><p>Review the public portfolio and its daily updates.</p></div>
+        <div class="vx-home-system-fact"><b>Public evidence</b><p>Swing Leaders model portfolio and Swing equity history.</p></div>
+        <div class="vx-home-system-fact"><b>Viewer access</b><p>The public Swing portfolio remains viewable without login.</p></div>
+        <em>Learn about Swing Trading →</em>
+      </a>
+      <a class="vx-home-system-card" href="${OPTIONS_PATH}">
+        <span>Options</span><strong>Journal-based tracking</strong>
+        <div class="vx-home-system-fact"><b>Holding horizon</b><p>Varies by the individual options trade.</p></div>
+        <div class="vx-home-system-fact"><b>How often to check</b><p>Follow updates when Option Journal records are available.</p></div>
+        <div class="vx-home-system-fact"><b>Public evidence</b><p>A public explanation of the owner-entered Option Journal.</p></div>
+        <div class="vx-home-system-fact"><b>Viewer access</b><p>Adds protected journal detail and available owner-provided screenshots.</p></div>
+        <em>Learn about Options →</em>
+      </a>
+    </nav>
+  </section>`;
 }
 
 function renderHeroPreview() {
-  return `<aside class="vx-home-proof-preview" aria-label="Day Trading performance preview">
-    <div class="vx-home-proof-preview-head"><div><span>Live evidence</span><h2>Day Trading snapshot</h2></div><a href="#${DAY_ANCHOR_ID}">View Day Trading results ↓</a></div>
-    <p class="vx-home-proof-preview-copy">This preview mirrors the verified Day Trading block below. If the source is unavailable, values remain unavailable rather than being simulated.</p>
+  return `<aside class="vx-home-proof-preview" aria-label="Day Trading evidence preview">
+    <div class="vx-home-proof-preview-head"><div><span>Day Trading evidence</span><h2>Current Day Trading snapshot</h2></div><a href="#${DAY_ANCHOR_ID}">View Day Trading results ↓</a></div>
+    <p class="vx-home-proof-preview-copy">This preview mirrors the Day Trading data block below, including its freshness state. If the source is unavailable, values remain unavailable rather than being simulated.</p>
     <div class="vx-home-proof-grid">
       <div><span>Open Positions</span><strong data-vx-mirror="vx-home-live-0">—</strong></div>
       <div><span>Pending Setups</span><strong data-vx-mirror="vx-home-live-1">—</strong></div>
@@ -84,37 +124,45 @@ function composeTopBlock(html) {
   const heroRange = findTagByClass(html, "section", "vx-home-hero");
   if (!heroRange) return html;
   const heroHtml = html.slice(heroRange.start, heroRange.end);
-  const top = `<section class="vx-home-top-systems"><div class="wrap"><div class="vx-home-top-grid">${heroHtml}${renderHeroPreview()}</div>${renderSystemSelector()}</div></section>`;
+  const top = `<section class="vx-home-top-systems"><div class="wrap">${heroHtml}${renderHowItWorks()}${renderSystemSelector()}${renderHeroPreview()}</div></section>`;
   return html.slice(0, heroRange.start) + top + html.slice(heroRange.end);
 }
 
 const styles = `
 <style id="${STYLE_ID}">
-  .vx-home-top-systems{padding:42px 0 38px;background:linear-gradient(180deg,#f3faf6 0%,#fff 92%);border-bottom:1px solid #e3e9e5}
+  .vx-home-top-systems{padding:34px 0 42px;background:linear-gradient(180deg,#f3faf6 0%,#fff 78%);border-bottom:1px solid #e3e9e5}
   .vx-home-top-systems>.wrap{max-width:1180px;margin:0 auto;padding:0 24px;box-sizing:border-box}
-  .vx-home-top-grid{display:grid;grid-template-columns:minmax(0,1.16fr) minmax(320px,.84fr);gap:18px;align-items:stretch}
-  .vx-home-top-systems .vx-home-hero{margin:0;padding:34px 34px 32px;border:1px solid #d9e6df;border-radius:28px;background:#fff;box-shadow:0 16px 44px rgba(31,67,51,.045);box-sizing:border-box}
+  .vx-home-top-systems .vx-home-hero{margin:0 auto;padding:22px 0 42px;border:0;background:transparent;box-shadow:none}
   .vx-home-top-systems .vx-home-hero .wrap{max-width:none;margin:0;padding:0}
-  .vx-home-top-systems .vx-home-hero-copy{max-width:650px;margin:0;padding:0;text-align:left}
-  .vx-home-top-systems .vx-home-hero h1{max-width:650px;margin:14px 0 0;font-size:clamp(48px,4.8vw,58px);font-weight:500;line-height:1.01;letter-spacing:-.045em;white-space:normal!important;text-wrap:balance}
-  .vx-home-top-systems .vx-home-hero-lead{max-width:620px;margin:17px 0 0;color:#56645e;font-size:16.5px;line-height:1.58}
-  .vx-home-top-systems .vx-home-hero-actions{justify-content:flex-start;margin-top:23px}
-  .vx-home-top-systems .vx-home-hero-proof{margin:14px 0 0;color:#5f6d67;font-size:13px}
-  .vx-home-top-systems .vx-home-hero-login{margin:7px 0 0;color:#5f6d67;font-size:12.5px}
-  .vx-home-proof-preview{display:flex;min-width:0;flex-direction:column;padding:27px;border:1px solid #cfe3d8;border-radius:28px;background:linear-gradient(145deg,#11372a 0%,#174d39 100%);color:#f5fbf8;box-shadow:0 18px 48px rgba(17,55,42,.12);box-sizing:border-box}
-  .vx-home-proof-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.vx-home-proof-preview-head span{color:#a9d9c1;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.vx-home-proof-preview-head h2{margin:7px 0 0;color:#fff;font-size:25px;font-weight:560;letter-spacing:-.025em}.vx-home-proof-preview-head a{color:#d9f1e5;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap}.vx-home-proof-preview-copy{margin:14px 0 0;color:#c4d8ce;font-size:13px;line-height:1.55}
-  .vx-home-proof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:22px}.vx-home-proof-grid>div{min-width:0;padding:15px;border:1px solid rgba(255,255,255,.13);border-radius:17px;background:rgba(255,255,255,.055)}.vx-home-proof-grid span{display:block;color:#bfd3c9;font-size:11.5px;line-height:1.35}.vx-home-proof-grid strong{display:block;margin-top:8px;color:#fff;font-size:22px;font-weight:560;letter-spacing:-.025em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.vx-home-proof-grid strong.positive{color:#83e9b3}.vx-home-proof-grid strong.negative{color:#ffaaa7}
-  .vx-home-proof-meta{display:grid;gap:5px;margin-top:auto;padding-top:18px;color:#bed3c8;font-size:11.5px;line-height:1.45;font-variant-numeric:tabular-nums}
-  .vx-home-system-stack{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;min-width:0}
-  .vx-home-top-systems .vx-home-system-card{display:flex;min-height:170px;flex-direction:column;padding:19px 20px;border:1px solid #dce7e1;border-radius:22px;background:linear-gradient(145deg,#eefaf4 0%,#f8fdf9 52%,#ffffff 100%);color:#17211d;text-decoration:none;box-shadow:0 12px 34px rgba(31,67,51,.035);box-sizing:border-box;transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}
-  .vx-home-top-systems .vx-home-system-card>span{color:#287153;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
-  .vx-home-top-systems .vx-home-system-card>strong{margin-top:8px;font-size:22px;font-weight:560;letter-spacing:-.025em}
-  .vx-home-top-systems .vx-home-system-card>p{margin:7px 0 0;color:#56645e;font-size:13.5px;line-height:1.48}
-  .vx-home-top-systems .vx-home-system-card>b{margin-top:auto;padding-top:13px;color:#176442;font-size:12.5px;font-weight:700}
-  .vx-home-top-systems .vx-home-system-card:hover{transform:translateY(-1px);border-color:#c9ded3;box-shadow:0 16px 40px rgba(31,67,51,.06)}
+  .vx-home-top-systems .vx-home-hero-copy{max-width:900px;margin:0 auto;padding:0;text-align:center}
+  .vx-home-top-systems .vx-home-hero h1{max-width:900px;margin:14px auto 0;font-size:clamp(48px,4.8vw,58px);font-weight:500;line-height:1.02;letter-spacing:-.045em;white-space:normal!important;text-wrap:balance}
+  .vx-home-top-systems .vx-home-hero-lead{max-width:760px;margin:17px auto 0;color:#56645e;font-size:16.5px;line-height:1.62}
+  .vx-home-top-systems .vx-home-hero-actions{justify-content:center;margin-top:23px}
+  .vx-home-top-systems .vx-home-hero-proof{margin:14px auto 0;color:#5f6d67;font-size:13px}
+  .vx-home-section-kicker{color:#287153;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+  .vx-home-how,.vx-home-compare{padding:38px 0;border-top:1px solid #e0e9e4}
+  .vx-home-how h2,.vx-home-compare h2{max-width:800px;margin:10px 0 0;color:#17211d;font-size:clamp(30px,3.4vw,42px);font-weight:540;line-height:1.08;letter-spacing:-.035em}
+  .vx-home-section-lead{max-width:850px;margin:13px 0 0;color:#56645e;font-size:15.5px;line-height:1.62}
+  .vx-home-how-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:27px 0 0;padding:0;list-style:none}
+  .vx-home-how-steps li{display:grid;grid-template-columns:34px 1fr;gap:12px;padding-top:15px;border-top:2px solid #d8e5de}
+  .vx-home-how-steps li>b{display:flex;width:30px;height:30px;align-items:center;justify-content:center;border-radius:50%;background:#eef8f3;color:#176442;font-size:12px}
+  .vx-home-how-steps strong{display:block;color:#17211d;font-size:15px;font-weight:650}.vx-home-how-steps span{display:block;margin-top:5px;color:#5f6d67;font-size:13.5px;line-height:1.52}
+  .vx-home-how-boundary{margin-top:22px;color:#4f5e57;font-size:13.5px;line-height:1.55}.vx-home-how-boundary a{color:#176442;font-weight:700;text-decoration:none}.vx-home-how-boundary a:hover{text-decoration:underline;text-underline-offset:3px}
+  .vx-home-system-stack{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:25px;min-width:0}
+  .vx-home-top-systems .vx-home-system-card{display:flex;min-width:0;flex-direction:column;padding:22px;border:1px solid #dce7e1;border-radius:20px;background:#fff;color:#17211d;text-decoration:none;box-sizing:border-box;transition:border-color .16s ease,transform .16s ease}
+  .vx-home-top-systems .vx-home-system-card>span{color:#287153;font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+  .vx-home-top-systems .vx-home-system-card>strong{margin-top:8px;font-size:23px;font-weight:560;letter-spacing:-.025em}
+  .vx-home-system-fact{padding:13px 0;border-top:1px solid #edf2ef}.vx-home-system-fact:first-of-type{margin-top:17px}
+  .vx-home-system-fact b{display:block;color:#425049;font-size:12px;font-weight:700}.vx-home-system-fact p{margin:5px 0 0;color:#5f6d67;font-size:13.5px;line-height:1.48}
+  .vx-home-top-systems .vx-home-system-card>em{margin-top:auto;padding-top:15px;color:#176442;font-size:13px;font-style:normal;font-weight:700}
+  .vx-home-top-systems .vx-home-system-card:hover{transform:translateY(-1px);border-color:#bdd7ca}
+  .vx-home-proof-preview{display:flex;min-width:0;flex-direction:column;margin-top:8px;padding:30px;border:1px solid #245d47;border-radius:26px;background:linear-gradient(145deg,#11372a 0%,#174d39 100%);color:#f5fbf8;box-shadow:0 18px 48px rgba(17,55,42,.13);box-sizing:border-box}
+  .vx-home-proof-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.vx-home-proof-preview-head span{color:#a9d9c1;font-size:11.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.vx-home-proof-preview-head h2{margin:7px 0 0;color:#fff;font-size:28px;font-weight:560;letter-spacing:-.025em}.vx-home-proof-preview-head a{color:#d9f1e5;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap}.vx-home-proof-preview-copy{max-width:760px;margin:14px 0 0;color:#c4d8ce;font-size:13.5px;line-height:1.58}
+  .vx-home-proof-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:22px}.vx-home-proof-grid>div{min-width:0;padding:16px;border:1px solid rgba(255,255,255,.13);border-radius:17px;background:rgba(255,255,255,.055)}.vx-home-proof-grid span{display:block;color:#bfd3c9;font-size:11.5px;line-height:1.35}.vx-home-proof-grid strong{display:block;margin-top:8px;color:#fff;font-size:22px;font-weight:560;letter-spacing:-.025em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.vx-home-proof-grid strong.positive{color:#83e9b3}.vx-home-proof-grid strong.negative{color:#ffaaa7}
+  .vx-home-proof-meta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px;color:#bed3c8;font-size:11.5px;line-height:1.45;font-variant-numeric:tabular-nums}
   #${DAY_ANCHOR_ID}{scroll-margin-top:92px}
-  @media(max-width:900px){.vx-home-top-grid{grid-template-columns:1fr}.vx-home-top-systems .vx-home-hero{order:1}.vx-home-proof-preview{order:2}.vx-home-system-stack{grid-template-columns:repeat(3,minmax(0,1fr))}.vx-home-top-systems .vx-home-hero h1{font-size:clamp(42px,7vw,54px)}}
-  @media(max-width:700px){.vx-home-top-systems{padding:24px 0 28px}.vx-home-top-systems>.wrap{padding:0 16px}.vx-home-top-systems .vx-home-hero{padding:26px 20px 24px;border-radius:22px}.vx-home-top-systems .vx-home-hero h1{font-size:clamp(34px,10vw,40px);line-height:1.04}.vx-home-top-systems .vx-home-hero-lead{font-size:15.5px}.vx-home-top-systems .vx-home-hero-actions{margin-top:20px}.vx-home-proof-preview{padding:22px 18px;border-radius:22px}.vx-home-proof-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.vx-home-system-stack{grid-template-columns:1fr}.vx-home-top-systems .vx-home-system-card{min-height:138px}.vx-home-proof-preview-head{flex-direction:column}.vx-home-proof-preview-head a{white-space:normal}}
+  @media(max-width:900px){.vx-home-how-steps{grid-template-columns:1fr}.vx-home-system-stack{grid-template-columns:1fr}.vx-home-proof-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.vx-home-top-systems .vx-home-hero h1{font-size:clamp(42px,7vw,54px)}}
+  @media(max-width:700px){.vx-home-top-systems{padding:22px 0 30px}.vx-home-top-systems>.wrap{padding:0 16px}.vx-home-top-systems .vx-home-hero{padding:18px 0 32px}.vx-home-top-systems .vx-home-hero h1{font-size:clamp(34px,10vw,40px);line-height:1.05}.vx-home-top-systems .vx-home-hero-lead{font-size:15.5px}.vx-home-top-systems .vx-home-hero-actions{margin-top:20px}.vx-home-how,.vx-home-compare{padding:31px 0}.vx-home-how h2,.vx-home-compare h2{font-size:clamp(28px,8vw,36px)}.vx-home-proof-preview{padding:23px 18px;border-radius:22px}.vx-home-proof-preview-head{flex-direction:column}.vx-home-proof-preview-head a{white-space:normal}.vx-home-system-fact p,.vx-home-how-steps span{font-size:13.5px}}
   @media(max-width:420px){.vx-home-proof-grid{grid-template-columns:1fr}.vx-home-proof-grid strong{font-size:21px}}
 </style>`;
 
@@ -230,6 +278,7 @@ module.exports = {
   OPTIONS_PATH,
   findTagRangeFromOpen,
   findTagByClass,
+  renderHowItWorks,
   renderSystemSelector,
   renderHeroPreview,
   removeLowerSystemCards,
