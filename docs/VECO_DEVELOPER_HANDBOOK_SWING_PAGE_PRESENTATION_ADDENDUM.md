@@ -19,16 +19,32 @@ The final public Swing page should:
 - lay out the four beginner explanations horizontally on desktop, with responsive two-column and one-column fallbacks on narrower screens;
 - keep the summary metrics in their own horizontal row beneath the How block: `Active Portfolio`, `Candidates`, `Cash`, and `Model Allocation`;
 - use `Candidates` as the visible compact label instead of `Potential Candidates`, without changing the Trading Lab feed field or candidate-selection logic;
-- keep `Market Posture` in the larger page block that replaced the old How section, but reduce the PR #143 Market Posture typography by 50%: 16.5px heading and 12px body on desktop, with proportional mobile reductions;
+- render the former public `Market Posture` block as **`Market Update`**;
+- keep the Market Update heading compact at 16.5px desktop / 15px mobile while rendering the Trading Lab update copy at the same body size as the Active Portfolio beginner description: 18px desktop / 17px mobile;
+- always show the Trading Lab release date and time directly below Market Update using the existing Public Feed `snapshot_date` and `snapshot_time_et` values; do not substitute browser time, server time, fetch time, or a newly generated timestamp;
 - keep the beginner `How Swing Leaders Works` text materially easy to read: 33px heading, approximately 19.5px item labels, and 18px body copy on desktop, with modest mobile reductions;
 - explain Active Portfolio, Candidates, Closed Trades, position size, targets, morning stop review, and Trading Lab removals in plain language without changing their underlying meaning;
 - render model allocation with an explicit separator as `$10K / position`, avoiding the visually merged `$10Kper position` presentation.
+
+## Release-stamp data contract
+
+The public Swing renderer already validates and exposes these Trading Lab fields:
+
+```text
+snapshot_date
+snapshot_time_et
+market_posture
+```
+
+`website_swing_ui_refinement.js` may reuse the already-rendered snapshot stamp to label the Market Update release. The displayed update text remains the exact existing `market_posture` value from Trading Lab; Engineering does not rewrite, summarize, infer, or independently generate market commentary.
+
+The release stamp means **when the Trading Lab snapshot/update was released**, not when the browser loaded the page. The primary extraction source is the existing hero `Snapshot YYYY-MM-DD · <time> ET` pill, with the existing `Last Updated` footer as a presentation fallback. Both are rendered from the same validated Public Feed snapshot fields.
 
 ## Implementation boundary
 
 `website_swing_ui_refinement.js` is a route-scoped final HTML presentation refinement for the canonical Swing route. It is loaded immediately after the two established outer presentation preloads so it receives the fully composed Swing HTML after later Swing/evidence layers and can enforce the owner-approved final layout without modifying the Trading Lab renderer or data contract.
 
-The refinement must remain idempotent and must not invent, recompute, replace, or suppress Swing feed values other than removing the owner-rejected explanatory evidence panel from public display. Renaming the visible `Potential Candidates` label to `Candidates` is presentation-only; the underlying feed and semantics remain unchanged.
+The refinement must remain idempotent and must not invent, recompute, replace, or suppress Swing feed values other than removing the owner-rejected explanatory evidence panel from public display. Renaming the visible `Potential Candidates` label to `Candidates` and `Market Posture` to `Market Update` are presentation-only; the underlying feed fields and semantics remain unchanged.
 
 ## Verification
 
@@ -37,7 +53,9 @@ Regression coverage should confirm:
 - `Swing evidence context` and its Swing evidence marker are absent from final Swing HTML;
 - the How block appears before the Swing summary row and is not inside a summary-card slot;
 - the summary row remains horizontal on desktop and contains Active Portfolio, Candidates, Cash, and Model Allocation;
-- Market Posture remains below the summary and uses the reduced typography;
+- the former Market Posture content renders under the public heading `Market Update` below the summary;
+- Market Update body copy uses the same 18px desktop / 17px mobile size as the Active Portfolio description;
+- Market Update always carries the exact snapshot date/time from the existing Trading Lab snapshot stamp;
 - `$10K / position` is emitted;
 - the hero and beginner-copy font rules are present;
 - the transform is idempotent;

@@ -6,6 +6,7 @@ const {
   SWING_PATH,
   STYLE_ID,
   PAGE_MARKER,
+  extractSnapshotRelease,
   refineSwingHtml,
 } = require("../website_swing_ui_refinement");
 
@@ -16,9 +17,9 @@ assert(start.includes("-r ./website_swing_ui_refinement.js -r ./website_conversi
 const fixture = `<!doctype html><html><head></head><body>
 <main data-vx-conversion-system-page="swing">
   <div class="hero-layout">
-    <section class="hero"><h1>Follow a portfolio reviewed every day.</h1></section>
+    <section class="hero"><h1>Follow a portfolio reviewed every day.</h1><div class="stamp"><span class="pill">Snapshot 2026-09-18 · 10:15 ET</span></div></section>
     <section class="summary" aria-label="Swing Leaders summary">
-      <div class="summary-card posture"><small>Market Posture</small><strong>Selective / risk-aware</strong></div>
+      <div class="summary-card posture"><small>Market Posture</small><strong>Constructive but selective: S&amp;P 500 and Nasdaq opened higher as oil eased, while Treasury yields remained elevated; AI/optical infrastructure led early technology strength.</strong></div>
       <div class="summary-card"><small>Active Portfolio</small><strong>4</strong></div>
       <div class="summary-card"><small>Potential Candidates</small><strong>7</strong></div>
       <div class="summary-card"><small>Cash</small><strong>20%</strong></div>
@@ -34,7 +35,10 @@ const fixture = `<!doctype html><html><head></head><body>
     <div class="rules">Old rules copy.</div>
   </section>
 </main>
+<footer class="footer"><div class="wrap">Vixale Swing Leaders · Last Updated 2026-09-18 10:15 ET</div></footer>
 </body></html>`;
+
+assert.deepStrictEqual(extractSnapshotRelease(fixture), { date: "2026-09-18", time: "10:15 ET" });
 
 const out = refineSwingHtml(fixture);
 assert(out.includes(PAGE_MARKER));
@@ -43,8 +47,9 @@ assert(out.includes("font-size:clamp(30px,3.5vw,42px)!important"));
 assert(out.includes(".vx-swing-how-block h2{margin:0 0 18px;font-size:33px"));
 assert(out.includes("grid-template-columns:repeat(4,minmax(0,1fr))"));
 assert(out.includes("font-size:18px;line-height:1.5"));
-assert(out.includes(".vx-swing-market-posture h2{margin-bottom:6px;font-size:16.5px!important"));
-assert(out.includes(".vx-swing-posture-copy{margin:0;color:#17211d;font-size:12px"));
+assert(out.includes(".vx-swing-market-update h2{margin-bottom:10px;font-size:16.5px!important"));
+assert(out.includes(".vx-swing-posture-copy{margin:0;color:#5f6d67;font-size:18px;line-height:1.5"));
+assert(out.includes(".vx-swing-posture-copy{font-size:17px}"));
 
 assert(!out.includes("Swing evidence context"));
 assert(!out.includes('data-vx-evidence-credibility="swing"'));
@@ -62,20 +67,30 @@ assert(out.includes("<strong>Candidates</strong>"));
 assert(!out.includes("<small>Potential Candidates</small>"));
 assert(!out.includes("<strong>Potential Candidates</strong>"));
 
+assert(out.includes('aria-label="Market Update"'));
+assert(out.includes('data-vx-swing-market-update="1"'));
+assert(out.includes("<h2>Market Update</h2>"));
+assert(!out.includes("<h2>Market Posture</h2>"));
+assert(out.includes("Constructive but selective: S&amp;P 500 and Nasdaq opened higher as oil eased"));
+assert(out.includes("<strong>Released:</strong> 2026-09-18 · 10:15 ET"));
+
 const howIndex = out.indexOf('data-vx-swing-how="beginner"');
 const summaryIndex = out.indexOf('aria-label="Swing Leaders summary"');
 const activeMetricIndex = out.indexOf("<small>Active Portfolio</small>");
-const movedPostureIndex = out.indexOf('data-vx-swing-market-posture="1"');
+const movedUpdateIndex = out.indexOf('data-vx-swing-market-update="1"');
 const allocationIndex = out.indexOf("$10K / position");
 assert(howIndex >= 0 && howIndex < summaryIndex, "How block should sit above the horizontal summary row");
 assert(summaryIndex >= 0 && summaryIndex < activeMetricIndex, "Active Portfolio should remain inside the summary row below How");
-assert(movedPostureIndex > allocationIndex, "Market Posture should remain below the summary row");
-assert(out.includes('<p class="vx-swing-posture-copy">Selective / risk-aware</p>'));
+assert(movedUpdateIndex > allocationIndex, "Market Update should remain below the summary row");
 
 const summaryMatch = out.match(/<section\b[^>]*class=["'][^"']*\bsummary\b[^"']*["'][^>]*aria-label=["']Swing Leaders summary["'][^>]*>[\s\S]*?<\/section>/i);
 assert(summaryMatch, "Swing summary row should remain present");
 assert(!summaryMatch[0].includes('data-vx-swing-how="beginner"'), "How block must not occupy a metric-card slot");
 assert(!summaryMatch[0].includes("Market Posture"), "Market Posture should not occupy a metric-card slot");
+assert(!summaryMatch[0].includes("Market Update"), "Market Update should not occupy a metric-card slot");
+
+const footerOnlyFixture = fixture.replace('<div class="stamp"><span class="pill">Snapshot 2026-09-18 · 10:15 ET</span></div>', "");
+assert.deepStrictEqual(extractSnapshotRelease(footerOnlyFixture), { date: "2026-09-18", time: "10:15 ET" });
 
 assert.strictEqual(refineSwingHtml(out), out, "Swing UI refinement must be idempotent");
 assert.strictEqual(SWING_PATH, "/trading-systems/swing-trading");

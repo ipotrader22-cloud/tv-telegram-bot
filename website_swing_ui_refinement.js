@@ -10,8 +10,8 @@ const styles = `<style id="${STYLE_ID}">
 [data-vx-conversion-system-page="swing"] .hero h1{font-size:clamp(30px,3.5vw,42px)!important;font-weight:550!important;line-height:1.06!important;letter-spacing:-.035em!important}
 .vx-swing-how-block{grid-column:1/-1;width:100%;box-sizing:border-box}.vx-swing-how-block h2{margin:0 0 18px;font-size:33px;line-height:1.08;letter-spacing:-.03em;font-weight:600}.vx-swing-how-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px}.vx-swing-how-list p{margin:0;color:#5f6d67;font-size:18px;line-height:1.5}.vx-swing-how-list strong{display:block;margin-bottom:4px;color:#17211d;font-size:19.5px!important;line-height:1.3;font-weight:650!important;letter-spacing:-.01em!important}
 [data-vx-conversion-system-page="swing"] .hero-layout .summary{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))!important}
-.vx-swing-market-posture h2{margin-bottom:6px;font-size:16.5px!important;line-height:1.15!important}.vx-swing-posture-copy{margin:0;color:#17211d;font-size:12px;line-height:1.45;font-weight:600;letter-spacing:-.01em}
-@media(max-width:1000px){.vx-swing-how-list{grid-template-columns:repeat(2,minmax(0,1fr))}[data-vx-conversion-system-page="swing"] .hero-layout .summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:720px){.vx-swing-how-block h2{font-size:30px}.vx-swing-how-list{grid-template-columns:1fr}.vx-swing-how-list p{font-size:17px}.vx-swing-how-list strong{font-size:18.5px!important}[data-vx-conversion-system-page="swing"] .hero-layout .summary{grid-template-columns:1fr!important}.vx-swing-market-posture h2{font-size:15px!important}.vx-swing-posture-copy{font-size:10.5px}}
+.vx-swing-market-update h2{margin-bottom:10px;font-size:16.5px!important;line-height:1.15!important}.vx-swing-posture-copy{margin:0;color:#5f6d67;font-size:18px;line-height:1.5;font-weight:400;letter-spacing:normal}.vx-swing-update-release{margin:10px 0 0;color:#68736f;font-size:12px;line-height:1.4;font-weight:500;letter-spacing:.01em}.vx-swing-update-release strong{color:#17211d;font-weight:600}
+@media(max-width:1000px){.vx-swing-how-list{grid-template-columns:repeat(2,minmax(0,1fr))}[data-vx-conversion-system-page="swing"] .hero-layout .summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:720px){.vx-swing-how-block h2{font-size:30px}.vx-swing-how-list{grid-template-columns:1fr}.vx-swing-how-list p{font-size:17px}.vx-swing-how-list strong{font-size:18.5px!important}[data-vx-conversion-system-page="swing"] .hero-layout .summary{grid-template-columns:1fr!important}.vx-swing-market-update h2{font-size:15px!important}.vx-swing-posture-copy{font-size:17px}.vx-swing-update-release{font-size:11.5px}}
 </style>`;
 
 function requestPath(req) {
@@ -37,11 +37,27 @@ function renderHowSummaryCard() {
         </section>`;
 }
 
-function renderMarketPosture(postureHtml) {
-  return `<section class="how vx-swing-market-posture" aria-label="Market Posture" data-vx-swing-market-posture="1">
-      <h2>Market Posture</h2>
+function extractSnapshotRelease(html) {
+  const text = String(html || "");
+  const stamp = text.match(/<span\b[^>]*class=["'][^"']*\bpill\b[^"']*["'][^>]*>\s*Snapshot\s+(\d{4}-\d{2}-\d{2})\s*·\s*(\d{1,2}(?::\d{2})?\s+ET)\s*<\/span>/i);
+  if (stamp) return { date: stamp[1], time: stamp[2] };
+
+  const footer = text.match(/Last Updated\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}(?::\d{2})?\s+ET)/i);
+  return footer ? { date: footer[1], time: footer[2] } : null;
+}
+
+function renderMarketUpdate(postureHtml, release) {
+  const releaseDate = release?.date || "Release date unavailable";
+  const releaseTime = release?.time || "Release time unavailable";
+  return `<section class="how vx-swing-market-update" aria-label="Market Update" data-vx-swing-market-update="1">
+      <h2>Market Update</h2>
       <p class="vx-swing-posture-copy">${postureHtml}</p>
+      <p class="vx-swing-update-release"><strong>Released:</strong> ${releaseDate} · ${releaseTime}</p>
     </section>`;
+}
+
+function renderMarketPosture(postureHtml, release) {
+  return renderMarketUpdate(postureHtml, release);
 }
 
 function removeSwingEvidenceContext(html) {
@@ -67,11 +83,12 @@ function refineSwingHtml(html) {
   const posture = out.match(/<div\b[^>]*class=["'][^"']*\bsummary-card\b[^"']*\bposture\b[^"']*["'][^>]*>\s*<small>Market Posture<\/small>\s*<strong>([\s\S]*?)<\/strong>\s*<\/div>/i);
   const summary = out.match(/<section\b[^>]*class=["'][^"']*\bsummary\b[^"']*["'][^>]*aria-label=["']Swing Leaders summary["'][^>]*>[\s\S]*?<\/section>/i);
   const how = out.match(/<section\b[^>]*class=["'][^"']*\bhow\b[^"']*["'][^>]*aria-label=["']How Swing Leaders works["'][^>]*>[\s\S]*?<\/section>/i);
+  const release = extractSnapshotRelease(out);
 
   if (posture && summary && how) {
     const summaryWithoutPosture = summary[0].replace(posture[0], "");
     out = out.replace(summary[0], () => `${renderHowSummaryCard()}\n${summaryWithoutPosture}`);
-    out = out.replace(how[0], () => renderMarketPosture(posture[1]));
+    out = out.replace(how[0], () => renderMarketUpdate(posture[1], release));
   }
 
   out = renameCandidateLabels(out);
@@ -133,6 +150,8 @@ module.exports = {
   requestPath,
   injectStyles,
   renderHowSummaryCard,
+  extractSnapshotRelease,
+  renderMarketUpdate,
   renderMarketPosture,
   removeSwingEvidenceContext,
   renameCandidateLabels,
