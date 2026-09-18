@@ -1,0 +1,32 @@
+name: Diagnose live chart runtime
+
+on:
+  push:
+    branches: [diagnose/live-chart-runtime]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe public origins
+        shell: bash
+        run: |
+          set -u
+          for base in https://www.vixale.com https://tv-telegram-bot-a7t0.onrender.com; do
+            echo "=== BASE: $base ==="
+            for path in / /results /public-performance.json /public-live-open-pnl.json /api/swing-leaders; do
+              echo "--- $path ---"
+              code=$(curl -sS -L --max-time 20 -o /tmp/body -w '%{http_code}' "$base$path" || true)
+              echo "HTTP $code"
+              head -c 2400 /tmp/body || true
+              echo
+              if [[ "$path" == "/" ]]; then
+                echo "markers:"
+                grep -o 'vx-issue123-pr7-final-script\|vx-conversion-home-script\|vx-home-equity-svg\|vx-conversion-day-chart' /tmp/body | sort | uniq -c || true
+              fi
+              if [[ "$path" == "/results" ]]; then
+                echo "markers:"
+                grep -o 'vx-conversion-results-script\|vx-results-day-chart\|public-performance.json' /tmp/body | sort | uniq -c || true
+              fi
+            done
+          done
