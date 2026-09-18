@@ -5,6 +5,9 @@ const {
   SERVICE_SECTION_NEEDLES,
   SERVICES_INTRO_MARKER,
   SERVICES_OFFER_MARKER,
+  RESULTS_PATH,
+  RESULTS_STYLE_ID,
+  renderResultsFromLanding,
   refineHomeAccessCopy,
   normalizeAccessLinksToHome,
   refineHomeHtml,
@@ -76,6 +79,20 @@ const samePageFragments = [...services.matchAll(/href="#([^"]+)"/g)].map((match)
 for (const fragment of samePageFragments) {
   assert(services.includes(`id="${fragment}"`), `Services fragment #${fragment} must resolve to a rendered target`);
 }
+
+const results = renderResultsFromLanding(sample);
+assert(results.includes("<title>Vixale | Results</title>"));
+assert(results.includes(`id="${RESULTS_STYLE_ID}"`));
+assert(results.includes("Review the right evidence for each Vixale system."));
+assert(results.includes('id="day-trading"') && results.includes('href="/#live-day-trading">View Day Trading results →</a>'));
+assert(results.includes('href="/closed-trades">Open Day Trading closed-trades archive →</a>'));
+assert(results.includes('id="swing-trading"') && results.includes("Research/model portfolio only — not broker execution"));
+assert(results.includes('href="/trading-systems/swing-trading">View Swing Portfolio →</a>'));
+assert(results.includes('id="options"') && results.includes("Options evidence stays separate from Day Trading performance."));
+assert(results.includes('href="/trading-systems/options">Review Options evidence →</a>'));
+assert(results.includes('href="/trading-systems/options/viewer">Options Viewer →</a>'));
+assert(results.includes(`https://www.vixale.com${RESULTS_PATH}`));
+assert(!results.includes("simulated result"), "Results hub must not invent fallback performance values");
 
 const pricing = renderPricingFromLanding(sample);
 assert(pricing.includes("<title>Vixale | Watch System for Free</title>"));
