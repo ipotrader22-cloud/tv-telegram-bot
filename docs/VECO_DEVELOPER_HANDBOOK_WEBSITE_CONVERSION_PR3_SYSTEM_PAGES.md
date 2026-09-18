@@ -111,7 +111,7 @@ Revert the PR 3 merge and restore the prior `package.json` preload order. No tra
 
 ## 2026-09-18 Swing readability follow-up
 
-Owner-directed public Swing presentation changes are handled by `website_swing_readability_refinement.js`, loaded before the existing public refinements so it receives the fully composed Swing HTML on response unwind.
+Owner-directed public Swing presentation changes are handled by `website_swing_readability_refinement.js`, loaded immediately after `website_conversion_final_qa_refinement.js`. The final-QA preload remains first as required; the Swing-only layer still receives the fully composed Swing HTML after the lower public refinements unwind.
 
 The follow-up is presentation-only and applies to `/trading-systems/swing-trading`:
 
