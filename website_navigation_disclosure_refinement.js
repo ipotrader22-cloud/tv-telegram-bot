@@ -69,8 +69,8 @@ function findFirstTag(html, tagName) {
 }
 
 function findBrandAnchor(html) {
-  const anchors = String(html).match(/<a\\b[^>]*>[\\s\\S]*?<\\/a>/gi) || [];
-  return anchors.find(anchor => /href=["']\\/["']/i.test(anchor) && /VIXALE/i.test(anchor)) || "";
+  const anchors = String(html).match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) || [];
+  return anchors.find(anchor => /href=["']\/["']/i.test(anchor) && /VIXALE/i.test(anchor)) || "";
 }
 
 function normalizePublicNavigation(html) {
