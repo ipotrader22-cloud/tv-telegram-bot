@@ -19,7 +19,7 @@ const expectedNav = [
   'href="/services">Services</a>',
   'href="/trading-guide">Help</a>',
   'class="vx-public-nav-login" href="/dashboard">Log In</a>',
-  'class="vx-public-nav-cta" href="/#password-access">Request Free Access</a>',
+  'class="vx-public-nav-cta" href="/access">Request Free Access</a>',
 ];
 
 const home = `<!doctype html><html><head></head><body>
@@ -47,13 +47,14 @@ assert(!guideOut.includes(">Download PDF</a>"), "top navigation uses the shared 
 const standaloneSwingNav = '<html><head></head><body><nav class="swing-nav"><a class="brand" href="/">VIXALE</a><a href="/trading-systems">Trading Systems</a><a href="/">Home</a></nav><main>Swing</main><footer>Swing footer</footer></body></html>';
 const standaloneSwingOut = refineNavigationAndDisclosure(standaloneSwingNav, "/trading-systems/swing-trading");
 assert(standaloneSwingOut.includes('<a class="brand" href="/">VIXALE</a>'), "standalone Swing brand must be preserved");
-for (const fragment of expectedNav) assert(standaloneSwingOut.includes(fragment), `standalone Swing nav missing: ${fragment}`);
+for (const fragment of expectedNav.slice(0, -1)) assert(standaloneSwingOut.includes(fragment), `standalone Swing nav missing: ${fragment}`);
+assert(standaloneSwingOut.includes('class="vx-public-nav-cta" href="/access?system=swing-trading">Request Free Access</a>'));
 assert(!standaloneSwingOut.includes('>Home</a>'), "standalone mini-site Home nav must be replaced by the shared hierarchy");
 
 const systems = `<!doctype html><html><head></head><body>
 <nav><div class="nav-links"><a href="/">Home</a></div></nav>
 <main><section class="vx-systems-page"><div class="wrap">
-<section class="vx-systems-hero"><div class="vx-systems-actions"><a class="vx-systems-btn primary" href="/#password-access">Request Free Access</a><a class="vx-systems-btn" href="/dashboard">Live Dashboard</a></div></section>
+<section class="vx-systems-hero"><div class="vx-systems-actions"><a class="vx-systems-btn primary" href="/access">Request Free Access</a><a class="vx-systems-btn" href="/dashboard">Live Dashboard</a></div></section>
 <section class="vx-category-grid"><a class="vx-category-card">Day Trading</a></section>
 <section class="vx-performance-strip"><div>Verify results before choosing a system.</div></section>
 <div class="vx-detail-footer">Vixale presents system information for transparency, education, and research. Trading involves risk and results are not guaranteed.</div>
@@ -84,6 +85,7 @@ assert(PUBLIC_NAV_PATHS.has("/about"));
 assert(PUBLIC_NAV_PATHS.has("/services"));
 assert(PUBLIC_NAV_PATHS.has("/trading-guide"));
 assert(PUBLIC_NAV_PATHS.has("/results"));
+assert(PUBLIC_NAV_PATHS.has("/access"));
 assert.strictEqual(normalizePublicNavigation("<html><body>No nav links container</body></html>"), "<html><body>No nav links container</body></html>");
 
 console.log("Unified public navigation + guide ordering + accessibility: PASS");
