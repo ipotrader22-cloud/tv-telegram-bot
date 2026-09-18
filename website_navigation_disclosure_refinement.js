@@ -6,6 +6,7 @@ const { injectFunnelAccessScript } = require("./lib/website-funnel-client");
 const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
 const GUIDE_PATH = "/trading-guide";
+const RESULTS_PATH = "/results";
 const GUIDE_BLOCK_HREF = `${SYSTEMS_PATH}#vx-how-to-trade-title`;
 const GUIDE_NAV_TEXT = "How to Trade Vixale";
 const NFA_TEXT = "NFA — Not Financial Advice.";
@@ -16,6 +17,7 @@ const PUBLIC_NAV_PATHS = new Set([
   `${SYSTEMS_PATH}/day-trading`,
   `${SYSTEMS_PATH}/swing-trading`,
   `${SYSTEMS_PATH}/options`,
+  RESULTS_PATH,
   "/services",
   "/about",
   "/pricing",
@@ -52,12 +54,23 @@ function findTagByClass(html, tagName, className) {
 }
 
 function renderPublicNavLinks() {
-  return `<a href="/trading-systems">Trading Systems</a><a href="/#live-day-trading">Performance</a><a href="/services">Services</a><a href="/about">About</a><a href="/trading-guide">Trading Guide</a><a class="vx-public-nav-login" href="/dashboard">Login</a><a class="vx-public-nav-cta" href="/#password-access">Request Free Access</a>`;
+  return `<a href="${GUIDE_BLOCK_HREF}">How It Works</a><a href="/trading-systems">Trading Systems</a><a href="${RESULTS_PATH}">Results</a><a href="/services">Services</a><a href="/trading-guide">Help</a><a class="vx-public-nav-login" href="/dashboard">Log In</a><a class="vx-public-nav-cta" href="/#password-access">Request Free Access</a>`;
 }
 
 function replaceInnerHtml(html, range, inner) {
   if (!range || !Number.isFinite(range.openEnd) || !Number.isFinite(range.closeStart)) return html;
   return html.slice(0, range.openEnd) + inner + html.slice(range.closeStart);
+}
+
+function findFirstTag(html, tagName) {
+  const pattern = new RegExp(`<${escapeRegex(tagName)}\\b[^>]*>`, "i");
+  const match = pattern.exec(html);
+  return match ? findTagRangeFromOpen(html, tagName, match.index) : null;
+}
+
+function findBrandAnchor(html) {
+  const anchors = String(html).match(/<a\\b[^>]*>[\\s\\S]*?<\\/a>/gi) || [];
+  return anchors.find(anchor => /href=["']\\/["']/i.test(anchor) && /VIXALE/i.test(anchor)) || "";
 }
 
 function normalizePublicNavigation(html) {
@@ -66,7 +79,25 @@ function normalizePublicNavigation(html) {
   if (standard) return replaceInnerHtml(html, standard, renderPublicNavLinks());
   const guide = findTagByClass(html, "div", "navlinks");
   if (guide) return replaceInnerHtml(html, guide, renderPublicNavLinks());
-  return html;
+
+  const nav = findFirstTag(html, "nav");
+  if (!nav) return html;
+  const inner = html.slice(nav.openEnd, nav.closeStart);
+  const brand = findBrandAnchor(inner);
+  const replacement = brand
+    ? `${brand}<div class="nav-links">${renderPublicNavLinks()}</div>`
+    : renderPublicNavLinks();
+  return replaceInnerHtml(html, nav, replacement);
+}
+
+function ensureSecondaryAboutLink(html) {
+  if (typeof html !== "string") return html;
+  const footer = findFirstTag(html, "footer");
+  if (!footer) return html;
+  const block = html.slice(footer.start, footer.end);
+  if (/href=["']\\/about(?:["'#?])/i.test(block)) return html;
+  const secondary = '<nav class="vx-public-secondary-nav" aria-label="Secondary navigation"><a href="/about">About</a></nav>';
+  return html.slice(0, footer.closeStart) + secondary + html.slice(footer.closeStart);
 }
 
 function insertHomeGuideNavLink(html) {
@@ -141,6 +172,7 @@ const styles = `
   .nav-links a,.navlinks a{font-size:12.5px}
   .vx-public-nav-login{color:#425049!important;font-weight:650!important}
   .vx-public-nav-cta{display:inline-flex!important;align-items:center;justify-content:center;min-height:38px;padding:0 14px!important;border:1px solid #078f51!important;border-radius:999px;background:#078f51!important;color:#fff!important;text-decoration:none!important;font-weight:700!important;white-space:nowrap}
+  .vx-public-secondary-nav{display:flex;justify-content:center;margin-top:12px}.vx-public-secondary-nav a{color:#5f6d67;font-size:12px;text-decoration:none}.vx-public-secondary-nav a:hover{text-decoration:underline;text-underline-offset:3px}
   a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #0a7f4b!important;outline-offset:3px!important}
   .vx-home-hero-lead,.vx-home-hero-proof,.vx-home-hero-login,.vx-home-day-head p,.vx-home-system-card>p,.vx-systems-lead,.vx-category-card p,.vx-detail-card p,.vx-detail-list li,.vx-watch-lead,.vx-trial-review,.vx-guide-copy,.vx-guide-step span,.guide-step p,.section-head p,.quick-item span{color:#56645e!important}
   .vx-home-day-details-link,.vx-home-day-scope,.vx-home-equity-foot,.vx-home-day-freshness,.vx-home-equity-coverage,.vx-detail-footer,.vx-watch-risk,.vx-trial-disclosure,.footer{color:#5f6d67!important}
@@ -149,7 +181,7 @@ const styles = `
   .vx-guide-compact .vx-guide-grid .vx-guide-title{font-size:18px!important;line-height:1.25!important;white-space:normal!important}
   .vx-systems-hero h1{font-size:clamp(42px,4.8vw,58px)!important;line-height:1.04!important;letter-spacing:-.038em!important}
   .vx-watch-hero h1{font-size:clamp(36px,4.4vw,50px)!important;line-height:1.06!important}
-  @media(max-width:900px){.nav-links,.navlinks{gap:8px}.nav-links>a:not(.vx-public-nav-login):not(.vx-public-nav-cta),.navlinks>a:not(.vx-public-nav-login):not(.vx-public-nav-cta){display:none!important}.vx-public-nav-login,.vx-public-nav-cta{display:inline-flex!important}}
+  @media(max-width:900px){.nav-links,.navlinks{gap:8px;flex-wrap:nowrap;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin}.nav-links>a,.navlinks>a{flex:0 0 auto}.vx-public-nav-login,.vx-public-nav-cta{display:inline-flex!important}}
   @media(max-width:700px){.vx-systems-hero h1{font-size:clamp(34px,9vw,44px)!important}.vx-watch-hero h1{font-size:clamp(32px,9vw,40px)!important}.vx-home-live-label{font-size:11px!important}.vx-home-equity-svg text{font-size:10.5px!important}.vx-public-nav-cta{min-height:40px}}
 </style>`;
 
@@ -161,7 +193,10 @@ function injectStyles(html) {
 function refineNavigationAndDisclosure(html, path) {
   if (typeof html !== "string") return html;
   let result = addNfaToDisclaimers(html);
-  if (PUBLIC_NAV_PATHS.has(path)) result = normalizePublicNavigation(result);
+  if (PUBLIC_NAV_PATHS.has(path)) {
+    result = normalizePublicNavigation(result);
+    result = ensureSecondaryAboutLink(result);
+  }
   if (path === SYSTEMS_PATH) {
     result = removeGeneralPerformanceStrip(result);
     result = addSystemsGuideButton(result);
@@ -224,6 +259,7 @@ module.exports = {
   HOME_PATH,
   SYSTEMS_PATH,
   GUIDE_PATH,
+  RESULTS_PATH,
   GUIDE_BLOCK_HREF,
   GUIDE_NAV_TEXT,
   NFA_TEXT,
@@ -231,8 +267,11 @@ module.exports = {
   PUBLIC_NAV_PATHS,
   findTagRangeFromOpen,
   findTagByClass,
+  findFirstTag,
+  findBrandAnchor,
   renderPublicNavLinks,
   normalizePublicNavigation,
+  ensureSecondaryAboutLink,
   insertHomeGuideNavLink,
   removeGeneralPerformanceStrip,
   addSystemsGuideButton,
