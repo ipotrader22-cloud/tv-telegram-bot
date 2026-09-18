@@ -9,6 +9,8 @@ const PAGE_MARKER = 'data-vx-swing-canonical="1"';
 const ACCESS_STYLE_ID = "vx-swing-access-style";
 const ACCESS_MARKER = 'class="vx-swing-access"';
 const ACCESS_PATH = "/#password-access";
+const PORTFOLIO_ANCHOR_ID = "active-portfolio";
+const PORTFOLIO_HREF = `${CANONICAL_SWING_PATH}#${PORTFOLIO_ANCHOR_ID}`;
 
 function requestPath(req) {
   return String(req?.path || String(req?.url || "").split("?")[0] || "");
@@ -45,6 +47,11 @@ function injectSwingAccessStyles(html) {
   return html.includes("</head>") ? html.replace("</head>", `${swingAccessStyles}\n</head>`) : html;
 }
 
+function ensureSwingPortfolioAnchor(html) {
+  if (typeof html !== "string" || html.includes(`id="${PORTFOLIO_ANCHOR_ID}"`)) return html;
+  return html.replace(/<h2([^>]*)>\s*Active Portfolio\s*<\/h2>/i, `<h2 id="${PORTFOLIO_ANCHOR_ID}"$1>Active Portfolio</h2>`);
+}
+
 function insertSwingAccess(html) {
   if (typeof html !== "string" || html.includes(ACCESS_MARKER)) return html;
   const copy = "Swing Leaders research/model portfolio with actively monitored swing positions and potential future candidates from Vixale Trading Lab.";
@@ -52,7 +59,7 @@ function insertSwingAccess(html) {
   if (copyIndex < 0) return html;
   const paragraphEnd = html.indexOf("</p>", copyIndex);
   if (paragraphEnd < 0) return html;
-  const access = `<div class="vx-swing-access"><a class="vx-swing-access-primary" href="${ACCESS_PATH}">Watch Systems for Free</a><a class="vx-swing-access-primary" href="/dashboard">Watch Swings</a><span class="vx-swing-access-note">One viewer access · Day Trading · Swing Trading · Options</span></div>`;
+  const access = `<div class="vx-swing-access"><a class="vx-swing-access-primary" href="${PORTFOLIO_HREF}">View Swing Portfolio</a><a class="vx-swing-access-login" href="${ACCESS_PATH}">Request Dashboard Access</a><span class="vx-swing-access-note">Swing portfolio is public · Viewer access is separate</span></div>`;
   const insertAt = paragraphEnd + 4;
   return html.slice(0, insertAt) + access + html.slice(insertAt);
 }
@@ -84,6 +91,7 @@ function refineCanonicalSwingHtml(html) {
     "A research/model portfolio focused on actively monitored swing positions and potential future candidates from Vixale Trading Lab.",
     "Swing Leaders research/model portfolio with actively monitored swing positions and potential future candidates from Vixale Trading Lab."
   );
+  out = ensureSwingPortfolioAnchor(out);
   out = insertSwingAccess(out);
   out = injectSwingAccessStyles(out);
 
@@ -158,10 +166,13 @@ module.exports = {
   ACCESS_STYLE_ID,
   ACCESS_MARKER,
   ACCESS_PATH,
+  PORTFOLIO_ANCHOR_ID,
+  PORTFOLIO_HREF,
   requestPath,
   querySuffix,
   rewriteCanonicalRequest,
   injectSwingAccessStyles,
+  ensureSwingPortfolioAnchor,
   insertSwingAccess,
   refineCanonicalSwingHtml,
   installSwingCanonicalRefinement,

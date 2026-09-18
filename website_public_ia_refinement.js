@@ -5,6 +5,7 @@ const Module = require("module");
 const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
 const SERVICES_PATH = "/services";
+const RESULTS_PATH = "/results";
 const PRICING_PATH = "/pricing";
 const RISK_PATH = "/risk-management";
 const RISK_NAV_MARKER = "vx-risk-management-nav-link";
@@ -12,6 +13,7 @@ const PRICING_STYLE_ID = "vx-pricing-access-style";
 const SERVICES_INTRO_MARKER = "vx-services-intro";
 const SERVICES_OFFER_MARKER = "vx-services-offer";
 const SERVICES_OFFER_STYLE_ID = "vx-services-offer-style";
+const RESULTS_STYLE_ID = "vx-results-hub-style";
 
 const SERVICE_SECTION_NEEDLES = [
   "What can we help you with?",
@@ -206,6 +208,49 @@ function renderServicesFromLanding(html) {
   return result;
 }
 
+const resultsStyles = `
+<style id="${RESULTS_STYLE_ID}">
+  .vx-results-page{min-height:calc(100vh - 170px);padding:64px 0 88px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 60%);color:#17211d}
+  .vx-results-page .wrap{max-width:1120px;margin:0 auto;padding:0 24px;box-sizing:border-box}
+  .vx-results-head{max-width:820px}.vx-results-kicker{color:#287153;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .vx-results-head h1{margin:12px 0 0;font-size:clamp(40px,5vw,58px);font-weight:520;line-height:1.05;letter-spacing:-.04em}
+  .vx-results-head p{max-width:760px;margin:16px 0 0;color:#56645e;font-size:16px;line-height:1.6}
+  .vx-results-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:34px}
+  .vx-results-card{display:flex;min-height:330px;flex-direction:column;padding:24px;border:1px solid #dce7e1;border-radius:24px;background:#fff;box-shadow:0 14px 38px rgba(31,67,51,.05)}
+  .vx-results-card>span{color:#287153;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .vx-results-card h2{margin:10px 0 0;font-size:27px;font-weight:550;letter-spacing:-.03em}
+  .vx-results-card p{margin:10px 0 0;color:#56645e;font-size:13.5px;line-height:1.55}
+  .vx-results-card strong{display:block;margin-top:17px;font-size:12.5px;font-weight:700;color:#425049}
+  .vx-results-links{display:grid;gap:8px;margin-top:auto;padding-top:20px}.vx-results-links a{color:#176442;font-size:12.5px;font-weight:700;text-decoration:none}.vx-results-links a:hover{text-decoration:underline;text-underline-offset:3px}
+  .vx-results-boundary{margin-top:18px;padding:17px 19px;border:1px solid #dce8e1;border-radius:18px;background:#f6faf8;color:#4d5c55;font-size:12.8px;line-height:1.55}
+  @media(max-width:860px){.vx-results-grid{grid-template-columns:1fr}.vx-results-card{min-height:0}}
+  @media(max-width:640px){.vx-results-page{padding:46px 0 68px}.vx-results-page .wrap{padding:0 16px}.vx-results-head h1{font-size:clamp(34px,10vw,42px)}}
+</style>`;
+
+function injectResultsStyles(html) {
+  if (html.includes(`id="${RESULTS_STYLE_ID}"`)) return html;
+  return html.includes("</head>") ? html.replace("</head>", `${resultsStyles}\n</head>`) : `${resultsStyles}${html}`;
+}
+
+function renderResultsHub() {
+  return `<section class="vx-results-page"><div class="wrap"><div class="vx-results-head"><div class="vx-results-kicker">Results</div><h1>Review the right evidence for each Vixale system.</h1><p>Day Trading, Swing Trading, and Options use different evidence sources. This page keeps those records separate so a visitor is never sent to one system's results while evaluating another.</p></div><div class="vx-results-grid">
+    <article class="vx-results-card" id="day-trading"><span>Day Trading</span><h2>Realized and live Day Trading evidence</h2><p>The public Day Trading block shows current system status and realized P&amp;L from the Day Trading Closed Trades ledger. The archive provides the public closed-trade record.</p><strong>Execution-backed Day Trading evidence where recorded by the existing ledger.</strong><div class="vx-results-links"><a href="/#live-day-trading">View Day Trading results →</a><a href="/closed-trades">Open Day Trading closed-trades archive →</a></div></article>
+    <article class="vx-results-card" id="swing-trading"><span>Swing Trading</span><h2>Research/model portfolio evidence</h2><p>Swing Trading publishes the Swing Leaders research/model portfolio, including Active Portfolio, closed model positions, and Swing Equity History.</p><strong>Research/model portfolio only — not broker execution or brokerage-account performance.</strong><div class="vx-results-links"><a href="/trading-systems/swing-trading">View Swing Portfolio →</a></div></article>
+    <article class="vx-results-card" id="options"><span>Options</span><h2>Options-specific evidence</h2><p>The public Options page explains the owner-entered Option Journal. Detailed journal records, realized Options equity, and available owner-provided brokerage screenshots remain behind existing viewer access.</p><strong>Options evidence stays separate from Day Trading performance.</strong><div class="vx-results-links"><a href="/trading-systems/options">Review Options evidence →</a><a href="/trading-systems/options/viewer">Options Viewer →</a></div></article>
+  </div><div class="vx-results-boundary">Evidence types are intentionally not presented as one homogeneous performance record. Each system keeps its existing source, access boundary, and disclosure.</div></div></section>`;
+}
+
+function renderResultsFromLanding(html) {
+  if (typeof html !== "string") return html;
+  let result = transformPrimaryNav(html);
+  result = normalizeHeaderHashLinksToHome(result);
+  result = replaceMainContents(result, renderResultsHub());
+  result = injectResultsStyles(result);
+  result = updateTitle(result, "Vixale | Results");
+  result = updateCanonical(result, RESULTS_PATH);
+  return result;
+}
+
 const pricingStyles = `
 <style id="${PRICING_STYLE_ID}">
   .vx-trial-page{min-height:calc(100vh - 170px);padding:76px 0 96px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 58%)}
@@ -281,6 +326,7 @@ function installPublicIaRefinement(app) {
     if (originalPath === HOME_PATH) mode = "home";
     else if (originalPath === SYSTEMS_PATH) mode = "systems";
     else if (originalPath === SERVICES_PATH) mode = "services";
+    else if (originalPath === RESULTS_PATH) mode = "results";
     else if (originalPath === PRICING_PATH) mode = "pricing";
     if (!mode) return next();
 
@@ -291,12 +337,13 @@ function installPublicIaRefinement(app) {
         if (mode === "home") body = refineHomeHtml(body);
         else if (mode === "systems") body = injectRiskManagementNav(body);
         else if (mode === "services") body = renderServicesFromLanding(body);
+        else if (mode === "results") body = renderResultsFromLanding(body);
         else if (mode === "pricing") body = renderPricingFromLanding(body);
       }
       return originalSend(body);
     };
 
-    if (mode === "services" || mode === "pricing") {
+    if (mode === "services" || mode === "results" || mode === "pricing") {
       const queryIndex = req.url.indexOf("?");
       const query = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
       req.url = `/${query}`;
@@ -339,12 +386,17 @@ module.exports = {
   HOME_PATH,
   SYSTEMS_PATH,
   SERVICES_PATH,
+  RESULTS_PATH,
   PRICING_PATH,
   RISK_PATH,
   SERVICE_SECTION_NEEDLES,
   SERVICES_INTRO_MARKER,
   SERVICES_OFFER_MARKER,
   SERVICES_OFFER_STYLE_ID,
+  RESULTS_STYLE_ID,
+  renderResultsHub,
+  injectResultsStyles,
+  renderResultsFromLanding,
   renderServicesOffer,
   injectServicesOfferStyles,
   refineHomeAccessCopy,
