@@ -2841,6 +2841,37 @@ System-origin context may be carried in the public URL query (for example `/acce
 
 **Rollback:** Revert the Issue #107 PR 4 website/handbook commit(s) and redeploy the prior confirmed website commit. Legacy homepage-fragment access remains available without broker, trading, Pine, workbook, Option Journal, viewer-code, or customer-data rollback.
 
+### ADR-022 — Four-path Services taxonomy and intent-preserving forms (Issue #107 PR 5)
+
+**Decision:** The public Services page presents one commercial taxonomy with exactly four paths:
+
+1. **Signals & Research**
+2. **Automation / Setup**
+3. **Strategy Review / Development**
+4. **Custom Bot / Integration**
+
+Free viewer access is a small separate path to `/access`, not a fifth paid-service card.
+
+Each service card explains what the visitor provides, what Vixale returns, the expected request/consultation outcome, and the pricing posture. The website does not invent fixed prices. Scoped work is discussed or quoted only after the request is understood.
+
+**Intent routing:**
+- Signals & Research uses the existing `POST /appointment-request` contract with the existing `request_type` field set to `Signals & Research`. The public Research form asks only research/use-case questions and does not default to TWS/IBKR/automation questions.
+- Automation / Setup continues to use the existing `POST /appointment-request` form and may ask about TradingView, TWS/IBKR, alerts, dashboards, and setup state.
+- Strategy Review / Development continues to use `POST /strategy-review` and asks for strategy-specific market/rules/goal context.
+- Custom Bot / Integration continues to use `POST /bot-request` and asks for project behavior, market, platform/broker, and integration needs.
+
+No new service-request schema or backend route is introduced. The existing appointment fields carry the Research request type; backend delivery behavior remains unchanged.
+
+The legacy six-scenario **What can we help you with?** Services choice block is not rendered on the canonical Services page. Existing underlying form routes remain available and are reused rather than duplicated.
+
+Customer-facing forms must not be called a “Chat.” The bot path uses wording such as **Describe Your Bot** / **Custom Bot / Integration**.
+
+**Architecture ownership:** `website_public_ia_refinement.js` owns the canonical Services taxonomy, research-only presentation form, and presentation refinements for the existing Automation, Strategy, and Bot forms. The underlying POST handlers in `app.js` remain unchanged.
+
+**Execution/trading impact:** None. This decision changes service discovery, copy, form presentation, and intent values only. It does not connect to a broker, place trades, modify strategy logic, Pine, bridge/TWS/IBKR execution, access security, Swing Trading Lab output, Option Journal writes, or Google Sheet trading schemas.
+
+**Rollback:** Revert the Issue #107 PR 5 website/handbook commit(s) and redeploy the prior confirmed website commit. Existing service POST routes remain unchanged, so rollback requires no customer-data, trading, broker, workbook, or viewer-code cleanup.
+
 ## Public Swing Leaders display feed (2026-08-27)
 
 - Frozen contract: **Research/Data Display Freeze: Vixale Swing Leaders v1.0**. Trading Lab remains the authority for Morning Leader scoring, Ready Now / Close to Breakout / Early Watch classification, portfolio membership, entry/exit values, market posture, research notes, and cash state.
