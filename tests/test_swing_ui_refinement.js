@@ -11,7 +11,7 @@ const {
 } = require("../website_swing_ui_refinement");
 
 const start = pkg.scripts.start;
-assert(start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_conversion_access_services_refinement.js"));
+assert(start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_description_card_standard.js -r ./website_conversion_access_services_refinement.js"));
 assert(start.includes("-r ./website_swing_ui_refinement.js -r ./website_conversion_pricing_refinement.js"));
 
 const fixture = `<!doctype html><html><head></head><body>
