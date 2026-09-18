@@ -1,16 +1,16 @@
 "use strict";
 
 const Module = require("module");
+const { SYSTEMS, DAY_TRIAL_REQUEST_TEXT, DAY_TRIAL_URL } = require("./lib/website-commercial-offer");
 
 const STYLE_ID = "vx-conversion-direct-nav-style";
-const DAY_PATH = "/trading-systems/day-trading";
-const SWING_PATH = "/trading-systems/swing-trading";
-const OPTIONS_PATH = "/trading-systems/options";
+const DAY_PATH = SYSTEMS[0].path;
+const SWING_PATH = SYSTEMS[1].path;
+const OPTIONS_PATH = SYSTEMS[2].path;
 const RESULTS_PATH = "/results";
 const PRICING_PATH = "/pricing";
 const LOGIN_PATH = "/dashboard";
-const DAY_TRIAL_TEXT = "Hello, I'd like to start the 30-day free Day Trading Telegram signals trial.";
-const DAY_TRIAL_URL = `https://t.me/tradervip22?text=${encodeURIComponent(DAY_TRIAL_TEXT)}`;
+const DAY_TRIAL_TEXT = DAY_TRIAL_REQUEST_TEXT;
 
 const PUBLIC_PATHS = new Set([
   "/",
