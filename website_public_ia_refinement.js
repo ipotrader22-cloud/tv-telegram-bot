@@ -23,6 +23,11 @@ const SERVICE_SECTION_NEEDLES = [
   "Describe the trading bot you want.",
   "Send us your trading rules.",
 ];
+const SERVICE_FORM_SECTION_NEEDLES = [
+  "Book a quick setup call.",
+  "Describe the trading bot you want.",
+  "Send us your trading rules.",
+];
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -197,7 +202,7 @@ function renderServicesIntro() {
 
 const servicesOfferStyles = `
 <style id="${SERVICES_OFFER_STYLE_ID}">
-  .${SERVICES_OFFER_MARKER}{max-width:1180px;margin:0 auto;padding:0 24px 44px;box-sizing:border-box}.vx-services-offer-head{max-width:760px}.vx-services-offer-head h2{margin:0;color:#17211d;font-size:clamp(28px,3.4vw,40px);font-weight:520;letter-spacing:-.035em}.vx-services-offer-head p{margin:12px 0 0;color:#56645e;font-size:15px;line-height:1.6}.vx-services-offer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}.vx-services-offer-card{display:flex;min-height:238px;flex-direction:column;padding:24px;border:1px solid #dbe7e0;border-radius:23px;background:#fff;box-shadow:0 14px 38px rgba(24,54,42,.045)}.vx-services-offer-card>span{color:#287153;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.vx-services-offer-card h3{margin:10px 0 0;color:#17211d;font-size:24px;font-weight:550;letter-spacing:-.025em}.vx-services-offer-card p{margin:9px 0 0;color:#56645e;font-size:13.5px;line-height:1.55}.vx-services-offer-card a{display:inline-flex;align-items:center;margin-top:auto;padding-top:18px;color:#176442;font-size:12.5px;font-weight:700;text-decoration:none}.vx-services-boundary{margin-top:16px;padding:16px 18px;border:1px solid #dce8e1;border-radius:17px;background:#f6faf8;color:#4d5c55;font-size:12.8px;line-height:1.55}.vx-services-boundary strong{color:#17211d}@media(max-width:760px){.${SERVICES_OFFER_MARKER}{padding:0 16px 36px}.vx-services-offer-grid{grid-template-columns:1fr}.vx-services-offer-card{min-height:0;padding:21px}}
+  .${SERVICES_OFFER_MARKER}{max-width:1180px;margin:0 auto;padding:0 24px 44px;box-sizing:border-box}.vx-services-offer-head{max-width:820px}.vx-services-offer-head h2{margin:0;color:#17211d;font-size:clamp(28px,3.4vw,40px);font-weight:520;letter-spacing:-.035em}.vx-services-offer-head p{margin:12px 0 0;color:#56645e;font-size:15px;line-height:1.6}.vx-services-offer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}.vx-services-offer-card{display:flex;min-height:330px;flex-direction:column;padding:24px;border:1px solid #dbe7e0;border-radius:23px;background:#fff;box-shadow:0 14px 38px rgba(24,54,42,.045)}.vx-services-offer-card>span{color:#287153;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.vx-services-offer-card h3{margin:10px 0 0;color:#17211d;font-size:24px;font-weight:550;letter-spacing:-.025em}.vx-services-offer-card>p{margin:9px 0 0;color:#56645e;font-size:13.5px;line-height:1.55}.vx-services-offer-facts{display:grid;gap:7px;margin:16px 0 0}.vx-services-offer-facts div{display:grid;grid-template-columns:86px 1fr;gap:8px;padding-top:7px;border-top:1px solid #edf2ef}.vx-services-offer-facts dt{color:#425049;font-size:11.5px;font-weight:700}.vx-services-offer-facts dd{margin:0;color:#65716c;font-size:12.5px;line-height:1.45}.vx-services-offer-card a{display:inline-flex;align-items:center;margin-top:auto;padding-top:18px;color:#176442;font-size:12.5px;font-weight:700;text-decoration:none}.vx-services-free-path{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:17px 19px;border:1px solid #cfe4d8;border-radius:18px;background:#f4fbf7}.vx-services-free-path strong{font-size:13px}.vx-services-free-path span{display:block;margin-top:4px;color:#5f6d67;font-size:12.5px}.vx-services-free-path a{color:#176442;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}.vx-services-boundary{margin-top:12px;padding:16px 18px;border:1px solid #dce8e1;border-radius:17px;background:#f6faf8;color:#4d5c55;font-size:12.8px;line-height:1.55}.vx-services-boundary strong{color:#17211d}.vx-services-research{max-width:1180px;margin:0 auto;padding:0 24px 32px;box-sizing:border-box}@media(max-width:760px){.${SERVICES_OFFER_MARKER},.vx-services-research{padding-left:16px;padding-right:16px}.vx-services-offer-grid{grid-template-columns:1fr}.vx-services-offer-card{min-height:0;padding:21px}.vx-services-offer-facts div{grid-template-columns:1fr;gap:3px}.vx-services-free-path{align-items:flex-start;flex-direction:column}.vx-services-free-path a{white-space:normal}}
 </style>`;
 
 function injectServicesOfferStyles(html) {
@@ -206,13 +211,52 @@ function injectServicesOfferStyles(html) {
 </head>`) : `${servicesOfferStyles}${html}`;
 }
 
+function serviceFacts(items) {
+  return `<dl class="vx-services-offer-facts">${items.map(([name,value])=>`<div><dt>${name}</dt><dd>${value}</dd></div>`).join("")}</dl>`;
+}
+
 function renderServicesOffer() {
-  return `<section class="${SERVICES_OFFER_MARKER}" aria-labelledby="vx-services-offer-title"><div class="vx-services-offer-head"><h2 id="vx-services-offer-title">Choose the kind of help you need.</h2><p>Start with free read-only access, or use a consultation to define research access, automation setup, or custom development. Custom work is scoped and quoted before it starts.</p></div><div class="vx-services-offer-grid">
-    <article class="vx-services-offer-card"><span>Observe</span><h3>Viewer Access</h3><p>Review the public performance evidence and, if approved, use read-only viewer access for the Day Trading and Options evidence pages.</p><a href="/access">Request Free Access →</a></article>
-    <article class="vx-services-offer-card"><span>Research</span><h3>Signals &amp; Research Access</h3><p>Discuss the signals and research access currently available for your use case. The consultation clarifies supported scope, delivery/access method, and onboarding next steps.</p><a href="#appointment">Discuss research access →</a></article>
-    <article class="vx-services-offer-card"><span>Setup</span><h3>Automation Setup</h3><p>Get help planning supported TradingView alert, webhook, and automation setup. A setup consultation produces an implementation checklist and identifies any custom work that needs a quote before it starts.</p><a href="#appointment">Book setup consultation →</a></article>
-    <article class="vx-services-offer-card"><span>Build</span><h3>Custom Development</h3><p>Scope a bot, dashboard, or integration around documented requirements. The scoping conversation produces assumptions, deliverables, dependencies, and a quote before development begins.</p><a href="#bot-request">Request a quote →</a></article>
-  </div><div class="vx-services-boundary"><strong>Important boundary:</strong> Vixale does not trade or manage customer brokerage accounts. Services cover read-only access, research, setup assistance, and scoped development.</div></section>`;
+  return `<section class="${SERVICES_OFFER_MARKER}" aria-labelledby="vx-services-offer-title"><div class="vx-services-offer-head"><h2 id="vx-services-offer-title">Choose one service path.</h2><p>Each path has a different request form so research, automation, strategy work, and custom integrations do not collapse into the same questions. No standardized price is published here; scoped work is discussed or quoted after the request is understood.</p></div><div class="vx-services-offer-grid">
+    <article class="vx-services-offer-card"><span>01 · Research</span><h3>Signals &amp; Research</h3><p>Discuss currently supported Vixale signals, research, and evidence access for your use case.</p>${serviceFacts([["You provide","What market/system research you want and how you expect to use it."],["You get","A scope reply covering what is currently available and the relevant access/delivery path."],["Outcome","Clear onboarding or a clear no-fit answer."],["Pricing","Discussed after scope; no standard price is published here."]])}<a href="#research-request">Discuss Signals &amp; Research →</a></article>
+    <article class="vx-services-offer-card"><span>02 · Setup</span><h3>Automation / Setup</h3><p>Plan supported TradingView alert, webhook, TWS/IBKR, dashboard, or related setup.</p>${serviceFacts([["You provide","Your current platforms, broker/setup state, and the automation goal."],["You get","A setup conversation focused on what exists, what is missing, and dependencies."],["Outcome","An implementation checklist plus any separately scoped custom work."],["Pricing","Discussed or quoted after scope; no price is invented here."]])}<a href="#appointment">Book Automation / Setup Consultation →</a></article>
+    <article class="vx-services-offer-card"><span>03 · Strategy</span><h3>Strategy Review / Development</h3><p>Send your own trading rules for structured review, testing/development scoping, or coding discussion.</p>${serviceFacts([["You provide","Market, rules, current maturity, and the outcome you want."],["You get","Questions and an assessment of the appropriate next engineering/research step."],["Outcome","A review path: clarify, test, code, scope development, or stop."],["Pricing","Any development work is scoped/quoted after the initial rules review."]])}<a href="#strategy-review">Send Strategy Rules →</a></article>
+    <article class="vx-services-offer-card"><span>04 · Build</span><h3>Custom Bot / Integration</h3><p>Describe a bot, dashboard, signal transport, broker integration, or other custom software project.</p>${serviceFacts([["You provide","Desired behavior, market, platform/broker, and must-have integrations."],["You get","A scoped technical conversation separating version 1 from later work."],["Outcome","Documented assumptions, dependencies, deliverables, and a quote before development."],["Pricing","Custom work is quoted after scope; no price is invented here."]])}<a href="#bot-request">Describe Your Bot →</a></article>
+  </div><div class="vx-services-free-path"><div><strong>Looking only for viewer access?</strong><span>Free read-only viewer access is a separate path, not a paid service card.</span></div><a href="/access">Request Free Access →</a></div><div class="vx-services-boundary"><strong>Important boundary:</strong> Vixale does not trade or manage customer brokerage accounts. Services cover research/access, setup assistance, strategy/development work, and scoped software/integration work.</div></section>`;
+}
+
+function renderResearchRequest() {
+  return `<section id="research-request" class="vx-services-research"><div class="strategy-form-box">
+    <div class="strategy-form-copy"><div class="badge"><span class="dot"></span><span>Signals &amp; Research</span></div><h2>Tell us what research or signals you need.</h2><p>This request is for research/signals scope. It does not assume TWS, IBKR, or automation.</p><div class="soft-list"><div><strong>Describe the use case.</strong> Tell us what market or Vixale system you are evaluating.</div><div><strong>We clarify availability.</strong> The reply explains the supported research/access path and next step.</div><div><strong>No automatic commitment.</strong> Any paid scope is discussed after the request is understood.</div></div></div>
+    <form class="strategy-form" method="POST" action="/appointment-request"><div class="form-grid">
+      <div class="form-field"><label for="research_name">Your name</label><input id="research_name" name="name" type="text" autocomplete="name" /></div>
+      <div class="form-field"><label for="research_contact">Email or Telegram</label><input id="research_contact" name="contact" type="text" placeholder="@username or email" required /></div>
+      <input type="hidden" name="request_type" value="Signals & Research" />
+      <div class="form-field full"><label for="research_notes">What research or signals are you looking for?</label><textarea id="research_notes" name="notes" placeholder="Example: I want to understand what Day Trading signal/research access is available and what evidence I can review."></textarea><div class="form-help">No broker or automation details are required for this path.</div></div>
+      <div class="hidden-field"><label for="research_website">Website</label><input id="research_website" name="website" type="text" autocomplete="off" tabindex="-1" /></div>
+    </div><button class="btn btn-primary" type="submit">Send Research Request</button></form>
+  </div></section>`;
+}
+
+function refineAutomationSection(section) {
+  if (!section) return "";
+  let result = section;
+  result = replaceAllLiteral(result, "Book a quick setup call.", "Automation / Setup consultation");
+  result = replaceAllLiteral(result, "Setup call", "Automation / Setup");
+  result = result.replace(/<option value="Request dashboard access">[\s\S]*?<\/option>/g, "");
+  result = result.replace(/<option value="Not sure yet">[\s\S]*?<\/option>/g, "");
+  return result;
+}
+
+function refineStrategySection(section) {
+  if (!section) return "";
+  return replaceAllLiteral(section, "Send us your trading rules.", "Strategy Review / Development request");
+}
+
+function refineBotSection(section) {
+  if (!section) return "";
+  let result = replaceAllLiteral(section, "Bot Builder Chat", "Custom Bot / Integration");
+  result = replaceAllLiteral(result, "Describe the trading bot you want.", "Describe your bot or integration.");
+  return result;
 }
 
 function refineHomeHtml(html) {
@@ -225,13 +269,16 @@ function refineHomeHtml(html) {
 
 function renderServicesFromLanding(html) {
   if (typeof html !== "string") return html;
-  const sections = SERVICE_SECTION_NEEDLES.map((needle) => extractSectionByText(html, needle)).filter(Boolean);
+  const appointment = refineAutomationSection(extractSectionByText(html, SERVICE_FORM_SECTION_NEEDLES[0]));
+  const bot = refineBotSection(extractSectionByText(html, SERVICE_FORM_SECTION_NEEDLES[1]));
+  const strategy = refineStrategySection(extractSectionByText(html, SERVICE_FORM_SECTION_NEEDLES[2]));
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
-  if (sections.length) result = replaceMainContents(result, [renderServicesIntro(), renderServicesOffer(), ...sections].join("\n\n"));
+  result = replaceMainContents(result, [renderServicesIntro(), renderServicesOffer(), renderResearchRequest(), appointment, strategy, bot].filter(Boolean).join("\n\n"));
   result = normalizeAccessLinksToAccessPage(result);
   result = injectServicesOfferStyles(result);
   result = replaceAllLiteral(result, "Request Dashboard Access", "Request Free Access");
+  result = replaceAllLiteral(result, "Start Bot Builder Chat", "Describe Your Bot");
   result = updateTitle(result, "Vixale | Services");
   result = updateCanonical(result, SERVICES_PATH);
   return result;
@@ -484,6 +531,7 @@ module.exports = {
   PRICING_PATH,
   RISK_PATH,
   SERVICE_SECTION_NEEDLES,
+  SERVICE_FORM_SECTION_NEEDLES,
   SERVICES_INTRO_MARKER,
   SERVICES_OFFER_MARKER,
   SERVICES_OFFER_STYLE_ID,
@@ -499,7 +547,12 @@ module.exports = {
   renderResultsHub,
   injectResultsStyles,
   renderResultsFromLanding,
+  serviceFacts,
   renderServicesOffer,
+  renderResearchRequest,
+  refineAutomationSection,
+  refineStrategySection,
+  refineBotSection,
   injectServicesOfferStyles,
   refineHomeAccessCopy,
   normalizeAccessLinksToHome,
