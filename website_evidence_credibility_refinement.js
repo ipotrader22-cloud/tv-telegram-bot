@@ -1,0 +1,181 @@
+"use strict";
+
+const Module = require("module");
+
+const HOME_PATH = "/";
+const PRICING_PATH = "/pricing";
+const SWING_PATH = "/trading-systems/swing-trading";
+const OPTIONS_PATH = "/trading-systems/options";
+const STYLE_ID = "vx-evidence-credibility-style";
+const MARKER = "data-vx-evidence-credibility";
+
+const styles = `<style id="${STYLE_ID}">
+.vx-evidence-context{margin:20px 0;padding:20px 22px;border:1px solid #dce7e1;border-radius:20px;background:#f8fbf9;color:#47564f}.vx-evidence-context h2,.vx-evidence-context h3{margin:0;color:#17211d;font-size:18px;font-weight:650;letter-spacing:-.015em}.vx-evidence-context p{margin:8px 0 0;color:#5f6d67;font-size:13.5px;line-height:1.58}.vx-evidence-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;margin-top:14px}.vx-evidence-fact{padding-top:10px;border-top:1px solid #e4ece8}.vx-evidence-fact strong{display:block;color:#34423b;font-size:12px}.vx-evidence-fact span{display:block;margin-top:4px;color:#68756f;font-size:12.5px;line-height:1.48}.vx-evidence-freshness-note,.vx-evidence-coverage{margin-top:7px;color:#68756f;font-size:11.8px;line-height:1.48}.vx-evidence-coverage{padding:0 22px 18px}.vx-evidence-coverage strong{color:#4d5b54;font-weight:650}@media(max-width:700px){.vx-evidence-context{padding:18px}.vx-evidence-facts{grid-template-columns:1fr}.vx-evidence-coverage{padding-left:18px;padding-right:18px}}
+</style>`;
+
+function injectStyles(html) {
+  if (typeof html !== "string" || html.includes(`id="${STYLE_ID}"`)) return html;
+  return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
+}
+
+function replaceAllLiteral(value, from, to) {
+  return String(value).split(from).join(to);
+}
+
+function formatRange(first, last) {
+  if (!first && !last) return "No dated records available";
+  if (first && last && first !== last) return `${first} – ${last}`;
+  return first || last;
+}
+
+function transformHome(html) {
+  let out = String(html);
+  out = replaceAllLiteral(out, '<div class="vx-home-day-kicker">Live Day Trading</div>', '<div class="vx-home-day-kicker">Day Trading Evidence</div>');
+  out = replaceAllLiteral(out, "Verified · Closed Trades ledger", "Closed Trades ledger · realized P&amp;L source");
+  out = replaceAllLiteral(out, "Last verified snapshot · update delayed", "Cached Closed Trades snapshot · update delayed");
+  out = replaceAllLiteral(out, "Verified performance is temporarily unavailable. No simulated values are shown.", "Day Trading realized-results source is temporarily unavailable. No simulated values are shown.");
+  out = replaceAllLiteral(out, "Performance update unavailable", "Closed Trades update unavailable");
+  out = replaceAllLiteral(out, "Performance update delayed", "Closed Trades update delayed");
+
+  const oldCoverage = "const included=Number(c.included_trade_count);\n    if(!Number.isFinite(included)){\n      coverage.textContent='Coverage unavailable';\n      return;\n    }\n    const range=first&&last?(first===last?first:first+' – '+last):'No included realized closes yet';\n    coverage.textContent=range+'. '+included+' closed trade'+(included===1?'':'s');";
+  const newCoverage = "const included=Number(c.included_trade_count),omitted=Number(c.omitted_row_count);\n    if(!Number.isFinite(included)){\n      coverage.textContent='Coverage unavailable';\n      return;\n    }\n    const range=first&&last?(first===last?first:first+' – '+last):'No included realized closes yet';\n    const omittedText=Number.isFinite(omitted)&&omitted>0?'. '+omitted+' source row'+(omitted===1?'':'s')+' omitted because close date or realized P&L was unavailable':'';\n    coverage.textContent=range+'. '+included+' closed trade'+(included===1?'':'s')+omittedText+'. Realized Closed Trades only; open P&L excluded; this page adds no separate fee/commission adjustment.';";
+  if (out.includes(oldCoverage)) out = out.replace(oldCoverage, newCoverage);
+
+  const updatedMarker = '<span id="vx-home-day-updated">Last updated: checking…</span></div>';
+  if (out.includes(updatedMarker) && !out.includes('class="vx-evidence-freshness-note"')) {
+    out = out.replace(updatedMarker, `${updatedMarker}<div class="vx-evidence-freshness-note">“Data current” means the source refreshed successfully; it does not mean the market is open or a trade is active.</div>`);
+  }
+  return injectStyles(out);
+}
+
+function transformPricing(html) {
+  let out = String(html);
+  out = replaceAllLiteral(out, "Verified performance preview", "Day Trading realized-results preview");
+  out = replaceAllLiteral(out, "Realized results, aggregated from the dashboard data source.", "Realized results from the Closed Trades ledger used by the Day Trading dashboard.");
+  out = replaceAllLiteral(out, "Loading verified performance…", "Loading Day Trading realized results…");
+  out = replaceAllLiteral(out, "Loading verified performance", "Loading Closed Trades ledger");
+  out = replaceAllLiteral(out, "Verified performance is temporarily unavailable. No fallback or simulated values are shown.", "Day Trading realized-results source is temporarily unavailable. No fallback or simulated values are shown.");
+  out = replaceAllLiteral(out, "Last verified snapshot", "Cached Closed Trades snapshot");
+  out = replaceAllLiteral(out, "Verified performance data", "Closed Trades ledger · refresh succeeded");
+
+  const statusBlock = '<div id="vx-watch-status" class="vx-perf-status"><span><strong>Loading Closed Trades ledger</strong></span><span>Closed Trades only · Open P&amp;L excluded</span></div>';
+  if (out.includes(statusBlock) && !out.includes('id="vx-watch-coverage"')) {
+    out = out.replace(statusBlock, `${statusBlock}<div id="vx-watch-coverage" class="vx-evidence-coverage"><strong>Coverage:</strong> loading source range and included sample…</div>`);
+  }
+
+  const loaderDecl = "const empty=$('vx-watch-chart-empty'), stage=$('vx-watch-chart-stage'), status=$('vx-watch-status');";
+  if (out.includes(loaderDecl)) {
+    out = out.replace(loaderDecl, "const empty=$('vx-watch-chart-empty'), stage=$('vx-watch-chart-stage'), status=$('vx-watch-status'), coverage=$('vx-watch-coverage');");
+  }
+  const afterStatus = "if(status){const when=data.updated_at?new Date(data.updated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'recently';status.innerHTML='<span><strong>'+(data.stale?'Cached Closed Trades snapshot':'Closed Trades ledger · refresh succeeded')+'</strong> · '+when+'</span><span>Closed Trades only · Open P&amp;L excluded</span>'; }";
+  const actualAfterStatus = "if(status){const when=data.updated_at?new Date(data.updated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'recently';status.innerHTML='<span><strong>'+(data.stale?'Cached Closed Trades snapshot':'Closed Trades ledger · refresh succeeded')+'</strong> · '+when+'</span><span>Closed Trades only · Open P&amp;L excluded</span>'; }";
+  void afterStatus; void actualAfterStatus;
+
+  const originalStatusLine = "if(status){const when=data.updated_at?new Date(data.updated_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'recently';status.innerHTML='<span><strong>'+(data.stale?'Cached Closed Trades snapshot':'Closed Trades ledger · refresh succeeded')+'</strong> · '+when+'</span><span>Closed Trades only · Open P&amp;L excluded</span>';}";
+  const coverageStatusLine = `${originalStatusLine}if(coverage){const c=e.coverage||{},first=String(c.first_close_date||''),last=String(c.last_close_date||''),included=Number(c.included_trade_count),omitted=Number(c.omitted_row_count);const range=first&&last?(first===last?first:first+' – '+last):'No dated realized closes yet';const omittedText=Number.isFinite(omitted)&&omitted>0?' · '+omitted+' source row'+(omitted===1?'':'s')+' omitted':'';coverage.innerHTML='<strong>Coverage:</strong> '+range+' · '+(Number.isFinite(included)?included:'—')+' included closed trade'+(included===1?'':'s')+omittedText+' · open P&L excluded · stored Closed Trades P&L used as-is; no separate website fee/commission adjustment · refresh status does not indicate market or trade activity.';}`;
+  if (out.includes(originalStatusLine)) out = out.replace(originalStatusLine, coverageStatusLine);
+
+  const failLine = "if(status)status.innerHTML='<span><strong>Performance source unavailable</strong></span><span>Try again later or request dashboard access.</span>';";
+  if (out.includes(failLine)) out = out.replace(failLine, `${failLine}if(coverage)coverage.innerHTML='<strong>Coverage unavailable:</strong> the source could not be refreshed. No fallback or simulated values are shown.';`);
+  return injectStyles(out);
+}
+
+function swingCoverageFromHtml(html) {
+  const equityLabels = [...String(html).matchAll(/aria-label="(\d{4}-\d{2}-\d{2})(?:[^";]*); Model P&amp;L/g)].map(match => match[1]);
+  const exitDates = [...String(html).matchAll(/data-label="Exit Date">(\d{4}-\d{2}-\d{2})<\/td>/g)].map(match => match[1]);
+  return {
+    equityCount: equityLabels.length,
+    equityFirst: equityLabels[0] || "",
+    equityLast: equityLabels[equityLabels.length - 1] || "",
+    closedCount: exitDates.length,
+    closedFirst: exitDates.length ? [...exitDates].sort()[0] : "",
+    closedLast: exitDates.length ? [...exitDates].sort().slice(-1)[0] : "",
+  };
+}
+
+function transformSwing(html) {
+  let out = String(html);
+  if (out.includes(`${MARKER}="swing"`)) return out;
+  const coverage = swingCoverageFromHtml(out);
+  const context = `<section class="vx-evidence-context" ${MARKER}="swing" aria-label="Swing evidence coverage"><h2>Swing evidence context</h2><p><strong>Evidence type:</strong> Trading Lab research/model portfolio. It is not broker execution or brokerage-account performance.</p><div class="vx-evidence-facts"><div class="vx-evidence-fact"><strong>Public snapshot</strong><span>The snapshot date/time shown above is the research-data timestamp. A successful refresh does not mean the market is open or trading is active.</span></div><div class="vx-evidence-fact"><strong>Equity History coverage</strong><span>${coverage.equityCount ? `${formatRange(coverage.equityFirst, coverage.equityLast)} · ${coverage.equityCount} displayed snapshot${coverage.equityCount === 1 ? "" : "s"}` : "Temporarily unavailable; the page does not reconstruct missing history."}</span></div><div class="vx-evidence-fact"><strong>Closed model-trade coverage</strong><span>${coverage.closedCount ? `${formatRange(coverage.closedFirst, coverage.closedLast)} · ${coverage.closedCount} closed model trade${coverage.closedCount === 1 ? "" : "s"}` : "No closed model trades in the displayed snapshot."}</span></div><div class="vx-evidence-fact"><strong>Open vs. realized / fees</strong><span>Active positions are model unrealized P&amp;L; Closed Trades are model realized P&amp;L. The website uses Trading Lab model returns/history and does not add a separate commission or fee adjustment.</span></div></div><p>Delayed-quote and stale/cached-history notices remain authoritative where shown on this page.</p></section>`;
+  const anchor = '<section class="how" aria-label="How Swing Leaders works">';
+  if (out.includes(anchor)) out = out.replace(anchor, `${context}\n${anchor}`);
+  return injectStyles(out);
+}
+
+function transformOptions(html) {
+  let out = String(html);
+  if (out.includes(`${MARKER}="options"`)) return out;
+  const context = `<section class="vx-evidence-context" ${MARKER}="options" aria-label="Options evidence context"><h2>Options evidence context</h2><p><strong>Evidence type:</strong> owner-entered Option Journal. It is separate from Day Trading broker/execution-backed records and the Swing research/model portfolio.</p><div class="vx-evidence-facts"><div class="vx-evidence-fact"><strong>Public coverage</strong><span>This public page explains the evidence source and access boundary; it does not publish protected journal rows or pretend a hidden sample is public.</span></div><div class="vx-evidence-fact"><strong>Protected viewer coverage</strong><span>The viewer’s realized equity uses Closed Option Journal records with valid exit dates and derived P&amp;L; open records are excluded from the realized curve.</span></div><div class="vx-evidence-fact"><strong>Fee treatment</strong><span>The existing Option Journal P&amp;L formula subtracts the recorded Fees field after applying contracts and multiplier. No separate fee estimate is invented by this page.</span></div><div class="vx-evidence-fact"><strong>Freshness</strong><span>Options records are updated manually by the owner. Page availability or a successful refresh does not mean an options trade is active.</span></div></div></section>`;
+  const anchor = '<div class="vx-system-sequence">';
+  if (out.includes(anchor)) out = out.replace(anchor, `${context}${anchor}`);
+  return injectStyles(out);
+}
+
+function refineEvidenceCredibility(html, pathname) {
+  if (typeof html !== "string") return html;
+  if (pathname === HOME_PATH) return transformHome(html);
+  if (pathname === PRICING_PATH) return transformPricing(html);
+  if (pathname === SWING_PATH) return transformSwing(html);
+  if (pathname === OPTIONS_PATH) return transformOptions(html);
+  return html;
+}
+
+function installEvidenceCredibilityRefinement(app) {
+  app.use((req, res, next) => {
+    const pathname = String(req.originalUrl || req.url || "").split("?")[0];
+    const isRead = req.method === "GET" || req.method === "HEAD";
+    if (!isRead || ![HOME_PATH, PRICING_PATH, SWING_PATH, OPTIONS_PATH].includes(pathname)) return next();
+    const send = res.send.bind(res);
+    res.send = function sendWithEvidenceCredibility(body) {
+      const type = String(res.getHeader?.("Content-Type") || "");
+      if (typeof body === "string" && (!type || type.includes("html"))) body = refineEvidenceCredibility(body, pathname);
+      return send(body);
+    };
+    next();
+  });
+}
+
+function copyExpressStatics(target, source) {
+  for (const key of Reflect.ownKeys(source)) {
+    if (["length", "name", "prototype", "arguments", "caller"].includes(String(key))) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(source, key);
+    if (descriptor) try { Object.defineProperty(target, key, descriptor); } catch (_) {}
+  }
+  Object.setPrototypeOf(target, Object.getPrototypeOf(source));
+}
+
+function wrapExpress(expressFactory) {
+  if (typeof expressFactory !== "function" || expressFactory.__vixaleEvidenceCredibilityWrapped) return expressFactory;
+  function wrappedExpress(...args) {
+    const app = expressFactory(...args);
+    installEvidenceCredibilityRefinement(app);
+    return app;
+  }
+  copyExpressStatics(wrappedExpress, expressFactory);
+  Object.defineProperty(wrappedExpress, "__vixaleEvidenceCredibilityWrapped", { value: true });
+  return wrappedExpress;
+}
+
+const originalLoad = Module._load;
+Module._load = function vixaleEvidenceCredibilityModuleLoad(request, parent, isMain) {
+  const loaded = originalLoad.call(this, request, parent, isMain);
+  return request === "express" ? wrapExpress(loaded) : loaded;
+};
+
+module.exports = {
+  HOME_PATH,
+  PRICING_PATH,
+  SWING_PATH,
+  OPTIONS_PATH,
+  STYLE_ID,
+  MARKER,
+  swingCoverageFromHtml,
+  transformHome,
+  transformPricing,
+  transformSwing,
+  transformOptions,
+  refineEvidenceCredibility,
+  installEvidenceCredibilityRefinement,
+  wrapExpress,
+};
