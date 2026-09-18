@@ -8,6 +8,7 @@ const {
   TOP_MARKER,
   PREVIEW_MARKER,
   DAY_ANCHOR_ID,
+  DAY_TRADING_PATH,
   SWING_TRADING_PATH,
   OPTIONS_PATH,
   refineHomeSystemSelector,
@@ -41,10 +42,11 @@ const out = refineHomeSystemSelector(sample, "/");
 assert(out.includes(TOP_MARKER));
 assert(out.includes(PREVIEW_MARKER));
 assert(out.includes(`id="${DAY_ANCHOR_ID}"`));
-assert(out.includes(`href="#${DAY_ANCHOR_ID}"`));
+assert(out.includes(`href="${DAY_TRADING_PATH}"`), "Day Trading card must go to the public Day Trading intro page");
+assert(out.includes(`href="#${DAY_ANCHOR_ID}"`), "Day Trading evidence preview may still jump to the scoped homepage Day Trading block");
 assert(out.includes(`href="${SWING_TRADING_PATH}"`));
 assert(out.includes(`href="${OPTIONS_PATH}"`));
-assert(out.includes("View Day Trading ↓"));
+assert(out.includes("Explore Day Trading →"));
 assert(out.includes("Explore Swing Trading →"));
 assert(out.includes("Explore Options →"));
 assert(out.includes('data-vx-mirror="vx-home-live-0"'));
