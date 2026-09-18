@@ -2718,6 +2718,34 @@ A handbook is not considered implemented until it is committed at its canonical 
 - Swing strategy presentation can show multi-session holding, ATR / percentage targets, defined risk, and daily-close target / stop evaluation when those rules are part of the approved public strategy specification.
 - This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
 
+### ADR-018 — Shared public navigation and system-aware Results hub (Issue #107 PR 1)
+
+**Decision:** All major public English website surfaces use the shared navigation renderer in `website_navigation_disclosure_refinement.js`. The primary hierarchy is **How It Works**, **Trading Systems**, **Results**, **Services**, and **Help**, followed by a quiet **Log In** action and one prominent **Request Free Access** action. **About** is secondary/footer navigation rather than a competing first-time-visitor task. The shared renderer must also normalize standalone public page headers such as Swing Trading instead of allowing a separate mini-site navigation.
+
+The canonical public Results destination is `/results`. It is a system-aware routing and explanation hub, not a new performance calculation layer:
+
+- **Day Trading** links to the existing public Day Trading live/realized evidence and public closed-trades archive.
+- **Swing Trading** links to the existing Swing Leaders research/model portfolio and must state that Swing model results are not broker execution or brokerage-account performance.
+- **Options** links to the public Options evidence overview and the existing protected Options viewer; it must never reuse Day Trading performance as an Options result.
+
+`website_public_ia_refinement.js` owns the synthetic `/results` composition using the same narrow route-rewrite pattern already used for other public IA pages. It must not calculate, merge, infer, or synthesize trade results from the three systems.
+
+Homepage Day Trading, Swing Trading, and Options selector cards all route first to their public system-introduction pages:
+
+```text
+/trading-systems/day-trading
+/trading-systems/swing-trading
+/trading-systems/options
+```
+
+A system-specific evidence preview may still deep-link to its explicitly labeled evidence block, but a generic top-level **Performance** destination must not silently resolve to Day Trading only.
+
+CTA text must describe the actual destination. An access-form link uses request/access wording; the public Swing page separates **View Swing Portfolio** from dashboard-access requests; Options evidence links remain Options-specific. Existing `/dashboard` and `/trading-systems/options/viewer` authentication and authorization boundaries are unchanged.
+
+**Execution/trading impact:** None. This decision changes website navigation, public routing, copy, and presentation only. It does not change VECO strategy logic, signals, Pine, bridge behavior, TWS/IBKR execution, risk logic, Swing Trading Lab selection/writer behavior, Option Journal write workflow, or Google Sheet trading schemas.
+
+**Rollback:** Revert the Issue #107 PR 1 website/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, or Option Journal data rollback is required.
+
 ## Public Swing Leaders display feed (2026-08-27)
 
 - Frozen contract: **Research/Data Display Freeze: Vixale Swing Leaders v1.0**. Trading Lab remains the authority for Morning Leader scoring, Ready Now / Close to Breakout / Early Watch classification, portfolio membership, entry/exit values, market posture, research notes, and cash state.
