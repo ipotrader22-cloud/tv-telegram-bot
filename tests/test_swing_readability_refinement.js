@@ -8,7 +8,7 @@ const {
   refineSwingReadability,
 } = require("../website_swing_readability_refinement");
 
-assert(pkg.scripts.start.startsWith("node -r ./website_swing_readability_refinement.js -r ./website_conversion_final_qa_refinement.js"));
+assert(pkg.scripts.start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_swing_readability_refinement.js"));
 
 const fixture = `<!doctype html><html><head></head><body>
 <main data-vx-conversion-system-page="swing">
