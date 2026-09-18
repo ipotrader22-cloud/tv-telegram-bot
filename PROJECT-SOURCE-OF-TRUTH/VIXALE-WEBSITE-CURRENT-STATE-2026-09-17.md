@@ -9,21 +9,36 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #113 — `Issue #107 PR 3: standardize public system pages`
-- **PR #113 merge SHA:** `d66f527a86dad2f41bdd83d1e30ee35a05f5a489`
+- **Latest website-changing merge:** PR #115 — `Issue #107 PR 4: add dedicated access journey`
+- **PR #115 merge SHA:** `fb3841431de1b7f2026bc2c0abcc684942c070d0`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** changed-JS syntax compilation PASS; focused PR 3 regressions PASS (53 assertions); shared-navigation regression PASS (21 assertions); PR patch whitespace/conflict scan PASS
+- **Feature-branch verification before merge:** changed-JS/test syntax compilation PASS; focused PR 4 regressions PASS (36 assertions); PR patch whitespace/conflict scan PASS
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-damal50ae00c73aj3tj0`
-- **Render deployed website-changing SHA:** `d66f527a86dad2f41bdd83d1e30ee35a05f5a489`
+- **Render deploy:** `dep-damaq1jtqb8s73bi8dig`
+- **Render deployed website-changing SHA:** `fb3841431de1b7f2026bc2c0abcc684942c070d0`
 - **Render deployment status:** LIVE
-- **Render startup verification:** exact PR #113 merge SHA deployed successfully and Render reported the service LIVE
 - **Fresh public HTML verification:** **UNVERIFIED**
-  - the available external browser could not access cache-busted public system-page URLs during this verification;
-  - deployment/runtime state is verified from GitHub + Render, but PR #113 rendered public HTML is not independently claimed here.
+  - the available external browser could not access the cache-busted `/access` URL during verification;
+  - GitHub + Render deployment/runtime state is verified independently.
 - **Prior owner verification:** PR #110 homepage behavior was explicitly verified by the owner after deployment.
+
+## PR #115 — Issue #107 PR 4
+
+PR #115 adds the dedicated public `/access` journey without changing the secured access backend.
+
+Production contract:
+- `/access` is the canonical acquisition route;
+- request → email verification → manual review → viewer code if approved → login is explained before submission;
+- access is free and read-only;
+- the verification link is accurately described as expiring after 60 minutes;
+- public copy does not promise a fixed viewer-code duration;
+- Day Trading dashboard and protected Options viewer are the protected viewer surfaces; Swing portfolio remains public;
+- system-origin context is stored only in the existing `Dashboard Access Requests.Source` field;
+- `/#password-access` and the homepage access form remain backward-compatible;
+- Turnstile, approval, viewer-code/session/expiry behavior, protected auth, and Sheet schema are unchanged;
+- funnel measurement counts dedicated and legacy access CTAs through the existing event.
 
 ## PR #113 — Issue #107 PR 3
 
@@ -101,7 +116,7 @@ Production code contract after the merge:
 
 ## Safety boundary
 
-PR #108, PR #110, and PR #113 do **not** change:
+PR #108, PR #110, PR #113, and PR #115 do **not** change:
 
 - VECO strategy logic
 - signal generation
