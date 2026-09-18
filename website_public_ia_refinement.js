@@ -382,7 +382,7 @@ function renderPricingFromLanding(html) {
       <div class="vx-trial-kicker">Free Access</div>
       <h1>Watch Vixale before you decide.</h1>
       <p class="vx-trial-lead">Start with read-only viewer access. See active trade ideas, open trades, closed trades, and tracked results before deciding whether Vixale is right for you.</p>
-      <div class="vx-trial-actions"><a class="vx-trial-btn primary" href="/#password-access">Request Free Access</a><a class="vx-trial-btn" href="${SYSTEMS_PATH}">Explore Trading Systems</a></div>
+      <div class="vx-trial-actions"><a class="vx-trial-btn primary" href="/access">Request Free Access</a><a class="vx-trial-btn" href="${SYSTEMS_PATH}">Explore Trading Systems</a></div>
       <p class="vx-trial-review">Submit the request, verify your email, and wait for manual review. If approved, we'll email your individual viewer code.</p>
     </div>
     <div class="vx-trial-grid">
