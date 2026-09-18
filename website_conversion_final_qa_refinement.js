@@ -133,7 +133,7 @@ function refineHomeHtml(html) {
   let out = injectStyles(html);
   out = out.replace(/>Open P&amp;L Equity Curve</gi, ">Realized P&amp;L Equity Curve");
   out = out.replace(/>Open P&L Equity Curve</gi, ">Realized P&L Equity Curve");
-  if (!out.includes(`id="${SCRIPT_ID}"`)) out = out.includes("</body>") ? out.replace("</body>", `${homeChartScript}\n</body>`) : `${out}${homeChartScript}`;
+  if (!out.includes(`id="${SCRIPT_ID}"`)) out = out.includes("</body>") ? out.replace("</body>", () => `${homeChartScript}\n</body>`) : `${out}${homeChartScript}`;
   return out;
 }
 
