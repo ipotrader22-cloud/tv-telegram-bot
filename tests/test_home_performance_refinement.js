@@ -81,6 +81,8 @@ assert(out.includes(`href="${SWING_TRADING_PATH}"`));
 assert(out.includes("Explore Swing Trading →"));
 assert(out.includes(`href="${OPTIONS_PATH}"`));
 assert(out.includes("Explore Options →"));
+assert(out.includes('href="/#password-access">Request Dashboard Access</a>'), "access CTA must describe the access request destination");
+assert(!out.includes(">Watch the System Live</a>"));
 assert(out.includes("Watch our trading systems live before you trade them."));
 assert(out.indexOf('class="vx-home-hero"') < out.indexOf('class="vx-home-day-trading"'), "hero must appear before Day Trading status");
 assert(out.indexOf('class="vx-home-day-trading"') < out.indexOf('id="password-access"'), "Day Trading status must appear before access form");
