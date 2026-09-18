@@ -1,33 +1,27 @@
-name: Diagnose live chart runtime
+name: Verify live chart rendering
 
 on:
   push:
     branches: [diagnose/live-chart-runtime]
 
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe headers and payloads
+      - name: Verify live endpoint data and inline script syntax
         shell: bash
         run: |
           set -euo pipefail
-          for path in / /results /public-performance.json; do
-            echo "=== HEADERS $path ==="
-            curl -sS -L -D - -o /tmp/body "https://www.vixale.com$path" | sed -n '1,60p'
-            echo "=== BODY MARKERS $path ==="
-            if [[ "$path" == "/" ]]; then
-              grep -o 'vx-issue123-pr7-final-script\|vx-conversion-home-script\|vx-home-equity-svg\|vx-conversion-day-chart' /tmp/body | sort | uniq -c || true
-            elif [[ "$path" == "/results" ]]; then
-              grep -o 'vx-conversion-results-script\|vx-results-day-chart\|public-performance.json' /tmp/body | sort | uniq -c || true
-            else
-              head -c 1200 /tmp/body; echo
-            fi
-          done
-      - name: Check inline script syntax
-        shell: bash
-        run: |
-          set -euo pipefail
+          curl -sS -L https://www.vixale.com/public-performance.json -o /tmp/perf.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/perf.json'))
+          assert data.get('ok') is True, data
+          points=(data.get('equity_curve') or {}).get('points') or []
+          assert len(points) > 2, f'expected realized equity points, got {len(points)}'
+          print('performance endpoint PASS; points=', len(points))
+          PY
+
           mkdir -p /tmp/live-scripts
           for page in home results; do
             url="https://www.vixale.com/"
@@ -38,38 +32,46 @@ jobs:
           page=os.environ['PAGE']
           text=pathlib.Path(f'/tmp/{page}.html').read_text(errors='replace')
           scripts=re.findall(r'<script\b[^>]*>([\s\S]*?)</script>',text,re.I)
-          print(page,'scripts',len(scripts))
+          print(page,'inline scripts',len(scripts))
           out=pathlib.Path('/tmp/live-scripts')
           for i,s in enumerate(scripts):
-              p=out/f'{page}-{i:02d}.js'
-              p.write_text(s)
-              print(p, 'chars', len(s), 'ids', re.findall(r'id=["\']([^"\']+)', s)[:3])
+              (out/f'{page}-{i:02d}.js').write_text(s)
           PY
           done
-          failed=0
+
           for f in /tmp/live-scripts/*.js; do
-            echo "--- node --check $f ---"
-            if ! node --check "$f"; then failed=1; fi
+            echo "checking $f"
+            node --check "$f"
           done
-          exit $failed
-      - name: Run headless Chrome against live pages
+
+      - name: Verify charts execute in headless Chrome
         shell: bash
         run: |
           set -euo pipefail
-          CHROME=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)
+          CHROME=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)
           echo "Chrome=$CHROME"
-          if [[ -z "$CHROME" ]]; then exit 0; fi
-          for page in home results; do
-            url="https://www.vixale.com/"
-            [[ "$page" == "results" ]] && url="https://www.vixale.com/results"
-            echo "=== BROWSER $page ==="
-            "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=8000 --dump-dom "$url" > "/tmp/$page.dom" 2> "/tmp/$page.chrome.log" || true
-            echo "DOM markers:"
-            if [[ "$page" == "home" ]]; then
-              grep -o 'vx-conversion-day-equity-svg\|vx-home-equity-svg\|Loading realized-results chart…\|Realized-results chart unavailable\.' "/tmp/$page.dom" | sort | uniq -c || true
-            else
-              grep -o 'vx-results-day-chart\|Loading Day Trading realized history…\|No realized history is available\.' "/tmp/$page.dom" | sort | uniq -c || true
-            fi
-            echo "Chrome errors:"
-            grep -Ei 'uncaught|syntaxerror|referenceerror|typeerror|content security|refused to execute|failed to load|console' "/tmp/$page.chrome.log" | tail -80 || true
-          done
+
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=10000 --dump-dom https://www.vixale.com/ > /tmp/home.dom 2> /tmp/home.chrome.log
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=10000 --dump-dom https://www.vixale.com/results > /tmp/results.dom 2> /tmp/results.chrome.log
+
+          python - <<'PY'
+          from pathlib import Path
+          home=Path('/tmp/home.dom').read_text(errors='replace')
+          results=Path('/tmp/results.dom').read_text(errors='replace')
+
+          assert 'id="vx-conversion-day-equity-svg"' in home, 'homepage preview SVG was not rendered'
+          assert 'id="vx-home-equity-svg"' in home, 'homepage lower equity SVG was not rendered'
+          assert 'Loading realized-results chart' not in home, 'homepage preview still shows loading state'
+
+          marker='id="vx-results-day-chart"'
+          idx=results.find(marker)
+          assert idx >= 0, 'results chart container missing'
+          segment=results[idx:idx+12000]
+          assert '<polyline' in segment, 'results realized chart polyline was not rendered'
+          assert 'Loading Day Trading realized history' not in segment, 'results chart still shows loading state'
+
+          print('headless browser chart render PASS')
+          PY
+
+          echo 'Chrome console/error scan:'
+          cat /tmp/home.chrome.log /tmp/results.chrome.log | grep -Ei 'uncaught|syntaxerror|referenceerror|typeerror|refused to execute|content security' && exit 1 || true
