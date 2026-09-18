@@ -9,6 +9,7 @@ const TOP_MARKER = 'class="vx-home-top-systems"';
 const PREVIEW_MARKER = 'class="vx-home-proof-preview"';
 const DAY_SECTION_CLASS = "vx-home-day-trading";
 const DAY_ANCHOR_ID = "live-day-trading";
+const DAY_TRADING_PATH = "/trading-systems/day-trading";
 const SWING_TRADING_PATH = "/trading-systems/swing-trading";
 const OPTIONS_PATH = "/trading-systems/options";
 
@@ -42,7 +43,7 @@ function findTagByClass(html, tagName, className, from = 0, to = html.length) {
 
 function renderSystemSelector() {
   return `<nav class="vx-home-system-stack" aria-label="Explore Vixale systems">
-    <a class="vx-home-system-card" href="#${DAY_ANCHOR_ID}"><span>Intraday stocks</span><strong>Day Trading</strong><p>Live status, realized performance, and the Day Trading viewer dashboard.</p><b>View Day Trading ↓</b></a>
+    <a class="vx-home-system-card" href="${DAY_TRADING_PATH}"><span>Intraday stocks</span><strong>Day Trading</strong><p>Live status, realized performance, and the Day Trading viewer dashboard.</p><b>Explore Day Trading →</b></a>
     <a class="vx-home-system-card" href="${SWING_TRADING_PATH}"><span>Multi-session</span><strong>Swing Trading</strong><p>Active Portfolio, Swing Leaders, and the dedicated swing equity history.</p><b>Explore Swing Trading →</b></a>
     <a class="vx-home-system-card" href="${OPTIONS_PATH}"><span>Options</span><strong>Options</strong><p>Options Journal evidence and realized Options performance after viewer access.</p><b>Explore Options →</b></a>
   </nav>`;
@@ -50,7 +51,7 @@ function renderSystemSelector() {
 
 function renderHeroPreview() {
   return `<aside class="vx-home-proof-preview" aria-label="Day Trading performance preview">
-    <div class="vx-home-proof-preview-head"><div><span>Live evidence</span><h2>Day Trading snapshot</h2></div><a href="#${DAY_ANCHOR_ID}">Explore performance ↓</a></div>
+    <div class="vx-home-proof-preview-head"><div><span>Live evidence</span><h2>Day Trading snapshot</h2></div><a href="#${DAY_ANCHOR_ID}">View Day Trading results ↓</a></div>
     <p class="vx-home-proof-preview-copy">This preview mirrors the verified Day Trading block below. If the source is unavailable, values remain unavailable rather than being simulated.</p>
     <div class="vx-home-proof-grid">
       <div><span>Open Positions</span><strong data-vx-mirror="vx-home-live-0">—</strong></div>
@@ -224,6 +225,7 @@ module.exports = {
   PREVIEW_MARKER,
   DAY_SECTION_CLASS,
   DAY_ANCHOR_ID,
+  DAY_TRADING_PATH,
   SWING_TRADING_PATH,
   OPTIONS_PATH,
   findTagRangeFromOpen,
