@@ -48,7 +48,7 @@ const services = publicIa.renderServicesOffer();
 for (const title of ["Signals &amp; Research", "Automation / Setup", "Strategy Review / Development", "Custom Bot / Integration"]) assert(services.includes(`<h3>${title}</h3>`), `services missing ${title}`);
 assert.strictEqual((services.match(/class="vx-services-offer-card"/g) || []).length, 4, "Services must keep exactly four commercial cards");
 assert(services.includes('href="/access"'), "free viewer access must remain a separate path");
-assert(services.includes("does not manage customer brokerage accounts"), "Services must keep account-management boundary");
+assert(services.includes("does not trade or manage customer brokerage accounts"), "Services must keep account-management boundary");
 
 const day = systems.renderDayPage();
 assert(day.includes("Vixale Prime") && day.includes("Vixale Edge"));
