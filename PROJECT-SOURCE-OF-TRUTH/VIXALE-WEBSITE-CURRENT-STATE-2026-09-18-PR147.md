@@ -20,7 +20,8 @@ Latest directly verified website-changing state:
 - **Render deployed website-changing SHA:** `76f7a6924f67b65c9496a7ef42a574e34d0ae1d3`
 - **Render deployment status:** LIVE
 - **Render verification:** exact PR #147 merge SHA was deployed by the `tv-telegram-bot` service and Render reported LIVE at `2026-09-18T22:54:56.398984Z`.
-- **Fresh public-origin content verification after PR #147:** PENDING in this documentation branch until the cache-busting production check completes.
+- **Fresh public-origin content verification after PR #147:** GitHub Actions run `35403667643` — SUCCESS against a cache-busting `https://www.vixale.com/trading-systems/swing-trading` request after the Render deploy.
+- **Verified public markers:** `data-vx-swing-market-update="1"`, `<h2>Market Update</h2>`, 18px Market Update body rule, a `Released: YYYY-MM-DD · <time> ET` line, the beginner How block, `Candidates`, and `$10K / position`; the old `<h2>Market Posture</h2>` heading was absent.
 
 A later documentation-only commit/deploy may advance `main` without changing website runtime behavior. Such a docs-only deploy does not replace PR #147 as the latest website-changing code reference.
 
