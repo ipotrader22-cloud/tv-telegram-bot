@@ -2713,7 +2713,7 @@ A handbook is not considered implemented until it is committed at its canonical 
 ## Public Trading Systems information architecture (2026-08-27)
 
 - `/trading-systems` is presented horizon-first at the public product level: **Day Trading** and **Swing Trading**.
-- **Day Trading** groups the public system families **Prime**, **Edge**, and **Straddles**. Existing Stocks / Futures / Options sections remain below as detailed market coverage and should keep their established deep links.
+- **Day Trading** groups the public system families **Prime** and **Edge**. **Options** is a separate top-level category with its own public intro and protected viewer evidence; do not present Options/Straddles as Day Trading.
 - **Swing Trading** is a single public category. Do not split the navigation into Daily and Weekly products; timeframe inputs belong inside each strategy profile.
 - Swing strategy presentation can show multi-session holding, ATR / percentage targets, defined risk, and daily-close target / stop evaluation when those rules are part of the approved public strategy specification.
 - This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
@@ -2782,6 +2782,34 @@ The older lower-home beginner section beginning **“New to trading systems? Sta
 **Execution/trading impact:** None. This decision changes homepage information hierarchy, copy, and presentation only. It does not change public data sources, calculations, authentication, viewer-code policy, VECO trading logic, strategy rules, Pine, bridge behavior, TWS/IBKR execution, Swing Trading Lab behavior, Option Journal writes, or Google Sheet schemas.
 
 **Rollback:** Revert the Issue #107 PR 2 homepage/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, Option Journal, or customer-data rollback is required.
+
+### ADR-020 — Standard public system-page teaching sequence (Issue #107 PR 3)
+
+**Decision:** The public Day Trading, Swing Trading, and Options system pages teach first-time visitors in the same semantic order:
+
+```text
+What this system is
+-> How it differs from the other two categories
+-> What the visitor will see
+-> What is available publicly now
+-> What viewer access adds
+-> Evidence/results for this system only
+-> One clear page-specific next action
+```
+
+The Trading Systems landing page is category-first. Its comparison uses beginner-facing dimensions — holding horizon, how often to check, public availability, and viewer-access boundary — before strategy/product names.
+
+**Day Trading:** The category is explained before Prime and Edge. Prime and Edge are described in practical user terms without exposing proprietary signal-generation rules. Public copy must remain accurate that some approved Edge positions can remain open overnight. Day Trading evidence links stay Day Trading-specific. The page-specific next action is the read-only access request; returning-user login remains in the shared header.
+
+**Swing Trading:** The canonical public page remains the live Swing research/model portfolio. The explanatory layer is inserted before the existing portfolio data without recalculating or rewriting Trading Lab output. It must say that the Swing model portfolio is already public, quotes may be delayed, results are model-portfolio evidence rather than broker execution or brokerage-account performance, and viewer access is not required to inspect Active Portfolio. The page-specific next action is **View Swing Portfolio**.
+
+**Options:** The public intro remains separate from Day Trading and Swing. It explains that Options evidence comes from the owner-entered Option Journal. Protected journal rows, closed-only realized equity, and owner-provided brokerage screenshots remain behind the existing viewer authentication. The page-specific next action is the access request; existing approved viewers can use the shared header login.
+
+**Architecture ownership:** `website_trading_systems_product_refinement.js` owns the Trading Systems landing page and the Day/Options public intro composition (plus the non-data Swing fallback composition). `website_swing_canonical_refinement.js` owns the explanatory sequence layered over the canonical live Swing portfolio. The Swing feed, Options journal workflow, and protected viewer implementations remain separate data/auth owners.
+
+**Execution/trading impact:** None. This decision changes public explanation, page composition, and CTA presentation only. It does not change strategy logic, Pine, signal generation, bridge/TWS/IBKR execution, Swing Trading Lab selection/scoring/writer behavior, Option Journal owner writes, public data calculations, Google Sheet schemas, or existing authentication/authorization.
+
+**Rollback:** Revert the Issue #107 PR 3 website/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, Swing workbook, Option Journal, viewer-code, or customer-data rollback is required.
 
 ## Public Swing Leaders display feed (2026-08-27)
 

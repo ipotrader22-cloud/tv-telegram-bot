@@ -33,13 +33,18 @@ function rewriteCanonicalRequest(req) {
 }
 
 const swingAccessStyles = `<style id="${ACCESS_STYLE_ID}">
-  .vx-swing-access{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;margin-top:20px}
-  .vx-swing-access-primary{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 20px;border:1px solid #078f51;border-radius:999px;background:#078f51;color:#fff;text-decoration:none;font-size:13px;font-weight:700;box-shadow:0 10px 24px rgba(7,143,81,.14);transition:transform .16s ease,box-shadow .16s ease}
+  .vx-swing-sequence-label{margin-top:16px;color:#287153;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+  .vx-swing-access{display:grid;gap:14px;margin-top:24px;padding:22px 0;border-top:1px solid #dfe8e3;border-bottom:1px solid #dfe8e3}
+  .vx-swing-primer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .vx-swing-primer-card{padding:18px;border:1px solid #dfe8e3;border-radius:18px;background:#fff}
+  .vx-swing-primer-card span{color:#287153;font-size:10.5px;font-weight:750;letter-spacing:.07em;text-transform:uppercase}
+  .vx-swing-primer-card strong{display:block;margin-top:7px;color:#17211d;font-size:16px;font-weight:650}
+  .vx-swing-primer-card p{margin:7px 0 0;color:#5f6d67;font-size:13.5px;line-height:1.55}
+  .vx-swing-access-primary{display:inline-flex;width:max-content;align-items:center;justify-content:center;min-height:44px;padding:0 20px;border:1px solid #078f51;border-radius:999px;background:#078f51;color:#fff;text-decoration:none;font-size:13px;font-weight:700;box-shadow:0 10px 24px rgba(7,143,81,.14);transition:transform .16s ease,box-shadow .16s ease}
   .vx-swing-access-primary:hover{transform:translateY(-1px);box-shadow:0 12px 28px rgba(7,143,81,.18)}
-  .vx-swing-access-login{color:#4f5d57;font-size:12.5px;font-weight:650;text-decoration:none}
-  .vx-swing-access-login:hover{text-decoration:underline;text-underline-offset:3px}
-  .vx-swing-access-note{flex-basis:100%;color:#78837e;font-size:11.5px;line-height:1.45}
-  @media(max-width:640px){.vx-swing-access{align-items:stretch;flex-direction:column}.vx-swing-access-primary{width:100%;min-height:48px;box-sizing:border-box}.vx-swing-access-login{text-align:center}.vx-swing-access-note{text-align:center}}
+  .vx-swing-access-note{color:#65716c;font-size:12.5px;line-height:1.5}
+  @media(max-width:760px){.vx-swing-primer-grid{grid-template-columns:1fr}}
+  @media(max-width:640px){.vx-swing-access-primary{width:100%;min-height:48px;box-sizing:border-box}.vx-swing-access-note{text-align:left}}
 </style>`;
 
 function injectSwingAccessStyles(html) {
@@ -54,12 +59,18 @@ function ensureSwingPortfolioAnchor(html) {
 
 function insertSwingAccess(html) {
   if (typeof html !== "string" || html.includes(ACCESS_MARKER)) return html;
-  const copy = "Swing Leaders research/model portfolio with actively monitored swing positions and potential future candidates from Vixale Trading Lab.";
+  const copy = "Use this public Swing Leaders research/model portfolio to review active positions, potential candidates, closed trades, and model equity history. Quotes may be delayed; this is not broker execution.";
   const copyIndex = html.indexOf(copy);
   if (copyIndex < 0) return html;
   const paragraphEnd = html.indexOf("</p>", copyIndex);
   if (paragraphEnd < 0) return html;
-  const access = `<div class="vx-swing-access"><a class="vx-swing-access-primary" href="${PORTFOLIO_HREF}">View Swing Portfolio</a><a class="vx-swing-access-login" href="${ACCESS_PATH}">Request Dashboard Access</a><span class="vx-swing-access-note">Swing portfolio is public · Viewer access is separate</span></div>`;
+  const access = `<div class="vx-swing-access"><div class="vx-swing-primer-grid">
+    <section class="vx-swing-primer-card"><span>How it differs</span><strong>Multi-session research/model portfolio</strong><p>Swing positions may remain active across sessions. This page is model-portfolio research, not Day Trading broker/execution evidence and not the owner-entered Options journal.</p></section>
+    <section class="vx-swing-primer-card"><span>What you will see</span><strong>Portfolio status and model evidence</strong><p>Review Active Portfolio, potential candidates, closed trades, model P&amp;L, and the dedicated Swing equity history.</p></section>
+    <section class="vx-swing-primer-card"><span>Available publicly now</span><strong>The Swing portfolio is already public</strong><p>You do not need viewer login to inspect the Swing model portfolio. Delayed-quote and model-portfolio disclosures remain visible with the evidence.</p></section>
+    <section class="vx-swing-primer-card"><span>What viewer access adds</span><strong>No extra Swing portfolio unlock is required</strong><p>Viewer access is used for other protected Vixale areas; it is not a prerequisite for the Swing Active Portfolio on this page.</p></section>
+    <section class="vx-swing-primer-card"><span>Evidence / results</span><strong>Swing Trading only</strong><p>The evidence below is the Swing research/model portfolio and equity history. It is not brokerage-account performance.</p></section>
+  </div><a class="vx-swing-access-primary" href="${PORTFOLIO_HREF}">View Swing Portfolio</a><span class="vx-swing-access-note">One clear next step: review the public Active Portfolio below.</span></div>`;
   const insertAt = paragraphEnd + 4;
   return html.slice(0, insertAt) + access + html.slice(insertAt);
 }
@@ -85,11 +96,11 @@ function refineCanonicalSwingHtml(html) {
   );
   out = out.replace(
     "<h1>Vixale Swing Leaders</h1>",
-    "<h1>Vixale Swing Trading</h1>"
+    '<h1>Vixale Swing Trading</h1><div class="vx-swing-sequence-label">What this system is</div>'
   );
   out = out.replace(
     "A research/model portfolio focused on actively monitored swing positions and potential future candidates from Vixale Trading Lab.",
-    "Swing Leaders research/model portfolio with actively monitored swing positions and potential future candidates from Vixale Trading Lab."
+    "Use this public Swing Leaders research/model portfolio to review active positions, potential candidates, closed trades, and model equity history. Quotes may be delayed; this is not broker execution."
   );
   out = ensureSwingPortfolioAnchor(out);
   out = insertSwingAccess(out);
