@@ -1,0 +1,20 @@
+name: Issue 123 PR7 Final QA
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  final-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check website_conversion_final_qa_refinement.js
+          node --check tests/test_issue123_pr7_final_qa.js
+      - name: PR7 regression
+        run: node tests/test_issue123_pr7_final_qa.js
