@@ -90,7 +90,7 @@ tabs.forEach((tab,index)=>{tab.addEventListener('click',()=>activate(tab.dataset
 function injectAssets(html) {
   let out=html;
   if(!out.includes(`id="${STYLE_ID}"`)) out=out.includes("</head>")?out.replace("</head>",`${styles}\n</head>`):`${styles}${out}`;
-  if(!out.includes(`id="${SCRIPT_ID}"`)) out=out.includes("</body>")?out.replace("</body>",`${script}\n</body>`):`${out}${script}`;
+  if(!out.includes(`id="${SCRIPT_ID}"`)) out=out.includes("</body>")?out.replace("</body>",() => `${script}\n</body>`):`${out}${script}`;
   return out;
 }
 function refineConversionHomepage(html) {
