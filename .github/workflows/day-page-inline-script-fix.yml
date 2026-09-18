@@ -1,0 +1,24 @@
+name: Day Page Inline Script Fix
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check website_conversion_system_pages_refinement.js
+          node --check tests/test_chart_inline_script_injection.js
+      - name: Inline-script regression
+        run: node tests/test_chart_inline_script_injection.js
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
