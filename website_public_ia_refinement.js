@@ -275,7 +275,7 @@ function renderAccessJourney(formSection, context = accessContext("")) {
     <div class="vx-access-facts">
       <article class="vx-access-fact"><strong>What access opens</strong><p>Approved viewer access opens the read-only Day Trading dashboard and the protected Options viewer. The Swing research/model portfolio is already public and does not require login.</p></article>
       <article class="vx-access-fact"><strong>Email not visible?</strong><p>Check Inbox and Spam/Junk for the verification email before submitting again. The verification link itself is valid for 60 minutes.</p></article>
-      <article class="vx-access-fact"><strong>Duration / expiration</strong><p>We do not advertise an unsupported fixed access duration. Viewer codes can expire; the issued code controls its own expiration. If a code is expired, it will no longer log in.</p></article>
+      <article class="vx-access-fact"><strong>Duration / expiration</strong><p>Access is free. Each approved viewer code has its own expiration date; no fixed public access duration is promised on this page. After a code expires, it will no longer log in.</p></article>
       <article class="vx-access-fact"><strong>Need help?</strong><p>Use <a href="/trading-guide">Help</a> if you are unsure what the viewer contains or submit a new access request if an earlier viewer code has expired.</p></article>
     </div>
     ${formSection}
