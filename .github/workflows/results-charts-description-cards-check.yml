@@ -1,0 +1,35 @@
+name: Results Charts and Description Cards Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check website_conversion_results_refinement.js
+          node --check website_description_card_standard.js
+          node --check tests/test_results_chart_refinement.js
+          node --check tests/test_description_card_standard.js
+      - name: Focused Results and visual-standard regressions
+        run: |
+          node tests/test_results_chart_refinement.js
+          node tests/test_description_card_standard.js
+          node tests/test_chart_inline_script_injection.js
+      - name: Existing Swing and performance regressions
+        run: |
+          node tests/test_swing_ui_refinement.js
+          node tests/test_swing_leaders.js
+          node tests/test_swing_instructional_refinement.js
+          node tests/test_issue123_pr7_final_qa.js
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
