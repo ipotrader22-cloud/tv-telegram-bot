@@ -5,7 +5,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const metrics = require("../lib/website-funnel-metrics");
-const { injectFunnelAccessScript, FUNNEL_SCRIPT_ID } = require("../lib/website-funnel-client");
+const { injectFunnelAccessScript, FUNNEL_SCRIPT_ID, ACCESS_HREF, LEGACY_ACCESS_HREF } = require("../lib/website-funnel-client");
 const funnelPatch = require("../lib/website-funnel-source-patch");
 const accessPatch = require("../website_dashboard_access_security");
 
@@ -38,11 +38,16 @@ const accessPatch = require("../website_dashboard_access_security");
     assert(!persisted.toLowerCase().includes(`\"${forbidden}\"`), `metrics file must not store ${forbidden}`);
   }
 
-  const html = '<html><body><a href="/#password-access">Request Free Access</a></body></html>';
+  assert.strictEqual(ACCESS_HREF, "/access");
+  assert.strictEqual(LEGACY_ACCESS_HREF, "/#password-access");
+  const html = '<html><body><a href="/access?system=day-trading">Request Free Access</a><a href="/#password-access">Legacy Access</a></body></html>';
   const measuredHtml = injectFunnelAccessScript(html);
   assert(measuredHtml.includes(`id="${FUNNEL_SCRIPT_ID}"`));
   assert(measuredHtml.includes("/website-funnel/access-cta"));
+  assert(measuredHtml.includes("href.indexOf('/access?')===0"));
+  assert(measuredHtml.includes("href==='/#password-access'"));
   assert.strictEqual(injectFunnelAccessScript(measuredHtml), measuredHtml, "client injection must be idempotent");
+  assert(injectFunnelAccessScript('<html><body><a href="/#password-access">Legacy Access</a></body></html>').includes(`id="${FUNNEL_SCRIPT_ID}"`));
   assert.strictEqual(injectFunnelAccessScript("<html><body>No access CTA</body></html>"), "<html><body>No access CTA</body></html>");
 
   const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
