@@ -9,21 +9,39 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #119 — `Issue #107 PR 6: clarify evidence credibility and freshness`
-- **PR #119 merge SHA:** `782d150cdf64a604b6e186a306a8cb31bc36c399`
+- **Latest website-changing merge:** PR #121 — `Issue #107 PR 7: accessibility, SEO, host, and end-to-end public QA`
+- **PR #121 merge SHA:** `703919449615b582e76bca4bff0ed3046136c998`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** new refinement Node syntax PASS; focused PR 6 semantic fixture checks PASS; branch 0 behind main; no configured GitHub Actions/status checks
+- **Feature-branch verification before merge:** PR 7 QA module Node syntax PASS; focused public-QA regression PASS (133 assertions); end-to-end visitor-journey regression aligned to approved PR 1–6 contracts; branch 0 behind main; no configured GitHub Actions/status checks; PR mergeable with five intended changed files
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-damgaeks728c73c1phmg`
-- **Render deployed website-changing SHA:** `782d150cdf64a604b6e186a306a8cb31bc36c399`
+- **Render deploy:** `dep-damgj28ae00c73bllmfg`
+- **Render deployed website-changing SHA:** `703919449615b582e76bca4bff0ed3046136c998`
 - **Render deployment status:** LIVE
-- **Render startup verification:** build successful; Render checked out the exact PR #119 merge SHA; `npm start` launched `website_evidence_credibility_refinement.js` first in the existing preload chain; server reported port 10000; Render reported the service live
-- **Fresh public HTML verification for PR #119:** **UNVERIFIED**
-  - deployment/runtime state is independently verified from GitHub + Render;
-  - a fresh public-origin/user-visible verification has not yet been recorded for PR #119.
+- **Render startup verification:** build successful; Render deployed the exact PR #121 merge SHA; `npm start` launched `website_public_qa_refinement.js` first, followed by `website_evidence_credibility_refinement.js`; server reported port 10000; Render reported the service live
+- **Fresh public HTML verification for PR #121:** **CONFLICT / UNVERIFIED**
+  - GitHub + Render deployment/runtime state is independently verified;
+  - the available external crawler returned an older cached homepage snapshot with pre-PR #110 navigation/content and could not access the new `/sitemap.xml`, `/robots.txt`, or apex-host response;
+  - that crawler result is therefore not accepted as origin truth for PR #121.
 - **Prior owner verification:** PR #110 homepage behavior was explicitly verified by the owner after deployment.
+
+## PR #121 — Issue #107 PR 7
+
+PR #121 is the final implementation PR for Issue #107 and adds cross-cutting public accessibility, responsive, SEO, canonical-host, and end-to-end QA guardrails without changing trading, auth, or evidence calculations.
+
+Production contract:
+- `website_public_qa_refinement.js` is the first preload so it receives the final outbound public HTML after existing page refinements unwind;
+- covered public pages receive page-specific titles, meta descriptions, `www.vixale.com` canonical URLs, Open Graph basics, and `twitter:card=summary` metadata;
+- `/sitemap.xml` lists public canonical routes only and excludes protected/admin/viewer routes and legacy `/pricing`;
+- `/robots.txt` allows the public site, disallows protected/admin/verification paths, and points to the canonical sitemap;
+- public pages receive a keyboard-visible Skip to content link, stable `#main-content` target, strong `:focus-visible` styles, reduced-motion handling, constrained images/SVGs, and narrow-screen overflow/reflow safeguards;
+- the known low-contrast `#87918d` public chart-label usage is corrected to the darker `#5f6d67` presentation token without changing chart values or calculations;
+- application-level canonical-host handling redirects only GET/HEAD requests that reach the service with host `vixale.com` to the equivalent HTTPS `www.vixale.com` URL using HTTP 308;
+- POST and other non-read traffic, including webhooks, access submissions, admin mutations, and trading callbacks, are never redirected by this layer;
+- no DNS, Cloudflare, or Render custom-domain records were changed by PR #121;
+- the PR 1–6 first-time visitor journey remains intact: Home → understand/compare → system-specific evidence/results → free viewer access or one of the four Services paths;
+- the shared navigation, dedicated `/access` flow, system-specific evidence boundaries, Services taxonomy, and existing auth behavior remain unchanged.
 
 ## PR #119 — Issue #107 PR 6
 
@@ -154,7 +172,7 @@ Production code contract after the merge:
 
 ## Safety boundary
 
-PR #108, PR #110, PR #113, PR #115, PR #117, and PR #119 do **not** change:
+PR #108, PR #110, PR #113, PR #115, PR #117, PR #119, and PR #121 do **not** change:
 
 - VECO strategy logic
 - signal generation
@@ -168,11 +186,11 @@ PR #108, PR #110, PR #113, PR #115, PR #117, and PR #119 do **not** change:
 - protected dashboard/viewer authentication or authorization
 - `app.js`
 
-The implementation is confined to public website navigation, routing, copy/presentation, focused regressions, and handbook documentation.
+The implementation is confined to public website navigation, routing, copy/presentation, accessibility/SEO guardrails, focused regressions, and handbook documentation.
 
 ## Locale/domain verification
 
-Render reports `ru.vixale.com` among the service domains, but repository search found no separate Russian-locale or host-specific navigation implementation. PR #108 does not add a locale-specific branch. Current origin HTML for each public domain remains subject to the public verification caveat above.
+Render reports `ru.vixale.com` among the service domains, but repository search found no separate Russian-locale or host-specific navigation implementation. PR #121 does not add a locale-specific public-site fork. The preferred canonical public host is `www.vixale.com`. The application now performs a GET/HEAD-only apex-to-www redirect when an apex request actually reaches the service, but DNS/TLS edge routing for `vixale.com` remains **UNVERIFIED** from the available external crawler.
 
 ## Historical manifest
 
@@ -180,4 +198,4 @@ The prior verified website state remains available at:
 
 `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-16.md`
 
-Use this manifest for the latest merged/deployed website-changing code state. PR #110 homepage behavior is owner-verified. PR #119 deployment/runtime is verified; its fresh user-visible public HTML remains UNVERIFIED until a direct origin/user check is recorded.
+Use this manifest for the latest merged/deployed website-changing code state. PR #110 homepage behavior is owner-verified. PR #121 deployment/runtime is verified; fresh public-origin behavior for PR #121 remains **CONFLICT / UNVERIFIED** until a direct origin/user check confirms the deployed presentation and host behavior.
