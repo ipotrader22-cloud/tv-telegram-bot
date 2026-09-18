@@ -9,20 +9,37 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #115 — `Issue #107 PR 4: add dedicated access journey`
-- **PR #115 merge SHA:** `fb3841431de1b7f2026bc2c0abcc684942c070d0`
+- **Latest website-changing merge:** PR #117 — `Issue #107 PR 5: simplify Services and preserve intent`
+- **PR #117 merge SHA:** `726311d5d69bf4c54cb6d4da160106cced7826b0`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** changed-JS/test syntax compilation PASS; focused PR 4 regressions PASS (36 assertions); PR patch whitespace/conflict scan PASS
+- **Feature-branch verification before merge:** source/test syntax PASS; focused PR 5 Services regressions PASS (33 assertions); PR patch whitespace/conflict scan PASS
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-damaq1jtqb8s73bi8dig`
-- **Render deployed website-changing SHA:** `fb3841431de1b7f2026bc2c0abcc684942c070d0`
+- **Render deploy:** `dep-damas4mk1f9s73e802n0`
+- **Render deployed website-changing SHA:** `726311d5d69bf4c54cb6d4da160106cced7826b0`
 - **Render deployment status:** LIVE
 - **Fresh public HTML verification:** **UNVERIFIED**
-  - the available external browser could not access the cache-busted `/access` URL during verification;
+  - the available external browser could not access the cache-busted `/services` URL during verification;
   - GitHub + Render deployment/runtime state is verified independently.
 - **Prior owner verification:** PR #110 homepage behavior was explicitly verified by the owner after deployment.
+
+## PR #117 — Issue #107 PR 5
+
+PR #117 simplifies Services to one intent-preserving commercial taxonomy without changing service backend routes.
+
+Production contract:
+- exactly four commercial paths: Signals & Research; Automation / Setup; Strategy Review / Development; Custom Bot / Integration;
+- free viewer access is a separate small path to `/access`, not a fifth commercial service card;
+- Research reuses `POST /appointment-request` with the existing `request_type=Signals & Research` field and does not ask TWS/IBKR/automation questions;
+- Automation / Setup reuses `POST /appointment-request` and keeps setup/TWS/IBKR context;
+- Strategy Review / Development reuses `POST /strategy-review`;
+- Custom Bot / Integration reuses `POST /bot-request`;
+- the legacy six-scenario Services choice block is not rendered on the canonical page;
+- normal forms are not described as “Chat”;
+- each service states what the visitor provides, what they get, the expected outcome, and pricing posture without inventing prices;
+- Vixale’s no-account-management boundary remains visible;
+- no backend route, schema, trading, auth, or execution behavior changed.
 
 ## PR #115 — Issue #107 PR 4
 
@@ -116,7 +133,7 @@ Production code contract after the merge:
 
 ## Safety boundary
 
-PR #108, PR #110, PR #113, and PR #115 do **not** change:
+PR #108, PR #110, PR #113, PR #115, and PR #117 do **not** change:
 
 - VECO strategy logic
 - signal generation
