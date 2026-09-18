@@ -84,7 +84,7 @@ assert(out.includes("Last updated: checking"));
 assert(out.includes("Awaiting Closed Trades ledger"));
 assert(!out.includes("Coverage: awaiting Closed Trades ledger"));
 assert(out.includes('id="vx-home-live-open-pnl"'));
-assert(out.includes('href="/#password-access">Request Free Access</a>'));
+assert(out.includes('href="/access">Request Free Access</a>'));
 assert(out.includes('href="/results">Explore Results</a>'));
 assert(!out.includes('class="vx-home-hero-btn primary access" href="/dashboard">Login</a>'), "hero Login must be removed");
 assert(out.includes('class="vx-public-nav-login" href="/dashboard">Log In</a>'), "quiet header Log In must remain");
