@@ -13,12 +13,12 @@ const {
 } = require("../website_navigation_disclosure_refinement");
 
 const expectedNav = [
+  `href="${GUIDE_BLOCK_HREF}">How It Works</a>`,
   'href="/trading-systems">Trading Systems</a>',
-  'href="/#live-day-trading">Performance</a>',
+  'href="/results">Results</a>',
   'href="/services">Services</a>',
-  'href="/about">About</a>',
-  'href="/trading-guide">Trading Guide</a>',
-  'class="vx-public-nav-login" href="/dashboard">Login</a>',
+  'href="/trading-guide">Help</a>',
+  'class="vx-public-nav-login" href="/dashboard">Log In</a>',
   'class="vx-public-nav-cta" href="/#password-access">Request Free Access</a>',
 ];
 
@@ -34,6 +34,8 @@ assert(homeOut.includes(`class="vx-nfa-disclosure">${NFA_TEXT}</span>`));
 assert(homeOut.includes(`id="${STYLE_ID}"`));
 assert(homeOut.includes(".vx-home-equity-svg text{fill:#5f6d67!important;font-size:11px!important}"));
 assert(homeOut.includes("a:focus-visible,button:focus-visible"));
+assert(homeOut.includes("overflow-x:auto"), "mobile navigation must remain reachable rather than hiding primary links");
+assert(homeOut.includes('class="vx-public-secondary-nav"') && homeOut.includes('href="/about">About</a>'), "About must remain available as secondary navigation");
 assert.strictEqual(refineNavigationAndDisclosure(homeOut, "/"), homeOut, "home refinement must be idempotent");
 
 const guideNav = '<html><head></head><body><header><div class="nav"><a class="brand" href="/">VIXALE</a><div class="navlinks"><a href="/trading-systems">Trading Systems</a><a class="vx-guide-btn" href="/download/trading-guide.pdf">Download PDF</a></div></div></header></body></html>';
@@ -41,6 +43,12 @@ const guideOut = refineNavigationAndDisclosure(guideNav, "/trading-guide");
 assert(guideOut.includes('<a class="brand" href="/">VIXALE</a>'), "brand must be preserved");
 for (const fragment of expectedNav) assert(guideOut.includes(fragment), `guide nav missing: ${fragment}`);
 assert(!guideOut.includes(">Download PDF</a>"), "top navigation uses the shared contract; PDF remains available in page content");
+
+const standaloneSwingNav = '<html><head></head><body><nav class="swing-nav"><a class="brand" href="/">VIXALE</a><a href="/trading-systems">Trading Systems</a><a href="/">Home</a></nav><main>Swing</main><footer>Swing footer</footer></body></html>';
+const standaloneSwingOut = refineNavigationAndDisclosure(standaloneSwingNav, "/trading-systems/swing-trading");
+assert(standaloneSwingOut.includes('<a class="brand" href="/">VIXALE</a>'), "standalone Swing brand must be preserved");
+for (const fragment of expectedNav) assert(standaloneSwingOut.includes(fragment), `standalone Swing nav missing: ${fragment}`);
+assert(!standaloneSwingOut.includes('>Home</a>'), "standalone mini-site Home nav must be replaced by the shared hierarchy");
 
 const systems = `<!doctype html><html><head></head><body>
 <nav><div class="nav-links"><a href="/">Home</a></div></nav>
@@ -75,6 +83,7 @@ assert(pricingOut.includes(`id="${STYLE_ID}"`));
 assert(PUBLIC_NAV_PATHS.has("/about"));
 assert(PUBLIC_NAV_PATHS.has("/services"));
 assert(PUBLIC_NAV_PATHS.has("/trading-guide"));
+assert(PUBLIC_NAV_PATHS.has("/results"));
 assert.strictEqual(normalizePublicNavigation("<html><body>No nav links container</body></html>"), "<html><body>No nav links container</body></html>");
 
 console.log("Unified public navigation + guide ordering + accessibility: PASS");
