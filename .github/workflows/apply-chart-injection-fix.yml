@@ -45,35 +45,21 @@ jobs:
           if(!m) throw new Error('missing results script');
           fs.writeFileSync('/tmp/results.js',m[1]);
           NODE
-          python <<'PY'
-          from pathlib import Path
-          s=Path('/tmp/results.js').read_text()
-          # Diagnostic only: make the long generated program readable without changing tokens.
-          out=[]
-          quote=None
-          esc=False
-          for ch in s:
-              out.append(ch)
-              if quote:
-                  if esc:
-                      esc=False
-                  elif ch=='\\':
-                      esc=True
-                  elif ch==quote:
-                      quote=None
-                  continue
-              if ch in ("'", '"', '`'):
-                  quote=ch
-              elif ch in '{};':
-                  out.append('\n')
-          Path('/tmp/results-readable.js').write_text(''.join(out))
-          PY
-          echo '===== raw check ====='
+          npm install --no-save --ignore-scripts acorn@8 >/dev/null 2>&1
+          node <<'NODE'
+          const fs=require('fs');
+          const acorn=require('acorn');
+          const s=fs.readFileSync('/tmp/results.js','utf8');
+          try { acorn.parse(s,{ecmaVersion:'latest'}); console.log('acorn parse PASS'); }
+          catch(e) {
+            console.log('ACORN ERROR', e.message, 'pos', e.pos, 'loc', e.loc);
+            const start=Math.max(0,e.pos-260), end=Math.min(s.length,e.pos+260);
+            console.log('CONTEXT START');
+            console.log(JSON.stringify(s.slice(start,end)));
+            console.log('CONTEXT END');
+          }
+          NODE
           node --check /tmp/results.js || true
-          echo '===== readable check ====='
-          node --check /tmp/results-readable.js || true
-          echo '===== readable program ====='
-          nl -ba /tmp/results-readable.js | sed -n '1,180p'
       - name: Syntax and focused regressions
         run: |
           node --check website_conversion_home_refinement.js
