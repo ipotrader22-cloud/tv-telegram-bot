@@ -1,6 +1,6 @@
 # VECO Developer Handbook — Swing Page Presentation Addendum
 
-Date: 2026-09-18  
+Date: 2026-09-18
 Scope: public Swing Trading page presentation only
 
 ## Purpose
