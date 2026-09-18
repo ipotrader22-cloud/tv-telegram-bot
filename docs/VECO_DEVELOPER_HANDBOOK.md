@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-17
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -2745,6 +2745,43 @@ CTA text must describe the actual destination. An access-form link uses request/
 **Execution/trading impact:** None. This decision changes website navigation, public routing, copy, and presentation only. It does not change VECO strategy logic, signals, Pine, bridge behavior, TWS/IBKR execution, risk logic, Swing Trading Lab selection/writer behavior, Option Journal write workflow, or Google Sheet trading schemas.
 
 **Rollback:** Revert the Issue #107 PR 1 website/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, or Option Journal data rollback is required.
+
+### ADR-019 — First-time-visitor homepage hierarchy (Issue #107 PR 2)
+
+**Decision:** The public homepage teaches a first-time visitor before asking them to interpret detailed performance or access workflows. The canonical top-of-home sequence is:
+
+```text
+Hero
+-> How It Works
+-> Day / Swing / Options comparison
+-> one authentic Day Trading evidence preview
+-> existing detailed Day Trading evidence
+-> existing access and downstream public content
+```
+
+The hero keeps the approved H1 **“See how our trading systems perform before you commit.”** and exposes only one primary acquisition action, **Request Free Access**, plus the secondary **Explore Results** action. Returning-user **Log In** remains in shared header navigation and is not duplicated as a full-size hero CTA.
+
+The homepage **How It Works** block must explain the product in plain language before evidence-heavy content:
+
+```text
+Explore systems
+-> review available evidence
+-> request viewer access if useful
+```
+
+It must also state that viewer access is read-only, automation/setup/custom development are separate services, and Vixale does not trade or manage customer brokerage accounts.
+
+The homepage category comparison remains **Day Trading / Swing Trading / Options first**. It compares beginner-facing dimensions such as holding horizon, how often a visitor may check the category, public evidence, viewer-access boundary, and the relevant system-introduction route. Internal strategy/product names such as Prime, Edge, Swing Leaders, or Straddles are not introduced in this comparison before the visitor understands the three categories.
+
+The product/evidence preview reuses the existing Day Trading source and mirror targets from the detailed homepage Day Trading block. It must preserve the same freshness state and unavailable behavior, and must never synthesize or substitute profit values. The preview is the strongest visual treatment in the top composition; explanatory sections should use restrained styling and readable text sizes instead of a competing wall of bordered cards.
+
+The older lower-home beginner section beginning **“New to trading systems? Start here.”** is removed when the new early **How It Works** block is present, avoiding duplicate beginner guidance.
+
+**Architecture ownership:** `website_home_conversion_refinement.js` owns the hero copy/CTA hierarchy and removal of the superseded lower beginner section. `website_home_system_selector_refinement.js` owns the top homepage composition, beginner explanation, category comparison, and mirrored Day Trading preview. This continues the existing narrow HTML-refinement architecture and does not expand Issue #107 into the broader preload-consolidation work owned by Issue #89.
+
+**Execution/trading impact:** None. This decision changes homepage information hierarchy, copy, and presentation only. It does not change public data sources, calculations, authentication, viewer-code policy, VECO trading logic, strategy rules, Pine, bridge behavior, TWS/IBKR execution, Swing Trading Lab behavior, Option Journal writes, or Google Sheet schemas.
+
+**Rollback:** Revert the Issue #107 PR 2 homepage/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, Option Journal, or customer-data rollback is required.
 
 ## Public Swing Leaders display feed (2026-08-27)
 
