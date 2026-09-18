@@ -11,13 +11,13 @@ const {
 } = require("../website_swing_ui_refinement");
 
 const start = pkg.scripts.start;
-assert(start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_conversion_access_services_refinement.js"));
+assert(start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_description_card_standard.js -r ./website_conversion_access_services_refinement.js"));
 assert(start.includes("-r ./website_swing_ui_refinement.js -r ./website_conversion_pricing_refinement.js"));
 
 const fixture = `<!doctype html><html><head></head><body>
 <main data-vx-conversion-system-page="swing">
   <div class="hero-layout">
-    <section class="hero"><h1>Follow a portfolio reviewed every day.</h1><div class="stamp"><span class="pill">Snapshot 2026-09-18 · 10:15 ET</span></div></section>
+    <section class="hero"><h1>Follow a portfolio reviewed every day.</h1><p class="hero-copy">A public research/model portfolio built around Vixale's proprietary ranking system. Review open positions, potential candidates, completed trades and model equity history from the latest published update.</p><div class="stamp"><span class="pill">Snapshot 2026-09-18 · 10:15 ET</span></div></section>
     <section class="summary" aria-label="Swing Leaders summary">
       <div class="summary-card posture"><small>Market Posture</small><strong>Constructive but selective: S&amp;P 500 and Nasdaq opened higher as oil eased, while Treasury yields remained elevated; AI/optical infrastructure led early technology strength.</strong></div>
       <div class="summary-card"><small>Active Portfolio</small><strong>4</strong></div>
@@ -44,12 +44,16 @@ const out = refineSwingHtml(fixture);
 assert(out.includes(PAGE_MARKER));
 assert(out.includes(`id="${STYLE_ID}"`));
 assert(out.includes("font-size:clamp(30px,3.5vw,42px)!important"));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .hero .hero-copy{box-sizing:border-box;padding:16px 20px;border:1px solid #d7e8df;border-radius:24px;background:linear-gradient(135deg,#eaf8f0 0%,#f6fbf8 52%,#fff 100%)'));
 assert(out.includes(".vx-swing-how-block h2{margin:0 0 18px;font-size:33px"));
 assert(out.includes("grid-template-columns:repeat(4,minmax(0,1fr))"));
-assert(out.includes("font-size:18px;line-height:1.5"));
+assert(out.includes(".vx-swing-how-list p{box-sizing:border-box;height:100%;margin:0;padding:18px 20px;border:1px solid #d7e8df;border-radius:24px;background:linear-gradient(145deg,#eaf8f0 0%,#f6fbf8 55%,#fff 100%)"));
+assert(out.includes("color:#5f6d67;font-size:18px;line-height:1.5"));
 assert(out.includes(".vx-swing-market-update h2{margin-bottom:10px;font-size:16.5px!important"));
 assert(out.includes(".vx-swing-posture-copy{margin:0;color:#5f6d67;font-size:18px;line-height:1.5"));
 assert(out.includes(".vx-swing-posture-copy{font-size:17px}"));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .hero .hero-copy{padding:15px 17px;border-radius:21px}'));
+assert(out.includes(".vx-swing-how-list p{padding:16px 17px;border-radius:21px;font-size:17px}"));
 
 assert(!out.includes("Swing evidence context"));
 assert(!out.includes('data-vx-evidence-credibility="swing"'));

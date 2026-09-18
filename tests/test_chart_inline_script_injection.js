@@ -28,6 +28,10 @@ assert.strictEqual((homeHtml.match(/<\/html>/g) || []).length, 1);
 const resultsHtml = results.injectAssets(base);
 const resultsJs = extractInlineScript(resultsHtml, results.SCRIPT_ID);
 assert(resultsJs.includes("return n>0?'+$'+a:n<0?'-$'+a:'$0.00'"));
+assert(resultsJs.includes("renderPnlChart('vx-results-day-chart'"));
+assert(resultsJs.includes("renderPnlChart('vx-results-swing-chart'"));
+assert(resultsJs.includes("'cumulative_pnl'"));
+assert(resultsJs.includes("'total_model_pnl'"));
 assertParses(resultsJs, "conversion results script");
 assert.strictEqual((resultsHtml.match(/<\/html>/g) || []).length, 1);
 

@@ -57,6 +57,6 @@ assert(pdf.length > 5000);
 assert.strictEqual(pdf.subarray(0, 4).toString("ascii"), "%PDF");
 
 const packageJson = JSON.parse(fs.readFileSync(require.resolve("../package.json"), "utf8"));
-assert(packageJson.scripts.start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_conversion_access_services_refinement.js"));
+assert(packageJson.scripts.start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_description_card_standard.js -r ./website_conversion_access_services_refinement.js"));
 
 console.log("Issue #123 PR7 final QA regression PASS");
