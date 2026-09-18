@@ -6,6 +6,7 @@ const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
 const SERVICES_PATH = "/services";
 const RESULTS_PATH = "/results";
+const ACCESS_PATH = "/access";
 const PRICING_PATH = "/pricing";
 const RISK_PATH = "/risk-management";
 const RISK_NAV_MARKER = "vx-risk-management-nav-link";
@@ -14,6 +15,7 @@ const SERVICES_INTRO_MARKER = "vx-services-intro";
 const SERVICES_OFFER_MARKER = "vx-services-offer";
 const SERVICES_OFFER_STYLE_ID = "vx-services-offer-style";
 const RESULTS_STYLE_ID = "vx-results-hub-style";
+const ACCESS_STYLE_ID = "vx-access-journey-style";
 
 const SERVICE_SECTION_NEEDLES = [
   "What can we help you with?",
@@ -142,6 +144,33 @@ function normalizeAccessLinksToHome(html) {
   return String(html).replace(/href=(["'])(?:\/services)?#password-access\1/gi, 'href="/#password-access"');
 }
 
+function normalizeAccessLinksToAccessPage(html) {
+  return String(html)
+    .replace(/href=(["'])(?:\/services)?#password-access\1/gi, 'href="/access"')
+    .replace(/href=(["'])\/#password-access\1/gi, 'href="/access"');
+}
+
+function findSectionById(html, id) {
+  const pattern = new RegExp(`<section\\b[^>]*\\bid=(["'])${escapeRegex(id)}\\1[^>]*>`, "i");
+  const match = pattern.exec(String(html || ""));
+  return match ? findTagRangeFromOpen(html, "section", match.index) : null;
+}
+
+function accessContext(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "day-trading") return { key, label: "Day Trading", source: "Access page · Day Trading" };
+  if (key === "swing-trading") return { key, label: "Swing Trading", source: "Access page · Swing Trading" };
+  if (key === "options") return { key, label: "Options", source: "Access page · Options" };
+  return { key: "", label: "", source: "Access page" };
+}
+
+function replaceAccessFormSource(sectionHtml, source) {
+  return String(sectionHtml || "").replace(
+    /(<input\b[^>]*\bname=["']source["'][^>]*\bvalue=["'])[^"']*(["'][^>]*>)/i,
+    `$1${String(source || "Access page").replace(/&/g, "&amp;").replace(/"/g, "&quot;")}$2`
+  );
+}
+
 function refineHomeAccessCopy(html) {
   let result = html;
   const replacements = [
@@ -179,7 +208,7 @@ function injectServicesOfferStyles(html) {
 
 function renderServicesOffer() {
   return `<section class="${SERVICES_OFFER_MARKER}" aria-labelledby="vx-services-offer-title"><div class="vx-services-offer-head"><h2 id="vx-services-offer-title">Choose the kind of help you need.</h2><p>Start with free read-only access, or use a consultation to define research access, automation setup, or custom development. Custom work is scoped and quoted before it starts.</p></div><div class="vx-services-offer-grid">
-    <article class="vx-services-offer-card"><span>Observe</span><h3>Viewer Access</h3><p>Review the public performance evidence and, if approved, use read-only viewer access for the Day Trading and Options evidence pages.</p><a href="/#password-access">Request Free Access →</a></article>
+    <article class="vx-services-offer-card"><span>Observe</span><h3>Viewer Access</h3><p>Review the public performance evidence and, if approved, use read-only viewer access for the Day Trading and Options evidence pages.</p><a href="/access">Request Free Access →</a></article>
     <article class="vx-services-offer-card"><span>Research</span><h3>Signals &amp; Research Access</h3><p>Discuss the signals and research access currently available for your use case. The consultation clarifies supported scope, delivery/access method, and onboarding next steps.</p><a href="#appointment">Discuss research access →</a></article>
     <article class="vx-services-offer-card"><span>Setup</span><h3>Automation Setup</h3><p>Get help planning supported TradingView alert, webhook, and automation setup. A setup consultation produces an implementation checklist and identifies any custom work that needs a quote before it starts.</p><a href="#appointment">Book setup consultation →</a></article>
     <article class="vx-services-offer-card"><span>Build</span><h3>Custom Development</h3><p>Scope a bot, dashboard, or integration around documented requirements. The scoping conversation produces assumptions, deliverables, dependencies, and a quote before development begins.</p><a href="#bot-request">Request a quote →</a></article>
@@ -200,11 +229,73 @@ function renderServicesFromLanding(html) {
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
   if (sections.length) result = replaceMainContents(result, [renderServicesIntro(), renderServicesOffer(), ...sections].join("\n\n"));
-  result = normalizeAccessLinksToHome(result);
+  result = normalizeAccessLinksToAccessPage(result);
   result = injectServicesOfferStyles(result);
   result = replaceAllLiteral(result, "Request Dashboard Access", "Request Free Access");
   result = updateTitle(result, "Vixale | Services");
   result = updateCanonical(result, SERVICES_PATH);
+  return result;
+}
+
+const accessStyles = `
+<style id="${ACCESS_STYLE_ID}">
+  .vx-access-page{min-height:calc(100vh - 170px);padding:60px 0 86px;background:linear-gradient(180deg,#f5fbf7 0%,#fff 62%);color:#17211d}
+  .vx-access-page>.wrap{max-width:1120px;margin:0 auto;padding:0 24px;box-sizing:border-box}
+  .vx-access-head{max-width:850px}.vx-access-kicker{color:#287153;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+  .vx-access-head h1{margin:12px 0 0;font-size:clamp(42px,5vw,60px);font-weight:520;line-height:1.04;letter-spacing:-.04em}
+  .vx-access-head p{max-width:780px;margin:16px 0 0;color:#56645e;font-size:16px;line-height:1.62}
+  .vx-access-context{display:inline-flex;margin-top:18px;padding:8px 11px;border:1px solid #cfe4d8;border-radius:999px;background:#f3faf6;color:#176442;font-size:12px;font-weight:700}
+  .vx-access-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:30px}
+  .vx-access-step{padding:17px;border-top:2px solid #d7e6de;background:#fff}.vx-access-step b{display:flex;width:28px;height:28px;align-items:center;justify-content:center;border-radius:50%;background:#eef8f3;color:#176442;font-size:11px}.vx-access-step strong{display:block;margin-top:10px;font-size:13.5px}.vx-access-step span{display:block;margin-top:5px;color:#5f6d67;font-size:12.5px;line-height:1.48}
+  .vx-access-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:28px}.vx-access-fact{padding:20px;border:1px solid #dce7e1;border-radius:19px;background:#fff}.vx-access-fact strong{display:block;font-size:14px}.vx-access-fact p{margin:7px 0 0;color:#5f6d67;font-size:13px;line-height:1.55}.vx-access-fact a{color:#176442;font-weight:700;text-decoration:none}
+  .vx-access-page #password-access{margin-top:34px!important}.vx-access-page #password-access .strategy-form-box{margin-top:0}
+  .vx-access-foot{margin-top:22px;color:#65716c;font-size:12.5px;line-height:1.55}.vx-access-foot a{color:#176442;font-weight:700}
+  @media(max-width:900px){.vx-access-steps{grid-template-columns:1fr 1fr}.vx-access-facts{grid-template-columns:1fr}}
+  @media(max-width:640px){.vx-access-page{padding:44px 0 66px}.vx-access-page>.wrap{padding:0 16px}.vx-access-head h1{font-size:clamp(34px,10vw,42px)}.vx-access-steps{grid-template-columns:1fr}.vx-access-step{padding:15px 0}.vx-access-fact{padding:18px}}
+</style>`;
+
+function injectAccessStyles(html) {
+  if (html.includes(`id="${ACCESS_STYLE_ID}"`)) return html;
+  return html.includes("</head>") ? html.replace("</head>", `${accessStyles}\n</head>`) : `${accessStyles}${html}`;
+}
+
+function renderAccessJourney(formSection, context = accessContext("")) {
+  const contextNote = context.label
+    ? `<div class="vx-access-context">Access request started from ${context.label}</div>`
+    : "";
+  return `<section class="vx-access-page"><div class="wrap">
+    <div class="vx-access-head"><div class="vx-access-kicker">Free Access</div><h1>Request read-only Vixale viewer access.</h1><p>Review public evidence first, then use this form if protected viewer detail is useful. Access is free, requires email verification and manual approval, and never gives Vixale control of your brokerage account.</p>${contextNote}</div>
+    <div class="vx-access-steps" aria-label="Access process">
+      <div class="vx-access-step"><b>1</b><strong>Request access</strong><span>Submit the form below.</span></div>
+      <div class="vx-access-step"><b>2</b><strong>Verify email</strong><span>Use the one-time confirmation link. The verification link expires after 60 minutes.</span></div>
+      <div class="vx-access-step"><b>3</b><strong>Manual review</strong><span>Verified requests are reviewed by the owner. Approval is not automatic.</span></div>
+      <div class="vx-access-step"><b>4</b><strong>Receive viewer code</strong><span>If approved, your individual viewer code is sent by email.</span></div>
+      <div class="vx-access-step"><b>5</b><strong>Log in</strong><span>Enter that code on the Vixale Log In page.</span></div>
+    </div>
+    <div class="vx-access-facts">
+      <article class="vx-access-fact"><strong>What access opens</strong><p>Approved viewer access opens the read-only Day Trading dashboard and the protected Options viewer. The Swing research/model portfolio is already public and does not require login.</p></article>
+      <article class="vx-access-fact"><strong>Email not visible?</strong><p>Check Inbox and Spam/Junk for the verification email before submitting again. The verification link itself is valid for 60 minutes.</p></article>
+      <article class="vx-access-fact"><strong>Duration / expiration</strong><p>We do not advertise an unsupported fixed access duration. Viewer codes can expire; the issued code controls its own expiration. If a code is expired, it will no longer log in.</p></article>
+      <article class="vx-access-fact"><strong>Need help?</strong><p>Use <a href="/trading-guide">Help</a> if you are unsure what the viewer contains or submit a new access request if an earlier viewer code has expired.</p></article>
+    </div>
+    ${formSection}
+    <div class="vx-access-foot">Existing approved viewer? <a href="/login">Log In with your viewer code</a>. Legacy links to <code>/#password-access</code> remain supported.</div>
+  </div></section>`;
+}
+
+function renderAccessFromLanding(html, rawContext = "") {
+  if (typeof html !== "string") return html;
+  let result = transformPrimaryNav(html);
+  result = refineHomeAccessCopy(result);
+  const range = findSectionById(result, "password-access");
+  if (!range) return html;
+  const context = accessContext(rawContext);
+  const formSection = replaceAccessFormSource(result.slice(range.start, range.end), context.source);
+  result = normalizeHeaderHashLinksToHome(result);
+  result = replaceMainContents(result, renderAccessJourney(formSection, context));
+  result = injectAccessStyles(result);
+  result = updateTitle(result, "Vixale | Request Free Access");
+  result = updateCanonical(result, ACCESS_PATH);
   return result;
 }
 
@@ -327,6 +418,7 @@ function installPublicIaRefinement(app) {
     else if (originalPath === SYSTEMS_PATH) mode = "systems";
     else if (originalPath === SERVICES_PATH) mode = "services";
     else if (originalPath === RESULTS_PATH) mode = "results";
+    else if (originalPath === ACCESS_PATH) mode = "access";
     else if (originalPath === PRICING_PATH) mode = "pricing";
     if (!mode) return next();
 
@@ -338,12 +430,13 @@ function installPublicIaRefinement(app) {
         else if (mode === "systems") body = injectRiskManagementNav(body);
         else if (mode === "services") body = renderServicesFromLanding(body);
         else if (mode === "results") body = renderResultsFromLanding(body);
+        else if (mode === "access") body = renderAccessFromLanding(body, req.query && req.query.system);
         else if (mode === "pricing") body = renderPricingFromLanding(body);
       }
       return originalSend(body);
     };
 
-    if (mode === "services" || mode === "results" || mode === "pricing") {
+    if (mode === "services" || mode === "results" || mode === "access" || mode === "pricing") {
       const queryIndex = req.url.indexOf("?");
       const query = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
       req.url = `/${query}`;
@@ -387,6 +480,7 @@ module.exports = {
   SYSTEMS_PATH,
   SERVICES_PATH,
   RESULTS_PATH,
+  ACCESS_PATH,
   PRICING_PATH,
   RISK_PATH,
   SERVICE_SECTION_NEEDLES,
@@ -394,6 +488,14 @@ module.exports = {
   SERVICES_OFFER_MARKER,
   SERVICES_OFFER_STYLE_ID,
   RESULTS_STYLE_ID,
+  ACCESS_STYLE_ID,
+  accessContext,
+  findSectionById,
+  replaceAccessFormSource,
+  normalizeAccessLinksToAccessPage,
+  renderAccessJourney,
+  injectAccessStyles,
+  renderAccessFromLanding,
   renderResultsHub,
   injectResultsStyles,
   renderResultsFromLanding,
