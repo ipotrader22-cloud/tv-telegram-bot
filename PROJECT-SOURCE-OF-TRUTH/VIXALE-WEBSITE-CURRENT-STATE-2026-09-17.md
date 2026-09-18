@@ -9,131 +9,127 @@
 
 Latest directly verified website-changing state:
 
-- **Latest website-changing merge:** PR #126 — `Issue #123 PR 2: put working product preview in the homepage first screen`
-- **PR #126 merge SHA:** `f510f60f2fe8aab8ec22ff5115c7c187deb8d3d6`
+- **Latest website-changing merge:** PR #129 — `Issue #123 PR 3: recompose system pages around the working product`
+- **PR #129 merge SHA:** `9fdfff07160a3ec21b314d114c1d2c25b46b5295`
 - **Observed PR state:** MERGED
-- **Feature-branch verification before merge:** branch 0 behind fresh `main`; six intended homepage/offer/test/handbook/preload files only; no configured GitHub Actions/status checks; authenticated branch-source regression review completed; literal local checkout/tests unavailable because the sandbox could not resolve `github.com`
+- **Feature-branch verification before merge:** local Node syntax PASS for the new conversion system-page module; focused source regression PASS; branch 0 behind fresh `main`; exactly four intended files; no configured GitHub Actions/status checks
 - **Render service:** `tv-telegram-bot`
 - **Render branch:** `main`
 - **Render Auto-Deploy:** enabled / commit-triggered
-- **Render deploy:** `dep-dami2j3ncjis73dk94kg`
-- **Render deployed website-changing SHA:** `f510f60f2fe8aab8ec22ff5115c7c187deb8d3d6`
+- **Render deploy:** `dep-dami7hcs728c73c3ojmg`
+- **Render deployed website-changing SHA:** `9fdfff07160a3ec21b314d114c1d2c25b46b5295`
 - **Render deployment status:** LIVE
-- **Render startup verification:** build successful; exact PR #126 merge SHA checked out; `npm start` successfully parsed and launched `website_conversion_home_refinement.js` first, `website_conversion_navigation_refinement.js` second, then `website_public_qa_refinement.js`; server startup reached the normal runtime phase
-- **Fresh public-origin visual verification for PR #126:** **UNVERIFIED**
-  - GitHub + Render code/runtime state is directly verified;
-  - the available external crawler has previously returned stale cached HTML and is not accepted as origin truth until a direct origin or owner-visible check is available.
+- **Render verification:** exact merge SHA checked out; build successful; server reached the normal startup/live sequence
+- **Fresh public-origin visual verification:** **UNVERIFIED** until a direct origin/owner-visible check is available; prior external crawler behavior has been stale and is not treated as origin truth.
 
 ## Active product direction — Issue #123
 
-Issue #123 — `Engineering: implement approved Vixale conversion redesign` — is the active public-site implementation epic.
+Issue #123 — `Engineering: implement approved Vixale conversion redesign` — remains the active public-site implementation epic.
 
-The owner-approved 2026-09-18 implementation brief supersedes earlier Issue #107 / audit presentation guidance where they conflict. In particular, working product data returns to the homepage opening and the public offer/navigation are conversion-oriented.
+Approved customer-facing product/commercial contract:
 
-Approved customer-facing commercial/product contract:
-
-- exactly three customer-facing systems: **Day Trading**, **Swing Trading**, **Options**;
-- free trial: **30 days of Day Trading Telegram signals** only;
-- **Single System:** `$49/month`, choose Day Trading, Swing Trading, or Options;
-- **Three-System Bundle:** `$99/month`, includes exactly all three system subscriptions;
+- exactly three systems: **Day Trading**, **Swing Trading**, **Options**;
+- shared direct navigation: **Day Trading | Swing Trading | Options | Results | Pricing**;
+- free trial: **30 days of Day Trading Telegram signals only**;
+- **Single System:** `$49/month`;
+- **Three-System Bundle:** `$99/month`;
+- bundle includes exactly Day Trading, Swing Trading, and Options;
 - bundle savings: `$48/month` compared with three separate `$49/month` subscriptions;
-- bespoke setup, automation/integration, strategy review, bots, and custom development remain separate services;
-- Telegram delivery in this release is Day Trading only; Swing and Options remain website-update products;
-- no payment processor, card requirement, automatic billing, or day-31 conversion policy may be invented if not already supported by production behavior.
+- custom bots, setup, automation/integration, strategy review, and bespoke development remain separate services;
+- Swing/Options Telegram delivery is not part of this release;
+- no checkout, card requirement, renewal, automatic billing, or day-31 conversion behavior may be invented unless production support is separately verified.
 
-## PR #126 — Issue #123 PR 2 production contract
+## PR #129 — Issue #123 PR 3 production contract
 
-PR #126 replaces the prior explanation-first homepage opening with the approved working-product first screen.
+PR #129 recomposes the direct system pages around the product rather than a long explanation wall.
 
-Production contract:
+### Day Trading
 
-- exact homepage H1: **Trading signals. Three systems. Your choice.**;
-- exact supporting copy and CTA hierarchy from the approved brief;
-- primary CTA **Get 30 Days Free** uses the verified Day Trading Telegram trial request;
-- secondary CTA **View Trading Results** routes to `/results`;
-- supporting line states **30-day free trial of Day Trading Telegram signals.**;
-- desktop opening uses an approximately 40/60 copy/product-preview composition; mobile stacks copy and preview while keeping the product near the top;
-- Day / Swing / Options are interactive preview tabs with button semantics, selected state, keyboard ArrowLeft/ArrowRight/Home/End behavior, stable panel height, and reduced-motion handling;
-- **Day Trading — Live Overview** is selected by default;
-- Day preview reuses existing real sources rather than creating a new calculation/polling pipeline:
-  - Open Positions → `vx-home-live-0`
-  - Open P&L → `vx-home-live-open-pnl`
-  - Closed P&L Today → `vx-home-live-3`
-  - Total Realized P&L → `vx-home-equity-total`
-  - session/update state → `vx-home-day-badge` / `vx-home-day-updated`
-  - compact realized-results chart → clone of existing `vx-home-equity-svg`;
-- Swing preview lazily reads the existing public `/api/swing-leaders` endpoint once when first selected, shows already-published portfolio/model fields, and uses **Reviewed each trading morning / Latest published update** wording;
-- the Swing sales preview does not repeat the older `Quotes delayed` phrase and does not rewrite Trading Lab values;
-- Options has no invented public feed or sample values; its preview stays within existing public/protected access rules and routes to the public Options page / selected-system access journey;
-- the three homepage system cards use the owner-approved Day / Swing / Options product copy and direct destinations;
-- the previous long pre-data **How It Works** opening composition is removed from the first screen, while the existing lower Day data source remains present for safe mirroring;
-- `lib/website-commercial-offer.js` is now the shared public-presentation source for the approved 30-day trial, `$49`, `$99`, `$48` savings, system labels/routes, and verified Telegram request URL/text;
-- no payment/billing/subscription engine is created by those constants.
+- benefit-led product intro;
+- one-load working screen uses existing public endpoints only:
+  - `/public-performance.json`
+  - `/public-live-open-pnl.json`;
+- displays existing Open Positions, Open P&L, Closed P&L Today, Total Realized P&L, and realized-equity points;
+- adds no new interval poller and changes no Day Trading calculations;
+- public results and Closed Trades remain separate evidence destinations;
+- Day trial remains the existing 30-day Day Trading Telegram request;
+- `$49/month` is presentation/comparison only, not an invented checkout flow.
 
-## PR #124 — Issue #123 PR 1 production contract
+### Swing Trading
 
-PR #124 established the direct navigation and trial-routing foundation:
+- existing public Swing Leaders portfolio remains the working product screen and data owner;
+- old primer/access wall is removed from the sales path;
+- product framing is shortened to **Follow a portfolio reviewed every day.**;
+- public portfolio, potential candidates, closed trades, equity history/model P&L, and existing Trading Lab values remain intact;
+- customer-facing copy uses morning/latest-published-update wording while model/disclosure semantics remain unchanged;
+- Swing remains research/model portfolio evidence, not brokerage-account performance.
 
-- primary desktop navigation: **Day Trading | Swing Trading | Options | Results | Pricing**;
-- right side: **Log In | Get 30 Days Free**;
-- mobile keeps a visible three-system switcher;
-- `/trading-systems` remains a supported legacy/search route but is no longer a required intermediate step;
-- About / Services / Help are secondary/footer navigation;
-- active direct page/system links expose `aria-current="page"`;
-- **Get 30 Days Free** reuses `t.me/tradervip22` with `Hello, I'd like to start the 30-day free Day Trading Telegram signals trial.`;
-- the CTA does not imply Swing/Options Telegram delivery or invented checkout/billing behavior.
+### Options
 
-PR #124 merge SHA: `04991bfd7446fa18acc15e7a61581f372457576b`  
-Verified Render deploy: `dep-damhrsjtqb8s73fujvcg` — LIVE.
+- public page is benefit-led and shows the real workflow boundary rather than fabricated financial data;
+- new positions / position updates / completed trades are described as the existing protected Option Journal workflow;
+- journal rows, closed-only realized P&L, and available brokerage proof remain behind the existing viewer auth;
+- no sample P&L, fictitious trade, synthetic timestamp, or Swing/Options Telegram promise is added.
 
-## Prior verified website baseline
+### Implementation ownership
 
-Immediately before Issue #123, the latest website-changing baseline was PR #121 — `Issue #107 PR 7: accessibility, SEO, host, and end-to-end public QA` — merge SHA `703919449615b582e76bca4bff0ed3046136c998`, deployed LIVE as `dep-damgj28ae00c73bllmfg`.
+- `website_conversion_system_pages_refinement.js` is first in the preload order for the three direct system routes;
+- it changes only GET/HEAD public presentation;
+- prior homepage, navigation, SEO/accessibility, auth, data, and trading owners remain in place;
+- Issue #89 still owns broad preload/HTML-rewrite consolidation.
 
-Issue #107's data/auth foundations remain the base that Issue #123 is recomposing rather than replacing:
+## Prior Issue #123 production slices
 
-- `/results` remains system-aware;
-- `/access` remains the secured viewer-request journey;
-- Swing remains a public research/model portfolio, not brokerage-account performance;
-- Options protected records/proofs remain behind viewer auth;
-- Day Trading public/status and Closed Trades sources remain unchanged;
-- Services retain the existing bespoke service forms unless a later Issue #123 PR changes customer-facing presentation only.
+### PR #126 — Homepage working-product opening
+
+- merge SHA `f510f60f2fe8aab8ec22ff5115c7c187deb8d3d6`;
+- Render deploy `dep-dami2j3ncjis73dk94kg` — LIVE;
+- homepage H1: **Trading signals. Three systems. Your choice.**;
+- first screen contains Day/Swing/Options product tabs;
+- Day mirrors existing real homepage sources, Swing lazily uses `/api/swing-leaders`, Options preserves protected boundaries;
+- shared `lib/website-commercial-offer.js` owns 30-day / $49 / $99 / $48 public presentation constants.
+
+### PR #124 — Direct navigation/trial foundation
+
+- merge SHA `04991bfd7446fa18acc15e7a61581f372457576b`;
+- Render deploy `dep-damhrsjtqb8s73fujvcg` — LIVE;
+- direct system navigation plus Results/Pricing;
+- Log In + Get 30 Days Free;
+- mobile three-system switcher;
+- verified Telegram DM request destination reused for the Day Trading trial.
 
 ## Data ownership
 
-Issue #123 is a website redesign/conversion project. Existing source and calculation ownership remains unchanged unless a later PR explicitly documents presentation-only reuse:
+Issue #123 is a website presentation/conversion project. Existing source and calculation ownership remains unchanged:
 
-- **Day Trading:** existing public live/status data, open P&L where supported, realized Closed Trades ledger/equity series, and protected dashboard viewer;
-- **Swing Trading:** existing Trading Lab research/model portfolio, Active Portfolio, candidates, Closed Trades, and Equity History;
-- **Options:** existing owner-maintained Option Journal, closed-position/result calculation, and protected owner-provided brokerage proofs.
+- **Day Trading:** current public status/open P&L, Closed Trades ledger/realized equity, protected Day viewer;
+- **Swing Trading:** Trading Lab research/model portfolio, Active Portfolio, candidates, Closed Trades, Equity History;
+- **Options:** owner-maintained Option Journal, existing derived closed-trade P&L/equity, protected owner-provided brokerage proofs.
 
-Do not combine unlike sources into one unexplained P&L, convert model returns into brokerage returns, fabricate missing data, or change financial calculations as part of the redesign.
+Do not combine unlike sources into one P&L, fabricate missing values, convert model returns into brokerage-account performance, or change financial calculations as part of the redesign.
 
 ## Safety boundary
 
-PR #124 and PR #126 do **not** change:
+Issue #123 PRs #124, #126 and #129 do **not** change:
 
-- VECO strategy logic;
-- signal generation;
-- entry/exit conditions;
-- targets/stops/risk logic;
+- VECO trading logic or strategy rules;
+- signal generation/timing;
+- entries/exits/filters/stops/targets/risk;
 - Pine;
 - bridge / TWS / IBKR execution;
 - Telegram trade lifecycle publication;
 - Swing Trading Lab scoring / selection / writer behavior;
-- Option Journal owner write workflow or result calculations;
-- Google Sheet trading schemas;
+- Option Journal owner writes or P&L calculation;
+- Google Sheet trading schemas/calculations;
 - protected dashboard/viewer authentication or authorization;
 - `app.js`.
 
-Issue #89 remains the owner of broad preload/HTML-rewrite consolidation.
-
 ## Locale/domain verification
 
-The preferred canonical host remains `www.vixale.com`. Existing application-level GET/HEAD apex-to-www behavior from PR #121 remains in place. DNS/TLS edge routing and fresh user-visible public HTML remain subject to direct verification rather than crawler inference.
+Preferred canonical public host remains `www.vixale.com`. Existing application-level GET/HEAD apex-to-www behavior from PR #121 remains in place. DNS/TLS edge routing and fresh user-visible public HTML require direct verification rather than crawler inference.
 
 Render reports `ru.vixale.com` among service domains, but repository inspection has not identified a separate Russian public navigation implementation. Issue #123 has not introduced a separate RU fork.
 
 ## Historical reference
 
-Prior manifests and detailed Issue #107 per-PR contracts remain in Git history / `PROJECT-SOURCE-OF-TRUTH/`. For current website-changing production state, use this manifest plus fresh GitHub/Render/live-origin verification according to `MASTER-INDEX.md`.
+Detailed prior Issue #107 and Issue #123 PR contracts remain in Git history and handbook addenda. For current website-changing production state, use this manifest plus fresh GitHub/Render/live-origin verification according to `MASTER-INDEX.md`.
