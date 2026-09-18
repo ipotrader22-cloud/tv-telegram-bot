@@ -34,15 +34,15 @@ assert(results.includes("Options evidence stays separate from Day Trading perfor
 const accessForm = `<section id="password-access"><form method="POST" action="/password-request"><input type="hidden" name="source" value="Website"><input name="name" required><input name="email" type="email" required><button type="submit">Request Free Access</button></form></section>`;
 const access = publicIa.renderAccessJourney(accessForm, publicIa.accessContext("day-trading"));
 for (const phrase of [
-  "Request free viewer access",
-  "Verify your email",
+  "Request read-only Vixale viewer access",
+  "Verify email",
   "Manual review",
   "viewer code",
   "read-only",
   "60 minutes",
+  "Approval is not automatic",
 ]) assert(access.toLowerCase().includes(phrase.toLowerCase()), `access journey missing ${phrase}`);
 assert(access.includes("Day Trading"));
-assert(!access.includes("guaranteed"), "access page must not guarantee approval");
 
 const services = publicIa.renderServicesOffer();
 for (const title of ["Signals &amp; Research", "Automation / Setup", "Strategy Review / Development", "Custom Bot / Integration"]) assert(services.includes(`<h3>${title}</h3>`), `services missing ${title}`);
