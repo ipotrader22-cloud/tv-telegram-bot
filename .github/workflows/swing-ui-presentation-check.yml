@@ -23,9 +23,10 @@ jobs:
       - name: Existing Swing regressions
         run: |
           node tests/test_swing_leaders.js
-          node tests/test_swing_canonical_route_refinement.js
           node tests/test_swing_instructional_refinement.js
-      - name: Existing conversion guard
-        run: node tests/test_issue123_pr7_final_qa.js
+      - name: Existing conversion guards
+        run: |
+          node tests/test_issue123_pr3_system_pages.js
+          node tests/test_issue123_pr7_final_qa.js
       - name: Diff check
         run: git diff --check origin/main...HEAD
