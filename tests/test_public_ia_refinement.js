@@ -7,6 +7,10 @@ const {
   SERVICES_OFFER_MARKER,
   RESULTS_PATH,
   RESULTS_STYLE_ID,
+  ACCESS_PATH,
+  ACCESS_STYLE_ID,
+  renderAccessFromLanding,
+  normalizeAccessLinksToAccessPage,
   renderResultsFromLanding,
   refineHomeAccessCopy,
   normalizeAccessLinksToHome,
@@ -20,7 +24,7 @@ const sample = `<!doctype html><html><head><title>Vixale | Watch a Live Trading 
 <nav><div class="nav-links"><a href="#live">Live System</a><a href="/trading-systems">Trading Systems</a><a href="/risk-management">Risk Management</a><a href="#start">Start Here</a><a href="#why">Why It Makes Sense</a><a href="#creators">Creators</a></div></nav>
 <main>
 <section id="hero"><h1>Watch live</h1><a href="#password-access">Request 7-Day Access</a><p>Read-only dashboard · Manual approval · Individual access code</p></section>
-<section id="password-access"><div>Private dashboard access</div><h2>Request access to the live dashboard.</h2><p>Send a short access request. Every request is reviewed manually before an individual dashboard code is created.</p><p>Once approved, you will receive a reply by email with the login instructions.</p><div>Reviewed. Access is never granted automatically.</div><div>Direct. The approval response goes to your email.</div><div>Private. Every approved viewer receives an individual access code.</div><button>Request Dashboard Access</button><small>Your request is reviewed manually. Trading involves risk and results are not guaranteed.</small></section>
+<section id="password-access"><div>Private dashboard access</div><h2>Request access to the live dashboard.</h2><p>Send a short access request. Every request is reviewed manually before an individual dashboard code is created.</p><p>Once approved, you will receive a reply by email with the login instructions.</p><div>Reviewed. Access is never granted automatically.</div><div>Direct. The approval response goes to your email.</div><div>Private. Every approved viewer receives an individual access code.</div><form class="strategy-form" method="POST" action="/password-request"><input type="hidden" name="source" value="Home page" /><input type="hidden" name="lang" value="en" /><button>Request Dashboard Access</button></form><small>Your request is reviewed manually. Trading involves risk and results are not guaranteed.</small></section>
 <section id="help"><h2>What can we help you with?</h2><div>01 / Watch</div><a href="#password-access">Request Dashboard Access</a><a href="#appointment">Book Setup Call</a><a href="#bot-request">Start Bot Builder Chat</a><a href="#strategy-rules">Test My Strategy</a></section>
 <section id="appointment"><h2>Book a quick setup call.</h2><form class="strategy-form" method="POST" action="/appointment-request"></form></section>
 <section id="bot-request"><h2>Describe the trading bot you want.</h2><form class="strategy-form" method="POST" action="/bot-request"></form></section>
@@ -47,6 +51,7 @@ assert(!home.includes("Request 7-Day Access"));
 const directHomeCopy = refineHomeAccessCopy("Request 7-Day Access · Request Dashboard Access");
 assert.strictEqual(directHomeCopy, "Request Free Access · Request Free Access");
 assert.strictEqual(normalizeAccessLinksToHome('<a href="#password-access">x</a><a href="/services#password-access">y</a>'), '<a href="/#password-access">x</a><a href="/#password-access">y</a>');
+assert.strictEqual(normalizeAccessLinksToAccessPage('<a href="#password-access">x</a><a href="/services#password-access">y</a><a href="/#password-access">z</a>'), '<a href="/access">x</a><a href="/access">y</a><a href="/access">z</a>');
 
 const services = renderServicesFromLanding(sample);
 assert(services.includes("<title>Vixale | Services</title>"));
@@ -54,7 +59,7 @@ assert(services.includes(`class="wrap section ${SERVICES_INTRO_MARKER}"`));
 assert(services.includes('<h1 id="vx-services-title">Vixale Services</h1>'));
 assert(services.includes(`class="${SERVICES_OFFER_MARKER}"`));
 for (const heading of ["Viewer Access", "Signals &amp; Research Access", "Automation Setup", "Custom Development"]) assert(services.includes(heading));
-assert(services.includes('href="/#password-access">Request Free Access →</a>'));
+assert(services.includes('href="/access">Request Free Access →</a>'));
 assert(services.includes('href="#appointment">Discuss research access →</a>'));
 assert(services.includes('href="#appointment">Book setup consultation →</a>'));
 assert(services.includes('href="#bot-request">Request a quote →</a>'));
@@ -66,7 +71,7 @@ for (const needle of SERVICE_SECTION_NEEDLES) assert(services.includes(needle));
 assert(services.includes('id="appointment"'));
 assert(services.includes('id="bot-request"'));
 assert(services.includes('href="/#live"'));
-assert(services.includes('href="/#password-access">Request Free Access</a>'));
+assert(services.includes('href="/access">Request Free Access</a>'));
 assert(!services.includes('href="#setup-call"'));
 assert(!services.includes('href="#bot-builder"'));
 assert(!services.includes('href="#password-access"'));
@@ -79,6 +84,29 @@ const samePageFragments = [...services.matchAll(/href="#([^"]+)"/g)].map((match)
 for (const fragment of samePageFragments) {
   assert(services.includes(`id="${fragment}"`), `Services fragment #${fragment} must resolve to a rendered target`);
 }
+
+const access = renderAccessFromLanding(sample, "options");
+assert.strictEqual(ACCESS_PATH, "/access");
+assert(access.includes("<title>Vixale | Request Free Access</title>"));
+assert(access.includes(`id="${ACCESS_STYLE_ID}"`));
+assert(access.includes("Request read-only Vixale viewer access."));
+assert(access.includes("Access request started from Options"));
+for (const step of ["Request access","Verify email","Manual review","Receive viewer code","Log in"]) assert(access.includes(step), `missing access step ${step}`);
+assert(access.includes("verification link expires after 60 minutes"));
+assert(access.includes("Inbox and Spam/Junk"));
+assert(access.includes("read-only Day Trading dashboard"));
+assert(access.includes("protected Options viewer"));
+assert(access.includes("Swing research/model portfolio is already public"));
+assert(access.includes("Each approved viewer code has its own expiration date"));
+assert(access.includes('href="/login">Log In with your viewer code</a>'));
+assert(access.includes('action="/password-request"'));
+assert(access.includes('name="source" value="Access page · Options"'));
+assert(access.includes("/#password-access"), "legacy fragment compatibility must be documented and retained");
+assert(access.includes(`https://www.vixale.com${ACCESS_PATH}`));
+assert(!access.includes("7-Day"));
+assert(!access.includes("7 days"));
+assert(!access.includes("30 days"));
+assert(!access.includes("30-day"));
 
 const results = renderResultsFromLanding(sample);
 assert(results.includes("<title>Vixale | Results</title>"));
@@ -97,7 +125,7 @@ assert(!results.includes("simulated result"), "Results hub must not invent fallb
 const pricing = renderPricingFromLanding(sample);
 assert(pricing.includes("<title>Vixale | Watch System for Free</title>"));
 assert(pricing.includes("Watch Vixale before you decide."));
-assert(pricing.includes('href="/#password-access">Request Free Access</a>'));
+assert(pricing.includes('href="/access">Request Free Access</a>'));
 assert(pricing.includes('href="/trading-systems">Explore Trading Systems</a>'));
 assert(pricing.includes("verify your email, and wait for manual review"));
 assert(pricing.includes("Four simple steps."));

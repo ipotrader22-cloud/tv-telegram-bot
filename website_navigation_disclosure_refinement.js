@@ -18,6 +18,7 @@ const PUBLIC_NAV_PATHS = new Set([
   `${SYSTEMS_PATH}/swing-trading`,
   `${SYSTEMS_PATH}/options`,
   RESULTS_PATH,
+  "/access",
   "/services",
   "/about",
   "/pricing",
@@ -53,8 +54,15 @@ function findTagByClass(html, tagName, className) {
   return findTagRangeFromOpen(html, tagName, match.index);
 }
 
-function renderPublicNavLinks() {
-  return `<a href="${GUIDE_BLOCK_HREF}">How It Works</a><a href="/trading-systems">Trading Systems</a><a href="${RESULTS_PATH}">Results</a><a href="/services">Services</a><a href="/trading-guide">Help</a><a class="vx-public-nav-login" href="/dashboard">Log In</a><a class="vx-public-nav-cta" href="/#password-access">Request Free Access</a>`;
+function accessHrefForPath(path) {
+  if (path === "/trading-systems/day-trading") return "/access?system=day-trading";
+  if (path === "/trading-systems/swing-trading") return "/access?system=swing-trading";
+  if (path === "/trading-systems/options") return "/access?system=options";
+  return "/access";
+}
+
+function renderPublicNavLinks(path = HOME_PATH) {
+  return `<a href="${GUIDE_BLOCK_HREF}">How It Works</a><a href="/trading-systems">Trading Systems</a><a href="${RESULTS_PATH}">Results</a><a href="/services">Services</a><a href="/trading-guide">Help</a><a class="vx-public-nav-login" href="/dashboard">Log In</a><a class="vx-public-nav-cta" href="${accessHrefForPath(path)}">Request Free Access</a>`;
 }
 
 function replaceInnerHtml(html, range, inner) {
@@ -73,20 +81,20 @@ function findBrandAnchor(html) {
   return anchors.find(anchor => /href=["']\/["']/i.test(anchor) && /VIXALE/i.test(anchor)) || "";
 }
 
-function normalizePublicNavigation(html) {
+function normalizePublicNavigation(html, path = HOME_PATH) {
   if (typeof html !== "string") return html;
   const standard = findTagByClass(html, "div", "nav-links");
-  if (standard) return replaceInnerHtml(html, standard, renderPublicNavLinks());
+  if (standard) return replaceInnerHtml(html, standard, renderPublicNavLinks(path));
   const guide = findTagByClass(html, "div", "navlinks");
-  if (guide) return replaceInnerHtml(html, guide, renderPublicNavLinks());
+  if (guide) return replaceInnerHtml(html, guide, renderPublicNavLinks(path));
 
   const nav = findFirstTag(html, "nav");
   if (!nav) return html;
   const inner = html.slice(nav.openEnd, nav.closeStart);
   const brand = findBrandAnchor(inner);
   const replacement = brand
-    ? `${brand}<div class="nav-links">${renderPublicNavLinks()}</div>`
-    : renderPublicNavLinks();
+    ? `${brand}<div class="nav-links">${renderPublicNavLinks(path)}</div>`
+    : renderPublicNavLinks(path);
   return replaceInnerHtml(html, nav, replacement);
 }
 
@@ -101,7 +109,7 @@ function ensureSecondaryAboutLink(html) {
 }
 
 function insertHomeGuideNavLink(html) {
-  return normalizePublicNavigation(html);
+  return normalizePublicNavigation(html, HOME_PATH);
 }
 
 function removeGeneralPerformanceStrip(html) {
@@ -194,7 +202,7 @@ function refineNavigationAndDisclosure(html, path) {
   if (typeof html !== "string") return html;
   let result = addNfaToDisclaimers(html);
   if (PUBLIC_NAV_PATHS.has(path)) {
-    result = normalizePublicNavigation(result);
+    result = normalizePublicNavigation(result, path);
     result = ensureSecondaryAboutLink(result);
   }
   if (path === SYSTEMS_PATH) {
@@ -269,6 +277,7 @@ module.exports = {
   findTagByClass,
   findFirstTag,
   findBrandAnchor,
+  accessHrefForPath,
   renderPublicNavLinks,
   normalizePublicNavigation,
   ensureSecondaryAboutLink,

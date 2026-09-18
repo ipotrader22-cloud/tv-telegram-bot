@@ -110,7 +110,7 @@ function renderHomeHero() {
     <a class="vx-home-hero-kicker" href="/trading-systems" aria-label="Explore Vixale Trading Systems">Vixale trading systems</a>
     <h1>See how our trading systems perform before you commit.</h1>
     <p class="vx-home-hero-lead">Follow current activity, inspect recorded results, compare Day Trading, Swing Trading, and Options, then decide whether read-only viewer access or a separate Vixale service is useful for you.</p>
-    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary access" href="/#password-access">Request Free Access</a><a class="vx-home-hero-btn" href="/results">Explore Results</a></div>
+    <div class="vx-home-hero-actions"><a class="vx-home-hero-btn primary access" href="/access">Request Free Access</a><a class="vx-home-hero-btn" href="/results">Explore Results</a></div>
     <p class="vx-home-hero-proof">Read-only viewer access · Email verification · Manual review</p>
   </div></div></section>`;
 }

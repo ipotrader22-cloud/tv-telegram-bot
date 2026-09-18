@@ -24,7 +24,7 @@ assert(hub.includes("Strategy names come after you choose a category."));
 assert(hub.includes(`href="${DAY_PATH}"`)&&hub.includes(`href="${SWING_PATH}"`)&&hub.includes(`href="${OPTIONS_PATH}"`));
 assert(!hub.includes("Systems at a glance.")&&!hub.includes("Market Coverage")&&!hub.includes("old wall of text"));
 assert(hub.includes("<title>Vixale | Trading Systems</title>"));
-assert(hub.includes('href="/#password-access">Request Free Access</a>'));
+assert(hub.includes('href="/access">Request Free Access</a>'));
 assert(hub.includes(`href="${RESULTS_PATH}">Explore Results</a>`));
 for(const label of ["Holding horizon","How often to check","Public now","Viewer access"])assert(hub.includes(`<dt>${label}</dt>`),`missing comparison label ${label}`);
 assert(hub.includes("Usually intraday; some approved positions may remain open overnight"));
