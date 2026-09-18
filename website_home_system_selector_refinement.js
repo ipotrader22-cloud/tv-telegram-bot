@@ -63,7 +63,7 @@ function renderSystemSelector() {
     <nav class="vx-home-system-stack" aria-label="Compare Vixale trading systems">
       <a class="vx-home-system-card" href="${DAY_TRADING_PATH}">
         <span>Day Trading</span><strong>Intraday activity</strong>
-        <div class="vx-home-system-fact"><b>Holding horizon</b><p>Generally within the trading day.</p></div>
+        <div class="vx-home-system-fact"><b>Holding horizon</b><p>Usually intraday; some Day Trading positions can remain open overnight.</p></div>
         <div class="vx-home-system-fact"><b>How often to check</b><p>During the market session when you want current status.</p></div>
         <div class="vx-home-system-fact"><b>Public evidence</b><p>Day Trading status plus realized closed-trade results.</p></div>
         <div class="vx-home-system-fact"><b>Viewer access</b><p>Adds read-only dashboard detail after approval.</p></div>
