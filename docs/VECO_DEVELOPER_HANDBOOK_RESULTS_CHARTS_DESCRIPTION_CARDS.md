@@ -11,14 +11,14 @@ It does **not** change Trading Lab logic, strategy behavior, signal generation, 
 
 ## Results chart contract
 
-`/results` must keep Day Trading and Swing Trading evidence separate and use only their already-authoritative public data sources.
+`/results` must keep Day Trading and Swing Trading evidence separate and use only their already-authoritative public data sources. The dedicated Day Trading page must use the same approved Day chart presentation so visitors do not see a lower-information chart on `/trading-systems/day-trading`.
 
 ### Day Trading
 
 - source remains `/public-performance.json`;
 - the chart continues to use existing `equity_curve.points[].cumulative_pnl` values;
 - no alternate realized-P&L calculation is introduced;
-- the chart includes visible Y-axis money labels, horizontal reference lines, a visible zero baseline when it falls inside the plotted range, first/last date labels, and a `Realized P&L` legend.
+- both `/results` and `/trading-systems/day-trading` use the same presentation contract: visible Y-axis money labels, horizontal reference lines, a visible zero baseline when it falls inside the plotted range, first/last date labels, compact-history point markers, and a `Realized P&L` legend.
 
 ### Swing Trading
 
@@ -62,14 +62,15 @@ Future public explanatory cards should prefer the reusable `.vx-description-card
 
 The shared description-card module injects CSS only into successful HTML responses. It does not alter routes, text, data values, API responses, calculation code, or authentication behavior.
 
-The Results chart renderer is presentation-only JavaScript. It reads the already-returned Day and Swing series and draws SVG axes/labels/lines. It does not create, interpolate, backfill, or modify historical points.
+The Results chart renderer and the dedicated Day Trading chart renderer are presentation-only JavaScript. They read the already-returned series and draw SVG axes/labels/lines. They do not create, interpolate, backfill, or modify historical points. The dedicated Day page continues to read only `/public-performance.json` for realized history and `/public-live-open-pnl.json` for the separately displayed Open P&L metric.
 
 ## Verification
 
 Regression coverage should confirm:
 
 - both Day and Swing chart containers exist on `/results`;
-- Day rendering references `cumulative_pnl`;
+- Day rendering references `cumulative_pnl` on both `/results` and `/trading-systems/day-trading`;
+- the dedicated Day chart includes Y-axis labels, first/last dates, point markers for compact histories, and the `Realized P&L` legend;
 - Swing rendering references `total_model_pnl` and `snapshot_date`;
 - both charts include Y-axis labels and legends;
 - injected inline JavaScript remains syntactically valid after HTML composition;
