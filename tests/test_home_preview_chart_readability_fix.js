@@ -2,6 +2,7 @@
 
 const assert = require("assert");
 const fs = require("fs");
+const path = require("path");
 const fix = require("../website_home_preview_chart_readability_fix");
 
 assert.strictEqual(fix.computePreviewScale(1120, 245, 740, 180).toFixed(3), "1.514");
@@ -26,7 +27,14 @@ assert.doesNotThrow(() => {
 assert.strictEqual(fix.refineHomeHtml(refined, "/"), refined, "refinement must be idempotent");
 assert.strictEqual(fix.refineHomeHtml(base, "/results"), base, "non-home routes must remain unchanged");
 
-const packageJson = JSON.parse(fs.readFileSync(require.resolve("../package.json"), "utf8"));
-assert(packageJson.scripts.start.includes("-r ./website_conversion_home_refinement.js -r ./website_home_preview_chart_readability_fix.js"));
+const root = path.join(__dirname, "..");
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const websitePreloads = [...String(packageJson.scripts.start || "").matchAll(/-r \.\/(website_[^ ]+\.js)/g)].map(match => match[1]);
+assert.strictEqual(websitePreloads.length, 22, "readability fix must not add another website preload");
+assert(!packageJson.scripts.start.includes("website_home_preview_chart_readability_fix.js"), "fix should compose through the existing home equity preload");
+const emptyFixSource = fs.readFileSync(path.join(root, "website_home_equity_empty_fix.js"), "utf8");
+const dependencyNeedle = 'require("./website_home_preview_chart_readability_fix");';
+assert(emptyFixSource.includes(dependencyNeedle), "home equity preload must compose the readability fix");
+assert(emptyFixSource.indexOf(dependencyNeedle) < emptyFixSource.indexOf("const originalLoad = Module._load;"), "readability fix must install before the existing preload captures Module._load");
 
 console.log("Homepage preview chart readability fix: PASS");
