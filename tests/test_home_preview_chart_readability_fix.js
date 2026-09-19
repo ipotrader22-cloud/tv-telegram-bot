@@ -32,11 +32,35 @@ assert.strictEqual(fix.refineHomeHtml(base, "/results"), base, "non-home routes 
 const root = path.join(__dirname, "..");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const start = String(packageJson.scripts.start || "");
+const readabilityPreload = "-r ./website_home_preview_chart_readability_fix.js";
+const conversionPreload = "-r ./website_conversion_home_refinement.js";
+assert(start.includes(readabilityPreload), "readability fix must be a top-level preload");
+assert(start.includes(conversionPreload), "homepage conversion preload must remain registered");
+assert(start.indexOf(readabilityPreload) < start.indexOf(conversionPreload), "readability preload must come before homepage conversion so its response transform runs after conversion output");
 assert(start.includes("-r ./website_home_equity_empty_fix.js"), "existing home equity preload must remain registered");
-assert(!start.includes("website_home_preview_chart_readability_fix.js"), "fix should compose through the existing home equity preload");
 const emptyFixSource = fs.readFileSync(path.join(root, "website_home_equity_empty_fix.js"), "utf8");
-const dependencyNeedle = 'require("./website_home_preview_chart_readability_fix");';
-assert(emptyFixSource.includes(dependencyNeedle), "home equity preload must compose the readability fix");
-assert(emptyFixSource.indexOf(dependencyNeedle) < emptyFixSource.indexOf("const originalLoad = Module._load;"), "readability fix must install before the existing preload captures Module._load");
+assert(!emptyFixSource.includes('require("./website_home_preview_chart_readability_fix");'), "late home equity preload must not own readability registration");
 
-console.log("Homepage preview chart readability fix: PASS");
+require("../website_conversion_home_refinement");
+const express = require("express");
+const app = express();
+const sourceHomepage = '<!doctype html><html><head><title>Vixale</title></head><body><section class="vx-home-hero"><div class="vx-home-hero-copy"><h1>Old home</h1></div></section></body></html>';
+app.get("/", (_req, res) => res.type("html").send(sourceHomepage));
+
+const server = app.listen(0, "127.0.0.1", async () => {
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/`);
+    const html = await response.text();
+    assert.strictEqual(response.status, 200);
+    assert(html.includes('id="vx-conversion-day-chart"'), "conversion layer must create the homepage preview chart target");
+    assert(html.includes(`id="${fix.STYLE_ID}"`), "readability style must be injected into the post-conversion homepage HTML");
+    assert(html.includes(`id="${fix.SCRIPT_ID}"`), "readability runtime must be injected into the post-conversion homepage HTML");
+    console.log("Homepage preview chart readability fix: PASS");
+  } catch (error) {
+    console.error(error);
+    process.exitCode = 1;
+  } finally {
+    server.close();
+  }
+});
