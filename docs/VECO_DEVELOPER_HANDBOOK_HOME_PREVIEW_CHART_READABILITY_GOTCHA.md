@@ -26,7 +26,22 @@ The top homepage preview may continue to mirror the existing Day Trading chart D
 
 The compensation factor is the larger of the source-to-preview width ratio and source-to-preview height ratio, with a minimum of `1`. This preserves readable visual sizes when a wide lower SVG is displayed inside the narrower preview.
 
-To avoid expanding the already-large top-level website preload list, the readability module is composed through the existing `website_home_equity_empty_fix.js` preload. `package.json` remains unchanged.
+## Middleware / preload ordering gotcha
+
+The readability transform must be registered as a top-level Node preload **before** `website_conversion_home_refinement.js` in `package.json`.
+
+Reason: these website modules wrap `express()` and then wrap `res.send()`. With the readability module loaded before the homepage conversion module, request middleware is installed in that same order, so on the response path the conversion wrapper runs first and creates `#vx-conversion-day-chart`; the readability wrapper then receives that converted HTML and can inject its style/runtime script.
+
+Do **not** register readability only through a later preload such as `website_home_equity_empty_fix.js`. That ordering makes the readability `res.send()` wrapper execute before homepage conversion has created the preview target, so its route guard sees no `#vx-conversion-day-chart` and silently leaves the response unchanged. This was the root cause of the first production fix having no visible effect despite the normalization code itself being valid.
+
+Canonical preload relationship:
+
+```text
+... -r ./website_home_preview_chart_readability_fix.js
+    -r ./website_conversion_home_refinement.js ...
+```
+
+`website_home_equity_empty_fix.js` remains independent and must not own readability registration.
 
 ## Data and execution boundary
 
@@ -52,9 +67,10 @@ Keep focused coverage for:
 - homepage-only and idempotent HTML injection;
 - syntactically valid emitted runtime JavaScript;
 - MutationObserver-based handling of later chart replacement;
-- composition through the existing `website_home_equity_empty_fix.js` preload with no direct `package.json` preload entry;
+- direct top-level preload registration before `website_conversion_home_refinement.js`;
+- an Express integration test proving that a source homepage without `#vx-conversion-day-chart` is first converted and then receives the readability assets;
 - no new polling or duplicate performance-data fetch in the readability layer.
 
 ## Rollback
 
-Revert the homepage preview readability module and remove its composition require from `website_home_equity_empty_fix.js`. No data, trading, broker, Sheet, Telegram, or authentication rollback is required.
+Revert the homepage preview readability preload-order change and the related compatibility layer. No data, trading, broker, Sheet, Telegram, or authentication rollback is required.
