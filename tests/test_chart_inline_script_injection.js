@@ -46,6 +46,10 @@ const dayJs = extractInlineScript(dayHtml, systemPages.DAY_SCRIPT_ID);
 assert(dayJs.includes("return n>0?'+$'+a:n<0?'-$'+a:'$0.00'"));
 assert(dayJs.includes("fetch('/public-performance.json'"));
 assert(dayJs.includes("fetch('/public-live-open-pnl.json'"));
+assert(dayJs.includes("axisMoney"));
+assert(dayJs.includes("const ticks=5"));
+assert(dayJs.includes("x&&x.cumulative_pnl"));
+assert(dayJs.includes("x&&x.date"));
 assertParses(dayJs, "Day Trading system-page script");
 assert.strictEqual((dayHtml.match(/<\/html>/g) || []).length, 1);
 
