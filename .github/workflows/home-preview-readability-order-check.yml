@@ -1,0 +1,36 @@
+name: Homepage Preview Readability Order Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax
+        run: |
+          node --check website_home_preview_chart_readability_fix.js
+          node --check website_home_equity_empty_fix.js
+          node --check tests/test_home_preview_chart_readability_fix.js
+      - name: Focused middleware-order regression
+        run: |
+          node tests/test_home_preview_chart_readability_fix.js
+          node tests/test_home_equity_empty_fix.js
+          node tests/test_home_performance_refinement.js
+          node tests/test_home_runtime_script_injection.js
+      - name: Existing homepage and chart regressions
+        run: |
+          node tests/test_issue123_pr2_homepage_preview.js
+          node tests/test_issue123_pr7_final_qa.js
+          node tests/test_chart_inline_script_injection.js
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
