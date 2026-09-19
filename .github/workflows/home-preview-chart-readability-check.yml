@@ -31,7 +31,8 @@ jobs:
         run: |
           node tests/test_issue123_pr2_homepage_preview.js
           node tests/test_issue123_pr7_final_qa.js
-          node tests/test_issue89_about_preload_consolidation.js
           node tests/test_chart_inline_script_injection.js
+      - name: Package preload unchanged
+        run: git diff --exit-code origin/main...HEAD -- package.json
       - name: Diff check
         run: git diff --check origin/main...HEAD
