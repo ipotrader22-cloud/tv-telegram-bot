@@ -26,6 +26,8 @@ The top homepage preview may continue to mirror the existing Day Trading chart D
 
 The compensation factor is the larger of the source-to-preview width ratio and source-to-preview height ratio, with a minimum of `1`. This preserves readable visual sizes when a wide lower SVG is displayed inside the narrower preview.
 
+To avoid expanding the already-large top-level website preload list, the readability module is composed through the existing `website_home_equity_empty_fix.js` preload. `package.json` remains unchanged.
+
 ## Data and execution boundary
 
 This fix is presentation-only. It does not change:
@@ -50,9 +52,9 @@ Keep focused coverage for:
 - homepage-only and idempotent HTML injection;
 - syntactically valid emitted runtime JavaScript;
 - MutationObserver-based handling of later chart replacement;
-- preload registration immediately after `website_conversion_home_refinement.js`;
+- composition through the existing `website_home_equity_empty_fix.js` preload with no direct `package.json` preload entry;
 - no new polling or duplicate performance-data fetch in the readability layer.
 
 ## Rollback
 
-Revert the homepage preview readability module and its preload entry. No data, trading, broker, Sheet, Telegram, or authentication rollback is required.
+Revert the homepage preview readability module and remove its composition require from `website_home_equity_empty_fix.js`. No data, trading, broker, Sheet, Telegram, or authentication rollback is required.
