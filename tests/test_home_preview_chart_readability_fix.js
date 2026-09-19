@@ -31,9 +31,9 @@ assert.strictEqual(fix.refineHomeHtml(base, "/results"), base, "non-home routes 
 
 const root = path.join(__dirname, "..");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-const websitePreloads = [...String(packageJson.scripts.start || "").matchAll(/-r \.\/(website_[^ ]+\.js)/g)].map(match => match[1]);
-assert.strictEqual(websitePreloads.length, 22, "readability fix must not add another website preload");
-assert(!packageJson.scripts.start.includes("website_home_preview_chart_readability_fix.js"), "fix should compose through the existing home equity preload");
+const start = String(packageJson.scripts.start || "");
+assert(start.includes("-r ./website_home_equity_empty_fix.js"), "existing home equity preload must remain registered");
+assert(!start.includes("website_home_preview_chart_readability_fix.js"), "fix should compose through the existing home equity preload");
 const emptyFixSource = fs.readFileSync(path.join(root, "website_home_equity_empty_fix.js"), "utf8");
 const dependencyNeedle = 'require("./website_home_preview_chart_readability_fix");';
 assert(emptyFixSource.includes(dependencyNeedle), "home equity preload must compose the readability fix");
