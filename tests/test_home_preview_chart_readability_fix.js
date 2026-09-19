@@ -15,10 +15,12 @@ const refined = fix.refineHomeHtml(base, "/");
 assert(refined.includes(`id="${fix.STYLE_ID}"`));
 assert(refined.includes(`id="${fix.SCRIPT_ID}"`));
 assert(refined.includes("getBoundingClientRect"));
-assert(refined.includes("data-vx-preview-original-font-size"));
+assert(refined.includes("data-vx-preview-original-"));
 assert(refined.includes("querySelectorAll('circle')"));
 assert(refined.includes("circles.length>24"));
 assert(refined.includes("new MutationObserver"));
+assert(!refined.includes("fetch('/public-performance.json'"), "readability layer must not add another performance fetch");
+assert(!refined.includes("setInterval("), "readability layer must not add polling");
 assert.doesNotThrow(() => {
   const match = refined.match(new RegExp(`<script id=["']${fix.SCRIPT_ID}["']>([\\s\\S]*?)<\\/script>`));
   assert(match, "runtime script must be injected");
