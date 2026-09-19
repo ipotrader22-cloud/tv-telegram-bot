@@ -1,7 +1,6 @@
 "use strict";
 
 const Module = require("module");
-require("./website_home_preview_chart_readability_fix");
 
 const HOME_PATH = "/";
 const STYLE_ID = "vx-home-equity-empty-fix-style";
