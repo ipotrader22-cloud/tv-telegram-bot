@@ -52,6 +52,8 @@ TradingView -> Render/app.js -> local IB bridge -> TWS confirmation
 
 For a normal requested change, Codex should complete the following workflow in one task unless the user explicitly asks for a read-only audit or a different stopping point:
 
+For small isolated changes, limit the task to the affected file(s), focused checks, and the requested stopping point. Do not repeat full architecture review, bridge/Render/Pine validation, deployment work, or handbook updates unless the change actually requires them.
+
 1. Confirm the current branch and Git status.
 2. Fetch and update from `origin/main`.
 3. Start from a clean, current `main`.
