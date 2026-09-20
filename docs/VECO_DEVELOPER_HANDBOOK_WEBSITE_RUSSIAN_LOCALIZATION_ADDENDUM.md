@@ -71,6 +71,30 @@ Forbidden host rewrites:
 
 A broad global replacement of `https://www.vixale.com` with `https://ru.vixale.com` is not allowed. The two hosts may have different routing/cache behavior for assets; rewriting those URLs can make the RU page look different even when its DOM and CSS classes are otherwise identical.
 
+## Canonical homepage renderer rule
+
+Production QA after the first RU rollout exposed a second, independent parity failure: `app.js` still contained a legacy root-route selector that returned `renderLandingHtmlRu()` whenever `isRussianRequest(req)` was true. That meant `ru.vixale.com` entered the localization layer with a completely different, older homepage DOM before translation, so translation correctness alone could never make the RU homepage match the current English homepage.
+
+The required homepage contract is now:
+
+```text
+www.vixale.com /
+-> canonical renderLandingHtml()
+-> existing homepage refinement stack
+-> English response
+
+ru.vixale.com /
+-> canonical renderLandingHtml()
+-> same homepage refinement stack
+-> final host-aware RU localization pass
+```
+
+Until the legacy `renderLandingHtmlRu()` branch is removed from `app.js` in a dedicated cleanup, `website_russian_localization.js` owns a narrow compatibility guard around registration of `GET /`. The RU localization middleware first captures the real RU host and installs its final response transform. Only while the root route handler chooses its source renderer, the guard presents the English host identity and suppresses a `lang=ru` query value; the original host/query values are restored immediately afterward. This forces the existing root handler to select `renderLandingHtml()` while leaving all non-home routes unchanged.
+
+Do not add a second RU homepage renderer, RU-only CSS composition, or RU-only homepage component tree. The public RU homepage must begin from the same canonical English renderer and receive only locale/presentation changes afterward.
+
+A regression test must prove that a simulated legacy `app.js` root selector receives the canonical English homepage for a RU request, that the final response is then localized, that the old `Live Trade Dashboard` homepage marker is absent, and that request host/query state is restored after renderer selection.
+
 ## Data-source rule
 
 Localization is display-only. The Russian host must continue to consume the same authoritative data endpoints and rendered values as the English host. It must never create translated fallback values, synthetic performance, altered calculations, translated API payloads, or a second data source.
@@ -97,7 +121,9 @@ For changes to the locale layer:
 8. Confirm `ru.vixale.com` samples set `lang="ru"`, Russian canonical/metadata, translated approved copy, and preserved scripts/styles/form values.
 9. Confirm stylesheet/image/script/other asset URLs remain unchanged while explicit navigation anchors and SEO URLs are localized.
 10. Confirm classes, IDs, `data-*` attributes, style blocks, script blocks, route paths, and live numeric values are unchanged.
-11. After an explicitly approved merge/deploy, visually compare representative desktop and mobile pages on both hosts and confirm layout parity.
+11. Confirm a RU `GET /` request reaches the same canonical homepage renderer as EN before localization and does not render the legacy RU-only homepage.
+12. Confirm temporary homepage renderer selection restores the original `Host`, `X-Forwarded-Host`, and `lang` query state after the root handler returns.
+13. After an explicitly approved merge/deploy, visually compare representative desktop and mobile pages on both hosts and confirm layout parity.
 
 ## Rollback
 
