@@ -20,6 +20,13 @@ const TRANSLATIONS = Object.freeze([
   ...require("./website_russian_translations_1"),
   ...require("./website_russian_translations_2"),
   ...require("./website_russian_translations_3"),
+  ...require("./website_russian_translations_4"),
+  ...require("./website_russian_translations_5"),
+  ...require("./website_russian_translations_6"),
+  ...require("./website_russian_translations_7"),
+  ...require("./website_russian_translations_8"),
+  ...require("./website_russian_translations_9"),
+  ...require("./website_russian_translations_10"),
 ]);
 
 const ATTRIBUTE_NAMES = new Set(["placeholder", "aria-label", "title", "alt", "content"]);
