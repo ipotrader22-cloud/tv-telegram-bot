@@ -11,6 +11,8 @@ const {
   rewriteCanonicalTag,
   rewriteOgUrlTag,
   localizeRussianHtml,
+  installRussianLocalization,
+  installRussianHomepageCanonicalRenderer,
 } = require("../website_russian_localization");
 
 assert.strictEqual(RU_HOST, "ru.vixale.com");
@@ -147,7 +149,6 @@ console.log("Russian localization regression checks: PASS");
 
 // Host scoping: the middleware must not alter English-host responses and must
 // localize Russian-host HTML responses without changing JSON/API behavior.
-const { installRussianLocalization } = require("../website_russian_localization");
 let middleware;
 installRussianLocalization({ use(fn) { middleware = fn; } });
 assert.strictEqual(typeof middleware, "function");
@@ -159,7 +160,7 @@ function runMiddleware(host, path, body, contentType = "text/html; charset=utf-8
     originalUrl: path,
     url: path,
     headers: { host },
-    get(name) { return String(name).toLowerCase() === "host" ? host : undefined; },
+    get(name) { return String(name).toLowerCase() === "host" ? this.headers.host : undefined; },
   };
   const res = {
     headers: { "Content-Type": contentType },
@@ -181,3 +182,59 @@ assert.strictEqual(runMiddleware("ru.vixale.com", "/api/status", '{"label":"Resu
 assert.strictEqual(runMiddleware("ru.vixale.com", "/admin/live", hostSample), hostSample);
 
 console.log("Russian localization host-scope checks: PASS");
+
+// Homepage renderer parity regression: app.js still contains a legacy
+// renderLandingHtmlRu() branch for GET /. The RU localization layer must capture
+// the RU host first, force only the root route's renderer selection through the
+// canonical English homepage, then translate that same HTML. This prevents the
+// old RU-only homepage from bypassing the current English homepage design.
+let homepageMiddleware;
+let registeredRootHandler;
+const fakeApp = {
+  use(fn) { homepageMiddleware = fn; },
+  get(path, ...handlers) {
+    if (handlers.length === 0) return undefined;
+    assert.strictEqual(path, "/");
+    registeredRootHandler = handlers[0];
+    return this;
+  },
+};
+installRussianLocalization(fakeApp);
+installRussianHomepageCanonicalRenderer(fakeApp);
+
+const currentHomepage = '<!doctype html><html lang="en"><body><h1>Trading signals. Three systems. Your choice.</h1></body></html>';
+const legacyRussianHomepage = '<!doctype html><html lang="ru"><body><h1>Live Trade Dashboard</h1></body></html>';
+fakeApp.get("/", (req, res) => {
+  const legacyRussianRequest = String(req.hostname || req.headers.host || "").toLowerCase().startsWith("ru.") ||
+    String(req.query?.lang || "").toLowerCase() === "ru";
+  return res.status(200).send(legacyRussianRequest ? legacyRussianHomepage : currentHomepage);
+});
+assert.strictEqual(typeof registeredRootHandler, "function");
+
+let homepageSent;
+const homepageReq = {
+  method: "GET",
+  originalUrl: "/",
+  url: "/",
+  headers: { host: "ru.vixale.com", "x-forwarded-host": "ru.vixale.com" },
+  query: { lang: "ru" },
+  get(name) { return String(name).toLowerCase() === "host" ? this.headers.host : undefined; },
+};
+Object.defineProperty(homepageReq, "hostname", {
+  configurable: true,
+  get() { return String(this.headers["x-forwarded-host"] || this.headers.host || "").split(":")[0]; },
+});
+const homepageRes = {
+  headers: { "Content-Type": "text/html; charset=utf-8" },
+  status(code) { this.statusCode = code; return this; },
+  getHeader(name) { return this.headers[name]; },
+  send(value) { homepageSent = value; return value; },
+};
+homepageMiddleware(homepageReq, homepageRes, () => registeredRootHandler(homepageReq, homepageRes, () => {}));
+assert.match(homepageSent, /Торговые сигналы\. Три системы\. Выбор за вами\./);
+assert.doesNotMatch(homepageSent, /Live Trade Dashboard/);
+assert.strictEqual(homepageReq.headers.host, "ru.vixale.com", "host must be restored after renderer selection");
+assert.strictEqual(homepageReq.headers["x-forwarded-host"], "ru.vixale.com", "forwarded host must be restored");
+assert.strictEqual(homepageReq.query.lang, "ru", "query language must be restored");
+
+console.log("Russian homepage canonical-renderer parity checks: PASS");
