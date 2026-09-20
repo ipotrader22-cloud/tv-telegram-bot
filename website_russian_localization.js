@@ -5,6 +5,7 @@ const Module = require("module");
 const RU_HOST = "ru.vixale.com";
 const EN_HOST = "www.vixale.com";
 const LOCALE = "ru";
+const HOME_PATH = "/";
 const PRIVATE_PREFIXES = Object.freeze([
   "/admin",
   "/tv",
@@ -39,6 +40,10 @@ function normalizeHost(value) {
     .trim()
     .toLowerCase()
     .replace(/:\d+$/, "");
+}
+
+function requestHost(req) {
+  return req?.get?.("host") || req?.headers?.host || req?.headers?.["x-forwarded-host"] || "";
 }
 
 function isRussianHost(value) {
@@ -188,7 +193,7 @@ function localizeRussianHtml(html, pathname = "/") {
 
 function installRussianLocalization(app) {
   app.use((req, res, next) => {
-    const host = req.get?.("host") || req.headers?.host || req.headers?.["x-forwarded-host"] || "";
+    const host = requestHost(req);
     const pathname = pathnameOf(req);
     if (!isRussianHost(host) || !isLocalizablePath(pathname)) return next();
 
@@ -202,6 +207,94 @@ function installRussianLocalization(app) {
     };
     return next();
   });
+}
+
+function restoreHeader(headers, name, hadValue, value) {
+  if (!headers) return;
+  if (hadValue) headers[name] = value;
+  else delete headers[name];
+}
+
+function withCanonicalEnglishHomepageIdentity(req, callback) {
+  const pathname = pathnameOf(req);
+  if (pathname !== HOME_PATH || !isRussianHost(requestHost(req))) return callback();
+
+  const headers = req?.headers;
+  if (!headers) return callback();
+
+  const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+  const hadHost = hasOwn(headers, "host");
+  const originalHost = headers.host;
+  const hadForwardedHost = hasOwn(headers, "x-forwarded-host");
+  const originalForwardedHost = headers["x-forwarded-host"];
+  const query = req?.query && typeof req.query === "object" ? req.query : null;
+  const hadLang = Boolean(query && hasOwn(query, "lang"));
+  const originalLang = query?.lang;
+
+  // app.js still contains a legacy renderLandingHtmlRu() selector for GET /.
+  // The localization middleware above has already captured the real RU host, so
+  // only while the root route handler chooses its renderer we present the EN
+  // identity. The handler therefore emits the same canonical homepage HTML as
+  // www.vixale.com, after which the already-installed RU response wrapper
+  // translates that final refined HTML. This does not affect non-home routes.
+  headers.host = EN_HOST;
+  headers["x-forwarded-host"] = EN_HOST;
+  if (query) delete query.lang;
+
+  const restore = () => {
+    restoreHeader(headers, "host", hadHost, originalHost);
+    restoreHeader(headers, "x-forwarded-host", hadForwardedHost, originalForwardedHost);
+    if (query) {
+      if (hadLang) query.lang = originalLang;
+      else delete query.lang;
+    }
+  };
+
+  let result;
+  try {
+    result = callback();
+  } catch (error) {
+    restore();
+    throw error;
+  }
+
+  if (result && typeof result.then === "function") {
+    return result.then(
+      value => {
+        restore();
+        return value;
+      },
+      error => {
+        restore();
+        throw error;
+      }
+    );
+  }
+
+  restore();
+  return result;
+}
+
+function wrapHomepageRouteHandler(handler) {
+  if (typeof handler !== "function") return handler;
+  return function canonicalRussianHomepageHandler(req, res, next) {
+    return withCanonicalEnglishHomepageIdentity(req, () => handler.call(this, req, res, next));
+  };
+}
+
+function installRussianHomepageCanonicalRenderer(app) {
+  if (!app || typeof app.get !== "function" || app.get.__vixaleRussianHomepageCanonicalWrapped) return app;
+  const originalGet = app.get.bind(app);
+
+  function getWithCanonicalRussianHomepage(path, ...handlers) {
+    // Preserve Express app.get(setting) and every non-home route unchanged.
+    if (path !== HOME_PATH || handlers.length === 0) return originalGet(path, ...handlers);
+    return originalGet(path, ...handlers.map(wrapHomepageRouteHandler));
+  }
+
+  Object.defineProperty(getWithCanonicalRussianHomepage, "__vixaleRussianHomepageCanonicalWrapped", { value: true });
+  app.get = getWithCanonicalRussianHomepage;
+  return app;
 }
 
 function copyExpressStatics(target, source) {
@@ -218,6 +311,7 @@ function wrapExpress(factory) {
   function wrapped(...args) {
     const app = factory(...args);
     installRussianLocalization(app);
+    installRussianHomepageCanonicalRenderer(app);
     return app;
   }
   copyExpressStatics(wrapped, factory);
@@ -235,10 +329,12 @@ module.exports = {
   RU_HOST,
   EN_HOST,
   LOCALE,
+  HOME_PATH,
   PRIVATE_PREFIXES,
   TRANSLATIONS,
   TRANSLATION_MAP,
   normalizeHost,
+  requestHost,
   isRussianHost,
   pathnameOf,
   isLocalizablePath,
@@ -252,5 +348,8 @@ module.exports = {
   localizeSeoHosts,
   localizeRussianHtml,
   installRussianLocalization,
+  withCanonicalEnglishHomepageIdentity,
+  wrapHomepageRouteHandler,
+  installRussianHomepageCanonicalRenderer,
   wrapExpress,
 };
