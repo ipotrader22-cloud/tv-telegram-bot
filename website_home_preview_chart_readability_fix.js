@@ -17,11 +17,10 @@ function computePreviewScale(viewBoxWidth, viewBoxHeight, targetWidth, targetHei
   return Math.max(sourceWidth / width, sourceHeight / height, 1);
 }
 
-function buildPreviewHistorySignature(totalText, pointCount, firstDate, lastDate) {
-  const total = String(totalText ?? "").trim();
-  const count = Number(pointCount);
-  const safeCount = Number.isFinite(count) && count >= 0 ? String(Math.floor(count)) : "";
-  return [total, safeCount, String(firstDate ?? "").trim(), String(lastDate ?? "").trim()].join("|");
+function buildPreviewHistorySignature(totalText, closedCountToday, closedPnlToday) {
+  return [totalText, closedCountToday, closedPnlToday]
+    .map(value => String(value ?? "").trim())
+    .join("|");
 }
 
 function shouldPreservePreview(previousSignature, nextSignature) {
@@ -37,12 +36,13 @@ ${computePreviewScale.toString()}
 ${buildPreviewHistorySignature.toString()}
 ${shouldPreservePreview.toString()}
 const targetId='${TARGET_ID}';
-const sourceId='vx-home-equity-svg';
 const totalId='vx-home-equity-total';
-const datePattern=/^[A-Z][a-z]{2}\\s+\\d{1,2}$/;
+const closedCountId='vx-home-live-2';
+const closedPnlId='vx-home-live-3';
 const originalAttr=(node,attr)=>{const key='data-vx-preview-original-'+attr;let raw=node.getAttribute(key);if(raw==null){raw=node.getAttribute(attr);if(raw!=null)node.setAttribute(key,raw)}return Number(raw)};
 const scaledAttr=(node,attr,factor)=>{const base=originalAttr(node,attr);if(Number.isFinite(base))node.setAttribute(attr,String(Math.max(base*factor,.1)))};
-const sourceSignature=()=>{const source=document.getElementById(sourceId);if(!source)return'';const total=document.getElementById(totalId)?.textContent||'';const dates=Array.from(source.querySelectorAll('text')).map(node=>String(node.textContent||'').trim()).filter(text=>datePattern.test(text));return buildPreviewHistorySignature(total,source.querySelectorAll('circle').length,dates[0]||'',dates[dates.length-1]||'')};
+const textOf=id=>document.getElementById(id)?.textContent||'';
+const sourceSignature=()=>buildPreviewHistorySignature(textOf(totalId),textOf(closedCountId),textOf(closedPnlId));
 const normalize=()=>{const target=document.getElementById(targetId);if(!target)return;const svg=target.querySelector('svg');if(!svg)return;const parts=String(svg.getAttribute('viewBox')||'').trim().split(/\\s+/).map(Number);if(parts.length!==4||!parts.every(Number.isFinite))return;const rect=target.getBoundingClientRect();if(!(rect.width>0&&rect.height>0))return;const factor=computePreviewScale(parts[2],parts[3],rect.width,rect.height);svg.querySelectorAll('text[font-size]').forEach(node=>scaledAttr(node,'font-size',factor));svg.querySelectorAll('[stroke-width]').forEach(node=>scaledAttr(node,'stroke-width',factor));svg.querySelectorAll('circle[r]').forEach(node=>scaledAttr(node,'r',factor));const circles=Array.from(svg.querySelectorAll('circle'));if(circles.length>24)circles.slice(0,-1).forEach(node=>node.remove());svg.setAttribute('data-vx-preview-readable','1')};
 const install=()=>{const target=document.getElementById(targetId);if(!target)return;let stableSignature='',stableMarkup='',restoring=false;const remember=()=>{stableSignature=sourceSignature();stableMarkup=target.innerHTML};normalize();remember();const observer=new MutationObserver(()=>{if(restoring){restoring=false;normalize();return}const nextSignature=sourceSignature();if(stableMarkup&&shouldPreservePreview(stableSignature,nextSignature)){restoring=true;target.innerHTML=stableMarkup;return}normalize();remember()});observer.observe(target,{childList:true,subtree:false});let timer=null;window.addEventListener('resize',()=>{clearTimeout(timer);timer=setTimeout(normalize,120)},{passive:true})};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
