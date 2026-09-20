@@ -1,88 +1,99 @@
-# VECO Developer Handbook Addendum — Homepage Preview Chart Clone Readability
+# VECO Developer Handbook Addendum — Homepage Day Preview Chart
 
 Date: 2026-09-20
 Scope: public website presentation only
 
-## Problem
+## Canonical rule
 
-The homepage Day Trading product preview mirrors the existing lower-home realized-P&L chart rather than creating a second P&L data source.
+The homepage top **Day Trading** tab and the lower **Day Trading performance — Equity Curve — Realized P&L** card use the same authoritative public performance feed:
 
-The lower chart is rendered server-side with a fixed SVG `viewBox`, then `website_home_performance_refinement.js` refreshes it about 2.5 seconds after load and redraws it responsively using the lower chart container's wider runtime dimensions.
+```text
+Closed Trades worksheet
+→ website_public_performance.js
+→ GET /public-performance.json
+→ equity_curve.points[].cumulative_pnl
+```
 
-`website_conversion_home_refinement.js` mirrors that SVG into the narrower top product-preview chart. Copying the wider refreshed SVG without compensating for the different viewport causes SVG text, line widths, and point markers to shrink visually. The first production compatibility fixes corrected scaling and preload order, but another discontinuity remained: the delayed lower-chart redraw replaced the already-normalized first-paint preview even when the realized trading metrics had not changed.
+The top Day Trading tab must read that feed directly. It must **not** clone, observe, resize, or otherwise depend on the lower `#vx-home-equity-svg` DOM.
 
-PR #158 attempted to distinguish layout-only redraws from real history changes with a signature that included SVG point count and displayed SVG date labels. Production screenshots showed that this was still wrong: point markers and date labels are renderer/layout output, so the responsive redraw itself changed the signature and caused the replacement to be accepted.
+This rule supersedes the earlier DOM-clone compatibility approach from PR #154 / #156 / #158 / #160. Those fixes addressed scale and delayed redraw symptoms, but production screenshots showed that keeping the top chart coupled to the lower chart's SVG lifecycle still allowed a visible second layout after load.
 
-## Required presentation rule
+## Ownership boundary
 
-The top homepage preview may continue to mirror the existing Day Trading chart DOM, but it must normalize presentation primitives for the preview viewport and must not replace a stable preview merely because the lower chart re-rendered the same realized state with different SVG geometry.
+`website_home_day_preview_feed_refinement.js` owns the final visible chart target in the top Day Trading tab.
 
-`website_home_preview_chart_readability_fix.js` owns that compatibility layer. It:
+On the final homepage response it changes the conversion layer's legacy target:
 
-- observes only the homepage `#vx-conversion-day-chart` preview;
-- reads the mirrored SVG `viewBox` and the actual preview viewport size;
-- compensates `font-size`, `stroke-width`, and circle radius for the SVG scale difference;
-- removes intermediate point markers when a dense history contains more than 24 points, while retaining the final marker;
-- records the normalized preview markup after first paint;
-- derives its preview-refresh identity only from already-rendered realized-data metrics: Total Realized P&L, Closed Trades Today count, and Closed P&L Today;
-- when the lower chart causes a replacement with the same realized-data identity, restores the already-normalized preview instead of accepting a layout-only visual change;
-- accepts and normalizes a replacement when those realized metrics change, so a genuine new closed-trade update can still appear;
-- recalculates presentation on browser resize;
-- does not fetch performance data, calculate P&L, interpolate points, or mutate the authoritative lower chart.
+```text
+vx-conversion-day-chart
+```
 
-The compensation factor is the larger of the source-to-preview width ratio and source-to-preview height ratio, with a minimum of `1`. This preserves readable visual sizes when a wide lower SVG is displayed inside the narrower preview.
+to the direct-feed target:
 
-The preview-refresh identity is presentation-adjacent only. It is not a new data contract and must never be used for P&L calculation, reconciliation, or trading decisions. Do not include SVG point count, `viewBox`, axis labels, date-label selection, marker count, path coordinates, or any other renderer-derived geometry in that identity.
+```text
+vx-conversion-day-feed-chart
+```
 
-## Middleware / preload ordering gotcha
+and injects the direct-feed renderer. Older compatibility scripts still looking for `vx-conversion-day-chart` therefore no-op instead of replacing the visible chart.
 
-The readability transform must be registered as a top-level Node preload **before** `website_conversion_home_refinement.js` in `package.json`.
+The direct-feed renderer:
 
-Reason: these website modules wrap `express()` and then wrap `res.send()`. With the readability module loaded before the homepage conversion module, request middleware is installed in that same order, so on the response path the conversion wrapper runs first and creates `#vx-conversion-day-chart`; the readability wrapper then receives that converted HTML and can inject its style/runtime script.
+- fetches `/public-performance.json` with `cache: no-store`;
+- reads only the existing `equity_curve.points` array;
+- plots each point's existing `cumulative_pnl` value in date order supplied by the endpoint;
+- preserves the endpoint's stale/last-valid behavior rather than inventing replacement values;
+- shows unavailable state only when no valid chart has been rendered;
+- may refresh on initial load, return to the Day tab, or document visibility recovery;
+- does not add interval polling;
+- does not read the lower chart SVG or install a lower-chart `MutationObserver`.
 
-Do **not** register readability only through a later preload such as `website_home_equity_empty_fix.js`. That ordering makes the readability `res.send()` wrapper execute before homepage conversion has created the preview target, so its route guard sees no `#vx-conversion-day-chart` and silently leaves the response unchanged.
+The lower Day Trading performance card keeps its existing rendering and refresh lifecycle. A lower-chart responsive redraw must have no effect on the top Day Trading tab chart.
 
-Canonical preload relationship:
+## Middleware / preload ordering
+
+The production preload relationship is:
 
 ```text
 ... -r ./website_home_preview_chart_readability_fix.js
+    -r ./website_home_day_preview_feed_refinement.js
     -r ./website_conversion_home_refinement.js ...
 ```
 
-`website_home_equity_empty_fix.js` remains independent and must not own readability registration.
+Because the Express response wrappers unwind in reverse order, `website_conversion_home_refinement.js` first creates the legacy chart target, then `website_home_day_preview_feed_refinement.js` retargets it to the direct-feed chart before the outer compatibility layer sees the response.
+
+Do not move the direct-feed refinement after `website_conversion_home_refinement.js` in the preload list without re-verifying response-wrapper order.
 
 ## Data and execution boundary
 
-This fix is presentation-only. It does not change:
+This is presentation-only. It does not change:
 
-- `/public-performance.json`;
+- `/public-performance.json` calculations or schema;
 - `equity_curve.points[].cumulative_pnl` values;
-- Open P&L sources;
 - Closed Trades calculations;
+- Open P&L sources;
 - Google Sheets reads or writes;
 - Trading Lab output;
 - Telegram;
 - Pine;
-- signal timing;
-- entries, exits, targets, stops, or risk;
+- strategy entries, exits, targets, stops, sizing, or signal timing;
 - bridge, TWS, or IBKR behavior.
+
+The website must never calculate a second realized-P&L series for this preview or substitute mock/simulated chart values.
 
 ## Regression rule
 
-Keep focused coverage for:
+Keep focused coverage proving that:
 
-- the preview-scale calculation;
-- preview-refresh identity construction and equality behavior;
-- proving the identity is independent of SVG point count and date-label/layout output;
-- homepage-only and idempotent HTML injection;
-- syntactically valid emitted runtime JavaScript;
-- MutationObserver-based handling of later chart replacement;
-- preserving normalized preview markup across an equivalent layout-only source redraw;
-- allowing a replacement when realized metrics change;
-- direct top-level preload registration before `website_conversion_home_refinement.js`;
-- an Express integration test proving that a source homepage without `#vx-conversion-day-chart` is first converted and then receives the readability assets;
-- no new polling or duplicate performance-data fetch in the readability layer.
+- the final homepage contains `#vx-conversion-day-feed-chart`;
+- the final homepage does not contain the legacy `#vx-conversion-day-chart` target;
+- the direct renderer fetches `/public-performance.json` and consumes `equity_curve.points[].cumulative_pnl`;
+- it does not clone `#vx-home-equity-svg` or observe lower-chart DOM redraws;
+- emitted runtime JavaScript parses successfully;
+- homepage transformation is route-scoped and idempotent;
+- preload order causes homepage conversion to run before direct-feed retargeting on the response path;
+- existing Day Trading performance, homepage, and inline-script regressions continue to pass;
+- no trading, broker, Sheet schema, or execution code is changed.
 
 ## Rollback
 
-Revert the latest homepage preview stability change. No data, trading, broker, Sheet, Telegram, authentication, or execution rollback is required.
+Revert the direct-feed refinement and its preload registration. No data, trading, broker, Sheet, Telegram, authentication, or execution rollback is required.
