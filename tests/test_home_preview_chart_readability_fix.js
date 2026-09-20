@@ -10,10 +10,18 @@ assert.strictEqual(fix.computePreviewScale(640, 250, 700, 180).toFixed(3), "1.38
 assert.strictEqual(fix.computePreviewScale(500, 180, 700, 200), 1);
 assert.strictEqual(fix.computePreviewScale(0, 180, 700, 200), 1);
 
-const stableSignature = fix.buildPreviewHistorySignature("+$23,390.02", 61, "May 27", "Sep 18");
-assert.strictEqual(stableSignature, "+$23,390.02|61|May 27|Sep 18");
-assert.strictEqual(fix.shouldPreservePreview(stableSignature, stableSignature), true, "identical realized-history identity should preserve the existing preview presentation");
-assert.strictEqual(fix.shouldPreservePreview(stableSignature, fix.buildPreviewHistorySignature("+$23,514.05", 62, "May 27", "Sep 19")), false, "changed realized history must be allowed to replace the preview");
+const stableSignature = fix.buildPreviewHistorySignature("+$23,390.02", "2", "$0.00");
+assert.strictEqual(stableSignature, "+$23,390.02|2|$0.00");
+assert.strictEqual(
+  fix.shouldPreservePreview(stableSignature, fix.buildPreviewHistorySignature("+$23,390.02", "2", "$0.00")),
+  true,
+  "same realized metrics must preserve the first normalized preview even if the mirrored SVG geometry changes",
+);
+assert.strictEqual(
+  fix.shouldPreservePreview(stableSignature, fix.buildPreviewHistorySignature("+$23,514.05", "3", "+$124.03")),
+  false,
+  "a real realized-metric update must be allowed to replace the preview",
+);
 assert.strictEqual(fix.shouldPreservePreview("", stableSignature), false);
 
 const base = `<!doctype html><html><head></head><body><div id="${fix.TARGET_ID}"><svg viewBox="0 0 1120 245"><text font-size="9">$25,729</text><path stroke-width="2.4"></path><circle r="2.6" stroke-width="1.4"></circle></svg></div></body></html>`;
@@ -27,8 +35,12 @@ assert(refined.includes("circles.length>24"));
 assert(refined.includes("new MutationObserver"));
 assert(refined.includes("sourceSignature"));
 assert(refined.includes("stableMarkup"));
+assert(refined.includes("closedCountId='vx-home-live-2'"));
+assert(refined.includes("closedPnlId='vx-home-live-3'"));
 assert(refined.includes("shouldPreservePreview(stableSignature,nextSignature)"));
 assert(refined.includes("target.innerHTML=stableMarkup"));
+assert(!refined.includes("source.querySelectorAll('circle').length"), "preview identity must not depend on SVG point-marker geometry");
+assert(!refined.includes("datePattern"), "preview identity must not depend on layout-generated SVG date labels");
 assert(!refined.includes("fetch('/public-performance.json'"), "readability layer must not add another performance fetch");
 assert(!refined.includes("setInterval("), "readability layer must not add polling");
 assert.doesNotThrow(() => {
