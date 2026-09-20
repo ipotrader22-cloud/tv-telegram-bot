@@ -6,6 +6,7 @@ const RU_HOST = "ru.vixale.com";
 const EN_HOST = "www.vixale.com";
 const LOCALE = "ru";
 const HOME_PATH = "/";
+const RUNTIME_SCRIPT_ID = "vx-ru-runtime-localizer";
 const PRIVATE_PREFIXES = Object.freeze([
   "/admin",
   "/tv",
@@ -29,10 +30,31 @@ const TRANSLATIONS = Object.freeze([
   ...require("./website_russian_translations_9"),
   ...require("./website_russian_translations_10"),
   ...require("./website_russian_translations_regression"),
+  ...require("./website_russian_translations_current_public_pages"),
 ]);
 
 const ATTRIBUTE_NAMES = new Set(["placeholder", "aria-label", "title", "alt"]);
 const TRANSLATION_MAP = new Map(TRANSLATIONS);
+const RUNTIME_TRANSLATION_PATTERNS = Object.freeze([
+  Object.freeze({
+    source: "^Research/model portfolio · latest published update (.+) · last validated snapshot$",
+    replacement: "Исследовательский/модельный портфель · последнее опубликованное обновление $1 · последний подтверждённый снимок",
+  }),
+  Object.freeze({
+    source: "^Research/model portfolio · latest published update (.+)$",
+    replacement: "Исследовательский/модельный портфель · последнее опубликованное обновление $1",
+  }),
+  Object.freeze({
+    source: "^Day Trading realized P&L history; latest (.+)$",
+    replacement: "История реализованного P&L дейтрейдинга; последнее значение: $1",
+  }),
+  Object.freeze({
+    source: "^Swing Trading model P&L equity history; latest (.+)$",
+    replacement: "История капитала модельного P&L свинг-трейдинга; последнее значение: $1",
+  }),
+  Object.freeze({ source: "^Last updated: (.+)$", replacement: "Последнее обновление: $1" }),
+  Object.freeze({ source: "^Score (.+)$", replacement: "Рейтинг $1" }),
+]);
 
 function normalizeHost(value) {
   return String(value || "")
@@ -90,6 +112,22 @@ function translateChunk(value) {
   const translated = TRANSLATION_MAP.get(core);
   if (translated === undefined) return source;
   return `${leading}${preserveCase(core, translated)}${trailing}`;
+}
+
+function translateRuntimeChunk(value) {
+  const { source, leading, core, trailing } = splitOuterWhitespace(value);
+  if (!/[A-Za-z]/.test(core)) return source;
+
+  const exact = TRANSLATION_MAP.get(core);
+  if (exact !== undefined) return `${leading}${preserveCase(core, exact)}${trailing}`;
+
+  for (const pattern of RUNTIME_TRANSLATION_PATTERNS) {
+    const regex = new RegExp(pattern.source);
+    if (!regex.test(core)) continue;
+    return `${leading}${core.replace(regex, pattern.replacement)}${trailing}`;
+  }
+
+  return source;
 }
 
 function translateAttributes(tag) {
@@ -181,6 +219,36 @@ function translateHtmlText(html) {
   return masked;
 }
 
+function safeInlineJson(value) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+function buildRuntimeLocalizationScript() {
+  const entries = safeInlineJson(Array.from(TRANSLATION_MAP.entries()));
+  const patterns = safeInlineJson(RUNTIME_TRANSLATION_PATTERNS);
+  return `<script id="${RUNTIME_SCRIPT_ID}">(() => {
+const map=new Map(${entries});
+const patterns=${patterns};
+const attrs=new Set(['placeholder','aria-label','title','alt']);
+const blocked=new Set(['SCRIPT','STYLE','PRE','CODE','TEXTAREA','NOSCRIPT']);
+const split=value=>{const source=String(value==null?'':value),leading=(source.match(/^\\s*/)||[''])[0],trailing=(source.match(/\\s*$/)||[''])[0],end=Math.max(leading.length,source.length-trailing.length);return{source,leading,core:source.slice(leading.length,end),trailing}};
+const translated=value=>{const parts=split(value),core=parts.core;if(!/[A-Za-z]/.test(core))return parts.source;let out=map.get(core);if(out!==undefined){if(core.toUpperCase()===core&&/[A-Z]/.test(core))out=String(out).toUpperCase();return parts.leading+out+parts.trailing}for(const item of patterns){const re=new RegExp(item.source);if(re.test(core))return parts.leading+core.replace(re,item.replacement)+parts.trailing}return parts.source};
+const localize=node=>{if(!node)return;if(node.nodeType===3){const next=translated(node.nodeValue);if(next!==node.nodeValue)node.nodeValue=next;return}if(node.nodeType!==1&&node.nodeType!==9&&node.nodeType!==11)return;if(node.nodeType===1){if(blocked.has(node.tagName))return;for(const name of attrs){if(!node.hasAttribute(name))continue;const current=node.getAttribute(name),next=translated(current);if(next!==current)node.setAttribute(name,next)}}for(const child of Array.from(node.childNodes||[]))localize(child)};
+const root=document.documentElement;if(!root)return;const observer=new MutationObserver(records=>{for(const record of records){if(record.type==='characterData'){localize(record.target);continue}if(record.type==='attributes'){localize(record.target);continue}for(const node of Array.from(record.addedNodes||[]))localize(node)}});observer.observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:Array.from(attrs)});localize(root);root.setAttribute('data-vx-ru-runtime-localized','1');
+})();</script>`;
+}
+
+function injectRuntimeLocalization(html) {
+  const source = String(html ?? "");
+  if (!source || source.includes(`id="${RUNTIME_SCRIPT_ID}"`)) return source;
+  const script = buildRuntimeLocalizationScript();
+  if (/<\/body>/i.test(source)) return source.replace(/<\/body>/i, `${script}\n</body>`);
+  return `${source}${script}`;
+}
+
 function localizeRussianHtml(html, pathname = "/") {
   if (typeof html !== "string" || !/<html\b|<body\b|<!doctype\s+html/i.test(html)) return html;
   let out = String(html);
@@ -188,6 +256,7 @@ function localizeRussianHtml(html, pathname = "/") {
   if (!/<html\b[^>]*\blang=/i.test(out)) out = out.replace(/<html\b/i, `<html lang="${LOCALE}"`);
   out = translateHtmlText(out);
   out = localizeSeoHosts(out, pathname);
+  out = injectRuntimeLocalization(out);
   return out;
 }
 
@@ -330,9 +399,11 @@ module.exports = {
   EN_HOST,
   LOCALE,
   HOME_PATH,
+  RUNTIME_SCRIPT_ID,
   PRIVATE_PREFIXES,
   TRANSLATIONS,
   TRANSLATION_MAP,
+  RUNTIME_TRANSLATION_PATTERNS,
   normalizeHost,
   requestHost,
   isRussianHost,
@@ -340,12 +411,15 @@ module.exports = {
   isLocalizablePath,
   splitOuterWhitespace,
   translateChunk,
+  translateRuntimeChunk,
   translateAttributes,
   rewriteInternalAnchorHost,
   rewriteCanonicalTag,
   rewriteOgUrlTag,
   translateHtmlText,
   localizeSeoHosts,
+  buildRuntimeLocalizationScript,
+  injectRuntimeLocalization,
   localizeRussianHtml,
   installRussianLocalization,
   withCanonicalEnglishHomepageIdentity,

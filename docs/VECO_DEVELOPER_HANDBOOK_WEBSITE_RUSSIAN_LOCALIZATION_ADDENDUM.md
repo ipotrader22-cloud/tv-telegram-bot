@@ -23,13 +23,14 @@ For Russian-host HTML responses, the layer may change only presentation/locale m
 - translatable `content` values on `<meta>` tags;
 - the document language to `lang="ru"`;
 - absolute internal navigation `<a href>` links to `ru.vixale.com`;
-- Russian canonical/OG URLs and `hreflang` metadata.
+- Russian canonical/OG URLs and `hreflang` metadata;
+- browser-visible text later inserted by approved public-page JavaScript, but only through the same exact-value translation catalog or an explicitly approved anchored runtime template.
 
-The translation catalog is split across `website_russian_translations_1.js` through `website_russian_translations_10.js`, plus a regression catalog for complete source strings discovered during production QA. Together, the catalogs cover the public homepage, Trading Systems hub, Day Trading, Swing Trading, Options, Results/access language, Pricing/free-watch flow, Services, About, Trading Guide, Risk Management, Closed Trades, login/access labels, common dashboard/result labels, disclosures, and currently published Swing research/status vocabulary.
+The translation catalog is split across `website_russian_translations_1.js` through `website_russian_translations_10.js`, the regression catalog for complete source strings discovered during production QA, and `website_russian_translations_current_public_pages.js` for copy emitted by the current conversion/refinement layer. Together, the catalogs cover the public homepage, Trading Systems hub, Day Trading, Swing Trading, Options, Results/access language, Pricing/free-watch flow, Services, About, Trading Guide, Risk Management, Closed Trades, login/access labels, common dashboard/result labels, disclosures, and currently published Swing research/status vocabulary.
 
 ## What the locale layer must not change
 
-The following are protected from text translation:
+The following are protected from server-side text translation:
 
 - `<script>` contents;
 - `<style>` contents;
@@ -50,6 +51,42 @@ A production regression after the first RU rollout established an important loca
 Fragment replacement can create visibly broken copy such as an English sentence with isolated Russian fragments. Therefore the locale layer translates only when the complete trimmed text node, or complete supported attribute value, has an explicit catalog entry. If a newly introduced English node is not yet in the catalog, it remains intact in English for QA rather than becoming a Russian/English hybrid.
 
 When a new English sentence or paragraph appears on a public page, add that complete rendered text node to the catalog. Do not try to assemble prose from generic fragments such as `Open`, `Review`, `Results`, `portfolio`, or similar words embedded inside longer copy.
+
+## Current refinement-copy rule
+
+Production QA after PR #166 showed that several canonical public pages could remain mostly English even though the RU header translated correctly. The affected surfaces included:
+
+```text
+/trading-systems/day-trading
+/trading-systems/options
+/results
+/pricing
+```
+
+The root cause was not a second renderer. These pages are rebuilt late in the response pipeline by current `website_conversion_*_refinement.js` modules, and their newer visible copy was not present in the original RU catalog. Because substring translation is deliberately forbidden, the correct behavior was to leave those unknown nodes intact rather than produce mixed-language copy.
+
+Required maintenance rule:
+
+- every public conversion/refinement PR that adds or materially changes visible English copy must add the complete rendered source nodes to the RU catalog in the same PR;
+- current conversion-page copy belongs in `website_russian_translations_current_public_pages.js` unless it is clearly shared with an existing catalog;
+- do not solve missing copy by weakening exact-node translation or reintroducing generic word replacement.
+
+## Client-side runtime text rule
+
+Some public pages update visible labels after the initial HTML response. Examples include Day Trading status/freshness text, Results chart empty states, dynamic `Last updated:` labels, chart accessibility labels, Swing model status, and score labels. The server intentionally leaves page `<script>` bodies unchanged, so server-only translation cannot translate text that does not exist in the DOM until those scripts execute.
+
+For `ru.vixale.com` HTML only, `website_russian_localization.js` therefore injects one small runtime localizer identified by `vx-ru-runtime-localizer` after the ordinary page scripts. It:
+
+- reuses the same deduplicated exact translation map as the server;
+- translates only complete DOM text-node values and complete supported attributes;
+- observes later DOM mutations so approved dynamic text is translated when inserted;
+- supports only a short explicit set of anchored dynamic templates such as `Last updated: <value>`, chart `... latest <value>` labels, Swing published-update status, and `Score <value>`;
+- preserves numeric values, dates, prices, P&L values, tickers, IDs, classes, `data-*`, form values, routes, API payloads, script/style bodies, and asset URLs;
+- remains idempotent and must not install more than one runtime localizer per response.
+
+The runtime pass is not a general machine translator. Unknown future sentences still remain whole in English until an approved complete translation is added. Anchored templates must preserve their dynamic value and may not be widened into arbitrary substring replacement.
+
+A practical HTML-entity gotcha is also covered by this runtime layer: serialized server HTML may contain visible text such as `Open P&amp;L`, while the browser DOM exposes `Open P&L`. The exact browser-visible catalog entry can therefore apply safely after parsing without teaching the server translator to decode and rewrite arbitrary HTML entities.
 
 ## Visual-parity and URL rule
 
@@ -113,18 +150,20 @@ For changes to the locale layer:
 
 1. Run `node --check website_russian_localization.js`.
 2. Run syntax checks for every added/changed translation catalog file.
-3. Run `node --check tests/test_russian_localization.js`.
-4. Run `node tests/test_russian_localization.js`.
+3. Run `node --check tests/test_russian_localization.js` and `node --check tests/test_russian_current_public_pages.js` when present.
+4. Run `node tests/test_russian_localization.js` and `node tests/test_russian_current_public_pages.js`.
 5. Confirm `package.json` preloads `website_russian_localization.js` before the other website refinement modules.
 6. Confirm `www.vixale.com` samples remain byte-for-byte unchanged by the locale middleware.
 7. Confirm an unknown longer English text node containing words that have shorter catalog translations remains whole and is not partially translated.
 8. Confirm `ru.vixale.com` samples set `lang="ru"`, Russian canonical/metadata, translated approved copy, and preserved scripts/styles/form values.
 9. Confirm stylesheet/image/script/other asset URLs remain unchanged while explicit navigation anchors and SEO URLs are localized.
-10. Confirm classes, IDs, `data-*` attributes, style blocks, script blocks, route paths, and live numeric values are unchanged.
-11. Confirm a RU `GET /` request reaches the same canonical homepage renderer as EN before localization and does not render the legacy RU-only homepage.
-12. Confirm temporary homepage renderer selection restores the original `Host`, `X-Forwarded-Host`, and `lang` query state after the root handler returns.
-13. After an explicitly approved merge/deploy, visually compare representative desktop and mobile pages on both hosts and confirm layout parity.
+10. Confirm classes, IDs, `data-*` attributes, style blocks, page script bodies, route paths, API payloads, and live numeric values are unchanged.
+11. Confirm the runtime localizer is injected only on RU HTML, appears once, and translates approved DOM text inserted after page scripts without mutating the page scripts themselves.
+12. Confirm approved dynamic templates preserve their date/number/P&L payload while translating only the fixed presentation wording.
+13. Confirm a RU `GET /` request reaches the same canonical homepage renderer as EN before localization and does not render the legacy RU-only homepage.
+14. Confirm temporary homepage renderer selection restores the original `Host`, `X-Forwarded-Host`, and `lang` query state after the root handler returns.
+15. After an explicitly approved merge/deploy, visually compare representative desktop and mobile pages on both hosts and confirm layout parity and review Day Trading, Options, Results, and Pricing for residual English UI copy.
 
 ## Rollback
 
-Revert the Russian localization correction and redeploy the previous confirmed website commit, or remove the Russian localization preload and revert `website_russian_localization.js`, the `website_russian_translations_*.js` catalog files, plus its test/addendum if the entire locale layer must be disabled. No broker state, trading state, performance ledger, authentication database, Google Sheet, Pine, Telegram, TWS, or IBKR rollback is required.
+Revert the Russian localization correction and redeploy the previous confirmed website commit, or remove the Russian localization preload and revert `website_russian_localization.js`, the `website_russian_translations_*.js` catalog files, plus its tests/addendum if the entire locale layer must be disabled. No broker state, trading state, performance ledger, authentication database, Google Sheet, Pine, Telegram, TWS, or IBKR rollback is required.
