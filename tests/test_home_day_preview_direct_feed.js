@@ -26,12 +26,7 @@ assert(!refined.includes("setInterval("), "direct-feed preview must not add poll
 
 const match = refined.match(new RegExp(`<script id=["']${feed.SCRIPT_ID}["']>([\\s\\S]*?)<\\/script>`));
 assert(match, "direct-feed runtime must be injected");
-try {
-  new Function(match[1]);
-} catch (error) {
-  console.error("--- emitted direct-feed runtime ---\n" + match[1] + "\n--- end runtime ---");
-  throw error;
-}
+assert.doesNotThrow(() => new Function(match[1]), "emitted direct-feed runtime must be valid JavaScript");
 
 assert.strictEqual(feed.refineHomeHtml(refined, "/"), refined, "direct-feed refinement must be idempotent");
 assert.strictEqual(feed.refineHomeHtml(fixture, "/results"), fixture, "non-home routes must remain unchanged");
