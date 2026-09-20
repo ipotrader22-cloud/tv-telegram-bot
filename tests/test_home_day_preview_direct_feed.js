@@ -24,11 +24,14 @@ assert(!refined.includes("cloneNode(true)"), "direct-feed preview must not clone
 assert(!refined.includes("new MutationObserver"), "direct-feed preview must not observe lower-chart layout redraws");
 assert(!refined.includes("setInterval("), "direct-feed preview must not add polling");
 
-assert.doesNotThrow(() => {
-  const match = refined.match(new RegExp(`<script id=["']${feed.SCRIPT_ID}["']>([\\s\\S]*?)<\\/script>`));
-  assert(match, "direct-feed runtime must be injected");
+const match = refined.match(new RegExp(`<script id=["']${feed.SCRIPT_ID}["']>([\\s\\S]*?)<\\/script>`));
+assert(match, "direct-feed runtime must be injected");
+try {
   new Function(match[1]);
-});
+} catch (error) {
+  console.error("--- emitted direct-feed runtime ---\n" + match[1] + "\n--- end runtime ---");
+  throw error;
+}
 
 assert.strictEqual(feed.refineHomeHtml(refined, "/"), refined, "direct-feed refinement must be idempotent");
 assert.strictEqual(feed.refineHomeHtml(fixture, "/results"), fixture, "non-home routes must remain unchanged");
