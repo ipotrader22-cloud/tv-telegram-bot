@@ -30,7 +30,7 @@ function refineHomeHtml(html, path = HOME_PATH) {
   if (!html.includes(`id="${LEGACY_TARGET_ID}"`) && !html.includes(`id="${TARGET_ID}"`)) return html;
   let out = html;
   if (!out.includes(`id="${TARGET_ID}"`)) out = out.replace(`id="${LEGACY_TARGET_ID}"`, `id="${TARGET_ID}" data-vx-day-preview-feed="${PUBLIC_PERFORMANCE_PATH}"`);
-  if (!out.includes(`id="${SCRIPT_ID}"`)) out = out.includes("</body>") ? out.replace("</body>", `${runtimeScript}\n</body>`) : `${out}${runtimeScript}`;
+  if (!out.includes(`id="${SCRIPT_ID}"`)) out = out.includes("</body>") ? out.replace("</body>", () => `${runtimeScript}\n</body>`) : `${out}${runtimeScript}`;
   return out;
 }
 
