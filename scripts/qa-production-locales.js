@@ -37,7 +37,26 @@ const ROUTES = [
     forbiddenRu: ["Choose one system or follow all three."],
   },
   { path: "/access" },
-  { path: "/services" },
+  {
+    path: "/services",
+    requiredRu: [
+      "Нужна настройка, автоматизация, работа со стратегией или индивидуальный бот?",
+      "Выберите одно направление услуг.",
+      "Расскажите, какие исследования или сигналы вам нужны.",
+      "Консультация по автоматизации / настройке",
+      "Запрос на анализ / разработку стратегии",
+      "Опишите нужного бота или интеграцию.",
+    ],
+    forbiddenRu: [
+      "Need setup, automation, strategy work, or a custom bot?",
+      "Choose one service path.",
+      "Tell us what research or signals you need.",
+      "Automation / Setup consultation",
+      "Strategy Review / Development request",
+      "Describe your bot or integration.",
+      "Important Risk Disclosure:",
+    ],
+  },
   { path: "/about" },
 ];
 
@@ -237,7 +256,7 @@ async function run() {
     "",
     "- Screenshots are paired EN/RU artifacts for manual visual review; text length may legitimately change layout details such as wrapping.",
     "- Automated parity compares top-level `<main>` structure and stylesheet URLs, not pixel identity.",
-    "- Strict translation assertions target known production regressions on Home, Day Trading, Options, Results, and Pricing.",
+    "- Strict translation assertions target known production regressions on Home, Day Trading, Options, Results, Pricing, and Services.",
     ""
   );
 
