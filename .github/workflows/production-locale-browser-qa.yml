@@ -8,6 +8,10 @@ on:
     branches:
       - main
     paths:
+      - "package.json"
+      - "website_services_source_parity_fix.js"
+      - "website_russian_translations_regression.js"
+      - "tests/test_services_ru_parity_fix.js"
       - "scripts/qa-production-locales.js"
       - ".github/workflows/production-locale-browser-qa.yml"
   push:
@@ -26,11 +30,40 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-locale-browser-qa
+  group: production-locale-browser-qa-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  locale-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax checks
+        run: |
+          node --check website_services_source_parity_fix.js
+          node --check website_russian_translations_regression.js
+          node --check scripts/qa-production-locales.js
+          node --check tests/test_services_ru_parity_fix.js
+
+      - name: Services RU parity regression
+        run: node tests/test_services_ru_parity_fix.js
+
+      - name: Existing Russian localization regressions
+        run: |
+          node tests/test_russian_localization.js
+          node tests/test_russian_current_public_pages.js
+
   browser-qa:
+    if: github.event_name != 'pull_request'
+    needs: locale-contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
