@@ -14,12 +14,20 @@ const localizedLandingSource = `<!doctype html><html lang="en"><head><title>Land
 </main><footer><strong>Important Risk Disclosure:</strong></footer></body></html>`;
 
 const prepared = prepareServicesSourceForPublicIa(localizedLandingSource);
-assert(prepared.includes(`${SOURCE_MARKER_PREFIX}:Book a quick setup call.`), "appointment source marker must be added by stable id");
-assert(prepared.includes(`${SOURCE_MARKER_PREFIX}:Send us your trading rules.`), "strategy source marker must be added by stable id");
-assert(prepared.includes(`${SOURCE_MARKER_PREFIX}:Describe the trading bot you want.`), "bot source marker must be added by stable id");
+assert(prepared.includes("<h2>Book a quick setup call.</h2>"), "appointment source heading must normalize by stable id");
+assert(prepared.includes("<h2>Send us your trading rules.</h2>"), "strategy source heading must normalize by stable id");
+assert(prepared.includes("<h2>Describe the trading bot you want.</h2>"), "bot source heading must normalize by stable id");
 assert(prepared.includes('id="strategy-review"'), "legacy strategy-rules id must normalize to strategy-review");
 assert(!prepared.includes('id="strategy-rules"'), "legacy strategy-rules id must not survive normalization");
+assert(!prepared.includes(SOURCE_MARKER_PREFIX), "normal h2 source must not need fallback marker comments");
 assert.strictEqual(prepareServicesSourceForPublicIa(prepared), prepared, "source parity preparation must be idempotent");
+
+const missingHeading = `<html><body><main><section id="appointment"><form action="/appointment-request"></form></section></main></body></html>`;
+const fallbackPrepared = prepareServicesSourceForPublicIa(missingHeading);
+assert(
+  fallbackPrepared.includes(`${SOURCE_MARKER_PREFIX}:Book a quick setup call.`),
+  "section without h2 must receive invisible fallback extraction marker"
+);
 
 const services = renderServicesFromLanding(prepared);
 for (const id of ["research-request", "appointment", "strategy-review", "bot-request"]) {
@@ -31,6 +39,9 @@ for (const href of ["#research-request", "#appointment", "#strategy-review", "#b
 assert(services.includes('action="/appointment-request"'), "Automation form backend route must be preserved");
 assert(services.includes('action="/strategy-review"'), "Strategy form backend route must be preserved");
 assert(services.includes('action="/bot-request"'), "Bot form backend route must be preserved");
+assert(services.includes("Automation / Setup consultation"), "Automation heading must pass through canonical Services refinement");
+assert(services.includes("Strategy Review / Development request"), "Strategy heading must pass through canonical Services refinement");
+assert(services.includes("Describe your bot or integration."), "Bot heading must pass through canonical Services refinement");
 
 const expectedPairs = [
   ["Need setup, automation, strategy work, or a custom bot?", "Нужна настройка, автоматизация, работа со стратегией или индивидуальный бот?"],
