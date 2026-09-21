@@ -10,6 +10,7 @@ on:
     paths:
       - "package.json"
       - "website_services_source_parity_fix.js"
+      - "website_russian_localization.js"
       - "website_russian_translations_regression.js"
       - "tests/test_services_ru_parity_fix.js"
       - "tests/test_services_ru_form_controls.js"
@@ -52,6 +53,7 @@ jobs:
       - name: Syntax checks
         run: |
           node --check website_services_source_parity_fix.js
+          node --check website_russian_localization.js
           node --check website_russian_translations_regression.js
           node --check scripts/qa-production-locales.js
           node --check scripts/qa-production-services-form-controls.js
