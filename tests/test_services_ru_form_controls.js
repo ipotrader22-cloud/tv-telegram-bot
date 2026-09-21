@@ -26,6 +26,9 @@ const source = `<!doctype html><html lang="en"><head><title>Services form contro
 </body></html>`;
 
 const localized = localizeRussianHtml(source, "/services");
+// The runtime localizer intentionally embeds English source keys in <script>.
+// Form-copy assertions must inspect rendered presentation markup, not those keys.
+const presentationHtml = localized.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
 
 const expectedRussian = [
   "Выберите тему…",
@@ -39,7 +42,7 @@ const expectedRussian = [
   "Пример: «Отслеживать 50 акций, присылать уведомления в Telegram и размещать ордера через IBKR.»",
 ];
 for (const expected of expectedRussian) {
-  assert(localized.includes(expected), `localized Services form controls must contain: ${expected}`);
+  assert(presentationHtml.includes(expected), `localized Services form controls must contain: ${expected}`);
 }
 
 const forbiddenEnglish = [
@@ -54,11 +57,11 @@ const forbiddenEnglish = [
   "Example: “Watch 50 stocks, alert me in Telegram, and place orders through IBKR.”",
 ];
 for (const sourceText of forbiddenEnglish) {
-  assert(!localized.includes(sourceText), `localized Services form controls must not retain: ${sourceText}`);
+  assert(!presentationHtml.includes(sourceText), `localized Services form controls must not retain: ${sourceText}`);
 }
 
 for (const route of ["/appointment-request", "/strategy-review", "/bot-request"]) {
-  assert(localized.includes(`action=\"${route}\"`), `form action must remain unchanged: ${route}`);
+  assert(presentationHtml.includes(`action=\"${route}\"`), `form action must remain unchanged: ${route}`);
 }
 for (const semanticValue of [
   'value="automation"',
@@ -67,7 +70,7 @@ for (const semanticValue of [
   'value="landing_strategy_form"',
   'value="landing_bot_form"',
 ]) {
-  assert(localized.includes(semanticValue), `form semantic value must remain unchanged: ${semanticValue}`);
+  assert(presentationHtml.includes(semanticValue), `form semantic value must remain unchanged: ${semanticValue}`);
 }
 
 console.log("Services RU form-control localization checks: PASS");
