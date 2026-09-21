@@ -12,7 +12,9 @@ on:
       - "website_services_source_parity_fix.js"
       - "website_russian_translations_regression.js"
       - "tests/test_services_ru_parity_fix.js"
+      - "tests/test_services_ru_form_controls.js"
       - "scripts/qa-production-locales.js"
+      - "scripts/qa-production-services-form-controls.js"
       - ".github/workflows/production-locale-browser-qa.yml"
   push:
     branches:
@@ -24,6 +26,7 @@ on:
       - "lib/**"
       - "public/**"
       - "scripts/qa-production-locales.js"
+      - "scripts/qa-production-services-form-controls.js"
       - ".github/workflows/production-locale-browser-qa.yml"
 
 permissions:
@@ -51,10 +54,14 @@ jobs:
           node --check website_services_source_parity_fix.js
           node --check website_russian_translations_regression.js
           node --check scripts/qa-production-locales.js
+          node --check scripts/qa-production-services-form-controls.js
           node --check tests/test_services_ru_parity_fix.js
+          node --check tests/test_services_ru_form_controls.js
 
       - name: Services RU parity regression
-        run: node tests/test_services_ru_parity_fix.js
+        run: |
+          node tests/test_services_ru_parity_fix.js
+          node tests/test_services_ru_form_controls.js
 
       - name: Existing Russian localization regressions
         run: |
@@ -91,6 +98,11 @@ jobs:
           QA_RU_ORIGIN: https://ru.vixale.com
           QA_OUTPUT_DIR: artifacts/production-locale-qa
         run: node scripts/qa-production-locales.js
+
+      - name: Run RU Services form-control QA
+        env:
+          QA_RU_ORIGIN: https://ru.vixale.com
+        run: node scripts/qa-production-services-form-controls.js
 
       - name: Upload browser QA artifacts
         if: always()
