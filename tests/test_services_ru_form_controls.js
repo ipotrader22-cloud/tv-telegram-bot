@@ -1,8 +1,16 @@
 "use strict";
 
 const assert = require("assert");
+const packageJson = require("../package.json");
 const { localizeRussianHtml } = require("../website_russian_localization");
 const { localizeServicesFormPresentation } = require("../website_russian_services_form_copy_refinement");
+
+const startCommand = String(packageJson?.scripts?.start || "");
+const finalPassIndex = startCommand.indexOf("-r ./website_russian_services_form_copy_refinement.js");
+const generalLocaleIndex = startCommand.indexOf("-r ./website_russian_localization.js");
+assert(finalPassIndex >= 0, "final RU Services form-copy refinement must be preloaded");
+assert(generalLocaleIndex >= 0, "general RU localization must be preloaded");
+assert(finalPassIndex < generalLocaleIndex, "final RU Services form-copy refinement must preload first so its response wrapper executes last");
 
 // Mirror the current serialized Services form-control presentation strings.
 // Backend actions and semantic values are included so localization regressions
