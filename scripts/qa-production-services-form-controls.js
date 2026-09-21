@@ -14,9 +14,13 @@ const VIEWPORTS = Object.freeze([
 const EXPECTED_PLACEHOLDERS = Object.freeze([
   "Имя",
   "Введите email или @telegram",
-  "Пример: «Я хочу автоматически торговать сигналами TradingView через IBKR.»",
-  "Пример: «Вход при пересечении RSI уровня 50 снизу вверх, стоп 2%, цель 5%.»",
-  "Пример: «Отслеживать 50 акций, присылать уведомления в Telegram и размещать ордера через IBKR.»",
+  "Завтра днём по времени Нью-Йорка...",
+  "Пример: у меня установлены IBKR и TWS, я использую алерты TradingView и хочу автоматически размещать сделки по сигналам...",
+  "Акции, опционы, фьючерсы, крипто...",
+  "Пример: хочу покупать после отката вслед за сильным движением, входить около..., цель..., стоп..., только в часы рынка...",
+  "Акции, фьючерсы, опционы, крипто...",
+  "Пример: хочу, чтобы бот получал алерты TradingView, размещал сделки в TWS, отслеживал позиции и отправлял обновления в Telegram...",
+  "Пример: хочу понять, какой доступ к сигналам/исследованиям по дейтрейдингу доступен и какие подтверждающие данные можно изучить.",
 ]);
 
 const EXPECTED_OPTIONS = Object.freeze([
@@ -28,10 +32,14 @@ const EXPECTED_OPTIONS = Object.freeze([
 
 const FORBIDDEN_ENGLISH = Object.freeze([
   "John",
+  "@username or email",
   "Enter email or @telegram",
-  "Example: “I want to auto-trade my TradingView alerts with IBKR.”",
-  "Example: “Enter when RSI crosses above 50, stop 2%, target 5%.”",
-  "Example: “Watch 50 stocks, alert me in Telegram, and place orders through IBKR.”",
+  "Example: I have IBKR and TWS installed. I use TradingView alerts. I want signals to place trades automatically...",
+  "Stocks, options, futures, crypto...",
+  "Example: I want to buy when price pulls back after a strong move, enter near... target..., stop..., only during market hours...",
+  "Stocks, futures, options, crypto...",
+  "Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram...",
+  "Example: I want to understand what Day Trading signal/research access is available and what evidence I can review.",
   "Select a topic…",
   "Automate trades with TWS / IBKR",
   "Set up TWS / API",
@@ -93,17 +101,17 @@ async function inspect(page) {
       ]) {
         assert(state.options.some(option => option.value === value && option.text === label), `${viewport.name}: option value changed or label missing for ${value}`);
       }
-      for (const hiddenValue of ["landing_strategy_form", "landing_bot_form"]) {
+      for (const hiddenValue of ["landing_strategy_form", "landing_bot_form", "Signals & Research"]) {
         assert(state.hiddenValues.includes(hiddenValue), `${viewport.name}: hidden semantic value changed or missing: ${hiddenValue}`);
       }
 
-      console.log(`${viewport.name}: RU Services form controls PASS`);
+      console.log(`${viewport.name}: RU Services live form controls PASS`);
       await context.close();
     }
   } finally {
     await browser.close();
   }
-  console.log("RU Services form-control production QA: PASS");
+  console.log("RU Services live form-control production QA: PASS");
 })().catch(error => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;
