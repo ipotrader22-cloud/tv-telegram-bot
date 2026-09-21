@@ -94,7 +94,9 @@ Form-control regression fixtures must mirror the **current serialized source val
 
 PR #171 exposed this distinction: its source fixture expected `Enter email or @telegram`, while the current Services renderer emitted `@username or email`. The exact-node localizer therefore behaved correctly but had no exact match for the live value. The dedicated production browser check caught the mismatch.
 
-`website_russian_services_form_copy_refinement.js` is a final, RU-`/services`-only presentation safety pass. It is intentionally preloaded first so its response wrapper executes after the normal public refinements and Russian localization and therefore sees the final form markup. It may rewrite only explicitly approved exact `placeholder` values and visible `<option>` labels. It must never rewrite option `value` attributes, hidden semantic values, form actions, field names, IDs, classes, data attributes, or user-entered values.
+`website_russian_localization.js` remains the mandatory first preload and therefore the final general response transform. `website_russian_services_form_copy_refinement.js` is intentionally preloaded immediately after it. Because Express response wrappers execute in reverse middleware order, the Services safety pass sees the final downstream-refined `/services` markup first, repairs only explicitly approved live form-control presentation variants, and then hands that HTML to the canonical general RU localizer for the final locale/SEO pass.
+
+The Services safety pass may rewrite only exact approved `placeholder` values and visible `<option>` labels on RU `/services`. It must never rewrite option `value` attributes, hidden semantic values, form actions, field names, IDs, classes, data attributes, or user-entered values.
 
 The dedicated Chromium form-control QA is the authority for live placeholder/option behavior. A source regression is necessary but is not a substitute for that post-deploy check.
 
