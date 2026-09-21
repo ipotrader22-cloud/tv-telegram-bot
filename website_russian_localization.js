@@ -197,7 +197,13 @@ function localizeSeoHosts(html, pathname) {
 }
 
 function translateHtmlText(html) {
-  const source = String(html ?? "");
+  let source = String(html ?? "");
+  // A textarea's body remains protected, but its opening tag contains
+  // presentation-only attributes such as placeholder. Translate those exact
+  // attributes before masking the whole textarea block so user/default values
+  // and form semantics remain untouched.
+  source = source.replace(/<textarea\b[^>]*>/gi, tag => translateAttributes(tag));
+
   // Keep script/style/pre/code/textarea bodies byte-for-byte unchanged. This is
   // critical because presentation text can sit next to live-data and form logic.
   const protectedBlocks = [];
