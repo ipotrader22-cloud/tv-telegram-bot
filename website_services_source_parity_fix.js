@@ -64,6 +64,14 @@ function normalizeSectionId(openTag, currentId, canonicalId) {
   return openTag.replace(pattern, `id="${canonicalId}"`);
 }
 
+function normalizePrimaryHeading(sectionHtml, headingText) {
+  const source = String(sectionHtml || "");
+  const match = /<h2\b([^>]*)>[\s\S]*?<\/h2>/i.exec(source);
+  if (!match) return source;
+  const replacement = `<h2${match[1]}>${headingText}</h2>`;
+  return source.slice(0, match.index) + replacement + source.slice(match.index + match[0].length);
+}
+
 function prepareServicesSourceForPublicIa(html) {
   if (typeof html !== "string" || !html) return html;
   let out = html;
@@ -79,7 +87,16 @@ function prepareServicesSourceForPublicIa(html) {
       out = out.slice(0, range.start) + normalizedOpenTag + out.slice(range.openEnd);
     }
 
-    const refreshed = findSectionByAnyId(out, [contract.canonicalId]);
+    let refreshed = findSectionByAnyId(out, [contract.canonicalId]);
+    if (!refreshed || !refreshed.range) continue;
+
+    const originalSection = out.slice(refreshed.range.start, refreshed.range.end);
+    const normalizedSection = normalizePrimaryHeading(originalSection, contract.needle);
+    if (normalizedSection !== originalSection) {
+      out = out.slice(0, refreshed.range.start) + normalizedSection + out.slice(refreshed.range.end);
+    }
+
+    refreshed = findSectionByAnyId(out, [contract.canonicalId]);
     if (!refreshed || !refreshed.range) continue;
     const sectionHtml = out.slice(refreshed.range.start, refreshed.range.end);
     if (sectionHtml.includes(contract.needle)) continue;
@@ -147,6 +164,7 @@ module.exports = {
   requestPath,
   findTagRangeFromOpen,
   findSectionByAnyId,
+  normalizePrimaryHeading,
   prepareServicesSourceForPublicIa,
   installServicesSourceParity,
   wrapExpress,
