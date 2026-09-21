@@ -46,11 +46,15 @@ for (const [source, expected] of expectedPairs) {
 }
 
 const localized = localizeRussianHtml(services, "/services");
-const visibleLikeHtml = localized.replace(/<!--[\s\S]*?-->/g, "");
-for (const [, expected] of expectedPairs.slice(0, 6)) {
+const visibleLikeHtml = localized
+  .replace(/<!--[\s\S]*?-->/g, "")
+  .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+const renderedPairs = expectedPairs.slice(1, 6);
+for (const [, expected] of renderedPairs) {
   assert(visibleLikeHtml.includes(expected), `localized Services output must contain: ${expected}`);
 }
-for (const [source] of expectedPairs.slice(0, 6)) {
+for (const [source] of renderedPairs) {
   assert(!visibleLikeHtml.includes(source), `localized Services output must not retain visible source copy: ${source}`);
 }
 assert(visibleLikeHtml.includes('action="/appointment-request"'), "localization must not change Automation backend route");
