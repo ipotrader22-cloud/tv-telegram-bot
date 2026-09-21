@@ -43,19 +43,19 @@ For read-only `/services` HTML only, the compatibility layer:
 
 1. finds the reusable Automation, Strategy, and Bot source sections by stable/legacy section IDs;
 2. normalizes legacy source IDs to the canonical Services anchors where required;
-3. inserts invisible source-marker comments containing the legacy English lookup needles only when those needles are absent;
-4. leaves user-visible source copy untouched;
-5. lets the existing public-IA renderer reuse the same form/backend routes;
-6. lets the final Russian localization pass translate visible presentation copy normally.
+3. normalizes each source section's primary `<h2>` to the legacy English heading expected by the existing public-IA extractor;
+4. inserts an invisible fallback marker comment only when a structurally identified section has no usable primary heading/needle;
+5. lets the existing public-IA renderer apply its normal canonical Services heading refinement and reuse the same form/backend routes;
+6. lets the final Russian localization pass translate the resulting user-visible canonical Services copy.
 
-The marker comments exist only to satisfy the legacy extraction matcher. They are not visible text, are not a second renderer, and do not alter form payloads or backend routes.
+The intermediate English heading normalization is internal composition glue, not a second customer-facing renderer. It is scoped by stable section ID and occurs before the final locale pass. A Russian response must not expose those intermediate English headings after localization. Fallback marker comments are invisible and exist only to keep a structurally identified form extractable if its heading markup is unexpectedly absent.
 
 Canonical ID normalization:
 
 ```text
-appointment / setup-call      -> appointment
+appointment / setup-call          -> appointment
 strategy-review / strategy-rules -> strategy-review
-bot-request / bot-builder     -> bot-request
+bot-request / bot-builder         -> bot-request
 ```
 
 ## Localization rule
