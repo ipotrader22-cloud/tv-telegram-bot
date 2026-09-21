@@ -88,13 +88,25 @@ For RU Services localization:
 
 This distinction is mandatory. A green page-text assertion does not prove a fully localized form.
 
+### Live-source exact-value rule
+
+Form-control regression fixtures must mirror the **current serialized source values** that the production renderer actually emits. Do not build a localization test from remembered, historical, or visually similar placeholder copy.
+
+PR #171 exposed this distinction: its source fixture expected `Enter email or @telegram`, while the current Services renderer emitted `@username or email`. The exact-node localizer therefore behaved correctly but had no exact match for the live value. The dedicated production browser check caught the mismatch.
+
+`website_russian_localization.js` remains the mandatory first preload and therefore the final general response transform. `website_russian_services_form_copy_refinement.js` is intentionally preloaded immediately after it. Because Express response wrappers execute in reverse middleware order, the Services safety pass sees the final downstream-refined `/services` markup first, repairs only explicitly approved live form-control presentation variants, and then hands that HTML to the canonical general RU localizer for the final locale/SEO pass.
+
+The Services safety pass may rewrite only exact approved `placeholder` values and visible `<option>` labels on RU `/services`. It must never rewrite option `value` attributes, hidden semantic values, form actions, field names, IDs, classes, data attributes, or user-entered values.
+
+The dedicated Chromium form-control QA is the authority for live placeholder/option behavior. A source regression is necessary but is not a substitute for that post-deploy check.
+
 ## Verification contract
 
 For any future Services or RU-localization change:
 
-1. run syntax checks for the parity module, translation catalog, production QA scripts, and regression tests;
+1. run syntax checks for the parity module, final form-copy refinement, translation catalog, production QA scripts, and regression tests;
 2. run `node tests/test_services_ru_parity_fix.js`;
-3. run `node tests/test_services_ru_form_controls.js`;
+3. run `node tests/test_services_ru_form_controls.js` using current serialized form-control strings;
 4. run the existing Russian localization regression tests;
 5. confirm the built Services page contains all four canonical form anchors;
 6. confirm the three existing form POST routes remain unchanged:
@@ -105,7 +117,7 @@ For any future Services or RU-localization change:
 8. after merge/deploy, require the `Production EN/RU Browser QA` push run to pass, including `scripts/qa-production-services-form-controls.js` on desktop and mobile;
 9. inspect paired desktop/mobile `/services` screenshots when visual parity is in question.
 
-The production browser QA treats `/services` as a strict regression surface. The broad QA verifies top-level EN/RU structure and representative Russian body copy; the dedicated Services form-control check verifies placeholders and option labels while separately asserting unchanged form actions and semantic values.
+The production browser QA treats `/services` as a strict regression surface. The broad QA verifies top-level EN/RU structure and representative Russian body copy; the dedicated Services form-control check verifies current placeholders and option labels while separately asserting unchanged form actions and semantic values.
 
 ## Workflow behavior
 
@@ -120,4 +132,4 @@ main push + Render deploy -> real production Chromium EN/RU check
 
 ## Rollback
 
-Revert the Services parity/localization changes, the form-control translation mappings/tests, and the associated QA assertions. No trading state, broker state, customer access state, Google Sheet data, or execution lifecycle rollback is required.
+Revert the Services parity/localization changes, the form-control presentation safety pass/tests, and the associated QA assertions. No trading state, broker state, customer access state, Google Sheet data, or execution lifecycle rollback is required.
