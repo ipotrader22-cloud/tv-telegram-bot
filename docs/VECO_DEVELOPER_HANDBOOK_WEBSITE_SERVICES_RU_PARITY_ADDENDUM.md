@@ -73,24 +73,39 @@ The Services translation coverage includes:
 - Services boundary copy;
 - the public risk-disclosure copy visible at the bottom of the page.
 
-Form `action`, hidden backend values, IDs, classes, route paths, and user-entered values are not translated.
+Form `action`, hidden backend values, IDs, classes, route paths, option `value` attributes, and user-entered values are not translated.
+
+### Form-control presentation copy
+
+Browser-visible form copy is not limited to `body.innerText`. Placeholders and closed `<select><option>` labels can remain English while an `innerText`-only browser test still passes.
+
+For RU Services localization:
+
+- `placeholder`, `aria-label`, `title`, and `alt` are presentation attributes and may be translated only by approved exact-string mappings;
+- `<option>` label text is presentation copy and must be translated on the RU host;
+- `<option value>`, hidden input values, form `action`, names, IDs, classes, data attributes, and submitted user values are semantics/backend contracts and must remain byte-equivalent unless separately authorized;
+- production QA must inspect form-control presentation copy separately from `body.innerText`.
+
+This distinction is mandatory. A green page-text assertion does not prove a fully localized form.
 
 ## Verification contract
 
 For any future Services or RU-localization change:
 
-1. run syntax checks for the parity module, translation catalog, QA script, and regression test;
+1. run syntax checks for the parity module, translation catalog, production QA scripts, and regression tests;
 2. run `node tests/test_services_ru_parity_fix.js`;
-3. run the existing Russian localization regression tests;
-4. confirm the built Services page contains all four canonical form anchors;
-5. confirm the three existing form POST routes remain unchanged:
+3. run `node tests/test_services_ru_form_controls.js`;
+4. run the existing Russian localization regression tests;
+5. confirm the built Services page contains all four canonical form anchors;
+6. confirm the three existing form POST routes remain unchanged:
    - `/appointment-request`
    - `/strategy-review`
    - `/bot-request`;
-6. after merge/deploy, require the `Production EN/RU Browser QA` push run to pass;
-7. inspect paired desktop/mobile `/services` screenshots when visual parity is in question.
+7. confirm option values and hidden form semantic values remain unchanged;
+8. after merge/deploy, require the `Production EN/RU Browser QA` push run to pass, including `scripts/qa-production-services-form-controls.js` on desktop and mobile;
+9. inspect paired desktop/mobile `/services` screenshots when visual parity is in question.
 
-The production browser QA now treats `/services` as a strict regression surface. It verifies top-level EN/RU structure and representative Russian copy, and rejects the known English regression phrases.
+The production browser QA treats `/services` as a strict regression surface. The broad QA verifies top-level EN/RU structure and representative Russian body copy; the dedicated Services form-control check verifies placeholders and option labels while separately asserting unchanged form actions and semantic values.
 
 ## Workflow behavior
 
@@ -105,4 +120,4 @@ main push + Render deploy -> real production Chromium EN/RU check
 
 ## Rollback
 
-Revert the Services parity module, its preload entry, the Services regression translations/tests, and the associated QA assertions. No trading state, broker state, customer access state, Google Sheet data, or execution lifecycle rollback is required.
+Revert the Services parity/localization changes, the form-control translation mappings/tests, and the associated QA assertions. No trading state, broker state, customer access state, Google Sheet data, or execution lifecycle rollback is required.
