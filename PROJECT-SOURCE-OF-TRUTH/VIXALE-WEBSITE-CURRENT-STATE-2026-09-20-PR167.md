@@ -19,9 +19,9 @@ Latest directly verified website-changing state:
 - **Render deployed website-changing SHA:** `1d82640130e9ce589748fa928ffc37ad35985ac6`
 - **Render deployment status:** LIVE
 - **Render verification:** the deployment record for `dep-dao71hss728c73bdqqvg` identifies the exact PR #167 merge SHA and reached `live` after the new-commit deploy.
-- **Fresh independent post-PR167 browser verification:** **UNVERIFIED** in the current assistant web-fetch environment. The owner reported pre-fix RU translation/parity failures and subsequently authorized the corrective merges, but no independent post-PR167 browser screenshot run is recorded here yet. Do not infer pixel-perfect EN/RU parity from Render deployment state alone.
+- **Browser verification authority:** the latest relevant completed run of GitHub Actions workflow **Production EN/RU Browser QA** (`.github/workflows/production-locale-browser-qa.yml`) once that workflow is present on `main`. Browser status is intentionally not frozen as a permanent PASS/FAIL value in this manifest; re-check the live workflow run and its artifacts for browser-visible claims.
 
-This manifest supersedes `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-20-PR160.md` once the documentation PR that points `MASTER-INDEX.md` here is merged.
+This manifest supersedes `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-20-PR160.md`. `MASTER-INDEX.md` was advanced to this manifest by merged docs PR #168.
 
 ## Website-changing states since PR #160
 
@@ -79,16 +79,20 @@ The localization layer may change approved user-facing text and locale/SEO metad
 
 Exact-node translation is mandatory for normal prose. Unknown new English text remains intact for QA rather than being partially translated into mixed Russian/English copy. Approved dynamic browser text may use only narrowly anchored templates that preserve live date/number/P&L payloads.
 
-## Visual/browser verification status
+## Browser verification authority
 
-Render deployment proves which source commit is serving the service; it does not prove browser-visible parity. Until an independent browser run is captured, the following remain explicitly **UNVERIFIED** post-PR167:
+Render deployment proves which source commit is serving the service; it does not prove browser-visible parity. Browser state is time-sensitive and must be re-checked rather than copied forward indefinitely in a static manifest.
 
-- pixel-level desktop parity between `www.vixale.com` and `ru.vixale.com`;
-- pixel-level mobile parity;
-- absence of every residual English visible string on all RU public routes;
-- client-side mutation behavior after live-data refresh on every affected page.
+The authoritative repository browser check is the latest relevant completed **Production EN/RU Browser QA** GitHub Actions run. That workflow uses a real Chromium browser and stores paired EN/RU desktop/mobile screenshots plus `report.json` and `summary.md` artifacts.
 
-A dedicated EN/RU production browser-QA workflow should be used to close this verification gap and store screenshots/artifacts independently of the assistant web-fetch path.
+For browser-visible EN/RU claims:
+
+1. verify the source/deployment identity in GitHub and Render;
+2. inspect the latest relevant Production EN/RU Browser QA run after that website change;
+3. treat a missing, canceled, or failed relevant run as **UNVERIFIED / FAILED** rather than inferring success from Render;
+4. use screenshots for visual questions that structural assertions cannot prove.
+
+A successful run verifies only its configured public routes and assertions. It does **not** prove pixel identity, every possible residual English string, authenticated/private pages, or every dynamic/stale-data state.
 
 ## Data and safety boundary
 
@@ -117,4 +121,4 @@ Its contracts remain in force except where PR #162 and PRs #164–#167 explicitl
 
 ## Source-of-Truth maintenance note
 
-The checked-in `MASTER-INDEX.md` must point to this PR167 manifest after the documentation synchronization PR merges. Future website-facing production changes must advance the pointer again rather than leaving this file to become a stale operational baseline.
+`MASTER-INDEX.md` points to this PR167 manifest. Future website-facing production changes must advance the pointer again when the website-changing baseline changes. Browser verification itself is intentionally live-state: re-check the latest relevant Production EN/RU Browser QA run rather than editing this manifest merely to copy a transient PASS/FAIL result.
