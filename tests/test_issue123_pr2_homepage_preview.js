@@ -17,8 +17,10 @@ const hero = home.renderHeroAndPreview();
 assert(hero.includes("Trading signals. Three systems. Your choice."));
 assert(hero.includes("Follow Day Trading live, explore a daily Swing portfolio, or track Options positions. See the trades and results, then choose your system."));
 assert(hero.includes(`href="${offer.DAY_TRIAL_URL}"`));
-assert(hero.includes(">Get 30 Days Free</a>"));
+assert(hero.includes(">Telegram Signals</a>"));
+assert(hero.includes('class="vx-conversion-btn" href="/#password-access">Live Access</a>'));
 assert(hero.includes('href="/results">View Trading Results</a>'));
+assert(!hero.includes(">Get 30 Days Free</a>"));
 assert(hero.includes("30-day free trial of Day Trading Telegram signals."));
 
 assert(hero.includes('role="tablist"'));
@@ -74,4 +76,4 @@ assert(refined.includes("font-size:clamp(34px,10.5vw,40px)"), "mobile hero size 
 assert(refined.includes("grid-template-columns:minmax(0,40fr) minmax(0,60fr)"), "desktop hero must use approximately 40/60 composition");
 assert.strictEqual(home.refineConversionHomepage(refined), refined, "homepage refinement must be idempotent");
 
-console.log("Issue #123 PR2 homepage product preview: PASS");
+console.log("Issue #123 PR2 homepage product preview + access actions: PASS");
