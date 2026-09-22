@@ -2,28 +2,51 @@
 
 const Module = require("module");
 const { SYSTEMS, DAY_TRIAL_REQUEST_TEXT, DAY_TRIAL_URL } = require("./lib/website-commercial-offer");
+const { TRANSLATION_MAP } = require("./website_russian_localization");
 
 const STYLE_ID = "vx-conversion-direct-nav-style";
+const HOW_IT_WORKS_HREF = "/trading-systems#vx-how-to-trade-title";
+const TRADING_SYSTEMS_PATH = "/trading-systems";
 const DAY_PATH = SYSTEMS[0].path;
 const SWING_PATH = SYSTEMS[1].path;
 const OPTIONS_PATH = SYSTEMS[2].path;
 const RESULTS_PATH = "/results";
 const PRICING_PATH = "/pricing";
+const ABOUT_PATH = "/about";
+const SERVICES_PATH = "/services";
+const HELP_PATH = "/trading-guide";
 const LOGIN_PATH = "/dashboard";
+const LIVE_ACCESS_HREF = "/#password-access";
 const DAY_TRIAL_TEXT = DAY_TRIAL_REQUEST_TEXT;
+
+for (const [source, translated] of [
+  ["How It Works", "Как это работает"],
+  ["Trading Systems", "Торговые системы"],
+  ["Day Trading", "Дейтрейдинг"],
+  ["Swing Trading", "Свинг-трейдинг"],
+  ["Options", "Опционы"],
+  ["Results", "Результаты"],
+  ["Pricing", "Тарифы"],
+  ["About", "О нас"],
+  ["Services", "Услуги"],
+  ["Help", "Помощь"],
+  ["Log In", "Войти"],
+  ["Live Access", "Live-доступ"],
+  ["Telegram Signals", "Сигналы в Telegram"],
+]) TRANSLATION_MAP.set(source, translated);
 
 const PUBLIC_PATHS = new Set([
   "/",
-  "/trading-systems",
+  TRADING_SYSTEMS_PATH,
   DAY_PATH,
   SWING_PATH,
   OPTIONS_PATH,
   RESULTS_PATH,
   PRICING_PATH,
-  "/services",
+  SERVICES_PATH,
   "/access",
-  "/about",
-  "/trading-guide",
+  ABOUT_PATH,
+  HELP_PATH,
   "/closed-trades",
   "/risk-management",
 ]);
@@ -66,16 +89,19 @@ function navAnchor(path, href, label, className = "") {
 }
 
 function renderPublicNavLinks(path = "/") {
-  const systems = [
-    navAnchor(path, DAY_PATH, "Day Trading", "vx-system-nav-link"),
-    navAnchor(path, SWING_PATH, "Swing Trading", "vx-system-nav-link"),
-    navAnchor(path, OPTIONS_PATH, "Options", "vx-system-nav-link"),
+  const links = [
+    navAnchor(path, HOW_IT_WORKS_HREF, "How It Works"),
+    navAnchor(path, TRADING_SYSTEMS_PATH, "Trading Systems"),
+    navAnchor(path, DAY_PATH, "Day Trading"),
+    navAnchor(path, SWING_PATH, "Swing Trading"),
+    navAnchor(path, OPTIONS_PATH, "Options"),
+    navAnchor(path, RESULTS_PATH, "Results"),
+    navAnchor(path, PRICING_PATH, "Pricing"),
+    navAnchor(path, ABOUT_PATH, "About"),
+    navAnchor(path, SERVICES_PATH, "Services"),
+    navAnchor(path, HELP_PATH, "Help"),
   ].join("");
-  const pages = [
-    navAnchor(path, RESULTS_PATH, "Results", "vx-page-nav-link"),
-    navAnchor(path, PRICING_PATH, "Pricing", "vx-page-nav-link"),
-  ].join("");
-  return `<div class="vx-direct-system-nav" aria-label="Trading systems">${systems}</div><div class="vx-direct-page-nav" aria-label="Public pages">${pages}</div><div class="vx-direct-nav-actions"><a class="vx-public-nav-login" href="${LOGIN_PATH}">Log In</a><a class="vx-public-nav-cta" href="${DAY_TRIAL_URL}" target="_blank" rel="noopener noreferrer" aria-label="Get 30 Days Free Day Trading Telegram signals">Get 30 Days Free</a></div>`;
+  return `<div class="vx-unified-public-nav" aria-label="Primary navigation">${links}</div><div class="vx-direct-nav-actions"><a class="vx-public-nav-login" href="${LOGIN_PATH}">Log In</a><a class="vx-public-nav-cta" href="${LIVE_ACCESS_HREF}">Live Access</a></div>`;
 }
 
 function normalizePublicNavigation(html, path = "/") {
@@ -102,29 +128,32 @@ function normalizeSecondaryNavigation(html) {
 
 const styles = `
 <style id="${STYLE_ID}">
-  .nav-links,.navlinks{display:flex!important;align-items:center!important;gap:14px!important;flex:1 1 auto!important;min-width:0!important;overflow:visible!important}
-  .vx-direct-system-nav,.vx-direct-page-nav,.vx-direct-nav-actions{display:flex;align-items:center;gap:10px}
-  .vx-direct-nav-actions{margin-left:auto}
-  .vx-direct-system-nav a,.vx-direct-page-nav a{display:inline-flex;align-items:center;min-height:38px;padding:0 8px;border-radius:10px;color:#33423b!important;font-size:13px!important;font-weight:650!important;text-decoration:none!important;white-space:nowrap}
-  .vx-direct-system-nav a:hover,.vx-direct-page-nav a:hover{background:#f1f7f4}
-  .vx-direct-system-nav a.is-active,.vx-direct-page-nav a.is-active{background:#e9f7ef;color:#075f39!important;box-shadow:inset 0 0 0 1px #b9dec9}
-  .vx-direct-system-nav a[aria-current="page"]::after,.vx-direct-page-nav a[aria-current="page"]::after{content:"Current";position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-  .vx-direct-system-nav a,.vx-direct-page-nav a{position:relative}
-  .vx-public-nav-login{display:inline-flex!important;align-items:center;justify-content:center;min-height:40px;padding:0 6px!important;color:#425049!important;font-size:13px!important;font-weight:650!important;text-decoration:none!important;white-space:nowrap}
-  .vx-public-nav-cta{display:inline-flex!important;align-items:center;justify-content:center;min-height:42px;padding:0 16px!important;border:1px solid #078f51!important;border-radius:999px;background:#078f51!important;color:#fff!important;font-size:13px!important;font-weight:750!important;text-decoration:none!important;white-space:nowrap;box-shadow:0 8px 22px rgba(7,143,81,.14)}
+  .nav-links,.navlinks{display:flex!important;align-items:center!important;gap:18px!important;flex:1 1 auto!important;min-width:0!important;overflow:visible!important}
+  .vx-unified-public-nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap;min-width:0}
+  .vx-direct-nav-actions{display:flex;align-items:center;gap:12px;margin-left:auto;flex:0 0 auto}
+  .vx-unified-public-nav a{display:inline-flex;align-items:center;min-height:40px;padding:0!important;color:#425049!important;font-size:14px!important;font-weight:500!important;line-height:1.2;text-decoration:none!important;white-space:nowrap;position:relative}
+  .vx-unified-public-nav a:hover{color:#17211d!important}
+  .vx-unified-public-nav a.is-active{color:#17211d!important;font-weight:700!important;box-shadow:inset 0 -2px #078f51}
+  .vx-unified-public-nav a[aria-current="page"]::after{content:"Current";position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .vx-public-nav-login{display:inline-flex!important;align-items:center;justify-content:center;min-height:42px;padding:0!important;color:#17211d!important;font-size:14px!important;font-weight:700!important;text-decoration:none!important;white-space:nowrap}
+  .vx-public-nav-cta{display:inline-flex!important;align-items:center;justify-content:center;min-height:46px;padding:0 20px!important;border:1px solid #078f51!important;border-radius:999px;background:#078f51!important;color:#fff!important;font-size:13px!important;font-weight:750!important;text-decoration:none!important;white-space:nowrap;box-shadow:0 8px 22px rgba(7,143,81,.14)}
   .vx-public-secondary-nav{display:flex!important;justify-content:center!important;gap:16px!important;flex-wrap:wrap!important;margin-top:12px!important}.vx-public-secondary-nav a{color:#5f6d67!important;font-size:12px!important;text-decoration:none!important}.vx-public-secondary-nav a:hover{text-decoration:underline!important;text-underline-offset:3px!important}
-  @media(max-width:900px){
-    .nav-links,.navlinks{gap:10px!important;flex-wrap:wrap!important}
-    .vx-direct-system-nav{order:3;flex:1 1 100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding-top:4px}
-    .vx-direct-system-nav a{justify-content:center;min-width:0;padding:0 8px;font-size:12.5px!important}
-    .vx-direct-page-nav{display:none}
-    .vx-direct-nav-actions{order:2;margin-left:auto;gap:8px}
+  @media(max-width:1180px){
+    .nav-links,.navlinks{gap:12px!important}
+    .vx-unified-public-nav{gap:12px}
+    .vx-unified-public-nav a{font-size:13px!important}
+    .vx-direct-nav-actions{gap:9px}
   }
-  @media(max-width:520px){
+  @media(max-width:1000px){
+    .nav-links,.navlinks{gap:10px!important;flex-wrap:wrap!important}
+    .vx-unified-public-nav{order:3;flex:1 1 100%;width:100%;gap:14px;padding-top:4px}
+    .vx-direct-nav-actions{order:2;margin-left:auto}
+  }
+  @media(max-width:700px){
     .nav-links,.navlinks{flex-basis:100%!important;width:100%!important}
-    .vx-direct-nav-actions{width:100%;justify-content:flex-end}
-    .vx-public-nav-login{min-height:38px}.vx-public-nav-cta{min-height:40px;padding:0 13px!important;font-size:12.5px!important}
-    .vx-direct-system-nav a{min-height:40px;font-size:12px!important;line-height:1.15;text-align:center;white-space:normal}
+    .vx-unified-public-nav{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin;padding-bottom:3px}
+    .vx-unified-public-nav a{flex:0 0 auto;min-height:38px;font-size:12.5px!important}
+    .vx-public-nav-login{min-height:40px;font-size:13px!important}.vx-public-nav-cta{min-height:42px;padding:0 15px!important;font-size:12.5px!important}
   }
 </style>`;
 
@@ -186,12 +215,18 @@ Module._load = function vixaleConversionNavigationModuleLoad(request, parent, is
 
 module.exports = {
   STYLE_ID,
+  HOW_IT_WORKS_HREF,
+  TRADING_SYSTEMS_PATH,
   DAY_PATH,
   SWING_PATH,
   OPTIONS_PATH,
   RESULTS_PATH,
   PRICING_PATH,
+  ABOUT_PATH,
+  SERVICES_PATH,
+  HELP_PATH,
   LOGIN_PATH,
+  LIVE_ACCESS_HREF,
   DAY_TRIAL_TEXT,
   DAY_TRIAL_URL,
   PUBLIC_PATHS,

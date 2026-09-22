@@ -21,14 +21,14 @@ async function verifySwing(page, origin, isRu) {
   const hero = await page.locator(".hero-copy").first().innerText();
   if (isRu) {
     assert(hero.includes("Активный портфель на основе фирменной системы ранжирования Vixale."), "RU Swing owner copy line 1 missing");
-    assert(hero.includes("Позиции добавляются и закрываются ежедневно. Обновляется каждое утро около 10:00."), "RU Swing owner copy line 2 missing");
-    assert(hero.includes("См. руководство по торговле."), "RU Swing trading-guide sentence missing");
+    assert(hero.includes("Позиции добавляются и закрываются ежедневно."), "RU Swing owner copy line 2 missing");
+    assert(hero.includes("Обновляется каждое утро около 10:00. См. руководство по торговле."), "RU Swing owner copy line 3 missing");
     const href = await page.locator(".vx-swing-guide-link").first().getAttribute("href");
     assert.strictEqual(href, `${RU_ORIGIN}/trading-guide#swing-trading`, "RU Swing guide link must stay on RU host");
   } else {
     assert(hero.includes("Active Portfolio based on Vixale's proprietary ranking system."), "EN Swing owner copy line 1 missing");
-    assert(hero.includes("Positions are added and closed daily. Updated every morning around 10:00 am."), "EN Swing owner copy line 2 missing");
-    assert(hero.includes("Refer to the trading guide."), "EN Swing trading-guide sentence missing");
+    assert(hero.includes("Positions are added and closed daily."), "EN Swing owner copy line 2 missing");
+    assert(hero.includes("Updated every morning around 10:00 am. Refer to the trading guide."), "EN Swing owner copy line 3 missing");
     const href = await page.locator(".vx-swing-guide-link").first().getAttribute("href");
     assert.strictEqual(href, `${EN_ORIGIN}/trading-guide#swing-trading`, "EN Swing guide link mismatch");
   }

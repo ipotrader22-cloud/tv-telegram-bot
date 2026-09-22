@@ -11,11 +11,15 @@ on:
       - "package.json"
       - "Vixale_Trading_Guide.pdf.b64"
       - "website_owner_copy_refinement.js"
+      - "website_conversion_navigation_refinement.js"
+      - "website_conversion_home_refinement.js"
       - "website_services_source_parity_fix.js"
       - "website_russian_services_form_copy_refinement.js"
       - "website_russian_localization.js"
       - "website_russian_translations_regression.js"
       - "tests/test_owner_requested_public_copy.js"
+      - "tests/test_issue123_pr1_direct_navigation.js"
+      - "tests/test_issue123_pr2_homepage_preview.js"
       - "tests/test_trading_guide_pdf_integrity.js"
       - "tests/test_services_ru_parity_fix.js"
       - "tests/test_services_ru_form_controls.js"
@@ -34,6 +38,8 @@ on:
       - "lib/**"
       - "public/**"
       - "tests/test_owner_requested_public_copy.js"
+      - "tests/test_issue123_pr1_direct_navigation.js"
+      - "tests/test_issue123_pr2_homepage_preview.js"
       - "tests/test_trading_guide_pdf_integrity.js"
       - "scripts/qa-production-locales.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
@@ -63,6 +69,8 @@ jobs:
       - name: Syntax checks
         run: |
           node --check website_owner_copy_refinement.js
+          node --check website_conversion_navigation_refinement.js
+          node --check website_conversion_home_refinement.js
           node --check website_services_source_parity_fix.js
           node --check website_russian_services_form_copy_refinement.js
           node --check website_russian_localization.js
@@ -71,9 +79,16 @@ jobs:
           node --check scripts/qa-production-owner-copy-and-pdf.js
           node --check scripts/qa-production-services-form-controls.js
           node --check tests/test_owner_requested_public_copy.js
+          node --check tests/test_issue123_pr1_direct_navigation.js
+          node --check tests/test_issue123_pr2_homepage_preview.js
           node --check tests/test_trading_guide_pdf_integrity.js
           node --check tests/test_services_ru_parity_fix.js
           node --check tests/test_services_ru_form_controls.js
+
+      - name: Unified navigation and homepage CTA regressions
+        run: |
+          node tests/test_issue123_pr1_direct_navigation.js
+          node tests/test_issue123_pr2_homepage_preview.js
 
       - name: Owner-requested public copy and PDF regressions
         run: |
