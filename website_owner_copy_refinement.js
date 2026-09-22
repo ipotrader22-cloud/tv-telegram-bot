@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+const { TRANSLATION_MAP } = require("./website_russian_localization");
 
 const HOME_PATH = "/";
 const SWING_PATH = "/trading-systems/swing-trading";
@@ -8,6 +9,15 @@ const GUIDE_URL = "https://www.vixale.com/trading-guide#swing-trading";
 const OLD_SWING_COPY = "A public research/model portfolio built around Vixale's proprietary ranking system. Review open positions, potential candidates, completed trades and model equity history from the latest published update.";
 const NEW_SWING_COPY = `Active Portfolio based on Vixale's proprietary ranking system.<br>Positions are added and closed daily. Updated every morning around 10:00 am.<br><span>Refer to the </span><a class="vx-swing-guide-link" href="${GUIDE_URL}">trading guide</a>.`;
 const STYLE_ID = "vx-owner-copy-refinement-style";
+
+for (const [source, translated] of [
+  ["Active Portfolio based on Vixale's proprietary ranking system.", "Активный портфель на основе фирменной системы ранжирования Vixale."],
+  ["Positions are added and closed daily. Updated every morning around 10:00 am.", "Позиции добавляются и закрываются ежедневно. Обновляется каждое утро около 10:00."],
+  ["Refer to the", "См."],
+  ["trading guide", "руководство по торговле"],
+  ["Closed Trades P&L", "P&L закрытых сделок"],
+  ["Closed Trades P&amp;L", "P&L закрытых сделок"],
+]) TRANSLATION_MAP.set(source, translated);
 
 function requestPath(req) {
   return String(req?.originalUrl || req?.url || "/").split("?")[0] || "/";
