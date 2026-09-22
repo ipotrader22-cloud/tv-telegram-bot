@@ -9,7 +9,7 @@
 
 Latest directly verified website state:
 
-- **Current verified main head:** `136421b8536a0802bba3ed31ae1588fbd979508c`
+- **Verified runtime/QA baseline commit:** `136421b8536a0802bba3ed31ae1588fbd979508c`
 - **PR #183:** `Remove stale bot source expectation from RU Services QA` — MERGED
 - **PR #183 merge SHA:** `136421b8536a0802bba3ed31ae1588fbd979508c`
 - **PR #182:** `Remove stale strategy source expectation from RU Services QA` — MERGED
@@ -24,6 +24,8 @@ Latest directly verified website state:
 - **Production QA result:** **SUCCESS**
 
 This manifest supersedes `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-22-PR176.md` as the website-facing baseline.
+
+Documentation-only Source-of-Truth commits can be newer than the runtime/QA baseline above without changing website runtime behavior. Therefore this manifest intentionally identifies the verified runtime/QA baseline rather than claiming that commit is always the repository's literal latest `main` head.
 
 ## RU Services form-control regression resolution
 
