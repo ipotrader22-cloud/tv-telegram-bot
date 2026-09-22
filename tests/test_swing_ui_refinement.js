@@ -61,9 +61,12 @@ assert(!out.includes("Old technical wording"));
 assert(!out.includes("Old rules copy"));
 
 assert(out.includes('data-vx-swing-how="beginner"'));
-assert(out.includes("Stocks that are currently in the model portfolio."));
+assert(out.includes("Stocks that are currently in the Active portfolio. Positions are monitored for Profit target/Stop Loss/or Removal due to ratings change. Check every morning around 10:06 for updates."));
 assert(out.includes("They are not open positions and may never be added."));
-assert(out.includes("The 5% stop reference is checked during the scheduled morning review, not as an automatic intraday stop."));
+assert(out.includes("<strong>Profit Target:</strong> A +10% target may fill during the day."));
+assert(out.includes("<strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review."));
+assert(out.includes("Position can also be removed from Active Portfolio if ranking goes below 70."));
+assert(out.includes("Closed positions due to Profit Target/Stop/Removal from the Active Portfolio."));
 assert(out.includes("$10K / position"));
 assert(!out.includes("$10K</strong><span>per position"));
 assert(out.includes("<small>Candidates</small>"));
