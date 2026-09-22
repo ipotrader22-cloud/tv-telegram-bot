@@ -33,7 +33,8 @@ for (const source of [
   "Verified · Closed Trades ledger",
 ]) {
   const out = refineOwnerCopy(`<button>${source}</button>`, HOME_PATH);
-  assert(out.includes("Closed Trades P&amp;L"), `must normalize home label variant: ${source}`);
+  assert(out.includes("Closed Trades P&L"), `must normalize home label variant: ${source}`);
+  assert(!out.includes("Closed Trades P&amp;L"), `must not pre-escape the final visible label: ${source}`);
   assert(!out.includes(source), `must remove old home label variant: ${source}`);
 }
 
