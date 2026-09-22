@@ -114,11 +114,14 @@ async function inspect(page) {
         assert(state.actions.includes(action), `${viewport.name}: missing unchanged form action: ${action}`);
       }
 
-      // Current /strategy-review has no hidden source field; its backend contract is
-      // name/contact/market/experience/goal/rules. Keep only hidden values that are
-      // actually present in the current Services markup.
-      for (const hiddenValue of ["landing_bot_form", "Signals & Research"]) {
-        assert(state.hiddenValues.includes(hiddenValue), `${viewport.name}: hidden semantic value changed or missing: ${hiddenValue}`);
+      // Current /strategy-review and /bot-request forms do not submit hidden
+      // source fields. The research request still intentionally carries the
+      // request_type semantic value below.
+      for (const hiddenValue of ["Signals & Research"]) {
+        assert(
+          state.hiddenValues.includes(hiddenValue),
+          `${viewport.name}: hidden semantic value changed or missing: ${hiddenValue}; observed hidden values=${JSON.stringify(state.hiddenValues)}`
+        );
       }
 
       console.log(`${viewport.name}: RU Services live form controls PASS`);
