@@ -2,6 +2,7 @@
 
 const Module = require("module");
 const { injectFunnelAccessScript } = require("./lib/website-funnel-client");
+const { addQuickMenuSystemLinks } = require("./lib/website-quick-menu");
 
 const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
@@ -210,6 +211,7 @@ function refineNavigationAndDisclosure(html, path) {
     result = addSystemsGuideButton(result);
     result = moveGuideBeforeDisclosure(result);
   }
+  result = addQuickMenuSystemLinks(result);
   if (PUBLIC_NAV_PATHS.has(path)) {
     result = injectStyles(result);
     result = injectFunnelAccessScript(result);
