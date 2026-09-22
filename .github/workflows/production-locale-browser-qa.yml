@@ -9,10 +9,14 @@ on:
       - main
     paths:
       - "package.json"
+      - "Vixale_Trading_Guide.pdf.b64"
+      - "website_owner_copy_refinement.js"
       - "website_services_source_parity_fix.js"
       - "website_russian_services_form_copy_refinement.js"
       - "website_russian_localization.js"
       - "website_russian_translations_regression.js"
+      - "tests/test_owner_requested_public_copy.js"
+      - "tests/test_trading_guide_pdf_integrity.js"
       - "tests/test_services_ru_parity_fix.js"
       - "tests/test_services_ru_form_controls.js"
       - "scripts/qa-production-locales.js"
@@ -24,9 +28,12 @@ on:
     paths:
       - "app.js"
       - "package.json"
+      - "Vixale_Trading_Guide.pdf.b64"
       - "website_*.js"
       - "lib/**"
       - "public/**"
+      - "tests/test_owner_requested_public_copy.js"
+      - "tests/test_trading_guide_pdf_integrity.js"
       - "scripts/qa-production-locales.js"
       - "scripts/qa-production-services-form-controls.js"
       - ".github/workflows/production-locale-browser-qa.yml"
@@ -53,14 +60,22 @@ jobs:
 
       - name: Syntax checks
         run: |
+          node --check website_owner_copy_refinement.js
           node --check website_services_source_parity_fix.js
           node --check website_russian_services_form_copy_refinement.js
           node --check website_russian_localization.js
           node --check website_russian_translations_regression.js
           node --check scripts/qa-production-locales.js
           node --check scripts/qa-production-services-form-controls.js
+          node --check tests/test_owner_requested_public_copy.js
+          node --check tests/test_trading_guide_pdf_integrity.js
           node --check tests/test_services_ru_parity_fix.js
           node --check tests/test_services_ru_form_controls.js
+
+      - name: Owner-requested public copy and PDF regressions
+        run: |
+          node tests/test_owner_requested_public_copy.js
+          node tests/test_trading_guide_pdf_integrity.js
 
       - name: Services RU parity regression
         run: |
