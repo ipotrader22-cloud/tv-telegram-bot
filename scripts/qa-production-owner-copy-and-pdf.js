@@ -9,10 +9,10 @@ const RU_ORIGIN = String(process.env.QA_RU_ORIGIN || "https://ru.vixale.com").re
 const EXPECTED_PDF_SHA256 = "bb51f6ca9baaec0bf10d200f8f308b765ec18ebe1db54ac991c9316bc6fa2c9f";
 
 async function open(page, url) {
-  const response = await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
   assert(response, `no response for ${url}`);
   assert(response.status() < 400, `${url} returned ${response.status()}`);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 }
 
 async function verifySwing(page, origin, isRu) {
