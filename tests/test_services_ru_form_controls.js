@@ -12,12 +12,13 @@ assert(
 );
 
 // Mirror the current serialized Services form-control presentation strings.
+// The current Automation / Setup select starts with the automation option; the
+// former disabled "Select a topic…" placeholder is no longer emitted.
 // Backend actions and semantic values are included so localization regressions
 // cannot accidentally translate submitted contracts while fixing visible copy.
 const source = `<!doctype html><html lang="en"><head><title>Services form controls</title></head><body>
 <form method="POST" action="/appointment-request">
   <select id="appointment-type" name="appointmentType" required>
-    <option value="" disabled selected>Select a topic…</option>
     <option value="automation">Automate trades with TWS / IBKR</option>
     <option value="setup">Set up TWS / API</option>
     <option value="other">Something else</option>
@@ -50,7 +51,6 @@ const localized = localizeServicesFormPresentation(localizeRussianHtml(source, "
 const presentationHtml = localized.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
 
 const expectedRussian = [
-  "Выберите тему…",
   "Автоматизировать сделки через TWS / IBKR",
   "Настроить TWS / API",
   "Другое",
@@ -69,7 +69,6 @@ for (const expected of expectedRussian) {
 }
 
 const forbiddenEnglish = [
-  "Select a topic…",
   "Automate trades with TWS / IBKR",
   "Set up TWS / API",
   ">Something else<",
@@ -87,6 +86,12 @@ const forbiddenEnglish = [
 for (const sourceText of forbiddenEnglish) {
   assert(!presentationHtml.includes(sourceText), `localized Services form controls must not retain: ${sourceText}`);
 }
+
+// Keep the historical placeholder mapping safe even though the current renderer
+// no longer emits that option.
+const legacyOption = localizeServicesFormPresentation('<select><option value="" disabled selected>Select a topic…</option></select>');
+assert(legacyOption.includes("Выберите тему…"));
+assert(!legacyOption.includes("Select a topic…"));
 
 // Brand/platform names are intentionally not forced into artificial translation.
 assert(presentationHtml.includes('placeholder="TradingView, NinjaTrader, IBKR, ..."'));
