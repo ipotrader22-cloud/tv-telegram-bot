@@ -15,6 +15,7 @@ const PLACEHOLDER_TRANSLATIONS = Object.freeze([
   Object.freeze(["Stocks, options, futures, crypto...", "Акции, опционы, фьючерсы, крипто..."]),
   Object.freeze(["Stocks, futures, options, crypto...", "Акции, фьючерсы, опционы, крипто..."]),
   Object.freeze(["Example: “Enter when RSI crosses above 50, stop 2%, target 5%.”", "Пример: «Вход при пересечении RSI уровня 50 снизу вверх, стоп 2%, цель 5%.»"]),
+  Object.freeze(["Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours...", "Пример: хочу покупать после отката вслед за сильным движением, входить около..., цель..., стоп..., только в часы рынка..."]),
   Object.freeze(["Example: I want to buy when price pulls back after a strong move, enter near... target..., stop..., only during market hours...", "Пример: хочу покупать после отката вслед за сильным движением, входить около..., цель..., стоп..., только в часы рынка..."]),
   Object.freeze(["Example: “Watch 50 stocks, alert me in Telegram, and place orders through IBKR.”", "Пример: «Отслеживать 50 акций, присылать уведомления в Telegram и размещать ордера через IBKR.»"]),
   Object.freeze(["Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram...", "Пример: хочу, чтобы бот получал алерты TradingView, размещал сделки в TWS, отслеживал позиции и отправлял обновления в Telegram..."]),
