@@ -10,10 +10,12 @@ const {
 } = require("../website_owner_copy_refinement");
 const { localizeRussianHtml } = require("../website_russian_localization");
 
-const swing = `<!doctype html><html><head></head><body><p class="hero-copy">${OLD_SWING_COPY}</p></body></html>`;
+const swing = `<!doctype html><html><head></head><body><h1>Follow a portfolio reviewed every day.</h1><p class="hero-copy">${OLD_SWING_COPY}</p></body></html>`;
 const swingOut = refineOwnerCopy(swing, SWING_PATH);
 assert(swingOut.includes("Active Portfolio based on Vixale's proprietary ranking system."));
-assert(swingOut.includes("Positions are added and closed daily. Updated every morning around 10:00 am."));
+assert(swingOut.includes("<h1>Active Portfolio</h1>"));
+assert(swingOut.includes('class="vx-swing-copy-row">Positions are added and closed daily.</span>'));
+assert(swingOut.includes('class="vx-swing-copy-row">Updated every morning around 10:00 am. Refer to the <a'));
 assert(swingOut.includes(`href="${GUIDE_URL}"`));
 assert(swingOut.includes(">trading guide</a>."));
 assert(!swingOut.includes(OLD_SWING_COPY));
@@ -21,8 +23,8 @@ assert.strictEqual(refineOwnerCopy(swingOut, SWING_PATH), swingOut, "Swing owner
 
 const swingRu = localizeRussianHtml(swingOut, SWING_PATH);
 assert(swingRu.includes("Активный портфель на основе фирменной системы ранжирования Vixale."));
-assert(swingRu.includes("Позиции добавляются и закрываются ежедневно. Обновляется каждое утро около 10:00."));
-assert(swingRu.includes("См. "));
+assert(swingRu.includes("Позиции добавляются и закрываются ежедневно."));
+assert(swingRu.includes("Обновляется каждое утро около 10:00. См. "));
 assert(swingRu.includes(">руководство по торговле</a>."));
 assert(swingRu.includes('href="https://ru.vixale.com/trading-guide#swing-trading"'));
 
