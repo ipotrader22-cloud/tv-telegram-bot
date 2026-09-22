@@ -7,7 +7,7 @@ const HOME_PATH = "/";
 const SWING_PATH = "/trading-systems/swing-trading";
 const GUIDE_URL = "https://www.vixale.com/trading-guide#swing-trading";
 const OLD_SWING_COPY = "A public research/model portfolio built around Vixale's proprietary ranking system. Review open positions, potential candidates, completed trades and model equity history from the latest published update.";
-const NEW_SWING_COPY = `Active Portfolio based on Vixale's proprietary ranking system.<br>Positions are added and closed daily. Updated every morning around 10:00 am.<br><span>Refer to the </span><a class="vx-swing-guide-link" href="${GUIDE_URL}">trading guide</a>.`;
+const NEW_SWING_COPY = `<span class="vx-swing-copy-row">Active Portfolio based on Vixale\'s proprietary ranking system.</span><span class="vx-swing-copy-row">Positions are added and closed daily.</span><span class="vx-swing-copy-row">Updated every morning around 10:00 am. Refer to the <a class="vx-swing-guide-link" href="${GUIDE_URL}">trading guide</a>.</span>`;
 const STYLE_ID = "vx-owner-copy-refinement-style";
 
 for (const [source, translated] of [
