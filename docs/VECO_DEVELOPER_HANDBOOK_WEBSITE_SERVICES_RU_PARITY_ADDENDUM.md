@@ -94,6 +94,14 @@ Form-control regression fixtures must mirror the **current serialized source val
 
 PR #171 exposed this distinction: its source fixture expected `Enter email or @telegram`, while the current Services renderer emitted `@username or email`. The exact-node localizer therefore behaved correctly but had no exact match for the live value. The dedicated production browser check caught the mismatch.
 
+A second production mismatch was caught on 2026-09-22 in the Strategy rules placeholder. The renderer emitted:
+
+```text
+Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours...
+```
+
+while the mapping/fixture had the visually similar but byte-different variant without the comma after `near...`. Because this layer intentionally performs exact-value replacement, that punctuation difference prevented localization and left the placeholder in English on the RU page. The fix is to keep the exact live variant in the approved mapping and keep regression/production QA aligned to the serialized source. Punctuation is part of the exact-value contract.
+
 `website_russian_localization.js` remains the mandatory first preload and therefore the final general response transform. `website_russian_services_form_copy_refinement.js` is intentionally preloaded immediately after it. Because Express response wrappers execute in reverse middleware order, the Services safety pass sees the final downstream-refined `/services` markup first, repairs only explicitly approved live form-control presentation variants, and then hands that HTML to the canonical general RU localizer for the final locale/SEO pass.
 
 The Services safety pass may rewrite only exact approved `placeholder` values and visible `<option>` labels on RU `/services`. It must never rewrite option `value` attributes, hidden semantic values, form actions, field names, IDs, classes, data attributes, or user-entered values.

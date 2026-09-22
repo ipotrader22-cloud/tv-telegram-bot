@@ -36,6 +36,7 @@ const FORBIDDEN_ENGLISH = Object.freeze([
   "Enter email or @telegram",
   "Example: I have IBKR and TWS installed. I use TradingView alerts. I want signals to place trades automatically...",
   "Stocks, options, futures, crypto...",
+  "Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours...",
   "Example: I want to buy when price pulls back after a strong move, enter near... target..., stop..., only during market hours...",
   "Stocks, futures, options, crypto...",
   "Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram...",
