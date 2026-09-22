@@ -8,10 +8,28 @@ const EN_ORIGIN = process.env.QA_EN_ORIGIN || "https://www.vixale.com";
 const RU_ORIGIN = process.env.QA_RU_ORIGIN || "https://ru.vixale.com";
 const OUTPUT_DIR = process.env.QA_OUTPUT_DIR || "artifacts/production-locale-qa";
 
+const EXPECTED_NAV_HREFS = [
+  "/trading-systems#vx-how-to-trade-title",
+  "/trading-systems",
+  "/trading-systems/day-trading",
+  "/trading-systems/swing-trading",
+  "/trading-systems/options",
+  "/results",
+  "/pricing",
+  "/about",
+  "/services",
+  "/trading-guide",
+];
+const EXPECTED_EN_NAV = ["How It Works", "Trading Systems", "Day Trading", "Swing Trading", "Options", "Results", "Pricing", "About", "Services", "Help"];
+const EXPECTED_RU_NAV = ["Как это работает", "Торговые системы", "Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Тарифы", "О нас", "Услуги", "Помощь"];
+const EXPECTED_EN_ACTIONS = ["Log In", "Live Access"];
+const EXPECTED_RU_ACTIONS = ["Войти", "Live-доступ"];
+const EXPECTED_ACTION_HREFS = ["/dashboard", "/#password-access"];
+
 const ROUTES = [
   {
     path: "/",
-    requiredRu: ["Торговые сигналы. Три системы. Выбор за вами."],
+    requiredRu: ["Торговые сигналы. Три системы. Выбор за вами.", "Сигналы в Telegram", "Live-доступ"],
     forbiddenRu: ["Trading signals. Three systems. Your choice.", "Live Trade Dashboard"],
   },
   { path: "/trading-systems" },
@@ -58,6 +76,9 @@ const ROUTES = [
     ],
   },
   { path: "/about" },
+  { path: "/trading-guide" },
+  { path: "/closed-trades" },
+  { path: "/risk-management" },
 ];
 
 const VIEWPORTS = {
@@ -97,6 +118,8 @@ async function gotoWithRetry(page, url) {
 async function pageSnapshot(page) {
   return page.evaluate(() => {
     const main = document.querySelector("main");
+    const primaryNav = document.querySelector(".vx-unified-public-nav");
+    const navActions = document.querySelector(".vx-direct-nav-actions");
     const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"][href]'))
       .map((node) => node.href)
       .sort();
@@ -107,6 +130,9 @@ async function pageSnapshot(page) {
           return `${node.tagName.toLowerCase()}${id}${classes ? `.${classes}` : ""}`;
         })
       : [];
+    const linkSnapshot = (root) => root
+      ? Array.from(root.querySelectorAll("a")).map((node) => ({ text: String(node.textContent || "").trim(), href: node.getAttribute("href") || "" }))
+      : [];
     return {
       lang: document.documentElement.getAttribute("lang") || "",
       runtimeLocalized: document.documentElement.getAttribute("data-vx-ru-runtime-localized") || "",
@@ -115,6 +141,8 @@ async function pageSnapshot(page) {
       directMainChildren,
       styleSheets,
       title: document.title,
+      primaryNav: linkSnapshot(primaryNav),
+      navActions: linkSnapshot(navActions),
     };
   });
 }
@@ -125,6 +153,26 @@ function addFailure(report, detail) {
 
 function sameArray(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function verifyNavigation(report, viewportName, routePath, snapshot, expectedLabels, localeLabel) {
+  const labels = snapshot.primaryNav.map((item) => item.text);
+  const hrefs = snapshot.primaryNav.map((item) => item.href);
+  const actionLabels = snapshot.navActions.map((item) => item.text);
+  const actionHrefs = snapshot.navActions.map((item) => item.href);
+  const expectedActions = localeLabel === "RU" ? EXPECTED_RU_ACTIONS : EXPECTED_EN_ACTIONS;
+  if (!sameArray(labels, expectedLabels)) {
+    addFailure(report, `${viewportName} ${routePath}: ${localeLabel} unified nav labels differ: ${JSON.stringify(labels)}`);
+  }
+  if (!sameArray(hrefs, EXPECTED_NAV_HREFS)) {
+    addFailure(report, `${viewportName} ${routePath}: ${localeLabel} unified nav hrefs differ: ${JSON.stringify(hrefs)}`);
+  }
+  if (!sameArray(actionLabels, expectedActions)) {
+    addFailure(report, `${viewportName} ${routePath}: ${localeLabel} nav actions differ: ${JSON.stringify(actionLabels)}`);
+  }
+  if (!sameArray(actionHrefs, EXPECTED_ACTION_HREFS)) {
+    addFailure(report, `${viewportName} ${routePath}: ${localeLabel} nav action hrefs differ: ${JSON.stringify(actionHrefs)}`);
+  }
 }
 
 async function run() {
@@ -177,6 +225,8 @@ async function run() {
             title: en.title,
             directMainChildren: en.directMainChildren,
             styleSheets: en.styleSheets,
+            primaryNav: en.primaryNav,
+            navActions: en.navActions,
           };
           record.ru = {
             lang: ru.lang,
@@ -184,6 +234,8 @@ async function run() {
             runtimeLocalized: ru.runtimeLocalized,
             directMainChildren: ru.directMainChildren,
             styleSheets: ru.styleSheets,
+            primaryNav: ru.primaryNav,
+            navActions: ru.navActions,
           };
 
           if (!/^ru(?:-|$)/i.test(ru.lang)) {
@@ -202,6 +254,9 @@ async function run() {
             addFailure(report, `${viewportName} ${route.path}: EN/RU stylesheet URLs differ`);
           }
 
+          verifyNavigation(report, viewportName, route.path, en, EXPECTED_EN_NAV, "EN");
+          verifyNavigation(report, viewportName, route.path, ru, EXPECTED_RU_NAV, "RU");
+
           if (viewportName === "desktop") {
             const ruText = normalizeText(ru.text);
             for (const phrase of route.requiredRu || []) {
@@ -213,6 +268,17 @@ async function run() {
               if (ruText.includes(normalizeText(phrase))) {
                 addFailure(report, `desktop ${route.path}: residual English/legacy text present: ${phrase}`);
               }
+            }
+          }
+
+          if (route.path === "/") {
+            const enText = normalizeText(en.text);
+            const ruText = normalizeText(ru.text);
+            for (const phrase of ["Telegram Signals", "Live Access", "View Trading Results"]) {
+              if (!enText.includes(phrase)) addFailure(report, `${viewportName} /: EN hero action missing: ${phrase}`);
+            }
+            for (const phrase of ["Сигналы в Telegram", "Live-доступ"]) {
+              if (!ruText.includes(phrase)) addFailure(report, `${viewportName} /: RU hero action missing: ${phrase}`);
             }
           }
 
@@ -256,6 +322,7 @@ async function run() {
     "",
     "- Screenshots are paired EN/RU artifacts for manual visual review; text length may legitimately change layout details such as wrapping.",
     "- Automated parity compares top-level `<main>` structure and stylesheet URLs, not pixel identity.",
+    "- Unified public navigation labels, destinations, Log In, and Live Access are verified on every configured public route at desktop and mobile widths.",
     "- Strict translation assertions target known production regressions on Home, Day Trading, Options, Results, Pricing, and Services.",
     ""
   );
