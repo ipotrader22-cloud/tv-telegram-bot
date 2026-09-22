@@ -113,7 +113,11 @@ async function inspect(page) {
       for (const action of ["/appointment-request", "/strategy-review", "/bot-request"]) {
         assert(state.actions.includes(action), `${viewport.name}: missing unchanged form action: ${action}`);
       }
-      for (const hiddenValue of ["landing_strategy_form", "landing_bot_form", "Signals & Research"]) {
+
+      // Current /strategy-review has no hidden source field; its backend contract is
+      // name/contact/market/experience/goal/rules. Keep only hidden values that are
+      // actually present in the current Services markup.
+      for (const hiddenValue of ["landing_bot_form", "Signals & Research"]) {
         assert(state.hiddenValues.includes(hiddenValue), `${viewport.name}: hidden semantic value changed or missing: ${hiddenValue}`);
       }
 
