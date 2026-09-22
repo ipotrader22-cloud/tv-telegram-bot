@@ -23,13 +23,21 @@ const EXPECTED_PLACEHOLDERS = Object.freeze([
   "Пример: хочу понять, какой доступ к сигналам/исследованиям по дейтрейдингу доступен и какие подтверждающие данные можно изучить.",
 ]);
 
-// Mirror the current serialized Automation / Setup select. The live form starts
-// with the actionable automation option; the historical disabled "Select a topic…"
-// placeholder is no longer emitted by the current renderer.
-const EXPECTED_OPTIONS = Object.freeze([
-  "Автоматизировать сделки через TWS / IBKR",
-  "Настроить TWS / API",
-  "Другое",
+// Exact current production option values and their RU presentation labels.
+// The semantic values must stay English/byte-equivalent; only visible labels localize.
+const EXPECTED_OPTION_PAIRS = Object.freeze([
+  Object.freeze(["Automate trades with TWS / IBKR", "Автоматизировать сделки через TWS / IBKR"]),
+  Object.freeze(["Help me set everything up", "Помогите мне всё настроить"]),
+  Object.freeze(["New to trading systems", "Новичок в торговых системах"]),
+  Object.freeze(["I trade manually", "Я торгую вручную"]),
+  Object.freeze(["I already have alerts or code", "У меня уже есть алерты или код"]),
+  Object.freeze(["I manage a trading audience", "Я работаю с торговой аудиторией"]),
+  Object.freeze(["Tell me if this strategy makes sense", "Скажите, имеет ли эта стратегия смысл"]),
+  Object.freeze(["Backtest this strategy", "Провести бэктест стратегии"]),
+  Object.freeze(["Code this strategy", "Реализовать стратегию в коде"]),
+  Object.freeze(["Build a trading bot", "Создать торгового бота"]),
+  Object.freeze(["Package this for my audience", "Подготовить решение для моей аудитории"]),
+  Object.freeze(["Not sure yet", "Пока не знаю"]),
 ]);
 
 const FORBIDDEN_ENGLISH = Object.freeze([
@@ -43,8 +51,9 @@ const FORBIDDEN_ENGLISH = Object.freeze([
   "Stocks, futures, options, crypto...",
   "Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram...",
   "Example: I want to understand what Day Trading signal/research access is available and what evidence I can review.",
+  ...EXPECTED_OPTION_PAIRS.map(([value]) => value),
+  // Historical labels should also never leak visibly if legacy markup returns.
   "Select a topic…",
-  "Automate trades with TWS / IBKR",
   "Set up TWS / API",
   "Something else",
 ]);
@@ -86,10 +95,10 @@ async function inspect(page) {
       for (const expected of EXPECTED_PLACEHOLDERS) {
         assert(state.placeholders.includes(expected), `${viewport.name}: missing RU placeholder: ${expected}`);
       }
-      for (const expected of EXPECTED_OPTIONS) {
+      for (const [value, label] of EXPECTED_OPTION_PAIRS) {
         assert(
-          state.options.some(option => option.text === expected),
-          `${viewport.name}: missing RU option label: ${expected}; observed options=${optionSummary}`
+          state.options.some(option => option.value === value && option.text === label),
+          `${viewport.name}: option value/label mismatch for ${value}; expected=${label}; observed options=${optionSummary}`
         );
       }
 
@@ -103,16 +112,6 @@ async function inspect(page) {
 
       for (const action of ["/appointment-request", "/strategy-review", "/bot-request"]) {
         assert(state.actions.includes(action), `${viewport.name}: missing unchanged form action: ${action}`);
-      }
-      for (const [value, label] of [
-        ["automation", "Автоматизировать сделки через TWS / IBKR"],
-        ["setup", "Настроить TWS / API"],
-        ["other", "Другое"],
-      ]) {
-        assert(
-          state.options.some(option => option.value === value && option.text === label),
-          `${viewport.name}: option value changed or label missing for ${value}; observed options=${optionSummary}`
-        );
       }
       for (const hiddenValue of ["landing_strategy_form", "landing_bot_form", "Signals & Research"]) {
         assert(state.hiddenValues.includes(hiddenValue), `${viewport.name}: hidden semantic value changed or missing: ${hiddenValue}`);

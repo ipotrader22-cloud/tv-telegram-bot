@@ -23,8 +23,26 @@ const PLACEHOLDER_TRANSLATIONS = Object.freeze([
 ]);
 
 const OPTION_TRANSLATIONS = Object.freeze([
-  Object.freeze(["Select a topic…", "Выберите тему…"]),
+  // Current Automation / Setup select values. Only visible labels are localized;
+  // option value attributes remain unchanged by replaceExactOptionLabel().
   Object.freeze(["Automate trades with TWS / IBKR", "Автоматизировать сделки через TWS / IBKR"]),
+  Object.freeze(["Help me set everything up", "Помогите мне всё настроить"]),
+  Object.freeze(["New to trading systems", "Новичок в торговых системах"]),
+  Object.freeze(["I trade manually", "Я торгую вручную"]),
+  Object.freeze(["I already have alerts or code", "У меня уже есть алерты или код"]),
+  Object.freeze(["I manage a trading audience", "Я работаю с торговой аудиторией"]),
+
+  // Current Strategy Review / Development select values.
+  Object.freeze(["Tell me if this strategy makes sense", "Скажите, имеет ли эта стратегия смысл"]),
+  Object.freeze(["Backtest this strategy", "Провести бэктест стратегии"]),
+  Object.freeze(["Code this strategy", "Реализовать стратегию в коде"]),
+  Object.freeze(["Build a trading bot", "Создать торгового бота"]),
+  Object.freeze(["Package this for my audience", "Подготовить решение для моей аудитории"]),
+  Object.freeze(["Not sure yet", "Пока не знаю"]),
+
+  // Historical/legacy labels retained for safe exact-value localization if old
+  // markup is ever rendered again.
+  Object.freeze(["Select a topic…", "Выберите тему…"]),
   Object.freeze(["Set up TWS / API", "Настроить TWS / API"]),
   Object.freeze(["Something else", "Другое"]),
 ]);

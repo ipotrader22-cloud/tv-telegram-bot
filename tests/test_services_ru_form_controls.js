@@ -11,17 +11,33 @@ assert(
   "general RU localization must remain first and the Services form-copy safety pass must be second"
 );
 
-// Mirror the current serialized Services form-control presentation strings.
-// The current Automation / Setup select starts with the automation option; the
-// former disabled "Select a topic…" placeholder is no longer emitted.
-// Backend actions and semantic values are included so localization regressions
-// cannot accidentally translate submitted contracts while fixing visible copy.
+const currentOptionPairs = Object.freeze([
+  Object.freeze(["Automate trades with TWS / IBKR", "Автоматизировать сделки через TWS / IBKR"]),
+  Object.freeze(["Help me set everything up", "Помогите мне всё настроить"]),
+  Object.freeze(["New to trading systems", "Новичок в торговых системах"]),
+  Object.freeze(["I trade manually", "Я торгую вручную"]),
+  Object.freeze(["I already have alerts or code", "У меня уже есть алерты или код"]),
+  Object.freeze(["I manage a trading audience", "Я работаю с торговой аудиторией"]),
+  Object.freeze(["Tell me if this strategy makes sense", "Скажите, имеет ли эта стратегия смысл"]),
+  Object.freeze(["Backtest this strategy", "Провести бэктест стратегии"]),
+  Object.freeze(["Code this strategy", "Реализовать стратегию в коде"]),
+  Object.freeze(["Build a trading bot", "Создать торгового бота"]),
+  Object.freeze(["Package this for my audience", "Подготовить решение для моей аудитории"]),
+  Object.freeze(["Not sure yet", "Пока не знаю"]),
+]);
+
+// Mirror the current serialized Services form-control presentation strings and
+// semantic option values captured by production Chromium. Values are backend
+// contracts and must remain English/unchanged while labels localize.
 const source = `<!doctype html><html lang="en"><head><title>Services form controls</title></head><body>
 <form method="POST" action="/appointment-request">
   <select id="appointment-type" name="appointmentType" required>
-    <option value="automation">Automate trades with TWS / IBKR</option>
-    <option value="setup">Set up TWS / API</option>
-    <option value="other">Something else</option>
+    <option value="Automate trades with TWS / IBKR">Automate trades with TWS / IBKR</option>
+    <option value="Help me set everything up">Help me set everything up</option>
+    <option value="New to trading systems">New to trading systems</option>
+    <option value="I trade manually">I trade manually</option>
+    <option value="I already have alerts or code">I already have alerts or code</option>
+    <option value="I manage a trading audience">I manage a trading audience</option>
   </select>
   <input name="name" placeholder="John">
   <input name="contact" placeholder="@username or email">
@@ -32,6 +48,14 @@ const source = `<!doctype html><html lang="en"><head><title>Services form contro
   <input type="hidden" name="source" value="landing_strategy_form">
   <input name="market" placeholder="Stocks, options, futures, crypto...">
   <textarea name="rules" placeholder="Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours..."></textarea>
+  <select id="strategy-help" name="strategyHelp" required>
+    <option value="Tell me if this strategy makes sense">Tell me if this strategy makes sense</option>
+    <option value="Backtest this strategy">Backtest this strategy</option>
+    <option value="Code this strategy">Code this strategy</option>
+    <option value="Build a trading bot">Build a trading bot</option>
+    <option value="Package this for my audience">Package this for my audience</option>
+    <option value="Not sure yet">Not sure yet</option>
+  </select>
 </form>
 <form method="POST" action="/bot-request">
   <input type="hidden" name="source" value="landing_bot_form">
@@ -51,9 +75,7 @@ const localized = localizeServicesFormPresentation(localizeRussianHtml(source, "
 const presentationHtml = localized.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
 
 const expectedRussian = [
-  "Автоматизировать сделки через TWS / IBKR",
-  "Настроить TWS / API",
-  "Другое",
+  ...currentOptionPairs.map(([, label]) => label),
   'placeholder="Имя"',
   'placeholder="Введите email или @telegram"',
   'placeholder="Завтра днём по времени Нью-Йорка..."',
@@ -69,9 +91,7 @@ for (const expected of expectedRussian) {
 }
 
 const forbiddenEnglish = [
-  "Automate trades with TWS / IBKR",
-  "Set up TWS / API",
-  ">Something else<",
+  ...currentOptionPairs.map(([value]) => `>${value}<`),
   'placeholder="John"',
   'placeholder="@username or email"',
   'placeholder="Enter email or @telegram"',
@@ -87,11 +107,15 @@ for (const sourceText of forbiddenEnglish) {
   assert(!presentationHtml.includes(sourceText), `localized Services form controls must not retain: ${sourceText}`);
 }
 
-// Keep the historical placeholder mapping safe even though the current renderer
-// no longer emits that option.
-const legacyOption = localizeServicesFormPresentation('<select><option value="" disabled selected>Select a topic…</option></select>');
-assert(legacyOption.includes("Выберите тему…"));
-assert(!legacyOption.includes("Select a topic…"));
+// Keep historical option mappings safe even though current production no longer
+// emits these labels.
+const legacyOptions = localizeServicesFormPresentation('<select><option value="" disabled selected>Select a topic…</option><option value="setup">Set up TWS / API</option><option value="other">Something else</option></select>');
+assert(legacyOptions.includes("Выберите тему…"));
+assert(legacyOptions.includes("Настроить TWS / API"));
+assert(legacyOptions.includes("Другое"));
+assert(!legacyOptions.includes("Select a topic…"));
+assert(!legacyOptions.includes(">Set up TWS / API<"));
+assert(!legacyOptions.includes(">Something else<"));
 
 // Brand/platform names are intentionally not forced into artificial translation.
 assert(presentationHtml.includes('placeholder="TradingView, NinjaTrader, IBKR, ..."'));
@@ -99,10 +123,10 @@ assert(presentationHtml.includes('placeholder="TradingView, NinjaTrader, IBKR, .
 for (const route of ["/appointment-request", "/strategy-review", "/bot-request"]) {
   assert(presentationHtml.includes(`action="${route}"`), `form action must remain unchanged: ${route}`);
 }
+for (const [value] of currentOptionPairs) {
+  assert(presentationHtml.includes(`value="${value}"`), `current option semantic value must remain unchanged: ${value}`);
+}
 for (const semanticValue of [
-  'value="automation"',
-  'value="setup"',
-  'value="other"',
   'value="landing_strategy_form"',
   'value="landing_bot_form"',
   'value="Signals & Research"',
