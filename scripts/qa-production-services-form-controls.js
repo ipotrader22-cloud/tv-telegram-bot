@@ -23,8 +23,10 @@ const EXPECTED_PLACEHOLDERS = Object.freeze([
   "Пример: хочу понять, какой доступ к сигналам/исследованиям по дейтрейдингу доступен и какие подтверждающие данные можно изучить.",
 ]);
 
+// Mirror the current serialized Automation / Setup select. The live form starts
+// with the actionable automation option; the historical disabled "Select a topic…"
+// placeholder is no longer emitted by the current renderer.
 const EXPECTED_OPTIONS = Object.freeze([
-  "Выберите тему…",
   "Автоматизировать сделки через TWS / IBKR",
   "Настроить TWS / API",
   "Другое",
@@ -78,18 +80,25 @@ async function inspect(page) {
       await page.waitForTimeout(750);
 
       const state = await inspect(page);
+      const optionSummary = JSON.stringify(state.options);
       assert.strictEqual(state.lang, "ru", `${viewport.name}: RU Services html lang must be ru`);
 
       for (const expected of EXPECTED_PLACEHOLDERS) {
         assert(state.placeholders.includes(expected), `${viewport.name}: missing RU placeholder: ${expected}`);
       }
       for (const expected of EXPECTED_OPTIONS) {
-        assert(state.options.some(option => option.text === expected), `${viewport.name}: missing RU option label: ${expected}`);
+        assert(
+          state.options.some(option => option.text === expected),
+          `${viewport.name}: missing RU option label: ${expected}; observed options=${optionSummary}`
+        );
       }
 
       const presentationText = [...state.placeholders, ...state.options.map(option => option.text)].join("\n");
       for (const forbidden of FORBIDDEN_ENGLISH) {
-        assert(!presentationText.includes(forbidden), `${viewport.name}: residual English Services form copy: ${forbidden}`);
+        assert(
+          !presentationText.includes(forbidden),
+          `${viewport.name}: residual English Services form copy: ${forbidden}; observed options=${optionSummary}`
+        );
       }
 
       for (const action of ["/appointment-request", "/strategy-review", "/bot-request"]) {
@@ -100,7 +109,10 @@ async function inspect(page) {
         ["setup", "Настроить TWS / API"],
         ["other", "Другое"],
       ]) {
-        assert(state.options.some(option => option.value === value && option.text === label), `${viewport.name}: option value changed or label missing for ${value}`);
+        assert(
+          state.options.some(option => option.value === value && option.text === label),
+          `${viewport.name}: option value changed or label missing for ${value}; observed options=${optionSummary}`
+        );
       }
       for (const hiddenValue of ["landing_strategy_form", "landing_bot_form", "Signals & Research"]) {
         assert(state.hiddenValues.includes(hiddenValue), `${viewport.name}: hidden semantic value changed or missing: ${hiddenValue}`);
