@@ -45,7 +45,6 @@ const source = `<!doctype html><html lang="en"><head><title>Services form contro
   <textarea name="notes" placeholder="Example: I have IBKR and TWS installed. I use TradingView alerts. I want signals to place trades automatically..."></textarea>
 </form>
 <form method="POST" action="/strategy-review">
-  <input type="hidden" name="source" value="landing_strategy_form">
   <input name="market" placeholder="Stocks, options, futures, crypto...">
   <textarea name="rules" placeholder="Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours..."></textarea>
   <select id="strategy-help" name="strategyHelp" required>
@@ -126,8 +125,11 @@ for (const route of ["/appointment-request", "/strategy-review", "/bot-request"]
 for (const [value] of currentOptionPairs) {
   assert(presentationHtml.includes(`value="${value}"`), `current option semantic value must remain unchanged: ${value}`);
 }
+
+// Current /strategy-review does not submit a hidden source value; the handler
+// contract is name/contact/market/experience/goal/rules. Preserve only hidden
+// semantic values that actually exist in the current Services markup.
 for (const semanticValue of [
-  'value="landing_strategy_form"',
   'value="landing_bot_form"',
   'value="Signals & Research"',
 ]) {
