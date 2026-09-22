@@ -43,12 +43,21 @@ const results = nav.refineConversionNavigation(base, nav.RESULTS_PATH);
 assert(results.includes(`href="${nav.RESULTS_PATH}" aria-current="page">Results</a>`));
 const pricing = nav.refineConversionNavigation(base, nav.PRICING_PATH);
 assert(pricing.includes(`href="${nav.PRICING_PATH}" aria-current="page">Pricing</a>`));
-const about = nav.refineConversionNavigation(base, nav.ABOUT_PATH);
+const about = nav.refineConversionNavigation(base, nav.ABUT_PATH || nav.ABOUT_PATH);
 assert(about.includes(`href="${nav.ABOUT_PATH}" aria-current="page">About</a>`));
 const services = nav.refineConversionNavigation(base, nav.SERVICES_PATH);
 assert(services.includes(`href="${nav.SERVICES_PATH}" aria-current="page">Services</a>`));
 const help = nav.refineConversionNavigation(base, nav.HELP_PATH);
 assert(help.includes(`href="${nav.HELP_PATH}" aria-current="page">Help</a>`));
+
+const standaloneSwing = `<!doctype html><html lang="en"><head><title>Swing</title></head><body><nav class="swing-nav"><a class="brand" href="/">VIXALE</a><a href="/trading-systems">Trading Systems</a><a href="/results">Results</a><a href="/dashboard">Log In</a><a href="/access">Request Free Access</a></nav><main>portfolio</main><footer>footer</footer></body></html>`;
+const standaloneRefined = nav.refineConversionNavigation(standaloneSwing, nav.SWING_PATH);
+assert(standaloneRefined.includes('class="nav-links"'), "standalone Swing nav must receive the standard navigation container");
+assert(standaloneRefined.includes('class="vx-unified-public-nav"'), "standalone Swing nav must receive merged public navigation");
+assert(standaloneRefined.includes(`href="${nav.SWING_PATH}" aria-current="page">Swing Trading</a>`));
+assert(standaloneRefined.includes(`class="vx-public-nav-cta" href="${nav.LIVE_ACCESS_HREF}">Live Access</a>`));
+assert(!standaloneRefined.includes('>Request Free Access</a>'));
+assert.strictEqual(nav.refineConversionNavigation(standaloneRefined, nav.SWING_PATH), standaloneRefined, "standalone refinement must be idempotent");
 
 const ru = localizeRussianHtml(day, nav.DAY_PATH);
 for (const label of ["Как это работает", "Торговые системы", "Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Тарифы", "О нас", "Услуги", "Помощь", "Войти", "Live-доступ"]) {
