@@ -77,6 +77,17 @@ function findTagByClass(html, tagName, className) {
   return match ? findTagRangeFromOpen(html, tagName, match.index) : null;
 }
 
+function findFirstTag(html, tagName) {
+  const pattern = new RegExp(`<${escapeRegex(tagName)}\\b[^>]*>`, "i");
+  const match = pattern.exec(String(html || ""));
+  return match ? findTagRangeFromOpen(html, tagName, match.index) : null;
+}
+
+function findBrandAnchor(html) {
+  const anchors = String(html || "").match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) || [];
+  return anchors.find(anchor => /href=["']\/["']/i.test(anchor) && /VIXALE/i.test(anchor)) || "";
+}
+
 function replaceInnerHtml(html, range, inner) {
   if (!range) return html;
   return html.slice(0, range.openEnd) + inner + html.slice(range.closeStart);
@@ -110,7 +121,15 @@ function normalizePublicNavigation(html, path = "/") {
   if (standard) return replaceInnerHtml(html, standard, renderPublicNavLinks(path));
   const guide = findTagByClass(html, "div", "navlinks");
   if (guide) return replaceInnerHtml(html, guide, renderPublicNavLinks(path));
-  return html;
+
+  const nav = findFirstTag(html, "nav");
+  if (!nav) return html;
+  const inner = html.slice(nav.openEnd, nav.closeStart);
+  const brand = findBrandAnchor(inner);
+  const replacement = brand
+    ? `${brand}<div class="nav-links">${renderPublicNavLinks(path)}</div>`
+    : `<div class="nav-links">${renderPublicNavLinks(path)}</div>`;
+  return replaceInnerHtml(html, nav, replacement);
 }
 
 function normalizeSecondaryNavigation(html) {
@@ -232,6 +251,8 @@ module.exports = {
   PUBLIC_PATHS,
   findTagRangeFromOpen,
   findTagByClass,
+  findFirstTag,
+  findBrandAnchor,
   renderPublicNavLinks,
   normalizePublicNavigation,
   normalizeSecondaryNavigation,
