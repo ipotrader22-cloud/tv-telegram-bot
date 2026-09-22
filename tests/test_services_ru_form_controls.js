@@ -30,7 +30,7 @@ const source = `<!doctype html><html lang="en"><head><title>Services form contro
 <form method="POST" action="/strategy-review">
   <input type="hidden" name="source" value="landing_strategy_form">
   <input name="market" placeholder="Stocks, options, futures, crypto...">
-  <textarea name="rules" placeholder="Example: I want to buy when price pulls back after a strong move, enter near... target..., stop..., only during market hours..."></textarea>
+  <textarea name="rules" placeholder="Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours..."></textarea>
 </form>
 <form method="POST" action="/bot-request">
   <input type="hidden" name="source" value="landing_bot_form">
@@ -78,6 +78,7 @@ const forbiddenEnglish = [
   'placeholder="Enter email or @telegram"',
   "Example: I have IBKR and TWS installed. I use TradingView alerts. I want signals to place trades automatically...",
   "Stocks, options, futures, crypto...",
+  "Example: I want to buy when price pulls back after a strong move, enter near..., target..., stop..., only during market hours...",
   "Example: I want to buy when price pulls back after a strong move, enter near... target..., stop..., only during market hours...",
   "Stocks, futures, options, crypto...",
   "Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram...",
