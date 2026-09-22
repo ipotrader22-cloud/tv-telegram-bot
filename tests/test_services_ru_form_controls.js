@@ -57,10 +57,9 @@ const source = `<!doctype html><html lang="en"><head><title>Services form contro
   </select>
 </form>
 <form method="POST" action="/bot-request">
-  <input type="hidden" name="source" value="landing_bot_form">
   <input name="market" placeholder="Stocks, futures, options, crypto...">
-  <input name="platform" placeholder="TradingView, NinjaTrader, IBKR, ...">
-  <textarea name="bot" placeholder="Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram..."></textarea>
+  <input name="platform" placeholder="TradingView, NinjaTrader, IBKR, TWS...">
+  <textarea name="description" placeholder="Example: I want the bot to receive TradingView alerts, place trades in TWS, track positions, and send updates to Telegram..."></textarea>
 </form>
 <form method="POST" action="/appointment-request">
   <input type="hidden" name="request_type" value="Signals & Research">
@@ -117,7 +116,7 @@ assert(!legacyOptions.includes(">Set up TWS / API<"));
 assert(!legacyOptions.includes(">Something else<"));
 
 // Brand/platform names are intentionally not forced into artificial translation.
-assert(presentationHtml.includes('placeholder="TradingView, NinjaTrader, IBKR, ..."'));
+assert(presentationHtml.includes('placeholder="TradingView, NinjaTrader, IBKR, TWS..."'));
 
 for (const route of ["/appointment-request", "/strategy-review", "/bot-request"]) {
   assert(presentationHtml.includes(`action="${route}"`), `form action must remain unchanged: ${route}`);
@@ -126,15 +125,12 @@ for (const [value] of currentOptionPairs) {
   assert(presentationHtml.includes(`value="${value}"`), `current option semantic value must remain unchanged: ${value}`);
 }
 
-// Current /strategy-review does not submit a hidden source value; the handler
-// contract is name/contact/market/experience/goal/rules. Preserve only hidden
-// semantic values that actually exist in the current Services markup.
-for (const semanticValue of [
-  'value="landing_bot_form"',
-  'value="Signals & Research"',
-]) {
-  assert(presentationHtml.includes(semanticValue), `form semantic value must remain unchanged: ${semanticValue}`);
-}
+// Current strategy and bot forms do not submit hidden source values. Preserve
+// the research request_type semantic value that is actually present in markup.
+assert(
+  presentationHtml.includes('value="Signals & Research"'),
+  'form semantic value must remain unchanged: value="Signals & Research"'
+);
 
 assert.strictEqual(
   localizeServicesFormPresentation(localized),
