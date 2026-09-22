@@ -48,7 +48,7 @@ function refineHomeOwnerCopy(html) {
     "Closed Trades ledger · realized P&L source",
     "Verified · Closed Trades ledger",
   ]) {
-    out = out.split(oldText).join("Closed Trades P&amp;L");
+    out = out.split(oldText).join("Closed Trades P&L");
   }
   return out;
 }
