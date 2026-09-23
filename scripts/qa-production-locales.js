@@ -41,8 +41,8 @@ const ROUTES = [
   { path: "/trading-systems/swing-trading" },
   {
     path: "/trading-systems/options",
-    requiredRu: ["Следите за позициями от открытия до закрытия."],
-    forbiddenRu: ["Follow positions from open to close."],
+    requiredRu: ["Следите за нашими опционными сделками от входа до выхода."],
+    forbiddenRu: ["Follow our options trades, from entry to exit.", "Follow positions from open to close."],
   },
   {
     path: "/results",
@@ -280,6 +280,68 @@ async function run() {
             for (const phrase of ["Сигналы в Telegram", "Live-доступ"]) {
               if (!ruText.includes(phrase)) addFailure(report, `${viewportName} /: RU hero action missing: ${phrase}`);
             }
+          }
+
+          if (route.path === "/trading-systems/options") {
+            const enText = normalizeText(en.text);
+            const ruText = normalizeText(ru.text);
+            for (const phrase of [
+              "Follow our options trades, from entry to exit.",
+              "Updated daily on the website.",
+              "Take a look inside.",
+              "See new positions",
+              "Follow daily updates",
+              "Review completed trades",
+              "The results are part of the service.",
+              "Get Options access for $49/month.",
+              "Before you join",
+            ]) {
+              if (!enText.includes(phrase)) addFailure(report, `${viewportName} ${route.path}: EN Options redesign text missing: ${phrase}`);
+            }
+            for (const phrase of [
+              "Следите за нашими опционными сделками от входа до выхода.",
+              "Обновляется ежедневно на сайте.",
+              "Результаты входят в сервис.",
+              "Перед подключением",
+            ]) {
+              if (!ruText.includes(phrase)) addFailure(report, `${viewportName} ${route.path}: RU Options redesign text missing: ${phrase}`);
+            }
+            for (const legacy of ["protected journal", "evidence boundary", "owner-entered records", "existing viewer access"]) {
+              if (enText.toLowerCase().includes(legacy)) addFailure(report, `${viewportName} ${route.path}: legacy Options sales terminology remains: ${legacy}`);
+            }
+
+            const [enOptions, ruOptions] = await Promise.all([
+              enPage.evaluate(() => {
+                const links = Array.from(document.querySelectorAll("a")).map((node) => ({ text: String(node.textContent || "").trim(), href: node.getAttribute("href") || "" }));
+                return {
+                  sales: Boolean(document.querySelector('[data-vx-options-sales-page="1"]')),
+                  preview: Boolean(document.querySelector('#options-preview-card.vx-options-dashboard-shot')),
+                  paid: links.filter((item) => item.text === "Request Options Access"),
+                  how: links.find((item) => item.text === "See How It Works ↓") || null,
+                  previewCta: links.find((item) => item.text === "Preview the Dashboard") || null,
+                  compare: links.find((item) => item.text === "Compare All Three Systems →") || null,
+                  family: Array.from(document.querySelectorAll(".vx-options-family-nav a")).map((node) => node.getAttribute("href") || ""),
+                  overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+                };
+              }),
+              ruPage.evaluate(() => ({
+                sales: Boolean(document.querySelector('[data-vx-options-sales-page="1"]')),
+                preview: Boolean(document.querySelector('#options-preview-card.vx-options-dashboard-shot')),
+                overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+              })),
+            ]);
+            if (!enOptions.sales || !ruOptions.sales) addFailure(report, `${viewportName} ${route.path}: Options sales-page marker missing`);
+            if (!enOptions.preview || !ruOptions.preview) addFailure(report, `${viewportName} ${route.path}: real historical Options preview is missing`);
+            if (enOptions.paid.length < 2 || enOptions.paid.some((item) => !item.href.startsWith("https://t.me/tradervip22?text="))) {
+              addFailure(report, `${viewportName} ${route.path}: paid Options CTA count/destination is incorrect: ${JSON.stringify(enOptions.paid)}`);
+            }
+            if (!enOptions.how || enOptions.how.href !== "#options-dashboard-preview") addFailure(report, `${viewportName} ${route.path}: See How It Works target is incorrect`);
+            if (!enOptions.previewCta || enOptions.previewCta.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: Preview the Dashboard target is incorrect`);
+            if (!enOptions.compare || enOptions.compare.href !== "/pricing") addFailure(report, `${viewportName} ${route.path}: Compare All Three Systems target is incorrect`);
+            if (!sameArray(enOptions.family, ["/trading-systems/day-trading", "/trading-systems/swing-trading", "/trading-systems/options"])) {
+              addFailure(report, `${viewportName} ${route.path}: direct Options family navigation differs: ${JSON.stringify(enOptions.family)}`);
+            }
+            if (enOptions.overflow || ruOptions.overflow) addFailure(report, `${viewportName} ${route.path}: Options page has horizontal overflow`);
           }
 
           await Promise.all([
