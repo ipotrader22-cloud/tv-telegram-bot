@@ -1530,6 +1530,41 @@ Reusable visual patterns:
 
 Before changing website layout or styling, preserve both English and Russian render flows.
 
+### 11.4 Options public sales page
+
+The public `/trading-systems/options` route is a commercial product page, while
+`/trading-systems/options/viewer` remains the existing protected Options viewer.
+The sales page follows the customer flow Offer -> Product Preview -> What’s
+Included -> Results -> Subscription -> FAQ and keeps direct Day Trading / Swing
+Trading / Options product-family navigation.
+
+The single-system Options price remains `$49/month`. Paid onboarding is still a
+manual request through the canonical `singleSystemRequestUrl("Options")` flow;
+the customer-facing primary CTA therefore says `Request Options Access` and must
+not imply automatic checkout or instant activation. The public `/access` route is
+a separate free read-only viewer-request workflow and is not used as the paid
+Options subscription CTA.
+
+The public product preview is sourced from the existing `Option Journal`
+`A:S` range and intentionally renders only the latest eligible **closed** trade.
+It exposes only customer-safe journal fields needed to demonstrate the product:
+underlying, option contract/legs, expiration, trade type, contract count, entry
+and exit dates/prices, recorded P&L, status, and strategy/note. It does not
+render current open-position rows, journal IDs, account/customer identifiers,
+credentials, or private brokerage data. The preview uses a five-minute
+process-local cache to bound public Google Sheets reads. If the journal cannot be
+loaded or no eligible closed trade exists, the page shows an unavailable state;
+it never substitutes a fabricated/sample trade.
+
+The Options sales refinement is preloaded before the existing Options-results
+link refinement and conversion-system-page renderer so the serialized HTML
+transform order remains: base Options system page -> results-link refinement ->
+Options sales-page replacement -> Russian localization. English and Russian
+share the same structure, data preview, links, responsive CSS, and access
+semantics. The protected viewer, Option Journal write path, authentication,
+subscriber/dashboard behavior, trading logic, Telegram, Sheets schemas, Pine,
+bridge, and TWS execution are unchanged.
+
 ---
 
 ## 12. Reusable Code Modules and Helpers
