@@ -1,0 +1,36 @@
+name: Temporary Options tablet QA
+
+on:
+  push:
+    branches:
+      - fix/options-redesign-production-qa-20260923
+
+permissions:
+  contents: write
+
+jobs:
+  tablet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/options-redesign-production-qa-20260923
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - name: Verify live Options at tablet width
+        run: node scripts/_temp_verify_options_tablet.js
+      - name: Remove temporary QA files
+        if: success()
+        shell: bash
+        run: |
+          git rm .github/workflows/_temp-options-tablet-qa.yml scripts/_temp_verify_options_tablet.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Remove temporary Options tablet QA"
+          git push origin HEAD:fix/options-redesign-production-qa-20260923
