@@ -1,0 +1,43 @@
+name: Temporary Options handbook patch
+
+on:
+  push:
+    branches:
+      - feature/options-sales-page-redesign-20260923
+
+permissions:
+  contents: write
+
+jobs:
+  patch-handbook:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/options-sales-page-redesign-20260923
+          fetch-depth: 0
+
+      - name: Update canonical handbook and remove temporary workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('docs/VECO_DEVELOPER_HANDBOOK.md')
+          text = path.read_text()
+          marker = '### 11.4 Options public sales page\n'
+          if marker not in text:
+              anchor = '\n---\n\n## 12. Reusable Code Modules and Helpers\n'
+              if anchor not in text:
+                  raise SystemExit('handbook insertion anchor not found')
+              section = '''\n### 11.4 Options public sales page\n\nThe public `/trading-systems/options` route is a commercial product page, while\n`/trading-systems/options/viewer` remains the existing protected Options viewer.\nThe sales page follows the customer flow Offer -> Product Preview -> What’s\nIncluded -> Results -> Subscription -> FAQ and keeps direct Day Trading / Swing\nTrading / Options product-family navigation.\n\nThe single-system Options price remains `$49/month`. Paid onboarding is still a\nmanual request through the canonical `singleSystemRequestUrl("Options")` flow;\nthe customer-facing primary CTA therefore says `Request Options Access` and must\nnot imply automatic checkout or instant activation. The public `/access` route is\na separate free read-only viewer-request workflow and is not used as the paid\nOptions subscription CTA.\n\nThe public product preview is sourced from the existing `Option Journal`\n`A:S` range and intentionally renders only the latest eligible **closed** trade.\nIt exposes only customer-safe journal fields needed to demonstrate the product:\nunderlying, option contract/legs, expiration, trade type, contract count, entry\nand exit dates/prices, recorded P&L, status, and strategy/note. It does not\nrender current open-position rows, journal IDs, account/customer identifiers,\ncredentials, or private brokerage data. The preview uses a five-minute\nprocess-local cache to bound public Google Sheets reads. If the journal cannot be\nloaded or no eligible closed trade exists, the page shows an unavailable state;\nit never substitutes a fabricated/sample trade.\n\nThe Options sales refinement is preloaded before the existing Options-results\nlink refinement and conversion-system-page renderer so the serialized HTML\ntransform order remains: base Options system page -> results-link refinement ->\nOptions sales-page replacement -> Russian localization. English and Russian\nshare the same structure, data preview, links, responsive CSS, and access\nsemantics. The protected viewer, Option Journal write path, authentication,\nsubscriber/dashboard behavior, trading logic, Telegram, Sheets schemas, Pine,\nbridge, and TWS execution are unchanged.\n'''
+              text = text.replace(anchor, section + anchor, 1)
+              path.write_text(text)
+          PY
+          git rm .github/workflows/_temp-options-handbook-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/VECO_DEVELOPER_HANDBOOK.md
+          git diff --cached --check
+          git commit -m "Document Options public sales-page contract"
+          git push origin HEAD:feature/options-sales-page-redesign-20260923
