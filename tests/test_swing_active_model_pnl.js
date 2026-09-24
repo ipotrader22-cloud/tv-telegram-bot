@@ -28,13 +28,13 @@ const fixture = `<!doctype html><html><head></head><body>
 const out = enhanceActivePortfolioTable(fixture);
 assert(out.includes(PAGE_MARKER));
 assert(out.includes(`id="${STYLE_ID}"`));
-assert(out.includes("<th>Current</th><th>Shares Quantity</th><th>P&amp;L, $</th><th>Return</th>"));
-assert(out.includes('data-label="Shares Quantity" class="vx-model-shares">51.7518</td>'));
+assert(out.includes("<th>Current</th><th>Quantity</th><th>P&amp;L, $</th><th>Return</th>"));
+assert(out.includes('data-label="Quantity" class="vx-model-shares">52</td>'));
 assert(out.includes('data-label="P&L, $" class="vx-model-open-pnl gain">+$536.67</td>'));
-assert(out.includes('data-label="Shares Quantity" class="vx-model-shares">29.9473</td>'));
+assert(out.includes('data-label="Quantity" class="vx-model-shares">30</td>'));
 assert(out.includes('data-label="P&L, $" class="vx-model-open-pnl loss">-$381.83</td>'));
 assert(out.includes('<strong class="loss">-$34.00</strong>'), "existing aggregate Unrealized Model P&L remains unchanged");
 assert(out.includes('<section class="section"><div><h2>Closed Trades</h2></div><table><thead><tr><th>Current</th><th>Return</th></tr></thead></table></section>'), "other tables must remain unchanged");
 assert.strictEqual(enhanceActivePortfolioTable(out), out, "refinement must be idempotent");
 
-console.log("Swing Active Portfolio model shares/P&L columns: PASS");
+console.log("Swing Active Portfolio whole-number Quantity/P&L columns: PASS");

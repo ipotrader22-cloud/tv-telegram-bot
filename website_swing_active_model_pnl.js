@@ -29,7 +29,7 @@ function parseMoney(text) {
 function formatShares(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
-  return number.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return Math.round(number).toLocaleString("en-US");
 }
 
 function formatMoney(value) {
@@ -63,7 +63,7 @@ function modelOpenPnl(entryPrice, currentPrice) {
 
 function enhanceActiveRow(rowHtml) {
   if (typeof rowHtml !== "string" || /class=["'][^"']*\bempty\b/i.test(rowHtml)) return rowHtml;
-  if (/data-label=["']Shares Quantity["']/i.test(rowHtml)) return rowHtml;
+  if (/data-label=["']Quantity["']/i.test(rowHtml)) return rowHtml;
 
   const entryCell = rowHtml.match(/<td\b[^>]*data-label=["']Entry["'][^>]*>([\s\S]*?)<\/td>/i);
   const currentCell = rowHtml.match(/<td\b[^>]*data-label=["']Current["'][^>]*>([\s\S]*?)<\/td>/i);
@@ -75,7 +75,7 @@ function enhanceActiveRow(rowHtml) {
   const pnl = modelOpenPnl(entryPrice, currentPrice);
   if (!Number.isFinite(shares) || !Number.isFinite(pnl)) return rowHtml;
 
-  const insertion = `<td data-label="Shares Quantity" class="vx-model-shares">${formatShares(shares)}</td>`
+  const insertion = `<td data-label="Quantity" class="vx-model-shares">${formatShares(shares)}</td>`
     + `<td data-label="P&L, $" class="vx-model-open-pnl ${pnlClass(pnl)}">${formatMoney(pnl)}</td>`;
   return rowHtml.replace(currentCell[0], `${currentCell[0]}${insertion}`);
 }
@@ -85,7 +85,7 @@ function enhanceActiveSection(sectionHtml) {
   let out = sectionHtml;
   out = out.replace(
     /<th>Current<\/th>\s*<th>Return<\/th>/i,
-    "<th>Current</th><th>Shares Quantity</th><th>P&amp;L, $</th><th>Return</th>"
+    "<th>Current</th><th>Quantity</th><th>P&amp;L, $</th><th>Return</th>"
   );
   out = out.replace(/<tbody>([\s\S]*?)<\/tbody>/i, (tbody, body) => {
     const enhanced = body.replace(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi, row => enhanceActiveRow(row));
