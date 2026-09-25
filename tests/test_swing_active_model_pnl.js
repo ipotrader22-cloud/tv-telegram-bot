@@ -12,6 +12,7 @@ const {
   modelOpenPnl,
   enhanceActivePortfolioTable,
 } = require("../website_swing_active_model_pnl");
+const { localizeRussianHtml } = require("../website_russian_localization");
 
 assert.strictEqual(MODEL_ALLOCATION_PER_POSITION, 10000);
 assert.strictEqual(QUOTE_API_PATH, "/api/swing-leaders");
@@ -54,5 +55,10 @@ assert(out.includes('section.querySelector(".section-metric strong")'), "client 
 assert(out.includes('document.visibilityState==="hidden"'), "hidden tabs must not poll continuously");
 assert(out.includes('<section class="section"><div><h2>Closed Trades</h2></div><table><thead><tr><th>Current</th><th>Return</th></tr></thead></table></section>'), "other tables must remain unchanged");
 assert.strictEqual(enhanceActivePortfolioTable(out), out, "refinement must be idempotent");
+
+const ru = localizeRussianHtml(out, "/trading-systems/swing-trading");
+assert(ru.includes(`id="${SCRIPT_ID}"`), "RU page must retain the quote-refresh client");
+assert(ru.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "RU page must keep the same sanitized quote endpoint");
+assert(ru.includes('data-vx-model-entry-price="193.23"'), "RU localization must preserve quote-refresh row metadata");
 
 console.log("Swing Active Portfolio Quantity/P&L + intraday GOOGLEFINANCE refresh: PASS");
