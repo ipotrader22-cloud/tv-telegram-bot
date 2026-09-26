@@ -49,17 +49,24 @@ assert(hero.includes("Position details and supporting records are protected."));
 assert(hero.includes('href="/access?system=options">Get Dashboard Access</a>'));
 assert(!hero.includes("$0.00") && !hero.includes("+10.00%"), "Options public preview must not fabricate sample results");
 
+const cards = home.renderSystemCards();
 for (const phrase of [
   "Watch the trades. Get the signals.",
-  "Two active strategies working across 5, 15, 30 and 60-minute charts.",
-  "Follow a portfolio reviewed every day.",
-  "Vixale's proprietary ranking system",
-  "Follow positions from open to close.",
-  "actively managed options system with daily position updates",
-]) assert(hero.includes(phrase), `missing approved card copy: ${phrase}`);
-assert(hero.includes('href="/trading-systems/day-trading">Explore Day Trading'));
-assert(hero.includes('href="/trading-systems/swing-trading#active-portfolio">View Swing Portfolio'));
-assert(hero.includes('href="/trading-systems/options">Explore Options'));
+  "Vixale Prime trades intraday but closes all positions at the end of the trading day.",
+  "Vixale Edge trades intraday but can hold overnight if target/stop not reached.",
+  "ACTIVE PORTFOLIO",
+  "Active portfolio updated every morning",
+  "Each trading morning around 10:15am",
+  "Options Trades",
+  "actively managed options 0DTE system with daily position updates",
+  "real brokerage records",
+]) assert(cards.includes(phrase), `missing approved card copy: ${phrase}`);
+assert(cards.includes('href="/trading-systems/day-trading">Get Day Trading Signals</a>'));
+assert(cards.includes('href="/trading-systems/swing-trading#active-portfolio">View Active Portfolio and candidates</a>'));
+assert(cards.includes('href="/trading-systems/options">Get options signals</a>'));
+assert(!cards.includes(">Explore Day Trading →</a>"));
+assert(!cards.includes(">View Swing Portfolio →</a>"));
+assert(!cards.includes(">Explore Options →</a>"));
 
 const base = `<!doctype html><html><head><title>Old</title></head><body><section class="vx-home-top-systems"><div>Old How It Works wall</div></section><section id="live-day-trading" class="vx-home-day-trading"><div id="vx-home-live-0">2</div><div id="vx-home-live-open-pnl">+$15.00</div><div id="vx-home-live-3">+$25.00</div><div id="vx-home-equity-total">+$500.00</div><span id="vx-home-day-badge">Market open</span><span id="vx-home-day-updated">Last updated: now</span><div id="vx-home-equity-stage"><svg id="vx-home-equity-svg"></svg></div></section><footer>footer</footer></body></html>`;
 const refined = home.refineConversionHomepage(base);
