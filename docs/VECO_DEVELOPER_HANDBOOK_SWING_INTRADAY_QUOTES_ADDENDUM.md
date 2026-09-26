@@ -1,6 +1,7 @@
 # VECO Developer Handbook — Swing Intraday Quote Refresh Addendum
 
 Date: 2026-09-25  
+Updated: 2026-09-26  
 Scope: public Swing Trading quote-refresh presentation only
 
 ## Purpose
@@ -30,11 +31,23 @@ When the displayed portfolio identity matches the API snapshot, the browser may 
 - `Current` from the API `current_price`;
 - `Return` from the API `return_pct`;
 - row-level `P&L, $` using the established fixed-$10,000 model allocation and the refreshed current price;
-- the existing aggregate `Unrealized Model P&L` from the API `active_unrealized_model_pnl`.
+- the existing aggregate `Unrealized Model P&L` from the API `active_unrealized_model_pnl`;
+- the current `Total Model P&L` summary as `closed_realized_model_pnl + active_unrealized_model_pnl` from the same sanitized API snapshot.
 
 `Quantity` remains derived from the fixed `$10,000 / entry_price` model methodology. The refresh layer must not add/remove rows, change scores, change research notes, infer targets/stops, or change portfolio membership.
 
 Hidden browser tabs should not continue periodic polling. When a tab becomes visible again, the page may request an immediate refresh.
+
+## Current total versus Equity History
+
+The current summary and the historical curve have different time semantics and must not be presented as if they were the same value:
+
+- `Total Model P&L` is the current display summary: current `Unrealized Model P&L` plus `Realized Model P&L` from the sanitized Public Feed snapshot.
+- the `Equity History` line and its plotted points remain sourced only from immutable Trading Lab `Equity History.total_model_pnl` rows.
+- intraday quote refresh may change the current `Total Model P&L` summary without changing the last historical point.
+- Engineering must never rewrite, synthesize, append, or recalculate an Equity History point from current browser/API values.
+
+This distinction prevents a stale historical snapshot value from being mistaken for the current portfolio total while preserving the frozen Trading Lab historical record.
 
 ## EN / RU behavior
 
@@ -48,7 +61,7 @@ This refresh behavior does **not** change:
 - entry/exit, +10% target, scheduled-morning stop, or rating-dropout logic;
 - the Public Feed schema or writer automation;
 - the `GOOGLEFINANCE` quote source;
-- Equity History;
+- Equity History rows or calculations;
 - broker/TWS/IBKR execution;
 - VECO/Pine/UAM/Telegram trading behavior.
 
@@ -58,7 +71,9 @@ Regression coverage should confirm that:
 
 - the client refresh script is injected only on the canonical Swing page;
 - it polls `/api/swing-leaders` at the documented cadence;
-- it updates Current, Return, row P&L, and aggregate Unrealized Model P&L;
+- it updates Current, Return, row P&L, aggregate Unrealized Model P&L, and current Total Model P&L;
+- current Total Model P&L equals the API snapshot's `active_unrealized_model_pnl + closed_realized_model_pnl`;
+- the Equity History line/points remain independent from that intraday current summary;
 - it refuses to mix values when the displayed portfolio ticker set or entry prices no longer match the API snapshot;
 - hidden tabs do not poll continuously;
 - the same refresh wiring survives Russian localization;
