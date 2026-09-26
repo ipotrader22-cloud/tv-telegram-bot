@@ -10,12 +10,19 @@ const {
 } = require("../website_owner_copy_refinement");
 const { localizeRussianHtml } = require("../website_russian_localization");
 const { renderHowSummaryCard } = require("../website_swing_ui_refinement");
+const { styles: descriptionStandardStyles } = require("../website_description_card_standard");
 const {
   OPTIONS_PATH,
   buildPublicPreview,
   renderOptionsSalesMain,
   refineOptionsSalesPage,
 } = require("../website_options_sales_page_refinement");
+const {
+  DAY_PATH: STRATEGY_DAY_PATH,
+  SWING_PATH: STRATEGY_SWING_PATH,
+  STYLE_ID: STRATEGY_STYLE_ID,
+  refineStrategyPageDesign,
+} = require("../website_strategy_page_design_refinement");
 
 const swing = `<!doctype html><html><head></head><body><h1>Follow a portfolio reviewed every day.</h1><p class="hero-copy">${OLD_SWING_COPY}</p></body></html>`;
 const swingOut = refineOwnerCopy(swing, SWING_PATH);
@@ -115,6 +122,36 @@ assert(optionOut.includes('id="vx-options-sales-page-style"'));
 assert(!optionOut.includes("protected journal evidence boundary owner-entered records"));
 assert.strictEqual(refineOptionsSalesPage(optionOut, optionPreview, "en"), optionOut, "Options sales refinement must be idempotent");
 
+const optionDesigned = refineStrategyPageDesign(optionOut, OPTIONS_PATH);
+assert(optionDesigned.includes('class="vx-options-family-nav vx-strategy-family-nav"'));
+assert(optionDesigned.includes('class="active" href="/trading-systems/options" aria-current="page"') || optionDesigned.includes('class="active" href="/trading-systems/options"'));
+assert(optionDesigned.includes('class="vx-options-unified-story"'));
+assert(optionDesigned.includes("Follow our options trades, from entry to exit."));
+assert(optionDesigned.includes("Take a look inside."));
+assert(optionDesigned.includes("The results are part of the service."));
+assert.strictEqual((optionDesigned.match(/class="vx-options-dashboard-shot/g) || []).length, 1, "Options overview must show one dashboard example card");
+assert(!optionDesigned.includes('class="vx-options-hero"'), "old standalone Options hero section must be folded into the unified card");
+assert(!optionDesigned.includes('class="vx-options-preview-section"'), "old standalone Options preview section must be folded into the unified card");
+assert(!optionDesigned.includes('class="vx-options-results"'), "old standalone Options results section must be folded into the unified card");
+assert(optionDesigned.includes("Get Options access for $49/month."), "subscription section copy must remain unchanged");
+assert(optionDesigned.indexOf('class="vx-options-unified-story"') < optionDesigned.indexOf('class="vx-options-benefits"'));
+assert(optionDesigned.indexOf('class="vx-options-benefits"') < optionDesigned.indexOf('class="vx-options-subscription"'));
+assert(optionDesigned.includes(`id="${STRATEGY_STYLE_ID}"`));
+assert(optionDesigned.includes("--vx-canonical-section-heading-size,24px"));
+assert.strictEqual(refineStrategyPageDesign(optionDesigned, OPTIONS_PATH), optionDesigned, "strategy page design refinement must be idempotent");
+
+const dayDesigned = refineStrategyPageDesign('<!doctype html><html><head></head><body><div class="vx-conversion-system-shell" data-vx-conversion-system-page="day"><h1>Day page</h1></div></body></html>', STRATEGY_DAY_PATH);
+assert(dayDesigned.includes('class="vx-strategy-family-nav"'));
+assert(dayDesigned.includes('class="active" aria-current="page" href="/trading-systems/day-trading">Day Trading</a>'));
+assert(dayDesigned.includes('href="/trading-systems/swing-trading">Swing Trading</a>'));
+assert(dayDesigned.includes('href="/trading-systems/options">Options</a>'));
+
+const swingDesigned = refineStrategyPageDesign('<!doctype html><html><head></head><body><main class="wrap" data-vx-conversion-system-page="swing"><h1>Active Portfolio</h1><section class="section"><div class="section-head"><h2>Active Portfolio</h2></div></section></main></body></html>', STRATEGY_SWING_PATH);
+assert(swingDesigned.includes('class="vx-strategy-family-nav"'));
+assert(swingDesigned.includes('class="active" aria-current="page" href="/trading-systems/swing-trading">Swing Trading</a>'));
+assert(swingDesigned.includes("var(--vx-canonical-section-heading-size,24px)"));
+assert(descriptionStandardStyles.includes(":root{--vx-canonical-section-heading-size:24px}"), "canonical public section heading token must be defined once in the shared style standard");
+
 const optionRu = renderOptionsSalesMain(optionPreview, "ru");
 assert(optionRu.includes("Следите за нашими опционными сделками от входа до выхода."));
 assert(optionRu.includes("Запросить доступ к опционам"));
@@ -126,4 +163,9 @@ assert(!optionRu.includes("Follow our options trades"));
 const unrelated = "<html><body>Unrelated page</body></html>";
 assert.strictEqual(refineOwnerCopy(unrelated, "/pricing"), unrelated);
 assert.strictEqual(refineOptionsSalesPage(unrelated, optionPreview, "/pricing"), unrelated);
-console.log("Owner-requested Swing copy, Closed Trades label, and Options sales page EN/RU: PASS");
+assert.strictEqual(refineStrategyPageDesign(unrelated, "/pricing"), unrelated);
+
+const pkg = require("../package.json");
+assert(pkg.scripts.start.includes("-r ./website_strategy_page_design_refinement.js"), "strategy page design refinement must be loaded in production");
+
+console.log("Owner-requested Swing copy, Closed Trades label, Options sales page, unified strategy navigation/card, and EN/RU: PASS");
