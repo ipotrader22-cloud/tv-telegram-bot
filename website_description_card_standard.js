@@ -88,7 +88,7 @@ function wrapExpress(factory) {
 
 const originalLoad = Module._load;
 Module._load = function vixaleDescriptionCardsModuleLoad(request, parent, isMain) {
-  const loaded = originalLoad.call(this, request, isMain);
+  const loaded = originalLoad.call(this, request, parent, isMain);
   return request === "express" ? wrapExpress(loaded) : loaded;
 };
 
