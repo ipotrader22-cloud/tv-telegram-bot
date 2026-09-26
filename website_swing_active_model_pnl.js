@@ -12,6 +12,8 @@ const SCRIPT_ID = "vx-swing-active-quote-refresh-script";
 
 const styles = `<style id="${STYLE_ID}">
 .vx-model-shares,.vx-model-open-pnl{white-space:nowrap}
+.vx-current-model-pnl-wrap{text-align:right}
+.vx-current-model-pnl{display:block;font-size:16px;font-weight:650}
 @media(max-width:720px){.vx-model-shares,.vx-model-open-pnl{white-space:normal}}
 </style>`;
 
@@ -28,7 +30,7 @@ const setState=(node,value)=>{if(!node)return;node.classList.remove("gain","loss
 const activeSection=()=>document.getElementById("active-portfolio")?.closest("section.section")||null;
 const displayedRows=section=>Array.from(section.querySelectorAll("tbody tr")).map(row=>{const ticker=clean(row.querySelector('td[data-label="Ticker"] strong')?.textContent).toUpperCase();const entry=Number(row.dataset.vxModelEntryPrice);return{row,ticker,entry}}).filter(item=>item.ticker&&Number.isFinite(item.entry));
 const sameEntry=(left,right)=>Number.isFinite(left)&&Number.isFinite(right)&&Math.abs(left-right)<0.005;
-const refresh=async()=>{if(document.visibilityState==="hidden")return;const section=activeSection();if(!section)return;try{const response=await fetch(API_PATH,{credentials:"same-origin",headers:{Accept:"application/json"}});if(!response.ok)return;const data=await response.json();const active=Array.isArray(data?.active_portfolio)?data.active_portfolio:null;if(!active)return;const rows=displayedRows(section);const feed=new Map(active.map(item=>[clean(item?.ticker).toUpperCase(),item]));if(rows.length!==active.length||feed.size!==active.length)return;for(const item of rows){const quote=feed.get(item.ticker);if(!quote||!sameEntry(item.entry,moneyNumber(quote.entry_price)))return}for(const item of rows){const quote=feed.get(item.ticker);const current=moneyNumber(quote.current_price);const returnPct=percentNumber(quote.return_pct);if(!Number.isFinite(current)||!Number.isFinite(returnPct))continue;const currentCell=item.row.querySelector('td[data-label="Current"]');const returnCell=item.row.querySelector('td[data-label="Return"]');const pnlCell=item.row.querySelector('td[data-label="P&L, $"]');if(currentCell)currentCell.textContent=clean(quote.current_price);if(returnCell){returnCell.textContent=clean(quote.return_pct);setState(returnCell,returnPct)}const shares=ALLOCATION/item.entry;const pnl=(current-item.entry)*shares;if(pnlCell&&Number.isFinite(pnl)){pnlCell.textContent=money(pnl);setState(pnlCell,pnl)}}const aggregate=Number(data.active_unrealized_model_pnl);const metric=section.querySelector(".section-metric strong");if(metric&&Number.isFinite(aggregate)){metric.textContent=money(aggregate);setState(metric,aggregate)}section.dataset.vxQuoteRefreshAt=new Date().toISOString()}catch(_){}};
+const refresh=async()=>{if(document.visibilityState==="hidden")return;const section=activeSection();if(!section)return;try{const response=await fetch(API_PATH,{credentials:"same-origin",headers:{Accept:"application/json"}});if(!response.ok)return;const data=await response.json();const active=Array.isArray(data?.active_portfolio)?data.active_portfolio:null;if(!active)return;const rows=displayedRows(section);const feed=new Map(active.map(item=>[clean(item?.ticker).toUpperCase(),item]));if(rows.length!==active.length||feed.size!==active.length)return;for(const item of rows){const quote=feed.get(item.ticker);if(!quote||!sameEntry(item.entry,moneyNumber(quote.entry_price)))return}for(const item of rows){const quote=feed.get(item.ticker);const current=moneyNumber(quote.current_price);const returnPct=percentNumber(quote.return_pct);if(!Number.isFinite(current)||!Number.isFinite(returnPct))continue;const currentCell=item.row.querySelector('td[data-label="Current"]');const returnCell=item.row.querySelector('td[data-label="Return"]');const pnlCell=item.row.querySelector('td[data-label="P&L, $"]');if(currentCell)currentCell.textContent=clean(quote.current_price);if(returnCell){returnCell.textContent=clean(quote.return_pct);setState(returnCell,returnPct)}const shares=ALLOCATION/item.entry;const pnl=(current-item.entry)*shares;if(pnlCell&&Number.isFinite(pnl)){pnlCell.textContent=money(pnl);setState(pnlCell,pnl)}}const aggregate=Number(data.active_unrealized_model_pnl);const metric=section.querySelector(".section-metric strong");if(metric&&Number.isFinite(aggregate)){metric.textContent=money(aggregate);setState(metric,aggregate)}const realized=Number(data.closed_realized_model_pnl);const totalMetric=document.querySelector(".vx-current-model-pnl");const total=aggregate+realized;if(totalMetric&&Number.isFinite(aggregate)&&Number.isFinite(realized)){totalMetric.textContent=money(total);setState(totalMetric,total)}section.dataset.vxQuoteRefreshAt=new Date().toISOString()}catch(_){}};
 let timer=null;
 const start=()=>{if(timer!==null)return;refresh();timer=window.setInterval(refresh,REFRESH_MS)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
@@ -84,6 +86,36 @@ function modelOpenPnl(entryPrice, currentPrice) {
   return (current - entry) * shares;
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findSectionByHeading(html, heading) {
+  const sections = String(html || "").match(/<section\b[^>]*class=["'][^"']*\bsection\b[^"']*["'][^>]*>[\s\S]*?<\/section>/gi) || [];
+  const pattern = new RegExp(`<h2\\b[^>]*>\\s*${escapeRegExp(heading)}\\s*<\\/h2>`, "i");
+  return sections.find(section => pattern.test(section)) || "";
+}
+
+function sectionMetricValue(html, heading) {
+  const section = findSectionByHeading(html, heading);
+  if (!section) return NaN;
+  const metric = section.match(/<div\b[^>]*class=["'][^"']*\bsection-metric\b[^"']*["'][^>]*>[\s\S]*?<strong\b[^>]*>([\s\S]*?)<\/strong>/i);
+  return metric ? parseMoney(metric[1]) : NaN;
+}
+
+function enhanceCurrentModelPnl(html) {
+  if (typeof html !== "string" || html.includes('class="vx-current-model-pnl ')) return html;
+  const unrealized = sectionMetricValue(html, "Active Portfolio");
+  const realized = sectionMetricValue(html, "Closed Trades");
+  if (!Number.isFinite(unrealized) || !Number.isFinite(realized)) return html;
+
+  const total = unrealized + realized;
+  return html.replace(
+    /(<div\b[^>]*class=["'][^"']*\bequity-chart-head\b[^"']*["'][^>]*>\s*<div>\s*<small>\s*Equity History\s*<\/small>\s*<strong>\s*Model P&amp;L\s*<\/strong>\s*<\/div>\s*)<span\b[^>]*>[\s\S]*?<\/span>(\s*<\/div>)/i,
+    `$1<div class="vx-current-model-pnl-wrap"><small>Total Model P&L</small><span class="vx-current-model-pnl ${pnlClass(total)}">${formatMoney(total)}</span></div>$2`
+  );
+}
+
 function enhanceActiveRow(rowHtml) {
   if (typeof rowHtml !== "string" || /class=["'][^"']*\bempty\b/i.test(rowHtml)) return rowHtml;
   if (/data-label=["']Quantity["']/i.test(rowHtml)) return rowHtml;
@@ -135,6 +167,7 @@ function enhanceActivePortfolioTable(html) {
     /<section\b[^>]*class=["'][^"']*\bsection\b[^"']*["'][^>]*>[\s\S]*?<h2\b[^>]*>\s*Active Portfolio\s*<\/h2>[\s\S]*?<\/section>/i,
     section => enhanceActiveSection(section)
   );
+  out = enhanceCurrentModelPnl(out);
   out = injectStyles(out);
   out = injectQuoteRefreshScript(out);
   return out.replace(/<body(\s[^>]*)?>/i, match => (
@@ -200,6 +233,10 @@ module.exports = {
   pnlClass,
   modelShares,
   modelOpenPnl,
+  escapeRegExp,
+  findSectionByHeading,
+  sectionMetricValue,
+  enhanceCurrentModelPnl,
   enhanceActiveRow,
   enhanceActiveSection,
   enhanceActivePortfolioTable,
