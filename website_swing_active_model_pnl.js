@@ -112,7 +112,7 @@ function enhanceCurrentModelPnl(html) {
   const total = unrealized + realized;
   return html.replace(
     /(<div\b[^>]*class=["'][^"']*\bequity-chart-head\b[^"']*["'][^>]*>\s*<div>\s*<small>\s*Equity History\s*<\/small>\s*<strong>\s*Model P&amp;L\s*<\/strong>\s*<\/div>\s*)<span\b[^>]*>[\s\S]*?<\/span>(\s*<\/div>)/i,
-    `$1<div class="vx-current-model-pnl-wrap"><small>Total Model P&L</small><span class="vx-current-model-pnl ${pnlClass(total)}">${formatMoney(total)}</span></div>$2`
+    (_match, before, after) => `${before}<div class="vx-current-model-pnl-wrap"><small>Total Model P&L</small><span class="vx-current-model-pnl ${pnlClass(total)}">${formatMoney(total)}</span></div>${after}`
   );
 }
 
