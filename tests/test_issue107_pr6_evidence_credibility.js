@@ -38,11 +38,12 @@ assert(homeOut.includes("Day Trading Evidence"));
 assert(homeOut.includes("Closed Trades ledger · realized P&amp;L source"));
 assert(homeOut.includes("Cached Closed Trades snapshot · update delayed"));
 assert(homeOut.includes("Day Trading realized-results source is temporarily unavailable"));
-assert(homeOut.includes("omitted_row_count"));
-assert(homeOut.includes("source row"));
-assert(homeOut.includes("open P&L excluded"));
-assert(homeOut.includes("adds no separate fee/commission adjustment"));
-assert(homeOut.includes("does not mean the market is open or a trade is active"));
+assert(homeOut.includes("formatCoverageDate"));
+assert(homeOut.includes("month:'short',day:'numeric',year:'numeric',timeZone:'UTC'"));
+assert(homeOut.includes("Realized Closed Trades only; open P&L excluded;"));
+assert(!homeOut.includes("adds no separate fee/commission adjustment"));
+assert(!homeOut.includes("does not mean the market is open or a trade is active"));
+assert(!homeOut.includes("vx-evidence-freshness-note"));
 assert(!homeOut.includes("Verified · Closed Trades ledger"));
 
 const pricing = `<!doctype html><html><head></head><body>
