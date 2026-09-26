@@ -69,6 +69,11 @@ assert(refined.includes('class="vx-home-day-trading"'), "existing lower Day data
 assert(refined.includes(`id="${home.STYLE_ID}"`));
 assert(refined.includes(`id="${home.SCRIPT_ID}"`));
 assert(refined.includes("fetch('/api/swing-leaders'"), "Swing tab must reuse the existing public Swing API");
+assert(refined.includes("d.active_unrealized_model_pnl"), "Swing homepage total must use current unrealized Model P&L");
+assert(refined.includes("d.closed_realized_model_pnl"), "Swing homepage total must use current realized Model P&L");
+assert(refined.includes("Number.isFinite(unrealized)&&Number.isFinite(realized)?unrealized+realized:NaN"), "Swing homepage current total must sum current unrealized and realized API aggregates");
+assert(!refined.includes("latest.total_model_pnl"), "Swing homepage total must not use the latest immutable Equity History point");
+assert(!refined.includes("d.equity_history"), "Swing homepage preview must not derive the current total from Equity History");
 assert(!refined.includes("setInterval("), "homepage tabs must not add interval polling");
 assert(refined.includes("ArrowLeft") && refined.includes("ArrowRight") && refined.includes("Home") && refined.includes("End"), "tabs must support keyboard navigation");
 assert(refined.includes("prefers-reduced-motion:reduce"));

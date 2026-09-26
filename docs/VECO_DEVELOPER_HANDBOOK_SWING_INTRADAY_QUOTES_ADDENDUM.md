@@ -49,6 +49,18 @@ The current summary and the historical curve have different time semantics and m
 
 This distinction prevents a stale historical snapshot value from being mistaken for the current portfolio total while preserving the frozen Trading Lab historical record.
 
+## Homepage Swing preview
+
+The homepage Swing Trading preview at `/` must use the same current-total semantics as the canonical Swing page:
+
+- it reuses `/api/swing-leaders`;
+- `Open positions` comes from `active_count`;
+- `Potential candidates` comes from `intern_count`;
+- `Total model P&L` is calculated only as `active_unrealized_model_pnl + closed_realized_model_pnl` from the current sanitized API response;
+- it must not use the latest `equity_history.total_model_pnl` point as the current homepage total.
+
+The homepage preview remains an on-demand product preview and does not add independent interval polling. This keeps its existing lightweight behavior while preventing an immutable historical snapshot from being displayed as the current Swing total.
+
 ## EN / RU behavior
 
 The English and Russian public pages share the same final HTML/data wiring. The intraday refresh script must therefore remain locale-neutral and use structural selectors/data attributes rather than translated visible labels. Russian localization must preserve the script and row metadata unchanged.
@@ -74,6 +86,7 @@ Regression coverage should confirm that:
 - it updates Current, Return, row P&L, aggregate Unrealized Model P&L, and current Total Model P&L;
 - current Total Model P&L equals the API snapshot's `active_unrealized_model_pnl + closed_realized_model_pnl`;
 - the Equity History line/points remain independent from that intraday current summary;
+- the homepage Swing preview also uses `active_unrealized_model_pnl + closed_realized_model_pnl` for its Total model P&L and does not use `equity_history` for that current summary;
 - it refuses to mix values when the displayed portfolio ticker set or entry prices no longer match the API snapshot;
 - hidden tabs do not poll continuously;
 - the same refresh wiring survives Russian localization;
@@ -82,4 +95,4 @@ Regression coverage should confirm that:
 
 ## Rollback
 
-Rollback is presentation-only: revert the Swing intraday quote-refresh refinement and its tests/docs. No Trading Lab, Google Sheet, quote-source, broker, Equity History, or strategy rollback is required.
+Rollback is presentation-only: revert the Swing intraday quote-refresh/homepage-preview refinement and its tests/docs. No Trading Lab, Google Sheet, quote-source, broker, Equity History, or strategy rollback is required.
