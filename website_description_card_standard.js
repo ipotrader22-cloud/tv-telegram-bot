@@ -5,6 +5,7 @@ const Module = require("module");
 const STYLE_ID = "vx-description-card-standard-style";
 
 const styles = `<style id="${STYLE_ID}">
+:root{--vx-canonical-section-heading-size:24px}
 .vx-description-card,
 .vx-conversion-hero-copy>p,
 .vx-conversion-system-hero>div>p,
@@ -87,7 +88,7 @@ function wrapExpress(factory) {
 
 const originalLoad = Module._load;
 Module._load = function vixaleDescriptionCardsModuleLoad(request, parent, isMain) {
-  const loaded = originalLoad.call(this, request, parent, isMain);
+  const loaded = originalLoad.call(this, request, isMain);
   return request === "express" ? wrapExpress(loaded) : loaded;
 };
 
