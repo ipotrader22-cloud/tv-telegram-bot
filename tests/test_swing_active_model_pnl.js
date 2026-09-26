@@ -2,15 +2,21 @@
 
 const assert = require("assert");
 const {
+  QUOTE_API_PATH,
+  QUOTE_REFRESH_MS,
   MODEL_ALLOCATION_PER_POSITION,
   PAGE_MARKER,
   STYLE_ID,
+  SCRIPT_ID,
   modelShares,
   modelOpenPnl,
   enhanceActivePortfolioTable,
 } = require("../website_swing_active_model_pnl");
+const { localizeRussianHtml } = require("../website_russian_localization");
 
 assert.strictEqual(MODEL_ALLOCATION_PER_POSITION, 10000);
+assert.strictEqual(QUOTE_API_PATH, "/api/swing-leaders");
+assert.strictEqual(QUOTE_REFRESH_MS, 60000);
 assert(Math.abs(modelShares(193.23) - 51.751798374993534) < 1e-12);
 assert(Math.abs(modelOpenPnl(193.23, 203.60) - 536.6661491486832) < 1e-10);
 
@@ -28,13 +34,31 @@ const fixture = `<!doctype html><html><head></head><body>
 const out = enhanceActivePortfolioTable(fixture);
 assert(out.includes(PAGE_MARKER));
 assert(out.includes(`id="${STYLE_ID}"`));
+assert(out.includes(`id="${SCRIPT_ID}"`), "quote refresh client must be injected");
 assert(out.includes("<th>Current</th><th>Quantity</th><th>P&amp;L, $</th><th>Return</th>"));
+assert(out.includes('data-vx-model-entry-price="193.23"'), "row must carry its public entry price for safe live P&L recalculation");
+assert(out.includes('data-vx-model-entry-price="333.92"'));
 assert(out.includes('data-label="Quantity" class="vx-model-shares">52</td>'));
 assert(out.includes('data-label="P&L, $" class="vx-model-open-pnl gain">+$536.67</td>'));
 assert(out.includes('data-label="Quantity" class="vx-model-shares">30</td>'));
 assert(out.includes('data-label="P&L, $" class="vx-model-open-pnl loss">-$381.83</td>'));
-assert(out.includes('<strong class="loss">-$34.00</strong>'), "existing aggregate Unrealized Model P&L remains unchanged");
+assert(out.includes('<strong class="loss">-$34.00</strong>'), "server-rendered aggregate remains unchanged before the first client refresh");
+assert(out.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "client must reuse the sanitized Swing API rather than another quote source");
+assert(out.includes(`const REFRESH_MS=${QUOTE_REFRESH_MS}`), "client refresh cadence must be explicit");
+assert(out.includes('fetch(API_PATH,{credentials:"same-origin",headers:{Accept:"application/json"}})'), "client must poll the existing same-origin Swing endpoint");
+assert(out.includes('rows.length!==active.length||feed.size!==active.length'), "client must not mix quotes across changed portfolio membership");
+assert(out.includes('sameEntry(item.entry,moneyNumber(quote.entry_price))'), "client must not apply quotes to a different entry instance");
+assert(out.includes('td[data-label="Current"]'), "client must update Current cells");
+assert(out.includes('td[data-label="Return"]'), "client must update Return cells");
+assert(out.includes('td[data-label="P&L, $"]'), "client must update row dollar P&L");
+assert(out.includes('section.querySelector(".section-metric strong")'), "client must update aggregate Unrealized Model P&L from the same API snapshot");
+assert(out.includes('document.visibilityState==="hidden"'), "hidden tabs must not poll continuously");
 assert(out.includes('<section class="section"><div><h2>Closed Trades</h2></div><table><thead><tr><th>Current</th><th>Return</th></tr></thead></table></section>'), "other tables must remain unchanged");
 assert.strictEqual(enhanceActivePortfolioTable(out), out, "refinement must be idempotent");
 
-console.log("Swing Active Portfolio whole-number Quantity/P&L columns: PASS");
+const ru = localizeRussianHtml(out, "/trading-systems/swing-trading");
+assert(ru.includes(`id="${SCRIPT_ID}"`), "RU page must retain the quote-refresh client");
+assert(ru.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "RU page must keep the same sanitized quote endpoint");
+assert(ru.includes('data-vx-model-entry-price="193.23"'), "RU localization must preserve quote-refresh row metadata");
+
+console.log("Swing Active Portfolio Quantity/P&L + intraday GOOGLEFINANCE refresh: PASS");

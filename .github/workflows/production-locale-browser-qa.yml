@@ -13,6 +13,7 @@ on:
       - "website_owner_copy_refinement.js"
       - "website_conversion_navigation_refinement.js"
       - "website_conversion_home_refinement.js"
+      - "website_swing_active_model_pnl.js"
       - "website_services_source_parity_fix.js"
       - "website_russian_services_form_copy_refinement.js"
       - "website_russian_localization.js"
@@ -20,6 +21,7 @@ on:
       - "tests/test_owner_requested_public_copy.js"
       - "tests/test_issue123_pr1_direct_navigation.js"
       - "tests/test_issue123_pr2_homepage_preview.js"
+      - "tests/test_swing_active_model_pnl.js"
       - "tests/test_trading_guide_pdf_integrity.js"
       - "tests/test_services_ru_parity_fix.js"
       - "tests/test_services_ru_form_controls.js"
@@ -40,6 +42,7 @@ on:
       - "tests/test_owner_requested_public_copy.js"
       - "tests/test_issue123_pr1_direct_navigation.js"
       - "tests/test_issue123_pr2_homepage_preview.js"
+      - "tests/test_swing_active_model_pnl.js"
       - "tests/test_trading_guide_pdf_integrity.js"
       - "scripts/qa-production-locales.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
@@ -71,6 +74,7 @@ jobs:
           node --check website_owner_copy_refinement.js
           node --check website_conversion_navigation_refinement.js
           node --check website_conversion_home_refinement.js
+          node --check website_swing_active_model_pnl.js
           node --check website_services_source_parity_fix.js
           node --check website_russian_services_form_copy_refinement.js
           node --check website_russian_localization.js
@@ -81,6 +85,7 @@ jobs:
           node --check tests/test_owner_requested_public_copy.js
           node --check tests/test_issue123_pr1_direct_navigation.js
           node --check tests/test_issue123_pr2_homepage_preview.js
+          node --check tests/test_swing_active_model_pnl.js
           node --check tests/test_trading_guide_pdf_integrity.js
           node --check tests/test_services_ru_parity_fix.js
           node --check tests/test_services_ru_form_controls.js
@@ -89,6 +94,9 @@ jobs:
         run: |
           node tests/test_issue123_pr1_direct_navigation.js
           node tests/test_issue123_pr2_homepage_preview.js
+
+      - name: Swing intraday quote refresh regression
+        run: node tests/test_swing_active_model_pnl.js
 
       - name: Owner-requested public copy and PDF regressions
         run: |
