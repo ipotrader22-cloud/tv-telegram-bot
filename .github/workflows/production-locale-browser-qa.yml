@@ -169,6 +169,7 @@ jobs:
         run: node scripts/qa-production-locales.js
 
       - name: Verify canonical favicon on public pages
+        if: always()
         env:
           QA_EN_ORIGIN: https://www.vixale.com
           QA_RU_ORIGIN: https://ru.vixale.com
