@@ -4,8 +4,13 @@ const fs = require("fs");
 const path = require("path");
 const Module = require("module");
 
-const FAVICON_VERSION = "20260922";
+const FAVICON_VERSION = "20260927";
 const FAVICON_MARKER = 'data-vixale-favicon="1"';
+const CANONICAL_FAVICON_HREFS = [
+  `/favicon.ico?v=${FAVICON_VERSION}`,
+  `/favicon.png?v=${FAVICON_VERSION}`,
+  `/apple-touch-icon.png?v=${FAVICON_VERSION}`,
+];
 
 function readAsset(fileName) {
   try {
@@ -22,18 +27,68 @@ const faviconAssets = new Map([
 ]);
 
 const faviconLinks = [
-  `<link rel="icon" type="image/png" sizes="64x64" href="/favicon.png?v=${FAVICON_VERSION}" ${FAVICON_MARKER}>`,
-  `<link rel="shortcut icon" href="/favicon.ico?v=${FAVICON_VERSION}" ${FAVICON_MARKER}>`,
-  `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=${FAVICON_VERSION}" ${FAVICON_MARKER}>`,
+  `<link rel="icon" type="image/x-icon" sizes="any" href="${CANONICAL_FAVICON_HREFS[0]}" ${FAVICON_MARKER}>`,
+  `<link rel="icon" type="image/png" sizes="64x64" href="${CANONICAL_FAVICON_HREFS[1]}" ${FAVICON_MARKER}>`,
+  `<link rel="apple-touch-icon" sizes="180x180" href="${CANONICAL_FAVICON_HREFS[2]}" ${FAVICON_MARKER}>`,
 ].join("\n");
 
-function injectFaviconLinks(html) {
-  if (typeof html !== "string" || html.includes(FAVICON_MARKER)) return html;
-  if (!/<\/head>/i.test(html)) return html;
-  return html.replace(/<\/head>/i, `${faviconLinks}\n</head>`);
+function faviconLinkTags(html) {
+  const tags = String(html || "").match(/<link\b[^>]*>/gi) || [];
+  return tags.filter((tag) => {
+    const relMatch = tag.match(/\brel\s*=\s*(["'])(.*?)\1/i);
+    if (!relMatch) return false;
+    const tokens = relMatch[2].toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return tokens.includes("icon")
+      || tokens.includes("apple-touch-icon")
+      || tokens.includes("apple-touch-icon-precomposed")
+      || tokens.includes("mask-icon");
+  });
 }
 
-function serveFaviconAsset(req, res, next) {
+function hasCanonicalFaviconLinks(html) {
+  const tags = faviconLinkTags(html);
+  if (tags.length !== 3) return false;
+  if (!tags.every((tag) => tag.includes(FAVICON_MARKER))) return false;
+  return CANONICAL_FAVICON_HREFS.every((href) => tags.some((tag) => tag.includes(`href="${href}"`) || tag.includes(`href='${href}'`)));
+}
+
+function stripFaviconLinks(html) {
+  if (typeof html !== "string") return html;
+  return html.replace(/<link\b[^>]*>/gi, (tag) => faviconLinkTags(tag).length ? "" : tag);
+}
+
+function injectFaviconLinks(html) {
+  if (typeof html !== "string" || !/<\/head>/i.test(html)) return html;
+  if (hasCanonicalFaviconLinks(html)) return html;
+  const cleaned = stripFaviconLinks(html);
+  return cleaned.replace(/<\/head>/i, `${faviconLinks}\n</head>`);
+}
+
+function isHtmlBody(contentType, body) {
+  if (typeof body !== "string") return false;
+  const type = String(contentType || "").toLowerCase();
+  if (type.includes("html")) return true;
+  return !type && /<head\b[\s>]/i.test(body) && /<\/head>/i.test(body);
+}
+
+function refineEndChunk(res, chunk) {
+  if (typeof chunk !== "string" && !Buffer.isBuffer(chunk)) return chunk;
+  const wasBuffer = Buffer.isBuffer(chunk);
+  const text = wasBuffer ? chunk.toString("utf8") : chunk;
+  if (!isHtmlBody(res.getHeader?.("Content-Type"), text)) return chunk;
+
+  const refined = injectFaviconLinks(text);
+  if (refined === text) return chunk;
+
+  const nextChunk = wasBuffer ? Buffer.from(refined, "utf8") : refined;
+  if (!res.headersSent) {
+    try { res.removeHeader?.("ETag"); } catch (_) {}
+    try { res.setHeader?.("Content-Length", String(Buffer.byteLength(refined, "utf8"))); } catch (_) {}
+  }
+  return nextChunk;
+}
+
+function serveFaviconAsset(req, res) {
   const method = String(req.method || "").toUpperCase();
   if (method !== "GET" && method !== "HEAD") return false;
 
@@ -52,15 +107,22 @@ function serveFaviconAsset(req, res, next) {
 
 function installFavicon(app) {
   app.use((req, res, next) => {
-    if (serveFaviconAsset(req, res, next)) return;
+    if (serveFaviconAsset(req, res)) return;
 
     const originalSend = res.send.bind(res);
+    const originalEnd = res.end.bind(res);
+
     res.send = function sendWithFavicon(body) {
-      const contentType = String(res.getHeader("Content-Type") || "");
-      if (typeof body === "string" && (!contentType || contentType.includes("html"))) {
+      const contentType = String(res.getHeader?.("Content-Type") || "");
+      if (typeof body === "string" && isHtmlBody(contentType, body)) {
         body = injectFaviconLinks(body);
       }
       return originalSend(body);
+    };
+
+    res.end = function endWithFavicon(chunk, encoding, callback) {
+      const refinedChunk = refineEndChunk(res, chunk);
+      return originalEnd(refinedChunk, encoding, callback);
     };
 
     next();
@@ -102,8 +164,15 @@ Module._load = function vixaleFaviconModuleLoad(request, parent, isMain) {
 module.exports = {
   FAVICON_VERSION,
   FAVICON_MARKER,
+  CANONICAL_FAVICON_HREFS,
   faviconAssets,
+  faviconLinks,
+  faviconLinkTags,
+  hasCanonicalFaviconLinks,
+  stripFaviconLinks,
   injectFaviconLinks,
+  isHtmlBody,
+  refineEndChunk,
   installFavicon,
   serveFaviconAsset,
   wrapExpress,
