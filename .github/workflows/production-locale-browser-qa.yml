@@ -10,6 +10,7 @@ on:
     paths:
       - "package.json"
       - "Vixale_Trading_Guide.pdf.b64"
+      - "website_favicon.js"
       - "website_owner_copy_refinement.js"
       - "website_conversion_navigation_refinement.js"
       - "website_conversion_home_refinement.js"
@@ -20,6 +21,7 @@ on:
       - "website_russian_services_form_copy_refinement.js"
       - "website_russian_localization.js"
       - "website_russian_translations_regression.js"
+      - "tests/test_favicon_consistency.js"
       - "tests/test_owner_requested_public_copy.js"
       - "tests/test_issue123_pr1_direct_navigation.js"
       - "tests/test_issue123_pr2_homepage_preview.js"
@@ -29,6 +31,7 @@ on:
       - "tests/test_trading_guide_pdf_integrity.js"
       - "tests/test_services_ru_parity_fix.js"
       - "tests/test_services_ru_form_controls.js"
+      - "scripts/qa-production-favicon.js"
       - "scripts/qa-production-locales.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
       - "scripts/qa-production-services-form-controls.js"
@@ -43,6 +46,7 @@ on:
       - "website_*.js"
       - "lib/**"
       - "public/**"
+      - "tests/test_favicon_consistency.js"
       - "tests/test_owner_requested_public_copy.js"
       - "tests/test_issue123_pr1_direct_navigation.js"
       - "tests/test_issue123_pr2_homepage_preview.js"
@@ -50,6 +54,7 @@ on:
       - "tests/test_swing_active_portfolio_rules.js"
       - "tests/test_swing_strategy_nav_position.js"
       - "tests/test_trading_guide_pdf_integrity.js"
+      - "scripts/qa-production-favicon.js"
       - "scripts/qa-production-locales.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
       - "scripts/qa-production-services-form-controls.js"
@@ -77,6 +82,7 @@ jobs:
 
       - name: Syntax checks
         run: |
+          node --check website_favicon.js
           node --check website_owner_copy_refinement.js
           node --check website_conversion_navigation_refinement.js
           node --check website_conversion_home_refinement.js
@@ -87,9 +93,11 @@ jobs:
           node --check website_russian_services_form_copy_refinement.js
           node --check website_russian_localization.js
           node --check website_russian_translations_regression.js
+          node --check scripts/qa-production-favicon.js
           node --check scripts/qa-production-locales.js
           node --check scripts/qa-production-owner-copy-and-pdf.js
           node --check scripts/qa-production-services-form-controls.js
+          node --check tests/test_favicon_consistency.js
           node --check tests/test_owner_requested_public_copy.js
           node --check tests/test_issue123_pr1_direct_navigation.js
           node --check tests/test_issue123_pr2_homepage_preview.js
@@ -99,6 +107,9 @@ jobs:
           node --check tests/test_trading_guide_pdf_integrity.js
           node --check tests/test_services_ru_parity_fix.js
           node --check tests/test_services_ru_form_controls.js
+
+      - name: Canonical favicon regression
+        run: node tests/test_favicon_consistency.js
 
       - name: Unified navigation and homepage CTA regressions
         run: |
@@ -156,6 +167,12 @@ jobs:
           QA_RU_ORIGIN: https://ru.vixale.com
           QA_OUTPUT_DIR: artifacts/production-locale-qa
         run: node scripts/qa-production-locales.js
+
+      - name: Verify canonical favicon on public pages
+        env:
+          QA_EN_ORIGIN: https://www.vixale.com
+          QA_RU_ORIGIN: https://ru.vixale.com
+        run: node scripts/qa-production-favicon.js
 
       - name: Verify owner copy and Trading Guide PDF live
         env:
