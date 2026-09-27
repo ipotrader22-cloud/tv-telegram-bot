@@ -335,7 +335,7 @@ async function run() {
             if (enOptions.paid.length < 2 || enOptions.paid.some((item) => !item.href.startsWith("https://t.me/tradervip22?text="))) {
               addFailure(report, `${viewportName} ${route.path}: paid Options CTA count/destination is incorrect: ${JSON.stringify(enOptions.paid)}`);
             }
-            if (!enOptions.how || enOptions.how.href !== "#options-dashboard-preview") addFailure(report, `${viewportName} ${route.path}: See How It Works target is incorrect`);
+            if (!enOptions.how || enOptions.how.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: See How It Works target is incorrect`);
             if (!enOptions.previewCta || enOptions.previewCta.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: Preview the Dashboard target is incorrect`);
             if (!enOptions.compare || enOptions.compare.href !== "/pricing") addFailure(report, `${viewportName} ${route.path}: Compare All Three Systems target is incorrect`);
             if (!sameArray(enOptions.family, ["/trading-systems/day-trading", "/trading-systems/swing-trading", "/trading-systems/options"])) {
