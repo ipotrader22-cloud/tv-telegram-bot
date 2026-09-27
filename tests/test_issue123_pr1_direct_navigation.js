@@ -2,6 +2,7 @@
 
 const assert = require("assert");
 const nav = require("../website_conversion_navigation_refinement");
+const alignment = require("../website_public_navigation_alignment");
 const { localizeRussianHtml } = require("../website_russian_localization");
 
 const base = `<!doctype html><html lang="en"><head><title>Vixale</title></head><body><nav><a class="brand" href="/">VIXALE</a><div class="nav-links"><a href="/trading-systems">Trading Systems</a><a href="/results">Results</a><a href="/services">Services</a><a href="/trading-guide">Help</a><a href="/dashboard">Log In</a><a href="/access">Request Free Access</a></div></nav><main>content</main><footer><nav class="vx-public-secondary-nav"><a href="/about">About</a></nav></footer></body></html>`;
@@ -35,6 +36,14 @@ assert(day.includes("flex-wrap:nowrap;overflow-x:auto"), "mobile navigation must
 assert.strictEqual(nav.refineConversionNavigation(day, nav.DAY_PATH), day, "refinement must be idempotent");
 assert.strictEqual(nav.refineConversionNavigation(base, "/dashboard"), base, "protected route must not be rewritten");
 
+const alignedDay = alignment.injectAlignmentStyles(day);
+assert(alignedDay.includes(`id="${alignment.STYLE_ID}"`), "public pages with unified navigation must receive the alignment stylesheet");
+assert(alignedDay.includes("grid-template-columns:minmax(0,1fr) auto!important"), "desktop header must keep primary links and actions on the same row");
+assert(alignedDay.includes("flex-wrap:nowrap!important"), "desktop public navigation must explicitly prevent wrapping");
+assert(alignedDay.includes("@media(min-width:1001px) and (max-width:1180px)"), "tight desktop widths must receive compact spacing instead of a second row");
+assert.strictEqual(alignment.injectAlignmentStyles(alignedDay), alignedDay, "alignment refinement must be idempotent");
+assert.strictEqual(alignment.injectAlignmentStyles(base), base, "alignment stylesheet must not be injected before unified navigation exists");
+
 const swing = nav.refineConversionNavigation(base, nav.SWING_PATH);
 assert(swing.includes(`href="${nav.SWING_PATH}" aria-current="page">Swing Trading</a>`));
 const options = nav.refineConversionNavigation(base, nav.OPTIONS_PATH);
@@ -58,6 +67,8 @@ assert(standaloneRefined.includes(`href="${nav.SWING_PATH}" aria-current="page">
 assert(standaloneRefined.includes(`class="vx-public-nav-cta" href="${nav.LIVE_ACCESS_HREF}">Live Access</a>`));
 assert(!standaloneRefined.includes('>Request Free Access</a>'));
 assert.strictEqual(nav.refineConversionNavigation(standaloneRefined, nav.SWING_PATH), standaloneRefined, "standalone refinement must be idempotent");
+const standaloneAligned = alignment.injectAlignmentStyles(standaloneRefined);
+assert(standaloneAligned.includes(`id="${alignment.STYLE_ID}"`), "standalone strategy pages must receive the same desktop alignment stylesheet");
 
 const ru = localizeRussianHtml(day, nav.DAY_PATH);
 for (const label of ["Как это работает", "Торговые системы", "Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Тарифы", "О нас", "Услуги", "Помощь", "Войти", "Live-доступ"]) {
