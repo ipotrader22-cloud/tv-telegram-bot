@@ -15,6 +15,7 @@ on:
       - "website_conversion_home_refinement.js"
       - "website_swing_active_model_pnl.js"
       - "website_swing_active_portfolio_rules_refinement.js"
+      - "website_swing_strategy_nav_position_refinement.js"
       - "website_services_source_parity_fix.js"
       - "website_russian_services_form_copy_refinement.js"
       - "website_russian_localization.js"
@@ -24,6 +25,7 @@ on:
       - "tests/test_issue123_pr2_homepage_preview.js"
       - "tests/test_swing_active_model_pnl.js"
       - "tests/test_swing_active_portfolio_rules.js"
+      - "tests/test_swing_strategy_nav_position.js"
       - "tests/test_trading_guide_pdf_integrity.js"
       - "tests/test_services_ru_parity_fix.js"
       - "tests/test_services_ru_form_controls.js"
@@ -46,6 +48,7 @@ on:
       - "tests/test_issue123_pr2_homepage_preview.js"
       - "tests/test_swing_active_model_pnl.js"
       - "tests/test_swing_active_portfolio_rules.js"
+      - "tests/test_swing_strategy_nav_position.js"
       - "tests/test_trading_guide_pdf_integrity.js"
       - "scripts/qa-production-locales.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
@@ -79,6 +82,7 @@ jobs:
           node --check website_conversion_home_refinement.js
           node --check website_swing_active_model_pnl.js
           node --check website_swing_active_portfolio_rules_refinement.js
+          node --check website_swing_strategy_nav_position_refinement.js
           node --check website_services_source_parity_fix.js
           node --check website_russian_services_form_copy_refinement.js
           node --check website_russian_localization.js
@@ -91,6 +95,7 @@ jobs:
           node --check tests/test_issue123_pr2_homepage_preview.js
           node --check tests/test_swing_active_model_pnl.js
           node --check tests/test_swing_active_portfolio_rules.js
+          node --check tests/test_swing_strategy_nav_position.js
           node --check tests/test_trading_guide_pdf_integrity.js
           node --check tests/test_services_ru_parity_fix.js
           node --check tests/test_services_ru_form_controls.js
@@ -104,6 +109,7 @@ jobs:
         run: |
           node tests/test_swing_active_model_pnl.js
           node tests/test_swing_active_portfolio_rules.js
+          node tests/test_swing_strategy_nav_position.js
 
       - name: Owner-requested public copy and PDF regressions
         run: |
