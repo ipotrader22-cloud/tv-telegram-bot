@@ -338,3 +338,28 @@ Rollback:
 Also summarize the user-visible result in plain language.
 
 Stop after creating the Pull Request unless the user explicitly instructs otherwise.
+
+<!-- trading-doc-maintenance-v1 -->
+## Documentation maintenance
+
+
+After a meaningful change to code behavior, paths, configuration locations, versions, schemas, dependencies, startup procedures, validation results or known limitations, update the owning project's documentation before declaring the task complete. This is a completion rule for agents working on a task, not a background watcher.
+
+1. Read existing AGENTS.md, handbook, master index and the current manifest they select. Preserve existing instructions and project-specific safety/approval boundaries.
+2. Recheck authoritative source relevant to each claim. Keep repository/source, local installation, observed running process, deployed service and end-to-end validation separate.
+3. Update the affected existing handbook/state document; use PROJECT-MEMORY only for its designated role. Do not create competing authoritative copies. Existing dated manifests remain historical unless explicitly superseded.
+4. In CURRENT-STATE.md record version/commit, exact paths, verification date and method, tests actually run and their results, and unresolved issues. Mark inherited evidence as previously recorded and label unknowns UNVERIFIED or NOT RUN. A hash or syntax check does not prove live trading behavior.
+5. Update MASTER-INDEX.md when locations or ownership change and append meaningful history to CHANGELOG.md. For repository work follow the existing branch/commit/PR rules; no merge or deployment is authorized by this policy.
+6. Keep unrelated trading systems separate. Never run broker-affecting code, place orders, restart live systems, enable alerts or alter secrets merely to maintain documentation.
+7. Do not export credentials, .env, service-account JSON, session/browser profiles, logs containing secrets, workbook records or broker/customer data. Export only the explicit Markdown allowlist in the central registry.
+8. Regenerate the ChatGPT upload package using the central export-docs.py utility after relevant documentation changes. Review the result. An upload bundle is a timestamped snapshot, not an automatic live mirror.
+9. Automatic delivery remains disabled until exact project mapping and a supported authenticated upload/replace method have been verified end-to-end. A successful local export is NOT a successful upload.
+10. Finish by stating docs changed or why no update was needed, tests/evidence, unresolved issues, and export/upload status. Never manufacture new validation dates for old results.
+
+Central registry and exporter: C:\Users\tradi\Documents\Trading-Documentation.
+
+Local documentation entry points:
+- `PROJECT-MEMORY/veco/MASTER-INDEX.md`
+- `PROJECT-MEMORY/website/MASTER-INDEX.md`
+
+Do not overwrite these records with stale chat or downloaded copies. Existing rules above remain in force.
