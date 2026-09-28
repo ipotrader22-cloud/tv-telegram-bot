@@ -7,6 +7,17 @@
 
 ## Verification status
 
+### Pending source work (2026-09-28 UTC; not deployed)
+
+`feature/swing-tp-sl-display`, based on fetched main
+`e3f94a1fc9e40287a2ad2c2c143603e20fb9beb7`, adds display-only TP/SL reference
+prices to Active Portfolio. Source checks and offline EN/RU responsive QA are
+recorded in `PROJECT-MEMORY/website/CURRENT-STATE.md`, with change history in
+`PROJECT-MEMORY/website/CHANGELOG.md`. This does not supersede the runtime
+baseline below. Live TP/SL deployment is **UNVERIFIED**; no merge/deploy was
+performed by this task. The following production evidence is previously
+recorded, not a new live verification.
+
 Latest directly verified favicon/public-page runtime state:
 
 - **Website-facing favicon PR:** #217 — `Make canonical favicon consistent across public pages` — MERGED

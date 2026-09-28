@@ -11,7 +11,7 @@ const STYLE_ID = "vx-swing-active-model-pnl-style";
 const SCRIPT_ID = "vx-swing-active-quote-refresh-script";
 
 const styles = `<style id="${STYLE_ID}">
-.vx-model-shares,.vx-model-open-pnl{white-space:nowrap}
+.vx-model-shares,.vx-model-open-pnl,.vx-model-reference-price{white-space:nowrap}
 .vx-current-model-pnl-wrap{text-align:right}
 .vx-current-model-pnl{display:block;font-size:16px;font-weight:650}
 @media(max-width:720px){.vx-model-shares,.vx-model-open-pnl{white-space:normal}}
@@ -64,6 +64,11 @@ function formatMoney(value) {
   if (number > 0) return `+$${absolute}`;
   if (number < 0) return `-$${absolute}`;
   return "$0.00";
+}
+
+function formatReferencePrice(value) {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  return "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function pnlClass(value) {
@@ -131,6 +136,8 @@ function enhanceActiveRow(rowHtml) {
   if (!Number.isFinite(shares) || !Number.isFinite(pnl)) return rowHtml;
 
   const insertion = `<td data-label="Quantity" class="vx-model-shares">${formatShares(shares)}</td>`
+    + `<td data-label="TP" class="vx-model-reference-price">${formatReferencePrice(entryPrice * 1.10)}</td>`
+    + `<td data-label="SL" class="vx-model-reference-price">${formatReferencePrice(entryPrice * 0.95)}</td>`
     + `<td data-label="P&L, $" class="vx-model-open-pnl ${pnlClass(pnl)}">${formatMoney(pnl)}</td>`;
   const withEntryMetadata = rowHtml.replace(/<tr\b([^>]*)>/i, `<tr$1 data-vx-model-entry-price="${entryPrice}">`);
   return withEntryMetadata.replace(currentCell[0], `${currentCell[0]}${insertion}`);
@@ -141,13 +148,13 @@ function enhanceActiveSection(sectionHtml) {
   let out = sectionHtml;
   out = out.replace(
     /<th>Current<\/th>\s*<th>Return<\/th>/i,
-    "<th>Current</th><th>Quantity</th><th>P&amp;L, $</th><th>Return</th>"
+    "<th>Current</th><th>Quantity</th><th>TP</th><th>SL</th><th>P&amp;L, $</th><th>Return</th>"
   );
   out = out.replace(/<tbody>([\s\S]*?)<\/tbody>/i, (tbody, body) => {
     const enhanced = body.replace(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi, row => enhanceActiveRow(row));
     return `<tbody>${enhanced}</tbody>`;
   });
-  out = out.replace(/colspan=["']6["']/gi, 'colspan="8"');
+  out = out.replace(/colspan=["']6["']/gi, 'colspan="10"');
   return out;
 }
 
