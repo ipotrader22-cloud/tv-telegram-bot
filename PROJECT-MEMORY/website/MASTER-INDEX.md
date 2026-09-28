@@ -5,6 +5,6 @@ Read CURRENT-STATE.md, CHANGELOG.md and the existing project references below. K
 Root: `C:\Users\tradi\Documents\GitHub\tv-telegram-bot`
 
 - Existing reference: `PROJECT-SOURCE-OF-TRUTH/MASTER-INDEX.md`
-- Existing reference: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-27-PR217.md`
+- Existing reference: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-28-PR221.md`
 
 Maintenance policy: `C:\Users\tradi\Documents\Trading-Documentation\DOCUMENTATION-POLICY.md`.

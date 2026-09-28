@@ -15,3 +15,11 @@
 - Installed evidence-based documentation maintenance rule and initial source/path inventory.
 - Preserved prior instructions and recorded validation limits.
 - Prepared ChatGPT mapping; no upload, scheduling, merge, deployment or trading action performed.
+
+## 2026-09-28 — PR221 deployment verified
+
+- Merged PR #221 and deployed bdaa42a to Render; verified Live and startup logs.
+- Checked eight Entry-derived TP/SL pairs on EN/RU, desktop/mobile, with HTTP 200.
+- Recorded separate upper-navigation mobile overflow and initial QA/deploy overlap.
+- Updated the selected source-of-truth manifest to PR221; older evidence preserved.
+- Production QA run 36420523488 attempt 2 passed all browser, favicon, owner-copy/PDF and RU Services checks after deployment.
