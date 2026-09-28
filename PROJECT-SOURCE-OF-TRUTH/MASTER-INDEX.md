@@ -53,3 +53,8 @@ A feature branch or pull request is **proposed work**, not production, until mer
 ## Maintenance rule
 
 Update the Current-State manifest whenever a website-facing change is merged/deployed or when an authoritative status changes. Record the verification source and date, and keep uncertain operational facts explicitly marked **UNVERIFIED**.
+
+
+## Documentation maintenance
+
+See `PROJECT-MEMORY/website/MASTER-INDEX.md` for documentation provenance and ChatGPT snapshot status. Keep the dated operational manifest selected above as website authority; documentation packaging does not renew its deployment verification.

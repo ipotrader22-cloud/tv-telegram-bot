@@ -2924,3 +2924,8 @@ Customer-facing forms must not be called a “Chat.” The bot path uses wording
 - The Equity History read remains `FORMATTED_VALUE`. Its strict currency parser must accept legitimate Google Sheets formats such as `$99.95`, `+$99.95`, `-$99.95`, `$1,234.56`, `($99.95)`, and `($1,234.56)`, with accounting parentheses interpreted as negative values. Malformed currency text remains invalid.
 - Do not switch the complete Equity History range blindly to `UNFORMATTED_VALUE`; its date/time display contract also depends on formatted values. A malformed nonblank historical row still fails that Equity History refresh. The website must not interpolate, reconstruct, or synthesize missing history.
 - This is a Swing website/data-display concern only. It does not modify the Trading Lab writer, Sheet schema, scoring or membership logic, strategy rules, Pine, bridge, TWS/IBKR, or other trading systems.
+
+
+## Documentation maintenance and ChatGPT snapshots
+
+Added 2026-09-28T02:01:47+00:00. Read `PROJECT-MEMORY/veco/MASTER-INDEX.md` for local source provenance and documentation status. The existing website `PROJECT-SOURCE-OF-TRUTH/MASTER-INDEX.md` continues selecting the website runtime manifest; the undated website manifest must not override its selected dated successor. Follow the appended AGENTS.md maintenance rule after meaningful changes. Exported ChatGPT files are dated snapshots; uploading, PR merge, source deployment and end-to-end verification are separate states. No automatic delivery is enabled by this documentation change.
