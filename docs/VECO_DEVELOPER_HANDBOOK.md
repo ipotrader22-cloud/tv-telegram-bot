@@ -2924,3 +2924,23 @@ Customer-facing forms must not be called a “Chat.” The bot path uses wording
 - The Equity History read remains `FORMATTED_VALUE`. Its strict currency parser must accept legitimate Google Sheets formats such as `$99.95`, `+$99.95`, `-$99.95`, `$1,234.56`, `($99.95)`, and `($1,234.56)`, with accounting parentheses interpreted as negative values. Malformed currency text remains invalid.
 - Do not switch the complete Equity History range blindly to `UNFORMATTED_VALUE`; its date/time display contract also depends on formatted values. A malformed nonblank historical row still fails that Equity History refresh. The website must not interpolate, reconstruct, or synthesize missing history.
 - This is a Swing website/data-display concern only. It does not modify the Trading Lab writer, Sheet schema, scoring or membership logic, strategy rules, Pine, bridge, TWS/IBKR, or other trading systems.
+
+### Swing Active Portfolio reference prices (2026-09-28, proposed source change)
+
+`website_swing_active_model_pnl.js` displays TP and SL between Quantity and
+P&L, $ on `/trading-systems/swing-trading`. TP is the displayed Entry price
+multiplied by 1.10; SL is Entry multiplied by 0.95. Both use dollar formatting,
+thousands separators and two decimals, without the positive P&L sign.
+These are presentation-only reference prices, not execution targets or orders.
+The existing daily-close stop explanation above the table is preserved in EN/RU.
+Mobile rows use the existing data-label layout; empty rows span ten columns.
+
+The unchanged path is Public Feed -> validated Swing snapshot -> base HTML ->
+website display refinement. No API fields or Sheet columns are added. The
+existing 60-second browser quote refresh updates Current/Return/P&L only and
+retains its same-entry/membership guards. TP/SL remain tied to the rendered
+Entry, including when quotes change or refresh fails. The five-minute server
+snapshot cache, stale snapshot fallback and initial-unavailable HTTP 503 are
+unchanged. This addition does not alter Trading Lab, VECO, execution or lifecycle.
+Source/test status is recorded in `PROJECT-MEMORY/website/CURRENT-STATE.md`;
+merge and live deployment require separate verification.
