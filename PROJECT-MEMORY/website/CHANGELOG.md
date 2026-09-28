@@ -1,5 +1,11 @@
 # VIXALE website — Documentation change log
 
+## 2026-09-28 — Current column emphasis
+
+- Set Active Portfolio Current values to font-weight 700 using scoped CSS.
+- Preserved quote refresh, TP/SL, mobile layout and all trading/data contracts.
+- Owner authorized merge/deployment of PR222 and this presentation follow-up.
+
 ## 2026-09-28 — Proposed Active Portfolio TP/SL display
 
 - Added Entry-derived TP (+10%) and SL (-5%) price columns after Quantity,

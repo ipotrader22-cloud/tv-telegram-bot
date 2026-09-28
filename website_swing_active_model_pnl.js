@@ -11,6 +11,7 @@ const STYLE_ID = "vx-swing-active-model-pnl-style";
 const SCRIPT_ID = "vx-swing-active-quote-refresh-script";
 
 const styles = `<style id="${STYLE_ID}">
+tr[data-vx-model-entry-price] > td[data-label="Current"]{font-weight:700}
 .vx-model-shares,.vx-model-open-pnl,.vx-model-reference-price{white-space:nowrap}
 .vx-current-model-pnl-wrap{text-align:right}
 .vx-current-model-pnl{display:block;font-size:16px;font-weight:650}
