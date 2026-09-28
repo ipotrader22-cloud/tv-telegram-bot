@@ -1,5 +1,15 @@
 # VIXALE website — Current state
 
+## Deployment verification — 2026-09-28 UTC
+
+PR #221 is merged. Render deployment dep-dat5lj7pn0mc73b0ipm0 is live on
+bdaa42a086ad3fdcb684179c614bb31d56bc582c (verified by Render deployment API
+and startup logs). Live EN/RU TP/SL checks passed for eight positions at
+1440px and 390px. Full-page mobile navigation overflow is recorded separately.
+See PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-09-28-PR221.md
+for exact evidence, the deployment trigger, QA results and limitations.
+The proposed-work records below describe the earlier pre-merge stage only.
+
 ## Proposed TP/SL display change — verified 2026-09-28 UTC
 
 - Branch: `feature/swing-tp-sl-display`, based on fetched `origin/main`
