@@ -1,5 +1,14 @@
 # VIXALE website — Current state
 
+## Current column emphasis — 2026-09-28 source change
+
+`feature/swing-current-bold`, based on PR222 merge `54d0ec8`, adds one scoped
+CSS rule in `website_swing_active_model_pnl.js`: Active Portfolio Current cells
+use font-weight 700. Styling persists through the unchanged textContent quote
+updates. No calculation, source, API, trading or lifecycle changes.
+Handbook update required: NO (isolated typography, no structure/contract change).
+Deployment verification is recorded separately after merge.
+
 ## Deployment verification — 2026-09-28 UTC
 
 PR #221 is merged. Render deployment dep-dat5lj7pn0mc73b0ipm0 is live on
@@ -75,3 +84,8 @@ These hashes identify inspected files, not live deployment health.
 
 - `app.js`: `616548454b78caa0bd52310a21e84804db237bf4da9a29ad069a49c55d7bed41`
 - `package.json`: `d160f79e4d6bee9e8eb209a50f8780def292bd7d7adf6060863965506a76324b`
+
+Current emphasis validation (2026-09-28): node syntax, Active Portfolio and
+rules regressions PASS. Offline Chrome EN/RU at 1440/1024/768/390/320px PASS,
+including computed Current font-weight 700 after quote refresh and preserved
+TP/SL values. git diff --check PASS.
