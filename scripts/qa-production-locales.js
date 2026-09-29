@@ -289,10 +289,13 @@ async function run() {
               "Follow our options trades, from entry to exit.",
               "Updated daily on the website.",
               "Take a look inside.",
+              "Realized P&L curve",
+              "See the trades behind the results.",
+              "Real trades. Daily updates. A record you can check.",
+              "These results come from our real trading account.",
               "See new positions",
               "Follow daily updates",
               "Review completed trades",
-              "The results are part of the service.",
               "Get Options access for $49/month.",
               "Before you join",
             ]) {
@@ -301,22 +304,35 @@ async function run() {
             for (const phrase of [
               "Следите за нашими опционными сделками от входа до выхода.",
               "Обновляется ежедневно на сайте.",
-              "Результаты входят в сервис.",
+              "Кривая реализованного P&L",
+              "Смотрите сделки, а не только итог.",
+              "Реальные сделки. Ежедневные обновления. История, которую можно проверить.",
               "Перед подключением",
             ]) {
               if (!ruText.includes(phrase)) addFailure(report, `${viewportName} ${route.path}: RU Options redesign text missing: ${phrase}`);
             }
-            for (const legacy of ["protected journal", "evidence boundary", "owner-entered records", "existing viewer access"]) {
+            for (const legacy of ["protected journal", "evidence boundary", "owner-entered records", "existing viewer access", "the results are part of the service."]) {
               if (enText.toLowerCase().includes(legacy)) addFailure(report, `${viewportName} ${route.path}: legacy Options sales terminology remains: ${legacy}`);
             }
 
             const [enOptions, ruOptions] = await Promise.all([
               enPage.evaluate(() => {
                 const links = Array.from(document.querySelectorAll("a")).map((node) => ({ text: String(node.textContent || "").trim(), href: node.getAttribute("href") || "" }));
+                const chart = document.querySelector("#options-public-chart");
+                const preview = document.querySelector("#options-preview-card");
+                const previewSection = document.querySelector("#options-dashboard-preview");
+                const journal = document.querySelector("#option-journal-public");
                 return {
                   sales: Boolean(document.querySelector('[data-vx-options-sales-page="1"]')),
                   preview: Boolean(document.querySelector('#options-preview-card.vx-options-dashboard-shot')),
+                  chart: Boolean(chart),
+                  journal: Boolean(journal),
+                  chartBeforePreview: Boolean(chart && preview && (chart.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING)),
+                  journalAfterPreview: Boolean(previewSection && journal && (previewSection.compareDocumentPosition(journal) & Node.DOCUMENT_POSITION_FOLLOWING)),
                   paid: links.filter((item) => item.text === "Request Options Access"),
+                  benefits: Array.from(document.querySelectorAll(".vx-options-benefit-grid a.vx-options-benefit-card")).map((node) => node.getAttribute("href") || ""),
+                  proofs: links.find((item) => item.text.toLowerCase() === "proofs") || null,
+                  protectedProofLinks: links.filter((item) => item.href.startsWith("/dashboard/options/") && item.href.includes("/proofs/")),
                   how: links.find((item) => item.text === "See How It Works ↓") || null,
                   previewCta: links.find((item) => item.text === "Preview the Dashboard") || null,
                   compare: links.find((item) => item.text === "Compare All Three Systems →") || null,
@@ -327,13 +343,32 @@ async function run() {
               ruPage.evaluate(() => ({
                 sales: Boolean(document.querySelector('[data-vx-options-sales-page="1"]')),
                 preview: Boolean(document.querySelector('#options-preview-card.vx-options-dashboard-shot')),
+                chart: Boolean(document.querySelector("#options-public-chart")),
+                journal: Boolean(document.querySelector("#option-journal-public")),
+                benefits: Array.from(document.querySelectorAll(".vx-options-benefit-grid a.vx-options-benefit-card")).map((node) => node.getAttribute("href") || ""),
                 overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
               })),
             ]);
             if (!enOptions.sales || !ruOptions.sales) addFailure(report, `${viewportName} ${route.path}: Options sales-page marker missing`);
             if (!enOptions.preview || !ruOptions.preview) addFailure(report, `${viewportName} ${route.path}: real historical Options preview is missing`);
-            if (enOptions.paid.length < 2 || enOptions.paid.some((item) => !item.href.startsWith("https://t.me/tradervip22?text="))) {
-              addFailure(report, `${viewportName} ${route.path}: paid Options CTA count/destination is incorrect: ${JSON.stringify(enOptions.paid)}`);
+            if (!enOptions.chart || !ruOptions.chart) addFailure(report, `${viewportName} ${route.path}: public Options realized P&L chart is missing`);
+            if (!enOptions.journal || !ruOptions.journal) addFailure(report, `${viewportName} ${route.path}: public Option Journal is missing`);
+            if (!enOptions.chartBeforePreview) addFailure(report, `${viewportName} ${route.path}: public Options chart is not above the dashboard example`);
+            if (!enOptions.journalAfterPreview) addFailure(report, `${viewportName} ${route.path}: public Option Journal is not below the Product Preview block`);
+            if (enOptions.paid.length < 2 || enOptions.paid.some((item) => item.href !== "/#password-access")) {
+              addFailure(report, `${viewportName} ${route.path}: Request Options Access destination is incorrect: ${JSON.stringify(enOptions.paid)}`);
+            }
+            if (!sameArray(enOptions.benefits, ["/#password-access", "/#password-access", "/#password-access"])) {
+              addFailure(report, `${viewportName} ${route.path}: EN benefit-card destinations differ: ${JSON.stringify(enOptions.benefits)}`);
+            }
+            if (!sameArray(ruOptions.benefits, ["/#password-access", "/#password-access", "/#password-access"])) {
+              addFailure(report, `${viewportName} ${route.path}: RU benefit-card destinations differ: ${JSON.stringify(ruOptions.benefits)}`);
+            }
+            if (!enOptions.proofs || enOptions.proofs.href !== "#option-journal-public") {
+              addFailure(report, `${viewportName} ${route.path}: Results proofs link does not target the public Option Journal`);
+            }
+            if (enOptions.protectedProofLinks.length) {
+              addFailure(report, `${viewportName} ${route.path}: protected brokerage proof URL exposed publicly: ${JSON.stringify(enOptions.protectedProofLinks)}`);
             }
             if (!enOptions.how || enOptions.how.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: See How It Works target is incorrect`);
             if (!enOptions.previewCta || enOptions.previewCta.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: Preview the Dashboard target is incorrect`);
