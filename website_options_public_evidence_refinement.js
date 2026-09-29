@@ -180,12 +180,13 @@ function renderCompactChart(evidence, locale = "en", error = false) {
   const curve = evidence?.curve || { points: [], total_realized_pnl: 0 };
   const points = Array.isArray(curve.points) ? curve.points : [];
   const svg = compactChartSvg(points);
-  const total = Number.isFinite(Number(curve.total_realized_pnl)) ? Number(curve.total_realized_pnl) : 0;
+  const hasTotal = !error && points.length > 0 && Number.isFinite(Number(curve.total_realized_pnl));
+  const total = hasTotal ? Number(curve.total_realized_pnl) : null;
   const unavailable = error
     ? (ru ? "История результатов временно недоступна." : "Options performance history is temporarily unavailable.")
     : (ru ? "Пока нет закрытых сделок с корректным реализованным P&L." : "No closed trades with valid realized P&L yet.");
   return `<div class="vx-options-public-chart" id="options-public-chart">
-    <div class="vx-options-public-chart-head"><div><span>${ru ? "РЕЗУЛЬТАТЫ OPTIONS" : "OPTIONS PERFORMANCE"}</span><strong>${ru ? "Кривая реализованного P&L" : "Realized P&L curve"}</strong><small>${ru ? "Закрытые сделки Option Journal · по дате выхода" : "Closed Option Journal trades · grouped by Exit Date"}</small></div><div class="vx-options-public-chart-total"><span>${ru ? "Итого" : "Total realized"}</span><b class="${total < 0 ? "negative" : "positive"}">${formatMoney(total)}</b></div></div>
+    <div class="vx-options-public-chart-head"><div><span>${ru ? "РЕЗУЛЬТАТЫ OPTIONS" : "OPTIONS PERFORMANCE"}</span><strong>${ru ? "Кривая реализованного P&L" : "Realized P&L curve"}</strong><small>${ru ? "Закрытые сделки Option Journal · по дате выхода" : "Closed Option Journal trades · grouped by Exit Date"}</small></div><div class="vx-options-public-chart-total"><span>${ru ? "Итого" : "Total realized"}</span><b class="${total == null ? "" : total < 0 ? "negative" : "positive"}">${total == null ? "—" : formatMoney(total)}</b></div></div>
     ${svg || `<div class="vx-options-public-evidence-empty">${unavailable}</div>`}
   </div>`;
 }
@@ -283,14 +284,18 @@ function applyMarketingCopy(html, locale = "en") {
       .replace("Результаты входят в сервис.", "Реальные сделки. Ежедневные обновления. История, которую можно проверить.")
       .replace("Подписка включает доступ к истории закрытых сделок и доступным брокерским скриншотам, чтобы можно было смотреть не только последнее обновление, но и торговую историю.", `Эти результаты получены на нашем реальном торговом счёте. Мы ежедневно обновляем журнал опционных сделок — <a class="vx-options-proof-link" href="#option-journal-public">подтверждения</a> можно посмотреть в Option Journal ниже.`)
       .replace("Открытые позиции. Закрытые сделки. Зафиксированные результаты.", "Следите за сделкой от входа до выхода и проверяйте зафиксированный результат самостоятельно.")
-      .replace("Платное подключение сейчас оформляется вручную через Vixale в Telegram. Кнопка открывает заранее заполненный запрос; детали активации, оплаты и доступа подтверждаются в процессе подключения.", "Начните с viewer-доступа Vixale: отправьте форму на главной странице, подтвердите email, и мы сообщим дальнейшие детали доступа и подключения.");
+      .replace("Платное подключение сейчас оформляется вручную через Vixale в Telegram. Кнопка открывает заранее заполненный запрос; детали активации, оплаты и доступа подтверждаются в процессе подключения.", "Начните с viewer-доступа Vixale: отправьте форму на главной странице, подтвердите email, и мы сообщим дальнейшие детали доступа и подключения.")
+      .replace("В Options dashboard на нашем сайте.", "На этой странице Options в публичном Option Journal. Одобренные пользователи также могут открыть защищённый Options dashboard.")
+      .replace("Да. Подписчики могут просматривать историю закрытых сделок и доступные подтверждающие брокерские скриншоты.", "Да. Публичный Option Journal показывает завершённые сделки и зафиксированный P/L; одобренные пользователи также могут открыть доступные защищённые брокерские скриншоты.");
   } else {
     out = out
       .replace("This is a real historical example from the existing Options dashboard, using actual journal fields and trade dates. Current open positions are not exposed in this public preview.", "This is a real example from the Options dashboard, using actual journal fields and trade dates. The full Option Journal is published below so you can review the trade record directly.")
       .replace("The results are part of the service.", "Real trades. Daily updates. A record you can check.")
       .replace("Your subscription includes access to our closed-trade history and available brokerage screenshots, so you can look beyond the latest update and review the trading record.", `These results come from our real trading account. We update the Options trade record daily, and you can review the <a class="vx-options-proof-link" href="#option-journal-public">proofs</a> in the Option Journal below.`)
       .replace("Open positions. Closed trades. Recorded results.", "Follow each trade from entry to exit, then review the recorded result for yourself.")
-      .replace("Paid onboarding is currently handled manually through Vixale on Telegram. The button opens a pre-filled plan request; activation, payment, and access details are confirmed during onboarding.", "Start with Vixale viewer access: submit the form on the homepage, verify your email, and we’ll follow up with access and onboarding details.");
+      .replace("Paid onboarding is currently handled manually through Vixale on Telegram. The button opens a pre-filled plan request; activation, payment, and access details are confirmed during onboarding.", "Start with Vixale viewer access: submit the form on the homepage, verify your email, and we’ll follow up with access and onboarding details.")
+      .replace("In the options dashboard on our website.", "On this Options page in the public Option Journal. Approved viewers can also use the protected Options dashboard.")
+      .replace("Yes. Subscribers can access the closed-trade history and available supporting brokerage screenshots.", "Yes. The public Option Journal shows completed trades and recorded P/L; approved viewers can also open available protected brokerage screenshots.");
   }
   return out;
 }
@@ -326,11 +331,12 @@ function refinePublicOptionsPage(html, evidence, locale = "en", error = false) {
   return injectStyles(out);
 }
 
-function refineHomeOptionsEvidenceCopy(html) {
+function refineHomeOptionsEvidenceCopy(html, locale = "en") {
   if (typeof html !== "string") return html;
+  const ru = locale === "ru";
   return html
-    .replace("Position details and supporting records are protected.", "Options chart and trade journal are public.")
-    .replace("Openings, updates and closures are published through the existing Options workflow. Public visitors see the product overview; entitled viewers can open the protected position history and brokerage records.", "Openings, updates and closures are published through the existing Options workflow. Public visitors can review the Options performance chart and trade journal; brokerage proof files remain protected for approved viewers.");
+    .replace("Position details and supporting records are protected.", ru ? "График и журнал Options открыты для просмотра." : "Options chart and trade journal are public.")
+    .replace("Openings, updates and closures are published through the existing Options workflow. Public visitors see the product overview; entitled viewers can open the protected position history and brokerage records.", ru ? "Открытия, обновления и закрытия публикуются через существующий процесс Options. Посетители могут смотреть график результатов и Option Journal; файлы брокерских подтверждений остаются защищёнными и доступны одобренным пользователям." : "Openings, updates and closures are published through the existing Options workflow. Public visitors can review the Options performance chart and trade journal; brokerage proof files remain protected for approved viewers.");
 }
 
 function installOptionsPublicEvidenceRefinement(app, dependencies = {}) {
@@ -344,7 +350,7 @@ function installOptionsPublicEvidenceRefinement(app, dependencies = {}) {
       const type = String(res.getHeader?.("Content-Type") || "").toLowerCase();
       const isHtml = typeof body === "string" && (!type || type.includes("html"));
       if (!isHtml || res.statusCode >= 300) return send(body);
-      if (pathname === HOME_PATH) return send(refineHomeOptionsEvidenceCopy(body));
+      if (pathname === HOME_PATH) return send(refineHomeOptionsEvidenceCopy(body, requestLocale(req)));
       const locale = requestLocale(req);
       Promise.resolve()
         .then(() => loadEvidence())
