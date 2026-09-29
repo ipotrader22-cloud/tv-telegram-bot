@@ -3,6 +3,7 @@
 const Module = require("module");
 
 const DAY_PATH = "/trading-systems/day-trading";
+const RU_HOST = "ru.vixale.com";
 const LIVE_ACCESS_HREF = "/#password-access";
 const PAGE_MARKER = 'data-vx-conversion-system-page="day"';
 const BUTTON_MARKER = 'data-vx-day-live-access="1"';
@@ -23,7 +24,19 @@ function requestPath(req) {
   return String(req?.originalUrl || req?.url || "/").split("?")[0] || "/";
 }
 
-function insertDayTradingLiveAccess(html) {
+function requestHost(req) {
+  return String(req?.get?.("host") || req?.headers?.host || req?.headers?.["x-forwarded-host"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "");
+}
+
+function isRussianRequest(req) {
+  return requestHost(req) === RU_HOST;
+}
+
+function insertDayTradingLiveAccess(html, isRussian = false) {
   if (typeof html !== "string" || !html.includes(PAGE_MARKER) || html.includes(BUTTON_MARKER)) return html;
   const openStart = html.indexOf(ACTIONS_OPEN);
   if (openStart < 0) return html;
@@ -34,7 +47,8 @@ function insertDayTradingLiveAccess(html) {
   const actions = html.slice(openStart, actionsEnd);
   if (!actions.includes("Get 30 Days Free") || !actions.includes(RESULTS_LINK)) return html;
 
-  const liveAccess = `<a ${BUTTON_MARKER} href="${LIVE_ACCESS_HREF}">Live Access</a>`;
+  const liveAccessLabel = isRussian ? "Live-доступ" : "Live Access";
+  const liveAccess = `<a ${BUTTON_MARKER} href="${LIVE_ACCESS_HREF}">${liveAccessLabel}</a>`;
   const refinedActions = actions.replace(RESULTS_LINK, `${liveAccess}${RESULTS_LINK}`);
   return html.slice(0, openStart) + refinedActions + html.slice(actionsEnd);
 }
@@ -44,19 +58,50 @@ function extractTrialHref(heroHtml) {
   return match ? match[1] : "";
 }
 
-function renderCompactPanel(trialHref) {
+function renderCompactPanel(trialHref, isRussian = false) {
+  const copy = isRussian ? {
+    aria: "Варианты доступа к дейтрейдингу",
+    eyebrow: "ДОСТУП К ДЕЙТРЕЙДИНГУ",
+    title: "Выберите, как следить за системой.",
+    note: "Публичный + защищённый доступ",
+    results: "Публичные результаты",
+    resultsBody: "Смотрите агрегированный текущий P&amp;L, историю реализованного P&amp;L и архив закрытых сделок.",
+    resultsCta: "Результаты",
+    access: "Live-доступ",
+    accessBody: "Детали открытых и ожидающих сделок доступны только после получения доступа.",
+    accessCta: "Получить доступ",
+    signals: "Сигналы в Telegram",
+    signalsBody: "Начните 30-дневный пробный доступ к сигналам дейтрейдинга: входы, выходы, цели и стопы.",
+    trialCta: "Начать бесплатно",
+    planCta: "Тарифы",
+  } : {
+    aria: "Day Trading access options",
+    eyebrow: "DAY TRADING ACCESS",
+    title: "Choose how to follow.",
+    note: "Public + protected views",
+    results: "Public results",
+    resultsBody: "Review aggregated live P&amp;L, realized history and the closed-trades archive.",
+    resultsCta: "View Results",
+    access: "Live access",
+    accessBody: "Open and pending trade details stay behind the existing viewer-access boundary.",
+    accessCta: "Open Access",
+    signals: "Telegram signals",
+    signalsBody: "Start the existing 30-day Day Trading signals trial for entries, exits, targets and stops.",
+    trialCta: "Start Free",
+    planCta: "View Plan",
+  };
   const trialAction = trialHref
-    ? `<a class="primary" href="${trialHref}" target="_blank" rel="noopener noreferrer">Start Free</a>`
-    : `<a class="primary" href="/pricing?system=day-trading">View Plan</a>`;
-  return `<aside class="vx-day-compact-panel" aria-label="Day Trading access options">
-      <div class="vx-day-compact-panel-head"><div><span>DAY TRADING ACCESS</span><strong>Choose how to follow.</strong></div><em>Public + protected views</em></div>
-      <div class="vx-day-compact-row"><div><strong>Public results</strong><p>Review aggregated live P&amp;L, realized history and the closed-trades archive.</p></div><a href="/results#day-trading">View Results</a></div>
-      <div class="vx-day-compact-row"><div><strong>Live access</strong><p>Open and pending trade details stay behind the existing viewer-access boundary.</p></div><a href="${LIVE_ACCESS_HREF}">Open Access</a></div>
-      <div class="vx-day-compact-row"><div><strong>Telegram signals</strong><p>Start the existing 30-day Day Trading signals trial for entries, exits, targets and stops.</p></div>${trialAction}</div>
+    ? `<a class="primary" href="${trialHref}" target="_blank" rel="noopener noreferrer">${copy.trialCta}</a>`
+    : `<a class="primary" href="/pricing?system=day-trading">${copy.planCta}</a>`;
+  return `<aside class="vx-day-compact-panel" aria-label="${copy.aria}">
+      <div class="vx-day-compact-panel-head"><div><span>${copy.eyebrow}</span><strong>${copy.title}</strong></div><em>${copy.note}</em></div>
+      <div class="vx-day-compact-row"><div><strong>${copy.results}</strong><p>${copy.resultsBody}</p></div><a href="/results#day-trading">${copy.resultsCta}</a></div>
+      <div class="vx-day-compact-row"><div><strong>${copy.access}</strong><p>${copy.accessBody}</p></div><a href="${LIVE_ACCESS_HREF}">${copy.accessCta}</a></div>
+      <div class="vx-day-compact-row"><div><strong>${copy.signals}</strong><p>${copy.signalsBody}</p></div>${trialAction}</div>
     </aside>`;
 }
 
-function makeDayTradingHeroCompact(html) {
+function makeDayTradingHeroCompact(html, isRussian = false) {
   if (typeof html !== "string" || !html.includes(PAGE_MARKER) || html.includes(COMPACT_MARKER)) return html;
   const heroStart = html.indexOf(HERO_OPEN);
   if (heroStart < 0) return html;
@@ -70,7 +115,7 @@ function makeDayTradingHeroCompact(html) {
 
   const trialHref = extractTrialHref(hero);
   let refinedHero = hero.replace(HERO_OPEN, `<section class="vx-conversion-system-hero vx-day-compact-hero" ${COMPACT_MARKER}><div class="vx-day-compact-copy">`);
-  refinedHero = refinedHero.replace(/<\/section>\s*$/i, `${renderCompactPanel(trialHref)}</section>`);
+  refinedHero = refinedHero.replace(/<\/section>\s*$/i, `${renderCompactPanel(trialHref, isRussian)}</section>`);
   return html.slice(0, heroStart) + refinedHero + html.slice(heroEnd);
 }
 
@@ -80,10 +125,10 @@ function injectCompactStyles(html) {
   return `${compactStyles}${html}`;
 }
 
-function refineDayTradingLiveAccess(html, pathname = DAY_PATH) {
+function refineDayTradingLiveAccess(html, pathname = DAY_PATH, isRussian = false) {
   if (pathname !== DAY_PATH) return html;
-  let out = insertDayTradingLiveAccess(html);
-  out = makeDayTradingHeroCompact(out);
+  let out = insertDayTradingLiveAccess(html, isRussian);
+  out = makeDayTradingHeroCompact(out, isRussian);
   if (out.includes(COMPACT_MARKER)) out = injectCompactStyles(out);
   return out;
 }
@@ -98,7 +143,7 @@ function installDayTradingLiveAccessRefinement(app) {
     res.send = function sendWithDayTradingLiveAccess(body) {
       const type = String(res.getHeader?.("Content-Type") || "").toLowerCase();
       if (typeof body === "string" && (!type || type.includes("html"))) {
-        body = refineDayTradingLiveAccess(body, pathname);
+        body = refineDayTradingLiveAccess(body, pathname, isRussianRequest(req));
       }
       return send(body);
     };
@@ -137,6 +182,7 @@ Module._load = function vixaleDayTradingLiveAccessModuleLoad(request, parent, is
 
 module.exports = {
   DAY_PATH,
+  RU_HOST,
   LIVE_ACCESS_HREF,
   PAGE_MARKER,
   BUTTON_MARKER,
@@ -148,6 +194,8 @@ module.exports = {
   RESULTS_LINK,
   compactStyles,
   requestPath,
+  requestHost,
+  isRussianRequest,
   insertDayTradingLiveAccess,
   extractTrialHref,
   renderCompactPanel,
