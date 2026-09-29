@@ -24,6 +24,7 @@ const salesHtml = `<!doctype html><html><head></head><body>
 <section class="vx-options-benefits"><div class="vx-options-benefit-grid"><article><span>01</span><h3>See new positions</h3><p>One</p></article><article><span>02</span><h3>Follow daily updates</h3><p>Two</p></article><article><span>03</span><h3>Review completed trades</h3><p>Three</p></article></div></section>
 <section class="vx-options-results"><div><h2>The results are part of the service.</h2><p>Your subscription includes access to our closed-trade history and available brokerage screenshots, so you can look beyond the latest update and review the trading record.</p><strong>Open positions. Closed trades. Recorded results.</strong></div></section>
 <section class="vx-options-subscription"><a class="vx-options-request" href="https://t.me/example" target="_blank" rel="noopener noreferrer">Request Options Access</a><small>Paid onboarding is currently handled manually through Vixale on Telegram. The button opens a pre-filled plan request; activation, payment, and access details are confirmed during onboarding.</small></section>
+<section class="vx-options-faq"><p>In the options dashboard on our website.</p><p>Yes. Subscribers can access the closed-trade history and available supporting brokerage screenshots.</p></section>
 </div></body></html>`;
 
 const refined = mod.refinePublicOptionsPage(salesHtml, evidence, "en", false);
@@ -43,15 +44,21 @@ assert(refined.includes("ES"));
 assert(!refined.includes("/dashboard/options/OPT-1/proofs/1"), "protected proof URL must not be exposed");
 assert(!refined.includes("/dashboard/options/OPT-2/proofs/1"), "protected proof URL must not be exposed");
 assert(refined.includes("Start with Vixale viewer access"));
+assert(refined.includes("On this Options page in the public Option Journal."));
+assert(refined.includes("The public Option Journal shows completed trades and recorded P/L"));
 
 const unavailable = mod.refinePublicOptionsPage(salesHtml, { trades: [], curve: { points: [], total_realized_pnl: 0 } }, "en", true);
 assert(unavailable.includes("Options performance history is temporarily unavailable."));
 assert(unavailable.includes("The Option Journal is temporarily unavailable. No simulated data is substituted."));
+assert(unavailable.includes('Total realized</span><b class="">—</b>'), "error state must not invent a $0 total");
 
 const homeHtml = `<html><body><h3>Position details and supporting records are protected.</h3><p>Openings, updates and closures are published through the existing Options workflow. Public visitors see the product overview; entitled viewers can open the protected position history and brokerage records.</p></body></html>`;
 const homeRefined = mod.refineHomeOptionsEvidenceCopy(homeHtml);
 assert(homeRefined.includes("Options chart and trade journal are public."));
 assert(homeRefined.includes("brokerage proof files remain protected for approved viewers."));
 assert(!homeRefined.includes("entitled viewers can open the protected position history"));
+const homeRu = mod.refineHomeOptionsEvidenceCopy(homeHtml, "ru");
+assert(homeRu.includes("График и журнал Options открыты для просмотра."));
+assert(homeRu.includes("файлы брокерских подтверждений остаются защищёнными"));
 
 console.log("options public evidence refinement: ok");
