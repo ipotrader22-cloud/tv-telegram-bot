@@ -4,6 +4,7 @@ const assert = require('assert');
 const {
   SWING_LEADERS_RANGE,
   SWING_LEADERS_EQUITY_HISTORY_RANGE,
+  DEFAULT_ACTIVE_BRIEF_NOTE,
   normalizePublicFeedRows,
   parsePublicFeed,
   createSwingLeadersService,
@@ -66,6 +67,26 @@ async function run() {
   assert.ok(!normalized.some(row => row[0] === 'candidate_count'));
   assert.ok(!normalized.some(row => row[0] === 'POTENTIAL CANDIDATES'));
 
+  const blankNoteRows = canonicalRows();
+  blankNoteRows[13][8] = '';
+  const blankNoteParsed = parsePublicFeed(blankNoteRows);
+  assert.strictEqual(
+    blankNoteParsed.active_portfolio[0].brief_note,
+    DEFAULT_ACTIVE_BRIEF_NOTE,
+    'blank presentation-only Active brief_note must not make the entire public feed unavailable',
+  );
+  const normalizedBlankNote = normalizePublicFeedRows(blankNoteRows);
+  assert.strictEqual(normalizedBlankNote[13][8], DEFAULT_ACTIVE_BRIEF_NOTE);
+  assert.strictEqual(blankNoteRows[13][8], '', 'normalization must not mutate source rows');
+
+  const missingCriticalField = canonicalRows();
+  missingCriticalField[13][4] = '';
+  assert.throws(
+    () => parsePublicFeed(missingCriticalField),
+    /Missing ANET entry_price/,
+    'critical trading/model fields must remain fail-closed',
+  );
+
   const conflictingCount = canonicalRows();
   conflictingCount.splice(6, 0, ['intern_count', '2']);
   assert.throws(() => parsePublicFeed(conflictingCount), /conflicting candidate count aliases/);
@@ -96,6 +117,30 @@ async function run() {
   assert.strictEqual(result.data.intern_count, 1);
   assert.strictEqual(result.data.interns[0].ticker, 'SNOW');
   assert.strictEqual(result.data.equity_history.length, 1);
+
+  const blankNoteClient = {
+    spreadsheets: {
+      values: {
+        async get(request) {
+          if (request.range === SWING_LEADERS_RANGE) {
+            const rows = canonicalRows();
+            rows[13][8] = '';
+            return { data: { values: rows } };
+          }
+          if (request.range === SWING_LEADERS_EQUITY_HISTORY_RANGE) return { data: { values: equityRows() } };
+          throw new Error(`Unexpected range ${request.range}`);
+        },
+      },
+    },
+  };
+  const blankNoteService = createSwingLeadersService({
+    getSheetsClient: async () => blankNoteClient,
+    logger: { error() {} },
+  });
+  const blankNoteResult = await blankNoteService.getSnapshot({ force: true });
+  assert.strictEqual(blankNoteResult.available, true);
+  assert.strictEqual(blankNoteResult.stale, false);
+  assert.strictEqual(blankNoteResult.data.active_portfolio[0].brief_note, DEFAULT_ACTIVE_BRIEF_NOTE);
 
   console.log('Swing Leaders candidate feed compatibility tests passed.');
 }
