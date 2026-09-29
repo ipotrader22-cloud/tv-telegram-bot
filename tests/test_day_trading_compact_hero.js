@@ -22,4 +22,12 @@ assert(!out.includes("NVDA"));
 assert(!out.includes("TSLA"));
 assert.strictEqual(day.refineDayTradingLiveAccess(out, day.DAY_PATH), out, "refinement should be idempotent");
 assert.strictEqual(day.refineDayTradingLiveAccess(html, "/pricing"), html, "other routes must be unchanged");
+
+const ru = day.refineDayTradingLiveAccess(html, day.DAY_PATH, true);
+assert(ru.includes("Выберите, как следить за системой."));
+assert(ru.includes("Публичные результаты"));
+assert(ru.includes("Сигналы в Telegram"));
+assert(ru.includes("Live-доступ"));
+assert(!ru.includes("Choose how to follow."));
+
 console.log("Day Trading compact hero: PASS");
