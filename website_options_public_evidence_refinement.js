@@ -393,7 +393,7 @@ const styles = `<style id="${STYLE_ID}">
  .vx-options-public-journal table,.vx-options-public-journal tbody{display:block;width:100%}
  .vx-options-public-journal colgroup,.vx-options-public-journal thead{display:none}
  .vx-options-public-journal tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid #dce7e1;border-radius:12px;background:#fff;padding:8px;margin-bottom:12px}
- .vx-options-public-journal td,.vx-options-public-journal td:first-child,.vx-options-public-journal td:nth-child(5){display:block;padding:7px;font-size:12px;border:0;min-width:0}
+ .vx-options-public-journal td,.vx-options-public-journal td:first-child,.vx-options-public-journal td:nth-child(5){display:block;padding:7px;font-size:12px;border:0;min-width:0;width:auto;max-width:none}
  .vx-options-public-journal td:before{content:attr(data-label);display:block;margin-bottom:4px;color:#718079;font-size:10px}
  .vx-options-proof-pill{font-size:12px;padding:8px 10px}
  .vx-options-public-status{font-size:12px}

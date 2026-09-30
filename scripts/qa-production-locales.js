@@ -381,9 +381,10 @@ async function run() {
               const metrics = await journal.evaluate(node => {
                 const wrapper = node.querySelector(".vx-options-public-journal-scroll");
                 const table = node.querySelector("table");
-                return { overflow: wrapper.scrollWidth > wrapper.clientWidth + 1, tableOverflow: table.scrollWidth > table.clientWidth + 1, forbidden: /Add Proof|Delete|Edit/.test(node.textContent) || Boolean(node.querySelector('a[href^="/admin/"],form,input')) };
+                const firstCell = table.querySelector("tbody td");
+                return { overflow: wrapper.scrollWidth > wrapper.clientWidth + 1, tableOverflow: table.scrollWidth > table.clientWidth + 1, crampedDate: innerWidth <= 760 && firstCell.getBoundingClientRect().width < 100, forbidden: /Add Proof|Delete|Edit/.test(node.textContent) || Boolean(node.querySelector('a[href^="/admin/"],form,input')) };
               });
-              if (metrics.overflow || metrics.tableOverflow || metrics.forbidden) addFailure(report, `${viewportName} ${locale}: journal layout/security ${JSON.stringify(metrics)}`);
+              if (metrics.overflow || metrics.tableOverflow || metrics.crampedDate || metrics.forbidden) addFailure(report, `${viewportName} ${locale}: journal layout/security ${JSON.stringify(metrics)}`);
               if (count > 8) {
                 await journal.locator("#vx-options-show-more").click();
                 if (await journal.locator("tbody tr:visible").count() !== count) addFailure(report, `${viewportName} ${locale}: Show More failed`);
