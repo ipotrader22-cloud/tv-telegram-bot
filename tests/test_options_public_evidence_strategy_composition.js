@@ -37,6 +37,10 @@ assert(composed.includes('class="vx-options-unified-story"'), "Options layout sh
 assert(composed.includes('class="vx-options-public-preview-stack"'), "strategy composition must preserve the public chart/dashboard stack");
 assert(composed.includes('id="options-public-chart"'), "public realized P&L chart must survive strategy composition");
 assert(composed.includes("Realized P&L curve"), "public chart heading must survive strategy composition");
+assert(composed.includes('class="vx-options-x-tick"'));
+assert(composed.includes('class="vx-options-y-tick"'));
+assert(composed.includes('stroke-dasharray="4 4"'));
+assert(composed.includes('>Proofs</th>'));
 assert(composed.includes('id="options-preview-card"'), "dashboard example must remain present");
 assert(composed.indexOf('id="options-public-chart"') < composed.indexOf('id="options-preview-card"'), "chart must remain above the dashboard example");
 assert(composed.includes('id="option-journal-public"'), "public Option Journal must remain present");

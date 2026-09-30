@@ -61,4 +61,82 @@ const homeRu = mod.refineHomeOptionsEvidenceCopy(homeHtml, "ru");
 assert(homeRu.includes("График и журнал Options открыты для просмотра."));
 assert(homeRu.includes("файлы брокерских подтверждений остаются защищёнными"));
 
+// Actual admin schema: journal Q:S are Notes/Created At/Updated At;
+// proof metadata is a separate sheet, and only validated proxy IDs may leave the server.
+const tradeId = "11111111-1111-4111-8111-111111111111";
+const proof1 = "22222222-2222-4222-8222-222222222222";
+const proof2 = "33333333-3333-4333-8333-333333333333";
+const realRow = [...values[1]];
+realRow[0] = tradeId;
+realRow[16] = "private note";
+const proofRows = [[proof1, tradeId, "private-storage-key", "private-name.jpg"], [proof2, tradeId, "internal-path", "private-name-2.jpg"]];
+const withProofs = mod.buildPublicOptionsEvidence([realRow], proofRows);
+assert.deepStrictEqual(withProofs.trades[0].proof_ids, [proof1, proof2]);
+assert(!JSON.stringify(withProofs).includes("private-storage-key"));
+for (const locale of ["en", "ru"]) {
+  const journal = mod.renderPublicJournal(withProofs, locale);
+  assert(journal.includes(locale === "en" ? ">Proofs</th>" : ">Подтверждения</th>"));
+  assert(journal.includes(locale === "en" ? ">View Proofs</summary>" : ">Подтверждения</summary>"));
+  assert(journal.includes(`/dashboard/options/${tradeId}/proofs/${proof1}`));
+  for (const forbidden of ["Add Proof", "Delete", "Edit", "private-storage-key", "internal-path", "private-name", "private note", "/admin/"]) assert(!journal.includes(forbidden), forbidden);
+}
+assert(mod.renderPublicJournal(mod.buildPublicOptionsEvidence([realRow], [proofRows[0]])).includes(">View Proof</a>"));
+assert(!mod.renderPublicJournal(mod.buildPublicOptionsEvidence([realRow])).includes("/proofs/"));
+assert(!mod.renderPublicJournal(mod.buildPublicOptionsEvidence([realRow], [["javascript:alert(1)", tradeId, "key"]])).includes("javascript:"));
+const many = mod.buildPublicOptionsEvidence(Array.from({ length: 12 }, (_, i) => {
+  const row = [...realRow]; row[1] = `2026-09-${String(i + 1).padStart(2, "0")}`; return row;
+}));
+const manyHtml = mod.renderPublicJournal(many);
+const rows = manyHtml.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/)[1].match(/<tr[^>]*>/g);
+assert.equal(rows.length, 12);
+assert.equal(rows.filter(row => !row.includes("hidden")).length, 8);
+assert(manyHtml.indexOf("2026-09-12") < manyHtml.indexOf("2026-09-01"));
+assert(manyHtml.includes("Show more trades"));
+const vm = require("vm");
+let click;
+const olderRows = Array.from({ length: 4 }, () => ({ hidden: true }));
+const button = { expanded: "false", dataset: { more: "Show more trades", less: "Show less" }, getAttribute() { return this.expanded; }, setAttribute(name, value) { this.expanded = value; }, addEventListener(name, fn) { click = fn; } };
+vm.runInNewContext(`(${mod.journalToggleScript.toString()})();`, { document: { getElementById: () => button, querySelectorAll: () => olderRows } });
+click(); assert(olderRows.every(row => !row.hidden)); assert.equal(button.textContent, "Show less");
+click(); assert(olderRows.every(row => row.hidden)); assert.equal(button.textContent, "Show more trades");
+for (const amounts of [[0], [-2000, -4000], [2000, 6000], [-2000, 4000], [0.1, 0.2]]) {
+  const chart = mod.renderCompactChart({ curve: { points: amounts.map((value, i) => ({ date: `2026-09-${20 + i}`, cumulative_pnl: value })) } });
+  assert(chart.includes('class="vx-options-x-tick"'));
+  assert(chart.includes('class="vx-options-y-tick"'));
+  assert(chart.includes("$0"));
+  assert((chart.match(/stroke-dasharray="4 4"/g) || []).length >= 3);
+  assert(!chart.includes("NaN"));
+}
+assert.equal(mod.optionPnl({ ...evidence.trades[0], trade_type: "Credit", entry_price: 24, exit_price: 20.70 }), 3197.58);
+assert.equal(mod.optionPnl(evidence.trades[1]), null);
+const sameDay = mod.buildOptionsEquityCurve([evidence.trades[0], evidence.trades[0], evidence.trades[1]]);
+assert.deepStrictEqual(sameDay.points, [{ date: "2026-09-29", daily_pnl: 6395.16, cumulative_pnl: 6395.16 }]);
 console.log("options public evidence refinement: ok");
+
+(async () => {
+  const source = require("fs").readFileSync(require.resolve("../website_options_public_evidence_refinement"), "utf8");
+  for (const failProofs of [false, true]) {
+    const reads = [];
+    const sandbox = { module: { exports: {} }, process: { env: { GOOGLE_SHEET_ID: "fixture", GOOGLE_SERVICE_ACCOUNT_JSON: "{}" } }, console,
+      require(name) {
+        if (name === "module") return { _load() {} };
+        assert.equal(name, "googleapis");
+        return { google: { auth: { GoogleAuth: class { constructor(options) { assert.deepStrictEqual(Array.from(options.scopes), ["https://www.googleapis.com/auth/spreadsheets.readonly"]); } } },
+          sheets: () => ({ spreadsheets: { values: { async get({ range }) {
+            reads.push(range);
+            if (range === mod.OPTION_JOURNAL_RANGE) return { data: { values: [realRow] } };
+            assert.equal(range, mod.OPTION_PROOFS_RANGE);
+            if (failProofs) throw new Error("unavailable private details");
+            return { data: { values: proofRows } };
+          } } } }) } };
+      } };
+    vm.runInNewContext(source, sandbox);
+    const loaded = await sandbox.module.exports.loadPublicOptionsEvidenceFromSheets();
+    assert.deepStrictEqual(reads, [mod.OPTION_JOURNAL_RANGE, mod.OPTION_PROOFS_RANGE]);
+    assert.equal(loaded.trades.length, 1);
+    assert.equal(loaded.proof_error, failProofs);
+    assert.equal(loaded.trades[0].proof_ids.length, failProofs ? 0 : 2);
+    assert(!JSON.stringify(loaded).includes("private"));
+  }
+  console.log("options read-only proof source and failure isolation: ok");
+})().catch(error => { console.error(error); process.exitCode = 1; });

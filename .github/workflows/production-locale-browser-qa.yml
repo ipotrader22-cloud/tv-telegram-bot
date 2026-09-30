@@ -124,7 +124,10 @@ jobs:
           node tests/test_issue123_pr2_homepage_preview.js
 
       - name: Options public evidence composition regression
-        run: node tests/test_options_public_evidence_strategy_composition.js
+        run: |
+          node --check tests/test_options_public_evidence_refinement.js
+          node tests/test_options_public_evidence_refinement.js
+          node tests/test_options_public_evidence_strategy_composition.js
 
       - name: Swing portfolio display regressions
         run: |
