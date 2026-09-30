@@ -2456,7 +2456,10 @@ Show Less button. All history remains in the response; no-JavaScript visitors
 can see every row. Desktop uses twelve compact fixed-layout columns, omitting
 secondary times and the nonessential Exit Date column. Mobile presents labeled
 trade cards. The existing compact SVG now includes exit-date ticks, dollar
-ticks, and dotted horizontal gridlines including zero. Credit/Debit formulas,
+ticks, and dotted horizontal gridlines including zero. Mobile card cells must
+reset inherited table widths to `auto`; otherwise the first date cell can
+collapse even when the page passes horizontal-overflow checks. The production
+browser regression also checks that this cell is at least 100px wide. Credit/Debit formulas,
 closed-only filtering, exit-date grouping, cumulative calculation, cache TTL,
 preview order, CTAs, and authentication remain unchanged. No trading, execution,
 broker, Google Sheets writer/schema, or admin implementation changes are involved.
