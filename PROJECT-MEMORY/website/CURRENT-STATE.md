@@ -89,3 +89,21 @@ Current emphasis validation (2026-09-28): node syntax, Active Portfolio and
 rules regressions PASS. Offline Chrome EN/RU at 1440/1024/768/390/320px PASS,
 including computed Current font-weight 700 after quote refresh and preserved
 TP/SL values. git diff --check PASS.
+
+
+## Proposed Day Trading hero-card refinement
+
+Branch: `fix/day-signals-card-alignment-20260929`, based on freshly fetched
+`origin/main` at `46a4b4f`. This feature branch is not deployed. The production
+manifest selected by MASTER-INDEX is now the September 29 PR235 manifest;
+earlier baseline references above remain historical.
+
+Only card CSS and a SHORT presentation class change in the Day Trading
+refinement. Five public closed trades, source request, P&L classifications,
+CTAs, Live Overview and protected Open/Pending boundaries remain unchanged.
+Local EN/RU browser checks passed at 1440/1024/768/390/320px with fixture trades:
+card raised 14px on desktop, pricing alignment within 3.3px, correct direction
+and P&L colors, weights 400/500, stacked mobile with no horizontal overflow.
+Syntax, recent-signals renderer, dedicated Day chart and Closed Trades archive
+regressions passed. Screenshots contain synthetic test data, not live results.
+Handbook updated. No merge or deployment performed.
