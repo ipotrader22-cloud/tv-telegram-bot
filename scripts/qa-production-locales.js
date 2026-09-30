@@ -367,8 +367,35 @@ async function run() {
             if (!enOptions.proofs || enOptions.proofs.href !== "#option-journal-public") {
               addFailure(report, `${viewportName} ${route.path}: Results proofs link does not target the public Option Journal`);
             }
-            if (enOptions.protectedProofLinks.length) {
-              addFailure(report, `${viewportName} ${route.path}: protected brokerage proof URL exposed publicly: ${JSON.stringify(enOptions.protectedProofLinks)}`);
+            // Only existing authenticated proxy links are public; storage metadata stays private.
+            if (enOptions.protectedProofLinks.some(item => !/^\/dashboard\/options\/[0-9a-f-]{36}\/proofs\/[0-9a-f-]{36}$/i.test(item.href))) {
+              addFailure(report, `${viewportName} ${route.path}: invalid proof proxy link`);
+            }
+            for (const [locale, page] of [["en", enPage], ["ru", ruPage]]) {
+              const journal = page.locator("#option-journal-public");
+              const rows = journal.locator("tbody tr");
+              const count = await rows.count();
+              const visible = await journal.locator("tbody tr:visible").count();
+              if (!count || visible !== Math.min(8, count)) addFailure(report, `${viewportName} ${locale}: initial journal row count ${visible}/${count}`);
+              if (await journal.locator("thead th").last().textContent() !== (locale === "en" ? "Proofs" : "Подтверждения")) addFailure(report, `${viewportName} ${locale}: Proofs column missing`);
+              const metrics = await journal.evaluate(node => {
+                const wrapper = node.querySelector(".vx-options-public-journal-scroll");
+                const table = node.querySelector("table");
+                return { overflow: wrapper.scrollWidth > wrapper.clientWidth + 1, tableOverflow: table.scrollWidth > table.clientWidth + 1, forbidden: /Add Proof|Delete|Edit/.test(node.textContent) || Boolean(node.querySelector('a[href^="/admin/"],form,input')) };
+              });
+              if (metrics.overflow || metrics.tableOverflow || metrics.forbidden) addFailure(report, `${viewportName} ${locale}: journal layout/security ${JSON.stringify(metrics)}`);
+              if (count > 8) {
+                await journal.locator("#vx-options-show-more").click();
+                if (await journal.locator("tbody tr:visible").count() !== count) addFailure(report, `${viewportName} ${locale}: Show More failed`);
+                await journal.locator("#vx-options-show-more").click();
+                if (await journal.locator("tbody tr:visible").count() !== 8) addFailure(report, `${viewportName} ${locale}: Show Less failed`);
+              }
+              if (await page.locator(".vx-options-x-tick").count() < 1 || await page.locator(".vx-options-y-tick").count() < 3 || await page.locator(".vx-options-grid").count() < 3) addFailure(report, `${viewportName} ${locale}: chart axes/grid missing`);
+              const proxy = await journal.locator('a[href^="/dashboard/options/"]').first().getAttribute("href").catch(() => null);
+              if (proxy) {
+                const response = await page.request.get(new URL(proxy, page.url()).href, { maxRedirects: 0 });
+                if (response.status() !== 302 || response.headers().location !== "/login") addFailure(report, `${viewportName} ${locale}: proof authentication boundary failed`);
+              }
             }
             if (!enOptions.how || enOptions.how.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: See How It Works target is incorrect`);
             if (!enOptions.previewCta || enOptions.previewCta.href !== "#options-preview-card") addFailure(report, `${viewportName} ${route.path}: Preview the Dashboard target is incorrect`);

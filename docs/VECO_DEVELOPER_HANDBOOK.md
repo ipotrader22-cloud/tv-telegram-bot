@@ -2440,6 +2440,32 @@ remove existing Fiona alerts.
 
 ### ADR-015 — Private option proof storage with authenticated proxy delivery
 
+**Public availability extension (2026-09-30):** The public Options journal reads
+the existing `Option Proofs!A2:G` metadata with read-only Sheets credentials,
+alongside its existing `Option Journal!A:S` read. Journal Q:S remain Notes,
+Created At, Updated At; they are not proof fields. Only validated trade/proof IDs
+are retained for the existing `/dashboard/options/:id/proofs/:proofId` links.
+Storage keys, filenames, private notes, and owner actions are not rendered.
+Anonymous proof requests still redirect to `/login`; approved viewer access is
+still required. Multiple proofs use a native disclosure containing individual
+view links. Metadata-read failure preserves the journal and displays a brief
+availability message without creating or modifying a worksheet.
+
+The public journal shows the eight newest entries with an in-page Show More /
+Show Less button. All history remains in the response; no-JavaScript visitors
+can see every row. Desktop uses twelve compact fixed-layout columns, omitting
+secondary times and the nonessential Exit Date column. Mobile presents labeled
+trade cards. The existing compact SVG now includes exit-date ticks, dollar
+ticks, and dotted horizontal gridlines including zero. Credit/Debit formulas,
+closed-only filtering, exit-date grouping, cumulative calculation, cache TTL,
+preview order, CTAs, and authentication remain unchanged. No trading, execution,
+broker, Google Sheets writer/schema, or admin implementation changes are involved.
+
+Rollback: revert the Options public-journal/chart presentation commit and
+redeploy. No proof-file, worksheet, broker-state, or customer-data rollback is
+needed. Record the exact PR/deployment/production QA in the Current-State manifest
+after live verification.
+
 **Decision:** Option-trade brokerage screenshots are stored as private files
 beneath the server directory configured by `OPTION_PROOFS_DIR`. Production must
 mount that directory on a Render persistent disk; the recommended configuration
