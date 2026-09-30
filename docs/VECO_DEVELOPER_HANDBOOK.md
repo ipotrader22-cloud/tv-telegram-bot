@@ -2944,3 +2944,30 @@ snapshot cache, stale snapshot fallback and initial-unavailable HTTP 503 are
 unchanged. This addition does not alter Trading Lab, VECO, execution or lifecycle.
 Source/test status is recorded in `PROJECT-MEMORY/website/CURRENT-STATE.md`;
 merge and live deployment require separate verification.
+
+
+### Day Trading recent-signals card refinement (proposed source change)
+
+`website_day_trading_live_access_refinement.js` owns the compact hero card.
+Its desktop card starts 14px above the hero copy's content box, removing the
+hero's top-padding gap, and stretches to the copy/pricing row with natural
+minimum content height. Compact rows and padding keep the five signals visible.
+At 900px and below, the existing stacked layout keeps natural card height;
+the mobile header may wrap instead of overflowing.
+
+Card typography uses weights 400/500. Shared `.vx-conversion-system-hero span`
+styles otherwise override the card's font, color, case and letter spacing:
+keep card-specific selectors strong enough to win that cascade. SHORT adds
+only a presentation class for red symbol/side text; LONG remains green.
+P&L retains its independent positive/negative/neutral classification. A
+profitable SHORT still has green P&L. No data or lifecycle calculation changes.
+
+The `/closed-trades` fetch, five-row order, public closed-only boundary,
+all CTA destinations and Day Trading Live Overview remain unchanged.
+Validation: EN/RU browser checks using fetched production HTML with the proposed
+card assets and synthetic closed-trade fixtures at 1440/1024/768/390/320px.
+Desktop card/pricing bottom difference was 0–3.3px; all checked viewports had
+no horizontal overflow, correct direction/P&L colors and card weights <=500.
+Node regressions cover EN/RU rendering, five-row ordering, escaping, empty/error
+states and unchanged destinations. This is local proposed-source evidence,
+not deployment verification; merge and production checks remain separate.
