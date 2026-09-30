@@ -95,17 +95,19 @@ function consolidateOptionsStory(html) {
 
   const heroCopy = findTagByClass(html, "div", "vx-options-hero-copy", hero.openEnd, hero.closeStart);
   const previewCopy = findTagByClass(html, "div", "vx-options-section-copy", preview.openEnd, preview.closeStart);
+  const previewStack = findTagByClass(html, "div", "vx-options-public-preview-stack", preview.openEnd, preview.closeStart);
   const previewCard = findTagByClass(html, "div", "vx-options-dashboard-shot", preview.openEnd, preview.closeStart)
     || findTagByClass(html, "div", "vx-options-preview-empty", preview.openEnd, preview.closeStart);
+  const previewVisual = previewStack || previewCard;
   const resultsCopy = firstChildDivRange(html, results);
-  if (!heroCopy || !previewCopy || !previewCard || !resultsCopy) return html;
+  if (!heroCopy || !previewCopy || !previewVisual || !resultsCopy) return html;
 
   let heroCopyHtml = html.slice(heroCopy.start, heroCopy.end)
     .replace('href="#options-dashboard-preview"', 'href="#options-preview-card"');
   let previewCopyHtml = html.slice(previewCopy.start, previewCopy.end);
   let resultsCopyHtml = html.slice(resultsCopy.start, resultsCopy.end)
     .replace(/^<div>/, '<div class="vx-options-unified-results-copy">');
-  const previewCardHtml = html.slice(previewCard.start, previewCard.end);
+  const previewVisualHtml = html.slice(previewVisual.start, previewVisual.end);
 
   heroCopyHtml = heroCopyHtml.replace(
     /class=(["'])vx-options-hero-copy\1/,
@@ -118,7 +120,7 @@ function consolidateOptionsStory(html) {
 
   const unified = `<section class="${OPTIONS_UNIFIED_CLASS}" id="options-dashboard-preview" aria-label="Options service overview">
     <div class="vx-options-unified-copy">${heroCopyHtml}${previewCopyHtml}${resultsCopyHtml}</div>
-    <div class="vx-options-unified-preview">${previewCardHtml}</div>
+    <div class="vx-options-unified-preview">${previewVisualHtml}</div>
   </section>`;
 
   let out = html.slice(0, results.start) + html.slice(results.end);
