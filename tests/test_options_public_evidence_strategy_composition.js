@@ -5,8 +5,8 @@ const evidence = require("../website_options_public_evidence_refinement");
 const strategy = require("../website_strategy_page_design_refinement");
 
 const values = [
-  ["ID", "Trade Date", "Entry Time", "Symbol", "Strategy", "Legs", "Expiration", "Contracts", "Multiplier", "Trade Type", "Entry Price", "Exit Date", "Exit Time", "Exit Price", "Fees", "Status", "Proof 1", "Proof 2", "Notes"],
-  ["OPT-1", "2026-09-27", "10:00", "SPX", "Calendar", "Short 7680 / Long 7680", "2026-09-29", 10, 100, "Debit", 20.70, "2026-09-29", "14:00", 24.00, 102.42, "Closed", "/dashboard/options/OPT-1/proofs/1"],
+  ["ID", "Trade Date", "Entry Time", "Symbol", "Strategy", "Legs", "Expiration", "Contracts", "Multiplier", "Trade Type", "Entry Price", "Exit Date", "Exit Time", "Exit Price", "Fees", "Status", "Notes", "Created At", "Updated At"],
+  ["OPT-1", "2026-09-27", "10:00", "SPX", "Calendar", "Short 7680 / Long 7680", "2026-09-29", 10, 100, "Debit", 20.70, "2026-09-29", "14:00", 24.00, 102.42, "Closed", "Calendar entry"],
 ];
 
 const publicEvidence = evidence.buildPublicOptionsEvidence(values);
