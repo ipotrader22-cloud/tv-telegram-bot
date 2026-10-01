@@ -99,11 +99,27 @@ const APP_PATCH_MARKER = "VIXALE_DASHBOARD_ACCESS_SECURITY_PATCH";
   assert(appSource.includes("app.post('/admin/access/requests/:id/approve'"));
   assert(appSource.includes("app.post('/admin/access/requests/:id/reject'"));
   assert(appSource.includes("app.post('/admin/access/requests/:id/delete'"));
-  assert(appSource.includes("if (!adminAccessRequestAllowed(req, res)) return;"), "Delete must reuse existing owner guard");
+  assert(appSource.includes("if (!adminAccessRequestAllowed(req, res)) return;"), "Admin access actions must reuse existing owner guard");
   assert(appSource.includes("deleteDimension"));
   assert(appSource.includes("linkedCode"));
   assert(appSource.includes("access-delete"));
   assert(appSource.includes("Permanently delete this dashboard access request?\\nThis cannot be undone."));
+
+  assert(appSource.includes("const dashboardAccessHealthState ="), "health state must be installed");
+  assert(appSource.includes("function dashboardAccessHealthSnapshot()"), "health snapshot helper must be installed");
+  assert(appSource.includes("dashboardAccessHealthFailure('sheet'"), "sheet failures must feed health state");
+  assert(appSource.includes("dashboardAccessHealthFailure('verification_email'"), "verification email failures must feed health state");
+  assert(appSource.includes("dashboardAccessHealthRecord('owner_notification', true"), "owner notification success must feed health state");
+  assert(appSource.includes("app.get('/admin/access/health'"), "owner health JSON route must exist");
+  assert(appSource.includes("app.post('/admin/access/health/test'"), "owner synthetic test route must exist");
+  assert(appSource.includes("[SYSTEM TEST] Vixale Dashboard Access Health Check"), "synthetic test email must be visibly marked");
+  assert(appSource.includes("range: \"'Dashboard Access Requests'!A1:L1\""), "synthetic test must verify sheet readability without adding a customer row");
+  assert(appSource.includes("Dashboard Access System"), "health card must appear in /admin/live");
+  assert(appSource.includes("Run Test Now"), "health card must expose a manual test control");
+  assert(appSource.includes("fetch('/admin/access/health'"), "health card must refresh without reloading admin live");
+  assert(appSource.includes("setInterval(refresh,30000)"), "health card must auto-refresh every 30 seconds");
+  assert(!appSource.includes("verification_token: verificationToken"), "health work must not weaken verification token handling");
+
   assert(appSource.includes("app.post('/dashboard-login'"), "dashboard login must remain present");
   assert(appSource.includes("app.post('/tv', handleTradingViewWebhook)"), "TradingView webhook must remain untouched");
 
@@ -112,6 +128,13 @@ const APP_PATCH_MARKER = "VIXALE_DASHBOARD_ACCESS_SECURITY_PATCH";
   const verifyBlock = appSource.slice(verifyStart, verifyEnd);
   assert(!verifyBlock.includes("createDashboardViewerCode("), "email verification must never create a viewer code");
 
+  const healthTestStart = appSource.indexOf("app.post('/admin/access/health/test'");
+  const healthTestEnd = appSource.indexOf("app.post('/admin/access/requests/:id/delete'", healthTestStart);
+  const healthTestBlock = appSource.slice(healthTestStart, healthTestEnd);
+  assert(!healthTestBlock.includes("logDashboardAccessRequest("), "synthetic test must not create fake customer requests");
+  assert(!healthTestBlock.includes("createDashboardViewerCode("), "synthetic test must never create viewer codes");
+  assert(healthTestBlock.includes("adminAccessRequestAllowed(req, res)"), "synthetic test must be owner-only");
+
   new vm.Script(appSource, { filename: "app.js" });
-  console.log("Dashboard access security hardening: PASS");
+  console.log("Dashboard access security + health monitor: PASS");
 })().catch(error => { console.error(error); process.exit(1); });
