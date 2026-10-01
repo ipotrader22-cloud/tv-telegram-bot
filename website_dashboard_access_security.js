@@ -26,7 +26,20 @@ function replaceBlockOnce(source, startNeedle, endNeedle, replacement, label) {
   return source.slice(0, start) + replacement + "\n\n" + source.slice(end);
 }
 
+function replaceWithinBlockOnce(source, startNeedle, endNeedle, needle, replacement, label) {
+  const start = source.indexOf(startNeedle);
+  if (start < 0) throw new Error(`Access Guard health block start missing: ${label}`);
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  if (end < 0) throw new Error(`Access Guard health block end missing: ${label}`);
+  const block = source.slice(start, end);
+  const index = block.indexOf(needle);
+  if (index < 0) throw new Error(`Access Guard health anchor missing: ${label}`);
+  const updated = block.slice(0, index) + replacement + block.slice(index + needle.length);
+  return source.slice(0, start) + updated + source.slice(end);
+}
+
 const { ACCESS_HELPERS, NEW_PASSWORD_AND_VERIFY_ROUTES, DELETE_ROUTE } = require("./lib/dashboard-access-security-source-blocks");
+const { HEALTH_HELPERS, HEALTH_ROUTES } = require("./lib/dashboard-access-health-source-blocks");
 const websiteFunnelSourcePatch = require("./lib/website-funnel-source-patch");
 
 function patchAppSource(source) {
@@ -48,7 +61,7 @@ function patchAppSource(source) {
     "access request headers"
   );
 
-  out = insertBeforeOnce(out, "async function logDashboardAccessRequest(request) {", ACCESS_HELPERS + "\n", "access security helpers");
+  out = insertBeforeOnce(out, "async function logDashboardAccessRequest(request) {", ACCESS_HELPERS + "\n" + HEALTH_HELPERS + "\n", "access security and health helpers");
 
   out = replaceBlockOnce(
     out,
@@ -126,6 +139,68 @@ function patchAppSource(source) {
 
   out = replaceBlockOnce(out, "app.post('/password-request', async (req, res) => {", "\napp.post('/strategy-review', async (req, res) => {", NEW_PASSWORD_AND_VERIFY_ROUTES, "password request workflow");
 
+  out = replaceWithinBlockOnce(
+    out,
+    "app.post('/password-request', async (req, res) => {",
+    "app.get('/dashboard-access/verify', async (req, res) => {",
+    "  try {\n    if (body.website) {",
+    "  try {\n    dashboardAccessHealthRecord('request', true);\n    if (body.website) {",
+    "record access request"
+  );
+
+  out = replaceWithinBlockOnce(
+    out,
+    "app.post('/password-request', async (req, res) => {",
+    "app.get('/dashboard-access/verify', async (req, res) => {",
+    "    if (!TURNSTILE_SITE_KEY || !TURNSTILE_SECRET_KEY) return dashboardAccessUnavailable(res, lang);",
+    "    if (!TURNSTILE_SITE_KEY || !TURNSTILE_SECRET_KEY) { dashboardAccessHealthRecord('turnstile', false, 'Turnstile configuration is incomplete.'); return dashboardAccessUnavailable(res, lang); }",
+    "record missing Turnstile config"
+  );
+
+  out = replaceWithinBlockOnce(
+    out,
+    "app.post('/password-request', async (req, res) => {",
+    "app.get('/dashboard-access/verify', async (req, res) => {",
+    "    if (!turnstile.ok) {\n      return res.status(400).send(lang === 'ru' ? 'Не удалось подтвердить проверку. Обновите страницу и попробуйте снова.' : 'Verification could not be confirmed. Refresh the page and try again.');\n    }",
+    "    if (!turnstile.ok) {\n      dashboardAccessHealthRecord('turnstile', false, 'Turnstile verification failed.');\n      return res.status(400).send(lang === 'ru' ? 'Не удалось подтвердить проверку. Обновите страницу и попробуйте снова.' : 'Verification could not be confirmed. Refresh the page and try again.');\n    }",
+    "record Turnstile failure"
+  );
+
+  out = replaceWithinBlockOnce(
+    out,
+    "app.post('/password-request', async (req, res) => {",
+    "app.get('/dashboard-access/verify', async (req, res) => {",
+    "    dashboardAccessUsedTurnstileTokens.set(turnstileTokenHash, Date.now() + DASHBOARD_ACCESS_USED_TURNSTILE_TTL_MS);\n    pruneUsedTurnstileTokenHashes();",
+    "    dashboardAccessUsedTurnstileTokens.set(turnstileTokenHash, Date.now() + DASHBOARD_ACCESS_USED_TURNSTILE_TTL_MS);\n    pruneUsedTurnstileTokenHashes();\n    dashboardAccessHealthRecord('turnstile', true, 'Latest real request passed Turnstile.');",
+    "record Turnstile success"
+  );
+
+  out = replaceWithinBlockOnce(
+    out,
+    "app.post('/password-request', async (req, res) => {",
+    "app.get('/dashboard-access/verify', async (req, res) => {",
+    "    } catch (sheetError) {\n      console.error('Dashboard access request sheet logging failed:', sheetError);\n    }\n    if (!stored) return dashboardAccessUnavailable(res, lang);",
+    "    } catch (sheetError) {\n      dashboardAccessHealthRecord('google_sheets', false, dashboardAccessHealthMessage(sheetError, 'Request logging failed.'));\n      console.error('Dashboard access request sheet logging failed:', sheetError);\n    }\n    if (!stored) { dashboardAccessHealthRecord('google_sheets', false, 'Request could not be stored.'); return dashboardAccessUnavailable(res, lang); }\n    dashboardAccessHealthRecord('google_sheets', true, 'Latest real request was stored.');",
+    "record request sheet health"
+  );
+
+  out = replaceWithinBlockOnce(
+    out,
+    "app.post('/password-request', async (req, res) => {",
+    "app.get('/dashboard-access/verify', async (req, res) => {",
+    "        text: dashboardAccessSecurity.verificationEmailText({ verificationUrl }),\n      });\n    } catch (emailError) {\n      console.error('Dashboard access verification email failed:', emailError);",
+    "        text: dashboardAccessSecurity.verificationEmailText({ verificationUrl }),\n      });\n      dashboardAccessHealthRecord('verification_email', true, 'Provider accepted latest verification email.');\n    } catch (emailError) {\n      dashboardAccessHealthRecord('verification_email', false, dashboardAccessHealthMessage(emailError, 'Verification email failed.'));\n      console.error('Dashboard access verification email failed:', emailError);",
+    "record verification email health"
+  );
+
+  out = replaceOnce(
+    out,
+    "      emailed = true;\n    } catch (emailError) {\n      console.error('Dashboard access verified owner email failed:', emailError);",
+    "      emailed = true;\n      dashboardAccessHealthRecord('owner_notification', true, 'Provider accepted latest owner notification.');\n    } catch (emailError) {\n      dashboardAccessHealthRecord('owner_notification', false, dashboardAccessHealthMessage(emailError, 'Owner notification email failed.'));\n      console.error('Dashboard access verified owner email failed:', emailError);",
+    "record owner notification health"
+  );
+
+  out = insertBeforeOnce(out, "app.post('/admin/access/codes/create', async (req, res) => {", HEALTH_ROUTES, "dashboard access health routes");
   out = insertBeforeOnce(out, "app.post('/admin/access/codes/create', async (req, res) => {", DELETE_ROUTE, "access request delete route");
 
   out = replaceOnce(
