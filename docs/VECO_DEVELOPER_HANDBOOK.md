@@ -2445,7 +2445,10 @@ the existing `Option Proofs!A2:G` metadata with read-only Sheets credentials,
 alongside its existing `Option Journal!A:S` read. Journal Q:S remain Notes,
 Created At, Updated At; they are not proof fields. Only validated trade/proof IDs
 are retained for the existing `/dashboard/options/:id/proofs/:proofId` links.
-Storage keys, filenames, private notes, and owner actions are not rendered.
+Storage keys, filenames, and owner actions are not rendered. At the owner's
+explicit request, public Notes now comes from Option Journal column Q, matching
+the admin/live journal, and is HTML-escaped between P&L and Proofs. Notes wrap
+inside the existing content width; empty notes display a dash.
 Anonymous proof requests still redirect to `/login`; approved viewer access is
 still required. Multiple proofs use a native disclosure containing individual
 view links. Metadata-read failure preserves the journal and displays a brief
@@ -2453,7 +2456,7 @@ availability message without creating or modifying a worksheet.
 
 The public journal shows the eight newest entries with an in-page Show More /
 Show Less button. All history remains in the response; no-JavaScript visitors
-can see every row. Desktop uses twelve compact fixed-layout columns, omitting
+can see every row. Desktop uses thirteen compact fixed-layout columns, omitting
 secondary times and the nonessential Exit Date column. Mobile presents labeled
 trade cards. The existing compact SVG now includes exit-date ticks, dollar
 ticks, and dotted horizontal gridlines including zero. Mobile card cells must

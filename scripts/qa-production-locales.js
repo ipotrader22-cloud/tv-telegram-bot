@@ -376,6 +376,8 @@ async function run() {
               const rows = journal.locator("tbody tr");
               const count = await rows.count();
               const visible = await journal.locator("tbody tr:visible").count();
+              const headers = await journal.locator("thead th").allTextContents();
+              if (headers.length !== 13 || headers[11] !== (locale === "en" ? "Notes" : "Примечания")) addFailure(report, `${viewportName} ${locale}: Notes column/order missing`);
               if (!count || visible !== Math.min(8, count)) addFailure(report, `${viewportName} ${locale}: initial journal row count ${visible}/${count}`);
               if (await journal.locator("thead th").last().textContent() !== (locale === "en" ? "Proofs" : "Подтверждения")) addFailure(report, `${viewportName} ${locale}: Proofs column missing`);
               const metrics = await journal.evaluate(node => {

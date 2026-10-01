@@ -4,9 +4,9 @@ const assert = require("assert");
 const mod = require("../website_options_public_evidence_refinement");
 
 const values = [
-  ["ID", "Trade Date", "Entry Time", "Symbol", "Strategy", "Legs", "Expiration", "Contracts", "Multiplier", "Trade Type", "Entry Price", "Exit Date", "Exit Time", "Exit Price", "Fees", "Status", "Proof 1", "Proof 2", "Notes"],
-  ["OPT-1", "2026-09-27", "10:00", "SPX", "Calendar", "Short 7680 / Long 7680", "2026-09-29", 10, 100, "Debit", 20.70, "2026-09-29", "14:00", 24.00, 102.42, "Closed", "/dashboard/options/OPT-1/proofs/1"],
-  ["OPT-2", "2026-09-29", "11:15", "ES", "Straddle", "Short 6000C / 6000P", "2026-09-29", 2, 50, "Credit", 40, "", "", "", 0, "Open", "/dashboard/options/OPT-2/proofs/1"],
+  ["ID", "Trade Date", "Entry Time", "Symbol", "Strategy", "Legs", "Expiration", "Contracts", "Multiplier", "Trade Type", "Entry Price", "Exit Date", "Exit Time", "Exit Price", "Fees", "Status", "Notes", "Created At", "Updated At"],
+  ["OPT-1", "2026-09-27", "10:00", "SPX", "Calendar", "Short 7680 / Long 7680", "2026-09-29", 10, 100, "Debit", 20.70, "2026-09-29", "14:00", 24.00, 102.42, "Closed", "Calendar entry"],
+  ["OPT-2", "2026-09-29", "11:15", "ES", "Straddle", "Short 6000C / 6000P", "2026-09-29", 2, 50, "Credit", 40, "", "", "", 0, "Open", "Straddle entry"],
   ["OPT-3", "2026-09-30", "09:45", "SPX", "Debit spread", "Long 7700 / Short 7710", "2026-09-30", 1, 100, "Debit", 5, "2026-09-30", "15:10", 7, 0, "Closed"],
 ];
 
@@ -68,7 +68,7 @@ const proof1 = "22222222-2222-4222-8222-222222222222";
 const proof2 = "33333333-3333-4333-8333-333333333333";
 const realRow = [...values[1]];
 realRow[0] = tradeId;
-realRow[16] = "private note";
+realRow[16] = 'Owner note <script>alert("x")</script> & details';
 const proofRows = [[proof1, tradeId, "private-storage-key", "private-name.jpg"], [proof2, tradeId, "internal-path", "private-name-2.jpg"]];
 const withProofs = mod.buildPublicOptionsEvidence([realRow], proofRows);
 assert.deepStrictEqual(withProofs.trades[0].proof_ids, [proof1, proof2]);
@@ -78,7 +78,10 @@ for (const locale of ["en", "ru"]) {
   assert(journal.includes(locale === "en" ? ">Proofs</th>" : ">Подтверждения</th>"));
   assert(journal.includes(locale === "en" ? ">View Proofs</summary>" : ">Подтверждения</summary>"));
   assert(journal.includes(`/dashboard/options/${tradeId}/proofs/${proof1}`));
-  for (const forbidden of ["Add Proof", "Delete", "Edit", "private-storage-key", "internal-path", "private-name", "private note", "/admin/"]) assert(!journal.includes(forbidden), forbidden);
+  assert(journal.includes(locale === "en" ? '>P&L</th><th scope="col">Notes</th><th scope="col">Proofs</th>' : '>P&L</th><th scope="col">Примечания</th><th scope="col">Подтверждения</th>'));
+  assert(journal.includes('Owner note &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; details'));
+  assert(!journal.includes('<script>alert("x")</script>'));
+  for (const forbidden of ["Add Proof", "Delete", "Edit", "private-storage-key", "internal-path", "private-name", "/admin/"]) assert(!journal.includes(forbidden), forbidden);
 }
 assert(mod.renderPublicJournal(mod.buildPublicOptionsEvidence([realRow], [proofRows[0]])).includes(">View Proof</a>"));
 assert(!mod.renderPublicJournal(mod.buildPublicOptionsEvidence([realRow])).includes("/proofs/"));
