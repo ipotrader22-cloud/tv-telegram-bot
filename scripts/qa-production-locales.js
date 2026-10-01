@@ -290,7 +290,7 @@ async function run() {
               "Updated daily on the website.",
               "Take a look inside.",
               "Realized P&L curve",
-              "See the trades behind the results.",
+              "Every trade, from entry to exit.",
               "Real trades. Daily updates. A record you can check.",
               "These results come from our real trading account.",
               "See new positions",
@@ -305,7 +305,7 @@ async function run() {
               "Следите за нашими опционными сделками от входа до выхода.",
               "Обновляется ежедневно на сайте.",
               "Кривая реализованного P&L",
-              "Смотрите сделки, а не только итог.",
+              "Каждая сделка — от входа до выхода.",
               "Реальные сделки. Ежедневные обновления. История, которую можно проверить.",
               "Перед подключением",
             ]) {
