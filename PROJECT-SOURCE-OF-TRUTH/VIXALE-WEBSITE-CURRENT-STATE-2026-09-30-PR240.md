@@ -3,6 +3,43 @@
 Updated: 2026-09-30 America/New_York (production verification 2026-10-01 UTC).
 Repository: `ipotrader22-cloud/tv-telegram-bot`, production branch `main`.
 
+## Latest verified header and introduction refinement (PR242 / PR243)
+
+PR242 (`6b1afea9ffe532c45550523321d3e35958199431`) makes table headings
+bold (700), centered, and single-line. Compact Qty/Expiry/Cr-Db/price labels
+retain full-label hover titles; mobile cards retain full field labels. The
+existing card layout now applies through 900px to avoid squeezing thirteen
+columns on tablets. No horizontal table scrolling was introduced.
+
+PR243 (`c9bae8d2618bf7d23f74dff109b564dde6b923c9`) changes the introduction to:
+
+> Every trade, from entry to exit.
+>
+> Explore our options trades, review the results, and read the notes behind each position.
+
+Russian copy: “Каждая сделка — от входа до выхода.” and “Смотрите наши опционные
+сделки, результаты и комментарии к каждой позиции.”
+
+Exact final code deploy: `dep-daut9htg1s2s73d1fn80`, commit
+`c9bae8d2618bf7d23f74dff109b564dde6b923c9`, verified **live** at
+`2026-10-01T03:35:01.432975Z`. Startup logs confirm port 10000 and live status.
+PR242's preceding deploy was `dep-daut5nvf3r2c7389598g`.
+
+Live Chrome checks passed in EN/RU at 1440/1024/768/390/320px, including exact
+new introduction, computed bold/center/nowrap styles, header text fit, no
+horizontal overflow, eight initial rows, all 47 trades on expansion, Notes/proof
+order, protected-proof redirects, chart/grid preservation, and CTA clicks.
+Desktop and mobile screenshots were inspected.
+
+PR242 production QA run `36810507222` passed. PR243 production run
+`36811135801` passed both locale-contract and browser-qa jobs.
+
+Runtime changes are limited to the public Options renderer and copy expectations
+in the existing browser QA script. No formulas, data sources, admin actions,
+authentication, Sheets writers, or trading/execution behavior changed.
+Rollback the copy with PR243's merge commit; rollback header styling with
+PR242's merge commit. No data rollback is required.
+
 ## Verified public Options journal and chart
 
 The public `/trading-systems/options#option-journal-public` journal now includes
