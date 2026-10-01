@@ -3,14 +3,19 @@
 const Module = require("module");
 
 const SWING_PATH = "/trading-systems/swing-trading";
-const SOURCE_PATH = "/swing-leaders";
+const SOURCE_PATH = SWING_PATH;
 const REFRESH_MS = 60 * 1000;
 const SCRIPT_ID = "vx-swing-equity-live-refresh-script";
 
 const equityRefreshScript = `<script id="${SCRIPT_ID}">(() => {
 const SOURCE_PATH=${JSON.stringify(SOURCE_PATH)};
 const REFRESH_MS=${REFRESH_MS};
-const refresh=async()=>{if(document.visibilityState==="hidden")return;const current=document.querySelector(".equity-chart-card .equity-chart-svg");if(!current)return;try{const response=await fetch(SOURCE_PATH,{credentials:"same-origin",cache:"no-store",headers:{Accept:"text/html"}});if(!response.ok)return;const html=await response.text();const parsed=new DOMParser().parseFromString(html,"text/html");const fresh=parsed.querySelector(".equity-chart-card .equity-chart-svg");if(!fresh)return;if(fresh.outerHTML!==current.outerHTML){current.replaceWith(document.importNode(fresh,true))}const card=document.querySelector(".equity-chart-card");if(card)card.dataset.vxEquityRefreshAt=new Date().toISOString()}catch(_){}};
+const clean=value=>String(value==null?"":value).trim();
+const tickers=root=>Array.from(root.querySelectorAll("main table tbody tr td:first-child strong")).map(node=>clean(node.textContent).toUpperCase()).filter(Boolean).join(",");
+const signature=root=>[clean(root.querySelector("footer.footer .wrap")?.textContent),tickers(root)].join("|");
+const replaceSnapshot=parsed=>{const currentMain=document.querySelector("main.wrap")||document.querySelector("main");const freshMain=parsed.querySelector("main.wrap")||parsed.querySelector("main");if(!currentMain||!freshMain)return false;if(signature(document)===signature(parsed))return false;currentMain.replaceWith(document.importNode(freshMain,true));const currentFooter=document.querySelector("footer.footer");const freshFooter=parsed.querySelector("footer.footer");if(currentFooter&&freshFooter)currentFooter.replaceWith(document.importNode(freshFooter,true));document.body.dataset.vxSnapshotRefreshAt=new Date().toISOString();return true};
+const refreshChart=parsed=>{const current=document.querySelector(".equity-chart-card .equity-chart-svg");const fresh=parsed.querySelector(".equity-chart-card .equity-chart-svg");if(!current||!fresh)return;if(fresh.outerHTML!==current.outerHTML)current.replaceWith(document.importNode(fresh,true));const card=document.querySelector(".equity-chart-card");if(card)card.dataset.vxEquityRefreshAt=new Date().toISOString()};
+const refresh=async()=>{if(document.visibilityState==="hidden")return;try{const separator=SOURCE_PATH.includes("?")?"&":"?";const url=SOURCE_PATH+separator+"vx_snapshot_refresh="+Date.now();const response=await fetch(url,{credentials:"same-origin",cache:"no-store",headers:{Accept:"text/html","Cache-Control":"no-cache"}});if(!response.ok)return;const html=await response.text();const parsed=new DOMParser().parseFromString(html,"text/html");if(!replaceSnapshot(parsed))refreshChart(parsed)}catch(_){}};
 let timer=null;
 const start=()=>{if(timer!==null)return;refresh();timer=window.setInterval(refresh,REFRESH_MS)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
