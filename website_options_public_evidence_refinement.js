@@ -283,7 +283,7 @@ function renderPublicJournal(evidence, locale = "en", error = false) {
   const body = error
     ? `<div class="vx-options-public-evidence-empty">${ru ? "Option Journal временно недоступен. Мы не подставляем имитационные данные." : "The Option Journal is temporarily unavailable. No simulated data is substituted."}</div>`
     : trades.length
-      ? `<div class="vx-options-public-journal-scroll"><table><colgroup>${[8, 5, 8, 12, 8, 5, 7, 6, 6, 6, 9, 10, 10].map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${journalHeaders(locale).map(label => `<th scope="col">${label}</th>`).join("")}</tr></thead><tbody id="vx-options-trade-rows">${journalRows(trades, locale)}</tbody></table></div>${trades.length > 8 ? `<button type="button" class="vx-options-show-more" id="vx-options-show-more" aria-expanded="false" aria-controls="vx-options-trade-rows" data-more="${ru ? "Показать ещё сделки" : "Show more trades"}" data-less="${ru ? "Показать меньше" : "Show less"}">${ru ? "Показать ещё сделки" : "Show more trades"}</button><script>(${journalToggleScript.toString()})();</script><noscript><style>#vx-options-trade-rows [hidden]{display:table-row!important}#vx-options-show-more{display:none}</style></noscript>` : ""}`
+      ? `<div class="vx-options-public-journal-scroll"><table><colgroup>${[8, 5, 8, 12, 8, 5, 7, 6, 6, 6, 9, 10, 10].map(width => `<col style="width:${width}%">`).join("")}</colgroup><thead><tr>${journalHeaders(locale).map(label => { const short = { Contracts: "Qty", Expiration: "Expiry", "Credit/Debit": "Cr/Db", "Entry Price": "Entry $", "Exit Price": "Exit $", "Экспирация": "Срок", "Кредит/Дебет": "Кр/Дб", "Цена входа": "Вход $", "Цена выхода": "Выход $" }[label]; return `<th scope="col"${short ? ` title="${label}"` : ""}>${short || label}</th>`; }).join("")}</tr></thead><tbody id="vx-options-trade-rows">${journalRows(trades, locale)}</tbody></table></div>${trades.length > 8 ? `<button type="button" class="vx-options-show-more" id="vx-options-show-more" aria-expanded="false" aria-controls="vx-options-trade-rows" data-more="${ru ? "Показать ещё сделки" : "Show more trades"}" data-less="${ru ? "Показать меньше" : "Show less"}">${ru ? "Показать ещё сделки" : "Show more trades"}</button><script>(${journalToggleScript.toString()})();</script><noscript><style>#vx-options-trade-rows [hidden]{display:table-row!important}#vx-options-show-more{display:none}</style></noscript>` : ""}`
       : `<div class="vx-options-public-evidence-empty">${ru ? "В Option Journal пока нет опубликованных сделок." : "No Option Journal trades have been published yet."}</div>`;
   return `<section class="vx-options-public-journal" id="option-journal-public" aria-labelledby="vx-options-public-journal-title">
     <div class="vx-options-public-journal-head"><div><span class="vx-options-kicker">OPTION JOURNAL</span><h2 id="vx-options-public-journal-title">${ru ? "Смотрите сделки, а не только итог." : "See the trades behind the results."}</h2><p>${ru ? "Публичный журнал показывает поля сделок, которые Vixale публикует из существующего Option Journal. Записи обновляются из того же источника; имитационные значения не используются." : "The public journal shows the trade fields Vixale publishes from the existing Option Journal. It refreshes from the same source, with no simulated replacement values."}</p></div><span class="vx-options-public-updated">${ru ? "Обновляется на сайте" : "Updated on the website"}</span></div>
@@ -377,7 +377,7 @@ const styles = `<style id="${STYLE_ID}">
 .vx-options-public-chart-svg .vx-options-zero{stroke:#a4b9ac;stroke-width:1.2}
 .vx-options-public-journal-scroll{overflow:visible}
 .vx-options-public-journal table{min-width:0;table-layout:fixed;font-size:11px}
-.vx-options-public-journal th{padding:10px 4px;font-size:9px;letter-spacing:0;white-space:normal;overflow-wrap:anywhere}
+.vx-options-public-journal th{padding:10px 4px;font-size:9px;font-weight:700;text-align:center;letter-spacing:0;white-space:nowrap;overflow-wrap:normal}
 .vx-options-public-journal td{padding:10px 4px;overflow-wrap:anywhere}
 .vx-options-public-journal td:first-child,.vx-options-public-journal td:nth-child(5){font-size:10px}
 .vx-options-public-journal td strong{font-weight:500}
@@ -391,7 +391,7 @@ const styles = `<style id="${STYLE_ID}">
 .vx-options-show-more{display:block;margin:16px auto 0;padding:10px 18px;font-size:12px}
 .vx-options-proof-pill:focus-visible,.vx-options-show-more:focus-visible{outline:2px solid #0b8f54;outline-offset:3px}
 #vx-options-trade-rows [hidden]{display:none!important}
-@media(max-width:760px){
+@media(max-width:900px){
  .vx-options-public-journal-scroll{border:0;background:transparent;box-shadow:none}
  .vx-options-public-journal table,.vx-options-public-journal tbody{display:block;width:100%}
  .vx-options-public-journal colgroup,.vx-options-public-journal thead{display:none}
