@@ -12,7 +12,10 @@ const SOURCE_PATH=${JSON.stringify(SOURCE_PATH)};
 const REFRESH_MS=${REFRESH_MS};
 const clean=value=>String(value==null?"":value).trim();
 const tickers=root=>Array.from(root.querySelectorAll("main table tbody tr td:first-child strong")).map(node=>clean(node.textContent).toUpperCase()).filter(Boolean).join(",");
-const signature=root=>[clean(root.querySelector("footer.footer .wrap")?.textContent),tickers(root)].join("|");
+const activeReviewSignature=root=>Array.from(root.querySelectorAll("#active-portfolio ~ * tbody tr, #active-portfolio + * tbody tr, section:has(#active-portfolio) tbody tr")).map(row=>{const ticker=clean(row.querySelector('td[data-label="Ticker"] strong')?.textContent).toUpperCase();const note=clean(row.querySelector('td[data-label="Research Note"]')?.textContent);return ticker?([ticker,note].join("~")):""}).filter(Boolean).join("||");
+const fallbackActiveReviewSignature=root=>Array.from(root.querySelectorAll("main table tbody tr")).map(row=>{const ticker=clean(row.querySelector('td[data-label="Ticker"] strong')?.textContent).toUpperCase();const note=clean(row.querySelector('td[data-label="Research Note"]')?.textContent);return ticker&&note?([ticker,note].join("~")):""}).filter(Boolean).join("||");
+const reviewSignature=root=>activeReviewSignature(root)||fallbackActiveReviewSignature(root);
+const signature=root=>[clean(root.querySelector("footer.footer .wrap")?.textContent),tickers(root),reviewSignature(root)].join("|");
 const replaceSnapshot=parsed=>{const currentMain=document.querySelector("main.wrap")||document.querySelector("main");const freshMain=parsed.querySelector("main.wrap")||parsed.querySelector("main");if(!currentMain||!freshMain)return false;if(signature(document)===signature(parsed))return false;currentMain.replaceWith(document.importNode(freshMain,true));const currentFooter=document.querySelector("footer.footer");const freshFooter=parsed.querySelector("footer.footer");if(currentFooter&&freshFooter)currentFooter.replaceWith(document.importNode(freshFooter,true));document.body.dataset.vxSnapshotRefreshAt=new Date().toISOString();return true};
 const refreshChart=parsed=>{const current=document.querySelector(".equity-chart-card .equity-chart-svg");const fresh=parsed.querySelector(".equity-chart-card .equity-chart-svg");if(!current||!fresh)return;if(fresh.outerHTML!==current.outerHTML)current.replaceWith(document.importNode(fresh,true));const card=document.querySelector(".equity-chart-card");if(card)card.dataset.vxEquityRefreshAt=new Date().toISOString()};
 const refresh=async()=>{if(document.visibilityState==="hidden")return;try{const separator=SOURCE_PATH.includes("?")?"&":"?";const url=SOURCE_PATH+separator+"vx_snapshot_refresh="+Date.now();const response=await fetch(url,{credentials:"same-origin",cache:"no-store",headers:{Accept:"text/html","Cache-Control":"no-cache"}});if(!response.ok)return;const html=await response.text();const parsed=new DOMParser().parseFromString(html,"text/html");if(!replaceSnapshot(parsed))refreshChart(parsed)}catch(_){}};
@@ -38,6 +41,12 @@ function installSwingEquityLiveRefresh(app) {
     const pathname = requestPath(req);
     const method = String(req.method || "GET").toUpperCase();
     if ((method !== "GET" && method !== "HEAD") || pathname !== SWING_PATH) return next();
+
+    res.set?.({
+      "Cache-Control": "no-store, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    });
 
     const send = res.send.bind(res);
     res.send = function sendSwingEquityLiveRefresh(body) {
