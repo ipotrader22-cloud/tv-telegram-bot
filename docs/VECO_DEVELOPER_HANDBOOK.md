@@ -220,9 +220,21 @@ catch-up even when the TradingView alert is stopped or its snapshot never
 executes the Pine final-bar logic.
 
 An already-open Edge position is not closed at EOD. Its attached ATR target uses
-`GTC`, remains active overnight, and the payload declares
-`eod_policy=NO_EOD_CLOSE`. There is no Edge Pine EOD-close option or next-day
-position reset.
+`GTC`, remains active across sessions, and the payload declares
+`eod_policy=NO_EOD_CLOSE`. The bridge marks only Vixale Edge profit-target
+limit orders with IB `outsideRth=true`, so the same frozen target may execute
+during IB-supported pre-market and after-hours sessions as well as RTH. The
+same flag is preserved when a partial entry fill requires the target to be
+repaired to the actual broker position. Edge entries and Stop Loss market
+closes remain RTH-gated.
+
+This GTC + `outsideRth` contract does **not** claim access to IBKR's separate
+Overnight venue (approximately 20:00-03:50 ET). IBKR Overnight / Overnight+Day
+orders are DAY-style orders and do not support GTC persistence. Supporting that
+venue for a multi-day Edge position would require a separate durable
+cancel/replace or daily target-rearm lifecycle with exact target identity and
+race-safe reconciliation; that lifecycle is not implemented by this change.
+There is no Edge Pine EOD-close option or next-day position reset.
 
 Part 3B distinguishes ordinary and closing-bar Stop Loss signals:
 
@@ -2520,6 +2532,53 @@ code rollback.
 **Schema impact:** `Dashboard Access Requests` extends from A:I to A:L by appending verification token hash, expiration, and verified timestamp. Existing historical A:I rows remain parseable. No dashboard access-code schema, trading worksheet, webhook payload, bridge, Pine, order, risk, or broker lifecycle contract changes.
 
 **Deployment impact:** Production requires a Cloudflare Turnstile widget and Render environment variables `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`. The secret is never browser-exposed. If configuration is incomplete, new public requests fail closed. Activation must be verified from the live Render deployment and public form before being recorded as active.
+
+---
+
+### ADR-023 — Vixale Edge GTC targets may execute in supported extended hours
+
+**Decision:** Vixale Edge keeps its frozen ATR profit target as one broker-side
+GTC limit order, but the bridge sets IB `outsideRth=true` on the attached
+target and on any repaired replacement target created after a partial entry
+fill. This permission is Edge-only. It does not change the frozen target price,
+target quantity, entry rules, signal timing, Stop Loss conditions, queued
+next-RTH close policy, or broker-confirmed publication requirements. Prime,
+EMA Pullback, and other target families retain their prior outside-RTH behavior.
+
+Edge market entries remain subject to the existing stock RTH entry gate. Edge
+opposite-flip / Stop Loss market closes remain subject to the existing RTH close
+gate. A target fill outside RTH still becomes a public TP only through the
+existing exact target-execution evidence plus broker-flat reconciliation.
+
+**Overnight venue boundary:** IBKR's distinct Overnight and Overnight+Day stock
+sessions do not support GTC orders. Therefore `outsideRth=true` expands Edge
+target eligibility to supported pre-market and after-hours execution but does
+not provide the separate 20:00-03:50 ET Overnight venue. True multi-day
+Overnight coverage requires a future durable target-rearm design that can
+replace an expiring DAY-style Overnight+Day order without leaving an
+unprotected window, duplicating targets, or breaking exact order/execution
+identity.
+
+**Reason:** Edge intentionally holds approved positions beyond the regular
+session. Allowing the already-frozen profit target to execute during supported
+extended hours captures valid target opportunities without modifying research
+logic or weakening Stop Loss safety. Keeping the separate Overnight venue out
+of this patch avoids pretending that a GTC order can provide unsupported 24/5
+coverage.
+
+**Schema/payload impact:** None. No TradingView payload, Render route, Google
+Sheet column, or public lifecycle schema changes. The change is local bridge
+order configuration only.
+
+**Deployment impact:** Repository merge alone does not update
+`C:\ib_bridge\ib_bridge.py`. Local bridge deployment/restart and paper
+verification are separate owner-approved steps. Verify an Edge target appears
+as GTC with outside-RTH eligibility in TWS and confirm that Prime targets and
+Edge Stop Loss execution remain unchanged.
+
+**Rollback:** Revert this bridge/handbook change and redeploy the previous
+reviewed bridge. Existing broker orders must be inspected rather than assumed
+to mutate automatically when code is rolled back.
 
 ---
 
