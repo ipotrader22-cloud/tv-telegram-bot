@@ -2553,6 +2553,11 @@ def target_order_tif(data: Dict[str, Any]) -> str:
     return "DAY"
 
 
+def target_order_outside_rth(data: Dict[str, Any]) -> bool:
+    """Allow only Vixale Edge profit targets to execute in supported extended hours."""
+    return is_vixale_edge_payload(data)
+
+
 def build_entry_order(entry_action: str, qty: int, entry: float, entry_order_type: str):
     if entry_order_type == "MARKET":
         order = MarketOrder(
@@ -2599,6 +2604,7 @@ async def place_repaired_target(
     qty: int,
     target_price: float,
     tif: str,
+    outside_rth: bool = False,
 ) -> Tuple[Any, str, bool]:
     """Place a standalone target sized to the actual broker position."""
     order = LimitOrder(
@@ -2606,6 +2612,7 @@ async def place_repaired_target(
         totalQuantity=qty,
         lmtPrice=target_price,
         tif=tif,
+        outsideRth=outside_rth,
     )
     order.orderId = ib.client.getReqId()
     order.transmit = True
@@ -2670,6 +2677,7 @@ async def repair_entry_target_for_actual_position(
             qty=actual_position_qty,
             target_price=target_price,
             tif=target_order_tif(original_data),
+            outside_rth=target_order_outside_rth(original_data),
         )
 
         if repaired_working:
@@ -3132,6 +3140,7 @@ async def place_entry_order(data: Dict[str, Any]) -> Dict[str, Any]:
             totalQuantity=target_order_qty,
             lmtPrice=target_price,
             tif=target_order_tif(data),
+            outsideRth=target_order_outside_rth(data),
         )
         target_order.orderId = ib.client.getReqId()
         target_order.parentId = entry_order.orderId

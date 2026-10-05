@@ -1,0 +1,32 @@
+name: Bridge Edge Regression
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "bridge/**"
+      - "tests/test_vixale_edge_bridge_isolation.py"
+      - ".github/workflows/bridge-edge-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  edge-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile bridge and focused test
+        run: python -m py_compile bridge/ib_bridge_core.py tests/test_vixale_edge_bridge_isolation.py
+
+      - name: Run Vixale Edge bridge regression
+        run: python -m unittest tests.test_vixale_edge_bridge_isolation

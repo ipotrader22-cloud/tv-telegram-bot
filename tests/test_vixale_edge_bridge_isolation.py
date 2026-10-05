@@ -354,10 +354,65 @@ class EdgeEntrySafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["target_tif"], "GTC")
         self.assertEqual(getattr(placed_orders[0], "orderType", "MKT"), "MKT")
         self.assertEqual(placed_orders[1].tif, "GTC")
+        self.assertTrue(placed_orders[1].outsideRth)
         self.assertEqual(len(placed_orders), 2)
         cancel_orders.assert_not_awaited()
         self.assertEqual(store["AAPL"]["setup_id"], edge_payload()["setup_id"])
         self.assertEqual(store["AAPL"]["target_order"]["order_id"], 200)
+
+    async def test_repaired_edge_target_preserves_extended_hours_permission(self):
+        placed_orders = []
+        repaired_trade = fake_trade(
+            order_id=201,
+            perm_id=2201,
+            order_ref="TVFVG_AAPL_LONG_TP",
+            action="SELL",
+            status="Submitted",
+            filled=0,
+            price=0,
+        )
+
+        def place_order(_contract, order):
+            placed_orders.append(order)
+            return repaired_trade
+
+        with (
+            patch.object(ib_bridge.ib.client, "getReqId", return_value=201),
+            patch.object(ib_bridge.ib, "placeOrder", side_effect=place_order),
+            patch.object(ib_bridge, "wait_for_ib_confirmation", AsyncMock(return_value="")),
+        ):
+            trade, rejection_reason, working = await ib_bridge.place_repaired_target(
+                contract=SimpleNamespace(symbol="AAPL"),
+                symbol="AAPL",
+                side="LONG",
+                qty=7,
+                target_price=105,
+                tif=ib_bridge.target_order_tif(edge_payload()),
+                outside_rth=ib_bridge.target_order_outside_rth(edge_payload()),
+            )
+
+        self.assertIs(trade, repaired_trade)
+        self.assertEqual(rejection_reason, "")
+        self.assertTrue(working)
+        self.assertEqual(len(placed_orders), 1)
+        self.assertEqual(placed_orders[0].tif, "GTC")
+        self.assertTrue(placed_orders[0].outsideRth)
+        self.assertEqual(placed_orders[0].totalQuantity, 7)
+        self.assertEqual(placed_orders[0].lmtPrice, 105)
+
+    def test_extended_hours_permission_is_edge_only(self):
+        self.assertTrue(ib_bridge.target_order_outside_rth(edge_payload()))
+        self.assertFalse(
+            ib_bridge.target_order_outside_rth({"strategy": "SHREK_1_4"})
+        )
+        self.assertFalse(
+            ib_bridge.target_order_outside_rth(
+                {
+                    "strategy": "VX_EMA_CROSS_PULLBACK_ATR_TARGET",
+                    "eod_policy": "NO_EOD_CLOSE",
+                }
+            )
+        )
 
     async def test_invalid_edge_target_returns_exact_pending_cancel_without_broker_action(self):
         invalid_payloads = (
