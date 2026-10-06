@@ -179,7 +179,9 @@ function enhanceActivePortfolioTable(html) {
     /<section\b[^>]*class=["'][^"']*\bsection\b[^"']*["'][^>]*>[\s\S]*?<h2\b[^>]*>\s*Active Portfolio\s*<\/h2>[\s\S]*?<\/section>/i,
     section => enhanceActiveSection(section)
   );
-  out = enhanceCurrentModelPnl(out);\n  out = out.replace(/<strong>\\s*Model P&amp;L\\s*<\\/strong>/i, "<strong>Portfolio P&amp;L</strong>");\n  out = out.replace(/<small>\\s*Total Model P&L\\s*<\\/small>/i, "<small>Total P&amp;L</small>");
+  out = enhanceCurrentModelPnl(out);
+  out = out.replace(/<strong>\s*Model P&amp;L\s*<\/strong>/i, "<strong>Portfolio P&amp;L</strong>");
+  out = out.replace(/<small>\s*Total Model P&L\s*<\/small>/i, "<small>Total P&amp;L</small>");
   out = injectStyles(out);
   out = injectQuoteRefreshScript(out);
   return out.replace(/<body(\s[^>]*)?>/i, match => (
