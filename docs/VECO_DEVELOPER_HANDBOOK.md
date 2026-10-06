@@ -3077,3 +3077,24 @@ The public `/results` page may display Options realized-equity evidence alongsid
 `website_conversion_results_refinement.js` consumes that public endpoint for the Options card on `/results`. The card uses the same dark results-card presentation as Day Trading and Swing Trading, shows cumulative realized P&L history, and the whole card routes to `/trading-systems/options`. The protected `/trading-systems/options/viewer` authorization boundary remains unchanged.
 
 This is website/data-presentation only. It does not modify Option Journal writes, trading logic, signal generation, order/risk logic, Pine, bridge/TWS/IBKR execution, Google Sheet schema, pricing, or customer authentication. Rollback is to revert the public Options results-card/feed commits; no trading or journal-data rollback is required.
+
+
+### ADR-023 — Shareable daily trading summaries
+
+**Decision:** Vixale publishes a read-only daily recap archive at `/daily-trading-summary` with date permalinks at `/daily-trading-summary/YYYY-MM-DD`. The recap is generated server-side from existing Google Sheets records using the current service-account read-only access; it does not create a second trading ledger or a write path.
+
+Public Day Trading recap ownership is deliberately narrower than the private 16:05 owner email:
+
+- `Trades!A:J` supplies the aggregate count of broker-confirmed `FILL` / `ENTRY_FILL` records for the selected New York trading date.
+- `Closed Trades!A:J` supplies the public closed-trade rows and recorded numeric realized P&L for positions whose close date is the selected date.
+- `Trade Metadata!A:H` may supply the already-recorded public system label for a closed trade. Raw technical metadata, execution IDs, payload JSON, reconciliation IDs, and broker identities are never rendered.
+- `Option Journal!A:S` is included only for rows already marked Closed whose **Exit Date** equals the recap date. Open option positions, notes, internal IDs, brokerage-proof paths, and other private journal fields are not published.
+- A fill that remains open after the selected date contributes only to the aggregate new-fill count. Its symbol, side, entry, target, stop, and quantity are not exposed by this public recap.
+
+Historical Open Positions or Pending state is intentionally not reconstructed after the fact because those worksheets are mutable operational state. The private end-of-day email may include the live Open/Pending snapshot captured at its scheduled run; the public permalink remains durable evidence of recorded fills and closes without pretending to preserve that point-in-time state.
+
+The routes use the existing `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` configuration, a bounded one-minute process cache, canonical/Open Graph metadata, and share actions for copying the permalink, X, and LinkedIn. No new environment variable or Google Sheets schema is introduced.
+
+**Execution / trading impact:** None. This is website/data presentation only. It does not change TradingView/Pine, strategy rules, signals, entries/exits/stops/targets, sizing, bridge/TWS/IBKR execution, Telegram trade lifecycle, Google Sheets writes, authentication, or risk logic.
+
+**Rollback:** Revert the daily-summary website module/preload commit and redeploy the prior confirmed website commit. No broker, Pine, trade-ledger, Option Journal, or customer-data rollback is required.
