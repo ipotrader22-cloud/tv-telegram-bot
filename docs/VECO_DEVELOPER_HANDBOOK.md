@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-09-17
+**Last updated:** 2026-10-06
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -3062,3 +3062,14 @@ no horizontal overflow, correct direction/P&L colors and card weights <=500.
 Node regressions cover EN/RU rendering, five-row ordering, escaping, empty/error
 states and unchanged destinations. This is local proposed-source evidence,
 not deployment verification; merge and production checks remain separate.
+
+
+### Public Options results card and equity feed (2026-10-06)
+
+The public `/results` page may display Options realized-equity evidence alongside Day Trading and Swing Trading. The Options chart must mirror the same closed-only cumulative realized P&L calculation used by the protected Options Viewer; the website must not create a second P&L formula.
+
+`website_options_canonical_refinement.js` owns the canonical Options equity calculation from the owner-entered `Option Journal` and exposes only the sanitized read-only curve through `/public-options-performance.json`. That public response contains the equity curve and total realized P&L only. It does not expose journal rows, open-position detail, notes, brokerage proofs, credentials, or viewer-session data. Load failure returns an unavailable state rather than simulated or stale substitute values.
+
+`website_conversion_results_refinement.js` consumes that public endpoint for the Options card on `/results`. The card uses the same dark results-card presentation as Day Trading and Swing Trading, shows cumulative realized P&L history, and the whole card routes to `/trading-systems/options`. The protected `/trading-systems/options/viewer` authorization boundary remains unchanged.
+
+This is website/data-presentation only. It does not modify Option Journal writes, trading logic, signal generation, order/risk logic, Pine, bridge/TWS/IBKR execution, Google Sheet schema, pricing, or customer authentication. Rollback is to revert the public Options results-card/feed commits; no trading or journal-data rollback is required.
