@@ -40,9 +40,10 @@ const alignedDay = alignment.injectAlignmentStyles(day);
 assert(alignedDay.includes(`id="${alignment.STYLE_ID}"`), "public pages with unified navigation must receive the alignment stylesheet");
 assert(alignedDay.includes("grid-template-columns:minmax(0,1fr) auto!important"), "desktop header must keep primary links and actions on the same row");
 assert(alignedDay.includes("flex-wrap:nowrap!important"), "desktop public navigation must explicitly prevent wrapping");
-assert(alignedDay.includes("@media(min-width:1001px) and (max-width:1380px)"), "medium desktop widths must receive compact spacing before primary links can collide with Log In");
-assert(alignedDay.includes(".nav-links,.navlinks{column-gap:10px!important}"), "compact desktop layout must tighten the primary/action column gap");
-assert(alignedDay.includes(".vx-unified-public-nav{gap:8px!important}"), "compact desktop layout must tighten primary link spacing");
+assert(!alignedDay.includes("(max-width:1380px)"), "desktop nav spacing must not depend on viewport width because the header uses a constrained container");
+assert(alignedDay.includes(".nav-links,.navlinks{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;column-gap:10px!important"), "desktop layout must reserve action space with a compact column gap");
+assert(alignedDay.includes(".vx-unified-public-nav{display:flex!important;align-items:center!important;flex-wrap:nowrap!important;min-width:0!important;width:auto!important;gap:8px!important"), "all desktop widths must use compact primary-link spacing");
+assert(alignedDay.includes(".vx-unified-public-nav a{font-size:12.5px!important}"), "all desktop widths must use compact primary-link typography");
 assert.strictEqual(alignment.injectAlignmentStyles(alignedDay), alignedDay, "alignment refinement must be idempotent");
 assert.strictEqual(alignment.injectAlignmentStyles(base), base, "alignment stylesheet must not be injected before unified navigation exists");
 

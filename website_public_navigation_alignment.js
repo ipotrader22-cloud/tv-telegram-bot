@@ -13,18 +13,13 @@ const styles = `<style id="${STYLE_ID}">
   nav:has(.vx-unified-public-nav)>.brand,
   header .wrap:has(.vx-unified-public-nav)>.brand,
   .topbar .wrap:has(.vx-unified-public-nav)>.brand{flex:0 0 auto!important}
-  .nav-links,.navlinks{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;column-gap:14px!important;flex:1 1 auto!important;min-width:0!important;flex-wrap:nowrap!important}
-  .vx-unified-public-nav{display:flex!important;align-items:center!important;flex-wrap:nowrap!important;min-width:0!important;width:auto!important;gap:clamp(10px,1.2vw,18px)!important;padding-top:0!important}
-  .vx-direct-nav-actions{display:flex!important;align-items:center!important;align-self:center!important;gap:10px!important;margin-left:0!important;white-space:nowrap!important}
-  .vx-public-nav-login,.vx-public-nav-cta{align-self:center!important}
-}
-@media(min-width:1001px) and (max-width:1380px){
-  .nav-links,.navlinks{column-gap:10px!important}
-  .vx-unified-public-nav{gap:8px!important}
+  .nav-links,.navlinks{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;column-gap:10px!important;flex:1 1 auto!important;min-width:0!important;flex-wrap:nowrap!important}
+  .vx-unified-public-nav{display:flex!important;align-items:center!important;flex-wrap:nowrap!important;min-width:0!important;width:auto!important;gap:8px!important;padding-top:0!important}
+  .vx-direct-nav-actions{display:flex!important;align-items:center!important;align-self:center!important;gap:8px!important;margin-left:0!important;white-space:nowrap!important}
   .vx-unified-public-nav a{font-size:12.5px!important}
-  .vx-direct-nav-actions{gap:8px!important}
   .vx-public-nav-login{font-size:13px!important}
   .vx-public-nav-cta{min-height:44px!important;padding:0 16px!important;font-size:12.5px!important}
+  .vx-public-nav-login,.vx-public-nav-cta{align-self:center!important}
 }
 </style>`;
 
