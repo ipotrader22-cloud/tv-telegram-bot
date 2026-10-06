@@ -132,8 +132,11 @@ function webhookSheets() {
           },
         };
       },
-      async update({ requestBody }) {
-        rows[0] = [...requestBody.values[0]];
+      async update({ range, requestBody }) {
+        const match = String(range || '').match(/!A(\\d+):M\\d+$/);
+        const rowNumber = match ? Number(match[1]) : 1;
+        while (rows.length < rowNumber) rows.push([]);
+        rows[rowNumber - 1] = [...requestBody.values[0]];
         return { data: {} };
       },
     },
