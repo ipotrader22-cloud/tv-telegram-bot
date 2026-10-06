@@ -15,6 +15,8 @@ const representative = [
   ["Options — Daily Position Updates", "Опционы — ежедневные обновления позиций"],
   ["Trading results, by system.", "Результаты торговли по каждой системе."],
   ["Latest published Swing portfolio", "Последний опубликованный свинг-портфель"],
+  ["Options Trading results", "Результаты торговли опционами"],
+  ["Owner-entered Option Journal · closed trades only", "Журнал опционов, заполняемый владельцем · только закрытые сделки"],
   ["Choose one system or follow all three.", "Выберите одну систему или следите за всеми тремя."],
   ["A request, not a fake checkout.", "Запрос на подключение, а не имитация оплаты."],
 ];
@@ -35,6 +37,10 @@ assert.strictEqual(
 assert.strictEqual(
   translateRuntimeChunk("Swing Trading model P&L equity history; latest +$1,234.56"),
   "История капитала модельного P&L свинг-трейдинга; последнее значение: +$1,234.56"
+);
+assert.strictEqual(
+  translateRuntimeChunk("Options realized P&L history; latest +$635.00"),
+  "История реализованного P&L по опционам; последнее значение: +$635.00"
 );
 assert.strictEqual(translateRuntimeChunk("Score 91"), "Рейтинг 91");
 assert.strictEqual(

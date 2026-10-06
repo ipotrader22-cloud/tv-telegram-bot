@@ -6,6 +6,7 @@ const OPTIONS_PATH = "/trading-systems/options";
 const OPTIONS_VIEWER_PATH = `${OPTIONS_PATH}/viewer`;
 const DASHBOARD_PATH = "/dashboard";
 const OPTIONS_CANONICAL_URL = "https://www.vixale.com/trading-systems/options";
+const OPTIONS_PUBLIC_PERFORMANCE_PATH = "/public-options-performance.json";
 const OPTION_JOURNAL_RANGE = "'Option Journal'!A:S";
 const OPTIONS_PAGE_MARKER = "data-vx-options-canonical";
 
@@ -210,7 +211,19 @@ function installOptionsCanonicalRefinement(app, dependencies = {}) {
   app.use((req, res, next) => {
     const originalPath = req.path || req.url.split("?")[0];
     const isRead = req.method === "GET" || req.method === "HEAD";
-    if (!isRead || (originalPath !== OPTIONS_VIEWER_PATH && originalPath !== DASHBOARD_PATH)) return next();
+    if (!isRead) return next();
+    if (originalPath === OPTIONS_PUBLIC_PERFORMANCE_PATH) {
+      Promise.resolve().then(() => loadCurve()).then(curve => {
+        res.set?.("Cache-Control", "no-store");
+        return res.json({ ok: true, source: "owner-entered-option-journal", equity_curve: curve });
+      }).catch(error => {
+        console.error("Public Options performance load error:", error);
+        res.set?.("Cache-Control", "no-store");
+        return res.status(503).json({ ok: false, error: "OPTIONS_PERFORMANCE_UNAVAILABLE" });
+      });
+      return;
+    }
+    if (originalPath !== OPTIONS_VIEWER_PATH && originalPath !== DASHBOARD_PATH) return next();
     const send = res.send.bind(res);
     res.send = function sendWithOptionsRefinement(body) {
       const contentType = String(res.getHeader?.("Content-Type") || "");
@@ -254,4 +267,4 @@ Module._load = function vixaleOptionsCanonicalModuleLoad(request, parent, isMain
   return request === "express" ? wrapExpress(loaded) : loaded;
 };
 
-module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, findIbkrExplanationRange, moveIbkrExplanationBelowJournal, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };
+module.exports = { OPTIONS_PATH, OPTIONS_VIEWER_PATH, DASHBOARD_PATH, OPTIONS_CANONICAL_URL, OPTIONS_PUBLIC_PERFORMANCE_PATH, OPTION_JOURNAL_RANGE, OPTIONS_PAGE_MARKER, optionTradeFromRow, parseOptionJournalRows, optionPnl, buildOptionsEquityCurve, loadOptionsEquityFromSheets, extractOptionJournalSection, findIbkrExplanationRange, moveIbkrExplanationBelowJournal, refineDayTradingDashboard, refineOptionsPageFromDashboard, installOptionsCanonicalRefinement };
