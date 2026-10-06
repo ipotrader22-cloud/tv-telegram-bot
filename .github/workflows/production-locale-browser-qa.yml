@@ -22,11 +22,17 @@ on:
       - "website_services_source_parity_fix.js"
       - "website_russian_services_form_copy_refinement.js"
       - "website_russian_localization.js"
+      - "website_oct6_user_friendliness_refinement.js"
+      - "lib/website-commercial-offer.js"
+      - "lib/website-funnel-metrics.js"
+      - "lib/website-funnel-source-patch.js"
       - "website_russian_translations_regression.js"
       - "tests/test_favicon_consistency.js"
       - "tests/test_owner_requested_public_copy.js"
       - "tests/test_issue123_pr1_direct_navigation.js"
       - "tests/test_issue123_pr2_homepage_preview.js"
+      - "tests/test_oct6_user_friendliness_refinement.js"
+      - "tests/test_website_funnel_measurement.js"
       - "tests/test_options_public_evidence_strategy_composition.js"
       - "tests/test_swing_active_model_pnl.js"
       - "tests/test_swing_active_portfolio_rules.js"
@@ -98,6 +104,10 @@ jobs:
           node --check website_services_source_parity_fix.js
           node --check website_russian_services_form_copy_refinement.js
           node --check website_russian_localization.js
+          node --check website_oct6_user_friendliness_refinement.js
+          node --check lib/website-commercial-offer.js
+          node --check lib/website-funnel-metrics.js
+          node --check lib/website-funnel-source-patch.js
           node --check website_russian_translations_regression.js
           node --check scripts/qa-production-favicon.js
           node --check scripts/qa-production-locales.js
@@ -107,6 +117,8 @@ jobs:
           node --check tests/test_owner_requested_public_copy.js
           node --check tests/test_issue123_pr1_direct_navigation.js
           node --check tests/test_issue123_pr2_homepage_preview.js
+          node --check tests/test_oct6_user_friendliness_refinement.js
+          node --check tests/test_website_funnel_measurement.js
           node --check tests/test_options_public_evidence_strategy_composition.js
           node --check tests/test_swing_active_model_pnl.js
           node --check tests/test_swing_active_portfolio_rules.js
@@ -122,6 +134,11 @@ jobs:
         run: |
           node tests/test_issue123_pr1_direct_navigation.js
           node tests/test_issue123_pr2_homepage_preview.js
+
+      - name: October 6 user-friendliness and funnel regressions
+        run: |
+          node tests/test_oct6_user_friendliness_refinement.js
+          node tests/test_website_funnel_measurement.js
 
       - name: Options public evidence composition regression
         run: |
