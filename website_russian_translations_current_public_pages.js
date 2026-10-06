@@ -98,6 +98,8 @@ module.exports = Object.freeze([
   ["Active Portfolio", "Активный портфель"],
   ["Candidates", "Кандидаты"],
   ["Total Model P&L", "Общий модельный P&L"],
+  ["Total P&L", "Общий P&L"],
+  ["Portfolio P&L", "P&L портфеля"],
   ["MODEL EQUITY HISTORY", "История капитала модели"],
   ["Model P&L", "Модельный P&L"],
   ["Swing Trading model P&L equity history", "История капитала модельного P&L свинг-трейдинга"],
