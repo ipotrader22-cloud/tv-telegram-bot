@@ -3081,7 +3081,7 @@ This is website/data-presentation only. It does not modify Option Journal writes
 
 ### ADR-023 — Shareable daily trading summaries
 
-**Decision:** Vixale publishes a read-only daily recap archive at `/daily-trading-summary` with date permalinks at `/daily-trading-summary/YYYY-MM-DD`. The recap is generated server-side from existing Google Sheets records using the current service-account read-only access; it does not create a second trading ledger or a write path.
+**Decision:** Vixale publishes a read-only daily recap archive at `/daily-trading-summary` with date permalinks at `/daily-trading-summary/YYYY-MM-DD`. The public journal begins on **2026-10-05**: dates before October 5, 2026 are not published as daily recap posts. The archive retains all published activity dates from that boundary forward with no fixed rolling-day limit; older posts remain addressable by their date permalinks as the history grows. The recap is generated server-side from existing Google Sheets records using the current service-account read-only access; it does not create a second trading ledger or a write path.
 
 Public Day Trading recap ownership is deliberately narrower than the private 16:05 owner email:
 
