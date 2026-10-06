@@ -640,6 +640,12 @@ WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS
 WEBHOOK_INBOX_SPOOL_FILE
 ```
 
+For production, the webhook ingress spool must live on durable storage. When
+`WEBHOOK_INBOX_SPOOL_FILE` is not explicitly configured and the Render
+persistent disk is mounted at `/var/data`, the server defaults to
+`/var/data/vixale_webhook_inbox_spool.json`. Development/test environments
+without that mount fall back to the OS temporary directory.
+
 Never put secrets into this handbook.
 
 ## 7.2 Local bridge `.env`
@@ -1312,35 +1318,48 @@ of technical publication truth.
 
 ### 9.6 `Webhook Inbox`
 
-Columns A:M durably own recognized, non-broker TradingView deliveries before
-Render returns HTTP 200:
+Columns A:M remain the authoritative Google Sheets processing/retry queue:
 
 ```text
 Delivery ID, Received At, Event, System ID, Setup ID, Symbol, Side, Status,
 Attempts, Next Attempt At, Last Error, Raw JSON, Completed At
 ```
 
+Recognized non-broker TradingView deliveries are first written synchronously to
+the deterministic local ingress spool. In production the default spool path is
+on the Render persistent disk at
+`/var/data/vixale_webhook_inbox_spool.json`. The spool write uses a temporary
+file, `fsync`, and atomic rename. If that durable local write fails, Render
+returns HTTP 503 and TradingView retains retry ownership. Once the local write
+succeeds, Render returns HTTP 200 without waiting for Google Sheets; migration
+to `Webhook Inbox` and normal downstream lifecycle processing continue
+asynchronously. Broker callbacks keep their separate synchronous
+execution-evidence/publication contract.
+
 `delivery_id` is deterministic from stable lifecycle identity. Duplicate
-deliveries reuse one row. `SETUP` execution work older than
-`WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS` (default 90 seconds) is marked
+deliveries reuse one row. Spool migration removes only the migrated delivery
+from the latest on-disk state, so a new alert arriving during an awaited Sheets
+write cannot be erased by a stale spool snapshot. `SETUP` execution work older
+than `WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS` (default 90 seconds) is marked
 `STALE_EXECUTION_DROPPED`; reliable payload alert/signal/bar-close timestamps
-take precedence over Inbox receipt time, which is the fallback. Setup-origin
-`flip_bar_time` and bar-start identity are not execution-age evidence because a
-virtual Edge limit can fill later. Close/cancel safety work does not expire.
-Recovery processes at most `WEBHOOK_INBOX_MAX_CONCURRENCY` items concurrently
-(default 4). The recovery poll is process-wide single-flight and has a
-15-second minimum interval. Its Inbox reads disable the Google client's local
-request retry so one quota response remains one request. HTTP 429 or a Sheets
-rate-limit reason starts a shared exponential cooldown with jitter (60 seconds
-by default, capped at five minutes); timer ticks skip without reading until the
-cooldown expires, and the next successful Inbox read resets the backoff. When
-Sheets is temporarily unavailable, Render writes a local JSON spool and returns
-HTTP 503 so TradingView retains retry ownership.
+take precedence over the original spool/Inbox receipt time, which is the
+fallback. Setup-origin `flip_bar_time` and bar-start identity are not
+execution-age evidence because a virtual Edge limit can fill later.
+Close/cancel safety work does not expire. Recovery processes at most
+`WEBHOOK_INBOX_MAX_CONCURRENCY` items concurrently (default 4). The recovery
+poll is process-wide single-flight and has a 15-second minimum interval. Its
+Inbox reads disable the Google client's local request retry so one quota
+response remains one request. HTTP 429 or a Sheets rate-limit reason starts a
+shared exponential cooldown with jitter (60 seconds by default, capped at five
+minutes); timer ticks skip without reading until the cooldown expires, and the
+next successful Inbox read resets the backoff. During Sheets failure or
+cooldown, the already-acknowledged disk-spooled delivery remains available for
+later migration.
 
 Structurally valid TradingView Edge v2 lifecycle JSON is admitted from its
 canonical `setup_id` before optional parsed-row classification and is persisted
-to this Inbox before HTTP 200. Missing redundant `timeframe` is not an ignore
-condition. Truly unrelated JSON, malformed canonical identity, mismatched
+to the durable local ingress spool before HTTP 200. Missing redundant
+`timeframe` is not an ignore condition. Truly unrelated JSON, malformed canonical identity, mismatched
 symbol/side/timeframe, and Edge `CANCEL` without `PENDING_ONLY` remain outside
 this admission path. Broker callbacks continue through their separate strict
 execution-evidence checks and are not trusted by this TradingView-only rule.
@@ -1814,16 +1833,27 @@ A Pro workspace is not required for the current single-owner architecture.
 
 ### 13.12 Render outages and missed signals
 
-Recognized non-broker TradingView deliveries are acknowledged only after the
-authoritative `Webhook Inbox` row exists. Downstream lifecycle work retries from
-that row with per-item backoff and bounded concurrency (default 4). If the Inbox
-cannot be written, Render returns HTTP 503 and also attempts a local fallback
-spool; it never sends a success ACK for memory-only work. A failed status update
+Recognized non-broker TradingView deliveries are acknowledged only after their
+deterministic delivery is durably written to the local ingress spool. Production
+uses the existing Render persistent disk at `/var/data` by default. Google
+Sheets `Webhook Inbox` persistence is no longer on the TradingView HTTP request
+critical path; the worker migrates the spooled delivery into the authoritative
+Sheets processing queue and then applies the existing retry/backoff lifecycle.
+If the local durable write fails, Render returns HTTP 503. A failed status update
 after a downstream side effect is caught and retried through the same durable
 delivery identity. Stale entry execution is suppressed after the configured
 maximum age, preferring a reliable payload emission/bar-close timestamp over
-Inbox receipt time, while close/cancel safety work remains eligible indefinitely.
-Do not manually backfill a missed live signal without an explicit decision.
+the original receipt time, while close/cancel safety work remains eligible
+indefinitely. Do not manually backfill a missed live signal without an explicit
+decision.
+
+On October 6, 2026, several real Edge alerts at the market open showed
+TradingView `request took too long and timed out` while Render later completed
+their Pending/CANCEL work. The live path was awaiting Google Sheets before HTTP
+200, so concurrent alerts inherited multi-second Sheets latency and serialized
+ingress delay. The durable-disk-first ACK removes Google Sheets latency from that
+request path without weakening deterministic deduplication, the 90-second SETUP
+TTL, execution-first broker handling, or downstream publication safety.
 
 The Inbox recovery worker must not poll Sheets faster than every 15 seconds or
 overlap itself. A quota-limited read is not retried inside gaxios: it activates
@@ -2767,18 +2797,23 @@ the Render disk is a separate infrastructure action.
 ### ADR-016 — Durable TradingView Inbox and evidence-only manual close
 
 **Decision:** Render persists every recognized non-broker TradingView lifecycle
-delivery to the Google Sheets `Webhook Inbox` before HTTP 200. A deterministic
-delivery ID deduplicates retries; the worker owns downstream retry state,
-per-item backoff, and bounded recovery concurrency through
-`WEBHOOK_INBOX_MAX_CONCURRENCY` (default 4). Entry `SETUP` work expires after 90
-seconds by default. A reliable payload alert/signal/bar-close timestamp is used
-when available, with Inbox `received_at` only as fallback; setup-origin
-`flip_bar_time` and bar-start identity do not age a later virtual-limit fill.
-Close/cancel safety work does not expire. A local JSON spool is only a fallback
-when the authoritative Inbox write fails, and that request still receives HTTP
-503. COMPLETE status persistence is awaited inside the retry boundary, so a
-post-side-effect status-write failure becomes RETRY rather than an escaped lost
-promise.
+delivery to a deterministic local ingress spool before HTTP 200. On the
+production Render service that spool defaults to the persistent disk at
+`/var/data/vixale_webhook_inbox_spool.json`; development/test falls back to the
+OS temporary directory unless `WEBHOOK_INBOX_SPOOL_FILE` is configured. The
+write is atomic and fsynced. A failed local durable write returns HTTP 503.
+After the local write succeeds, Render ACKs immediately and the worker migrates
+the delivery to the Google Sheets `Webhook Inbox`, which remains the
+authoritative processing/retry queue. A deterministic delivery ID deduplicates
+both TradingView retries and spool-to-Sheets migration; per-item backoff and
+bounded recovery concurrency remain controlled by
+`WEBHOOK_INBOX_MAX_CONCURRENCY` (default 4). Entry `SETUP` work expires after
+90 seconds by default. A reliable payload alert/signal/bar-close timestamp is
+used when available, with the original receipt time only as fallback;
+setup-origin `flip_bar_time` and bar-start identity do not age a later
+virtual-limit fill. Close/cancel safety work does not expire. COMPLETE status
+persistence is awaited inside the retry boundary, so a post-side-effect
+status-write failure becomes RETRY rather than an escaped lost promise.
 
 The worker itself is single-flight and polls no faster than every 15 seconds.
 Worker-owned Inbox reads disable gaxios request retries only for those reads.
@@ -2851,19 +2886,20 @@ published only after exact target cancellation is confirmed. Missing,
 historical, pre-entry, ambiguous, or cancellation-unverified evidence retains
 managed state and publishes nothing.
 
-**Reason:** HTTP acknowledgement before persistence created a loss window, flat
-state previously allowed Prime reconciliation to fabricate TP at the stored
-target, and a single hot-loop callback could monopolize local delivery. Durable
-ownership on both sides plus exact broker evidence preserves execution-first
-publication across retries and restarts. Ledger absence is ambiguous during
-out-of-order callback recovery and therefore cannot be a terminal idempotency
-signal by itself.
+**Reason:** HTTP acknowledgement before any durable ownership created a loss
+window, while waiting on remote Google Sheets before acknowledgement created the
+opposite failure mode: TradingView could time out even though Render later
+completed the delivery. Durable local ingress ownership closes both windows.
+Exact broker evidence still preserves execution-first publication across retries
+and restarts. Ledger absence remains ambiguous during out-of-order callback
+recovery and therefore cannot be a terminal idempotency signal by itself.
 
-**Schema impact:** Adds the `Webhook Inbox` A:M worksheet. `Trade Metadata` A:Y
-remains the technical publication authority; compact `Closed Trades` A:J remains
-human-readable. The local bridge adds a JSON Render outbox with attempts and
-`next_attempt_at`. TradingView payloads, canonical setup IDs, Pine logic, sizing,
-and EOD policy are unchanged.
+**Schema impact:** The existing `Webhook Inbox` A:M worksheet is unchanged.
+Render adds a disk-backed JSON ingress spool on the existing persistent disk;
+`Trade Metadata` A:Y remains the technical publication authority and compact
+`Closed Trades` A:J remains human-readable. The local bridge JSON Render
+outbox is unchanged. TradingView payloads, canonical setup IDs, Pine logic,
+sizing, and EOD policy are unchanged.
 
 **Deployment impact:** The repository bridge and deployed
 `C:\ib_bridge\ib_bridge.py` were different at implementation time. Merging this

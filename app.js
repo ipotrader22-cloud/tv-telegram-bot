@@ -170,8 +170,18 @@ const WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS = Math.max(1_000, Math.floor(envNumber
 const WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS = Math.max(WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS, Math.floor(envNumber('WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS', 300_000)));
 const WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS = Math.max(1, Math.floor(envNumber('WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS', 90)));
 const WEBHOOK_INBOX_MAX_CONCURRENCY = Math.max(1, Math.min(32, Math.floor(envNumber('WEBHOOK_INBOX_MAX_CONCURRENCY', 4))));
+function defaultWebhookInboxSpoolFile() {
+  const renderPersistentDir = '/var/data';
+  try {
+    if (fs.existsSync(renderPersistentDir)) {
+      return path.join(renderPersistentDir, 'vixale_webhook_inbox_spool.json');
+    }
+  } catch (_) {}
+  return path.join(os.tmpdir(), 'vixale_webhook_inbox_spool.json');
+}
+
 const WEBHOOK_INBOX_SPOOL_FILE = String(
-  process.env.WEBHOOK_INBOX_SPOOL_FILE || path.join(os.tmpdir(), 'vixale_webhook_inbox_spool.json')
+  process.env.WEBHOOK_INBOX_SPOOL_FILE || defaultWebhookInboxSpoolFile()
 ).trim();
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4608,7 +4618,13 @@ function writeWebhookInboxSpool(items) {
     const folder = path.dirname(WEBHOOK_INBOX_SPOOL_FILE);
     fs.mkdirSync(folder, { recursive: true });
     const temp = `${WEBHOOK_INBOX_SPOOL_FILE}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify(items, null, 2), { encoding: 'utf8', mode: 0o600 });
+    const fd = fs.openSync(temp, 'w', 0o600);
+    try {
+      fs.writeFileSync(fd, JSON.stringify(items, null, 2), 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(temp, WEBHOOK_INBOX_SPOOL_FILE);
     return true;
   } catch (error) {
@@ -4620,7 +4636,18 @@ function writeWebhookInboxSpool(items) {
 function spoolWebhookInboxItem(reqBody, parsedRow, receivedAt = new Date().toISOString()) {
   const items = readWebhookInboxSpool();
   const deliveryId = webhookInboundDeliveryId(reqBody, parsedRow);
-  items[deliveryId] = items[deliveryId] || { delivery_id: deliveryId, received_at: receivedAt, raw_json: JSON.stringify(reqBody) };
+  items[deliveryId] = items[deliveryId] || {
+    delivery_id: deliveryId,
+    received_at: receivedAt,
+    raw_json: JSON.stringify(reqBody),
+  };
+  return writeWebhookInboxSpool(items);
+}
+
+function removeWebhookInboxSpoolItem(deliveryId) {
+  const items = readWebhookInboxSpool();
+  if (!Object.prototype.hasOwnProperty.call(items, deliveryId)) return true;
+  delete items[deliveryId];
   return writeWebhookInboxSpool(items);
 }
 
@@ -4638,14 +4665,15 @@ async function migrateWebhookInboxSpool(sheets, readRequestOptions = null) {
         spooled.received_at,
         readRequestOptions
       );
-      delete items[deliveryId];
+      if (!removeWebhookInboxSpoolItem(deliveryId)) {
+        throw new Error(`Webhook Inbox spool item removal failed: ${deliveryId}`);
+      }
       migrated++;
     } catch (error) {
       if (isWebhookInboxReadRateLimitError(error)) throw error;
       console.error('Webhook Inbox spool migration retained item:', deliveryId, error.message);
     }
   }
-  if (migrated) writeWebhookInboxSpool(items);
   return migrated;
 }
 
@@ -12879,27 +12907,28 @@ async function handleTradingViewWebhookWithDependencies(
     }
 
     const receivedAt = new Date().toISOString();
-    let inboxItem;
+    let ingressPersisted = false;
     try {
-      const sheets = dependencies.sheets || await (dependencies.getSheetsClient || getSheetsClient)();
-      if (!sheets) throw new Error('Sheets unavailable for authoritative Webhook Inbox persistence');
-      inboxItem = await (dependencies.upsertWebhookInboxItem || upsertWebhookInboxItem)(
-        sheets, reqBody, parsedRow, receivedAt
-      );
-    } catch (inboxError) {
-      (dependencies.spoolWebhookInboxItem || spoolWebhookInboxItem)(
+      ingressPersisted = (dependencies.spoolWebhookInboxItem || spoolWebhookInboxItem)(
         reqBody,
         parsedRow,
         receivedAt
-      );
-      console.error('Webhook Inbox persistence failed; TradingView must retry:', inboxError);
+      ) === true;
+    } catch (spoolError) {
+      console.error('Webhook Inbox ingress spool persistence failed:', spoolError);
+    }
+    if (!ingressPersisted) {
+      console.error('Webhook Inbox ingress spool unavailable; TradingView must retry');
       return res.status(503).send('RETRY');
     }
 
+    // TradingView has a short webhook timeout. Durable local ownership on the
+    // Render persistent disk is enough to ACK immediately; Sheets migration and
+    // downstream lifecycle work continue from the deterministic delivery ID.
     res.status(200).send('OK');
     const scheduleWork = dependencies.scheduleWebhookInboxWork || (work => setImmediate(work));
     scheduleWork(() =>
-      processWebhookInboxItem(inboxItem, dependencies).catch(error => {
+      processWebhookInboxDueItems(dependencies).catch(error => {
         console.error('Webhook Inbox immediate processing failed:', error);
       })
     );
@@ -14173,6 +14202,8 @@ module.exports.__test = {
   handlePublicDashboardLivePnlRequest,
   webhookInboundDeliveryId,
   upsertWebhookInboxItem,
+  spoolWebhookInboxItem,
+  migrateWebhookInboxSpool,
   processWebhookInboxItem,
   processWebhookInboxDueItems,
   webhookInboxBackoffMs,
