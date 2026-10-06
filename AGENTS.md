@@ -43,8 +43,9 @@ TradingView -> Render/app.js -> local IB bridge -> TWS confirmation
 
 6. Never expose secrets or infer that a submitted order is a fill.
 7. Use a narrow feature branch, run the relevant checks, review the complete
-   diff, push the feature branch, open a Pull Request, and stop before merge
-   unless the owner explicitly authorizes the next production step.
+   diff, push the feature branch, and open a Pull Request. For eligible normal
+   Engineering tasks, apply the Standing Owner Authorization below and continue
+   through merge/deploy without asking for a second approval message.
 
 ---
 
@@ -63,11 +64,34 @@ For a normal requested change, Codex should complete the following workflow in o
 9. Commit the approved task to the feature branch.
 10. Push the feature branch.
 11. Create a Pull Request into `main`.
-12. Stop before merge.
+12. If the task is eligible under the Standing Owner Authorization below, merge the PR to `main`, allow the normal production deployment, verify the exact deployed commit reaches Live, and report the result. If an exception applies, stop before merge and request the required task-specific approval.
 
-Codex may commit, push the feature branch, and create the Pull Request as part of the same task.
+Codex may commit, push the feature branch, create the Pull Request, and—when eligible under the standing authorization—merge/deploy as part of the same task.
 
-Codex must **never** merge into `main`, push directly to `main`, or trigger a production deployment unless the user explicitly requests that action.
+## Standing Owner Authorization — Merge and Deploy
+
+**Owner instruction dated 2026-10-06:** for normal Engineering tasks that the owner has explicitly asked Codex to implement, successful completion of the requested change carries standing authorization to merge the task PR to `main` and allow the normal production deployment **without asking for a second “merge and deploy” confirmation**.
+
+This standing authorization counts as explicit owner approval only when all of the following are true:
+
+- the requested scope is implemented on a feature branch;
+- the complete diff is narrow and contains no unexpected files or behavior;
+- relevant syntax/tests/checks pass, or the repository has no required CI and the available scoped checks pass;
+- there is no unresolved Source-of-Truth conflict;
+- rollback is clear;
+- deployment uses the normal approved production path (for example Render Auto-Deploy from `main`) and the exact deployed commit is verified.
+
+The standing authorization does **not** authorize:
+
+- a task the owner explicitly marks read-only, PR-only, “stop before merge,” or “do not deploy”;
+- merging with failed required checks, unresolved conflicts, or unexpected scope;
+- unvalidated trading-strategy behavior changes, frozen Trading Lab contract changes, or silent Pine/entry/exit/stop/target/risk/session/parameter changes;
+- destructive Git/history operations;
+- production secret or environment-value changes;
+- destructive database/data migrations or deletions;
+- bypassing any separate activation/paper/shadow gate explicitly required by the frozen trading-system lifecycle.
+
+Direct pushes to `main` remain prohibited for normal work; use the PR workflow. A task-specific owner instruction always overrides this standing default.
 
 GitHub or operating-system permission prompts may still require the user to click **Allow once**.
 
@@ -230,7 +254,8 @@ main
 → commit
 → push feature branch
 → Pull Request
-→ stop before merge
+→ merge/deploy automatically when eligible under Standing Owner Authorization
+→ verify exact production deploy
 ```
 
 Use narrow branch names, for example:
@@ -246,7 +271,7 @@ Never:
 - force-push;
 - rewrite published history;
 - push directly to `main`;
-- merge without explicit approval;
+- merge outside the Standing Owner Authorization or a task-specific explicit approval;
 - delete unrelated files;
 - include secrets;
 - mix unrelated changes in one commit;
@@ -295,7 +320,7 @@ Every production or architectural PR should include:
 
 Before creating the PR, verify the diff contains only intended files.
 
-Do not merge the PR.
+After the PR checks are clean, continue through merge/deploy automatically when the task is eligible under the Standing Owner Authorization. Otherwise stop before merge.
 
 ---
 
@@ -309,7 +334,7 @@ Therefore:
 
 - feature-branch pushes are allowed;
 - Pull Request creation is allowed;
-- merge to `main` requires explicit approval;
+- merge to `main` is pre-authorized for eligible normal tasks under the Standing Owner Authorization; excluded/sensitive operations still require task-specific approval;
 - do not use or reveal the Deploy Hook;
 - do not claim Render is Live without checking deployment status and startup logs.
 
@@ -330,11 +355,11 @@ Files changed:
 Checks:
 Handbook update required:
 Production code changed:
-Merged to main: NO
-Deployment triggered: NO
+Merged to main: YES / NO
+Deployment triggered: YES / NO
 Rollback:
 ```
 
 Also summarize the user-visible result in plain language.
 
-Stop after creating the Pull Request unless the user explicitly instructs otherwise.
+For eligible normal tasks, do not stop merely to request a second merge/deploy confirmation; continue through verified production deployment under the Standing Owner Authorization. Stop when an exception applies or the owner explicitly requests a PR-only stopping point.
