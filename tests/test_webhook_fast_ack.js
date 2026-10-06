@@ -133,7 +133,7 @@ function webhookSheets() {
         };
       },
       async update({ range, requestBody }) {
-        const match = String(range || '').match(/!A(\\d+):M\\d+$/);
+        const match = String(range || '').match(/!A(\d+):M\d+$/);
         const rowNumber = match ? Number(match[1]) : 1;
         while (rows.length < rowNumber) rows.push([]);
         rows[rowNumber - 1] = [...requestBody.values[0]];
