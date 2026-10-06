@@ -18,8 +18,9 @@ const styles = `<style id="${STYLE_ID}">
   .vx-direct-nav-actions{display:flex!important;align-items:center!important;align-self:center!important;gap:10px!important;margin-left:0!important;white-space:nowrap!important}
   .vx-public-nav-login,.vx-public-nav-cta{align-self:center!important}
 }
-@media(min-width:1001px) and (max-width:1180px){
-  .vx-unified-public-nav{gap:9px!important}
+@media(min-width:1001px) and (max-width:1380px){
+  .nav-links,.navlinks{column-gap:10px!important}
+  .vx-unified-public-nav{gap:8px!important}
   .vx-unified-public-nav a{font-size:12.5px!important}
   .vx-direct-nav-actions{gap:8px!important}
   .vx-public-nav-login{font-size:13px!important}
