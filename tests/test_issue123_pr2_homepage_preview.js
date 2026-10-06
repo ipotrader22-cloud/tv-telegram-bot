@@ -16,12 +16,15 @@ assert(!/swing|options/i.test(offer.DAY_TRIAL_REQUEST_TEXT), "trial request must
 const hero = home.renderHeroAndPreview();
 assert(hero.includes("Trading signals. Three systems. Your choice."));
 assert(hero.includes("Follow Day Trading live, explore a daily Swing portfolio, or track Options positions. See the trades and results, then choose your system."));
+assert(hero.includes('class="vx-conversion-btn recaps" href="/daily-trading-summary">Daily Trading Recaps</a>'));
+assert(hero.indexOf("Daily Trading Recaps") < hero.indexOf("Telegram Signals"), "Daily Trading Recaps must appear first in the hero action row");
 assert(hero.includes(`href="${offer.DAY_TRIAL_URL}"`));
 assert(hero.includes(">Telegram Signals</a>"));
 assert(hero.includes('class="vx-conversion-btn" href="/#password-access">Live Access</a>'));
 assert(hero.includes('href="/results">View Trading Results</a>'));
 assert(!hero.includes(">Get 30 Days Free</a>"));
 assert(hero.includes("30-day free trial of Day Trading Telegram signals."));
+assert(hero.includes(".vx-conversion-btn.recaps{"), "Daily Trading Recaps CTA must have a distinct visible treatment");
 
 assert(hero.includes('role="tablist"'));
 for (const key of ["day", "swing", "options"]) {
