@@ -46,10 +46,8 @@ assert.strictEqual(summary.totals.carried_closed_count, 1);
 assert.strictEqual(summary.totals.options_closed_count, 1);
 assert.strictEqual(summary.closed[0].system, "Vixale Edge");
 assert.strictEqual(summary.closed[1].carried, true);
-assert.strictEqual(blog.FIRST_BLOG_DATE, "2026-10-05");
-assert.strictEqual(blog.publishedDateKey("2026-10-04"), false);
-assert.strictEqual(blog.publishedDateKey("2026-10-05"), true);
-assert.deepStrictEqual(blog.availableDates(source), ["2026-10-05"]);
+assert.deepStrictEqual(blog.availableDates(source), ["2026-10-05", "2026-10-04"]);
+assert.strictEqual(summary.options[0].result, -810);
 
 const historySource = {
   tradesValues: [["timestamp","symbol","side","event","entry","size","target","stop","result","status"]],
@@ -66,6 +64,12 @@ const historyDates = blog.availableDates(historySource);
 assert.strictEqual(historyDates.length, 60);
 assert.strictEqual(historyDates[historyDates.length - 1], "2026-10-05");
 
+const earlierHistory = {
+  ...historySource,
+  tradesValues: [...historySource.tradesValues, ["2026-07-01 10:00:00","EARLY","LONG","FILL","10","1","11","9","","open"]]
+};
+assert(blog.availableDates(earlierHistory).includes("2026-07-01"));
+
 const html = blog.renderDayPage(summary, false);
 assert(html.includes("Vixale Daily Trading Summary"));
 assert(html.includes("Copy Link"));
@@ -78,6 +82,8 @@ assert(!html.includes("SPY"));
 assert(!html.includes("closed-id"));
 assert(!html.includes("private note"));
 assert(html.includes("closed Option Journal records only"));
+assert(html.includes("Result"));
+assert(html.includes("-$810.00"));
 
 assert.strictEqual(blog.money(null), "—");
 assert.strictEqual(blog.price(null), "—");
