@@ -7,6 +7,7 @@ const {
   OPTIONS_VIEWER_PATH,
   DASHBOARD_PATH,
   OPTIONS_CANONICAL_URL,
+  OPTIONS_PUBLIC_PERFORMANCE_PATH,
   OPTION_JOURNAL_RANGE,
   OPTIONS_PAGE_MARKER,
   parseOptionJournalRows,
@@ -32,6 +33,7 @@ const values = [
 const trades = parseOptionJournalRows(values);
 assert.strictEqual(OPTION_JOURNAL_RANGE, "'Option Journal'!A:S");
 assert.strictEqual(OPTIONS_VIEWER_PATH, `${OPTIONS_PATH}/viewer`);
+assert.strictEqual(OPTIONS_PUBLIC_PERFORMANCE_PATH, "/public-options-performance.json");
 assert.strictEqual(trades.length, 5);
 assert.strictEqual(optionPnl(trades[0]), 590);
 assert.strictEqual(optionPnl(trades[1]), 145);
@@ -85,12 +87,29 @@ function capture(deps) {
   return middleware;
 }
 function responseHarness() {
-  return { statusCode: 200, sent: null, getHeader() { return "text/html; charset=utf-8"; }, send(body) { this.sent = body; return this; } };
+  return {
+    statusCode: 200, sent: null, jsonBody: null, headers: {},
+    getHeader() { return "text/html; charset=utf-8"; },
+    set(name, value) { this.headers[name] = value; return this; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.jsonBody = body; return this; },
+    send(body) { this.sent = body; return this; },
+  };
 }
 
 (async () => {
   let loadCalls = 0;
   const middleware = capture({ loadOptionsEquityFromSheets: async () => { loadCalls += 1; return curve; } });
+  const performanceReq = { method: "GET", path: OPTIONS_PUBLIC_PERFORMANCE_PATH, url: OPTIONS_PUBLIC_PERFORMANCE_PATH };
+  const performanceRes = responseHarness();
+  let performanceNextCalls = 0;
+  middleware(performanceReq, performanceRes, () => { performanceNextCalls += 1; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(performanceNextCalls, 0);
+  assert.strictEqual(loadCalls, 1);
+  assert.strictEqual(performanceRes.headers["Cache-Control"], "no-store");
+  assert.deepStrictEqual(performanceRes.jsonBody, { ok: true, source: "owner-entered-option-journal", equity_curve: curve });
+
   const publicReq = { method: "GET", path: OPTIONS_PATH, url: OPTIONS_PATH, _parsedUrl: {} };
   const publicRes = responseHarness();
   let publicNextCalls = 0;
@@ -99,7 +118,7 @@ function responseHarness() {
   assert.strictEqual(publicReq.url, OPTIONS_PATH, "public Options overview must not be rewritten through dashboard auth");
   publicRes.send("<p>public Options overview shell</p>");
   assert.strictEqual(publicRes.sent, "<p>public Options overview shell</p>");
-  assert.strictEqual(loadCalls, 0, "public Options overview must not read protected Option Journal equity");
+  assert.strictEqual(loadCalls, 1, "public Options overview itself must not trigger an additional Option Journal equity read");
 
   const req = { method: "GET", path: OPTIONS_VIEWER_PATH, url: `${OPTIONS_VIEWER_PATH}?key=test`, _parsedUrl: {} };
   const res = responseHarness();
@@ -110,7 +129,7 @@ function responseHarness() {
   assert(!Object.prototype.hasOwnProperty.call(req, "_parsedUrl"));
   res.send(dashboardHtml);
   await new Promise(resolve => setImmediate(resolve));
-  assert.strictEqual(loadCalls, 1);
+  assert.strictEqual(loadCalls, 2);
   assert(res.sent.includes(`${OPTIONS_PAGE_MARKER}="page"`));
 
   const dayMiddleware = capture({ loadOptionsEquityFromSheets: async () => { throw new Error("must not run"); } });
