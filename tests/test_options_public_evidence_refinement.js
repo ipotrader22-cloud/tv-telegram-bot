@@ -36,6 +36,7 @@ assert(refined.includes('href="#option-journal-public">proofs</a>'));
 assert(refined.includes("The full Option Journal is published below"));
 assert(!refined.includes("Current open positions are not exposed"));
 assert(refined.includes('id="options-public-chart"'));
+assert(refined.includes(".vx-options-public-chart-svg text{fill:#64776c;font-size:9px;font-family:inherit}"), "chart axis/date labels should remain visually compact beside the Total Realized value");
 assert(refined.includes('id="option-journal-public"'));
 assert(refined.indexOf('id="options-public-chart"') < refined.indexOf('id="options-preview-card"'), "chart must be above dashboard example");
 assert(refined.indexOf('id="option-journal-public"') > refined.indexOf('id="options-dashboard-preview"'), "journal must follow preview section");
@@ -108,8 +109,12 @@ for (const amounts of [[0], [-2000, -4000], [2000, 6000], [-2000, 4000], [0.1, 0
   assert(chart.includes('class="vx-options-y-tick"'));
   assert(chart.includes("$0"));
   assert((chart.match(/stroke-dasharray="4 4"/g) || []).length >= 3);
+  assert.equal((chart.match(/<circle /g) || []).length, amounts.length, "every plotted equity point should have a circular marker");
   assert(!chart.includes("NaN"));
 }
+const densePoints = Array.from({ length: 30 }, (_, i) => ({ date: `2026-09-${String(i + 1).padStart(2, "0")}`, cumulative_pnl: (i + 1) * 100 }));
+const denseChart = mod.renderCompactChart({ curve: { points: densePoints, total_realized_pnl: 3000 } });
+assert.equal((denseChart.match(/<circle /g) || []).length, densePoints.length, "point markers must remain visible when the curve has more than 24 daily points");
 assert.equal(mod.optionPnl({ ...evidence.trades[0], trade_type: "Credit", entry_price: 24, exit_price: 20.70 }), 3197.58);
 assert.equal(mod.optionPnl(evidence.trades[1]), null);
 const sameDay = mod.buildOptionsEquityCurve([evidence.trades[0], evidence.trades[0], evidence.trades[1]]);
