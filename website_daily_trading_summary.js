@@ -2,13 +2,13 @@
 
 const Module = require("module");
 const { google } = require("googleapis");
+const { optionPnl, optionTradeFromRow } = require("./website_options_canonical_refinement");
 
 const INDEX_PATH = "/daily-trading-summary";
 const SITE_URL = "https://www.vixale.com";
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID || "";
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
 const CACHE_MS = 60_000;
-const FIRST_BLOG_DATE = "2026-10-05";
 const RANGES = ["Trades!A:J", "Closed Trades!A:J", "Trade Metadata!A:H", "Option Journal!A:S"];
 
 let sourceCache = { loadedAt: 0, source: null };
@@ -44,10 +44,6 @@ function validDateKey(value) {
   const parts = value.split("-").map(Number);
   const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
   return dt.getUTCFullYear() === parts[0] && dt.getUTCMonth() === parts[1] - 1 && dt.getUTCDate() === parts[2];
-}
-
-function publishedDateKey(value) {
-  return validDateKey(value) && String(value) >= FIRST_BLOG_DATE;
 }
 
 function formatDate(value) {
@@ -162,18 +158,19 @@ function buildDaySummary(source, targetDate) {
 
   const options = [];
   for (const row of (source.optionValues || []).slice(1)) {
-    const status = String(row?.[15] || "").trim().toLowerCase();
-    if (dateKey(row?.[11]) !== targetDate || status !== "closed") continue;
+    const trade = optionTradeFromRow(row);
+    if (dateKey(trade.exit_date) !== targetDate || trade.status !== "Closed") continue;
     options.push({
-      symbol: String(row?.[3] || "").trim().toUpperCase(),
-      strategy: String(row?.[4] || "").trim(),
-      legs: String(row?.[5] || "").trim(),
-      expiration: String(row?.[6] || "").trim(),
-      contracts: numberOrNull(row?.[7]),
-      trade_type: String(row?.[9] || "").trim(),
-      entry_price: numberOrNull(row?.[10]),
-      exit_time: String(row?.[12] || "").trim(),
-      exit_price: numberOrNull(row?.[13])
+      symbol: String(trade.symbol || "").trim().toUpperCase(),
+      strategy: String(trade.strategy || "").trim(),
+      legs: String(trade.legs || "").trim(),
+      expiration: String(trade.expiration || "").trim(),
+      contracts: Number.isFinite(Number(trade.contracts)) ? Number(trade.contracts) : null,
+      trade_type: String(trade.trade_type || "").trim(),
+      entry_price: Number.isFinite(Number(trade.entry_price)) ? Number(trade.entry_price) : null,
+      exit_time: String(trade.exit_time || "").trim(),
+      exit_price: trade.exit_price === "" || !Number.isFinite(Number(trade.exit_price)) ? null : Number(trade.exit_price),
+      result: optionPnl(trade)
     });
   }
 
@@ -221,7 +218,7 @@ function availableDates(source) {
     const key = dateKey(row?.[11]);
     if (key) out.add(key);
   }
-  return [...out].filter(publishedDateKey).sort((a, b) => b.localeCompare(a));
+  return [...out].sort((a, b) => b.localeCompare(a));
 }
 
 async function sheetsClient() {
@@ -303,7 +300,8 @@ function optionCards(rows) {
     rows.map(row => '<article class="card"><h3>' + esc(row.symbol || "Options") + ' · ' + esc(row.strategy || "Trade") + '</h3>' +
       '<div class="meta">' + esc(row.trade_type || "") + (row.contracts !== null ? ' · ' + esc(row.contracts) + ' contract(s)' : '') + '</div>' +
       '<p>' + esc(row.legs || "—").replace(/\r?\n/g, "<br>") + '</p>' +
-      '<div class="meta">Expiration ' + esc(row.expiration || "—") + ' · Entry ' + esc(price(row.entry_price)) + ' · Exit ' + esc(price(row.exit_price)) + ' at ' + esc(formatTime(row.exit_time)) + '</div></article>').join("") +
+      '<div class="meta">Expiration ' + esc(row.expiration || "—") + ' · Entry ' + esc(price(row.entry_price)) + ' · Exit ' + esc(price(row.exit_price)) + ' at ' + esc(formatTime(row.exit_time)) + '</div>' +
+      '<div class="meta">Result <strong class="' + resultClass(row.result) + '">' + esc(money(row.result)) + '</strong></div></article>').join("") +
     '</div></section>';
 }
 
@@ -332,7 +330,7 @@ function renderIndexPage(items, stale = false) {
   const title = "Vixale Daily Trading Summaries";
   const cards = items.length ? items.map(summary => '<a class="card" href="' + INDEX_PATH + '/' + esc(summary.date) + '"><strong>' + esc(formatDate(summary.date)) + '</strong><span>' + esc(description(summary)) + '</span></a>').join("") : '<div class="card">No daily recaps are available yet.</div>';
   return head(title, "Shareable Vixale daily trading recaps built from recorded trading activity.", canonical) + header() +
-    '<main class="wrap"><section class="hero"><div class="eyebrow">Vixale Journal</div><h1>Daily Trading Summaries</h1><p class="lead">Shareable daily recaps of recorded trading activity and realized results, archived from October 5, 2026 onward.</p>' +
+    '<main class="wrap"><section class="hero"><div class="eyebrow">Vixale Journal</div><h1>Daily Trading Summaries</h1><p class="lead">Shareable daily recaps of recorded trading activity and realized results across the available Vixale ledger history.</p>' +
     (stale ? '<div class="stale">Showing the last successfully loaded ledger snapshot.</div>' : '') + '</section><section class="archive">' + cards + '</section>' +
     '<section class="section"><div class="disclosure">Daily recaps publish closed-trade details and aggregate new-fill counts. They do not reveal still-open Day Trading positions or reconstruct historical Pending/Open state. NFA — Not Financial Advice.</div></section></main>' +
     '<footer class="footer"><div class="wrap">Vixale · <a href="/results">Results</a> · <a href="/closed-trades">Closed Trades ledger</a></div></footer></body></html>';
@@ -363,7 +361,7 @@ async function handleIndex(req, res, deps = {}) {
 async function handleDay(req, res, deps = {}) {
   const targetDate = String(req.params?.date || "").trim();
   if (isRussianHost(req)) return res.redirect(302, SITE_URL + INDEX_PATH + "/" + encodeURIComponent(targetDate));
-  if (!publishedDateKey(targetDate)) return res.status(404).type("text").send("Daily trading summary not found.");
+  if (!validDateKey(targetDate)) return res.status(404).type("text").send("Daily trading summary not found.");
   try {
     const snapshot = await getSourceSnapshot(deps);
     const summary = buildDaySummary(snapshot.source, targetDate);
@@ -409,8 +407,8 @@ Module._load = function dailySummaryModuleLoad(request, parent, isMain) {
 };
 
 module.exports = {
-  INDEX_PATH, SITE_URL, CACHE_MS, FIRST_BLOG_DATE, RANGES,
-  numberOrNull, dateKey, validDateKey, publishedDateKey, formatDate, formatTime, money, price, prettyEvent,
+  INDEX_PATH, SITE_URL, CACHE_MS, RANGES,
+  numberOrNull, dateKey, validDateKey, formatDate, formatTime, money, price, prettyEvent,
   metadataMaps, buildDaySummary, availableDates, getSourceSnapshot, renderDayPage, renderIndexPage,
   handleIndex, handleDay, install, wrapExpress
 };
