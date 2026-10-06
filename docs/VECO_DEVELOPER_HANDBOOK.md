@@ -3081,14 +3081,14 @@ This is website/data-presentation only. It does not modify Option Journal writes
 
 ### ADR-023 — Shareable daily trading summaries
 
-**Decision:** Vixale publishes a read-only daily recap archive at `/daily-trading-summary` with date permalinks at `/daily-trading-summary/YYYY-MM-DD`. The public journal begins on **2026-10-05**: dates before October 5, 2026 are not published as daily recap posts. The archive retains all published activity dates from that boundary forward with no fixed rolling-day limit; older posts remain addressable by their date permalinks as the history grows. The recap is generated server-side from existing Google Sheets records using the current service-account read-only access; it does not create a second trading ledger or a write path.
+**Decision:** Vixale publishes a read-only daily recap archive at `/daily-trading-summary` with date permalinks at `/daily-trading-summary/YYYY-MM-DD`. The archive includes every activity date available from the existing authoritative ledger, including dates earlier than October 5, 2026, and has no fixed rolling-day limit; older posts remain addressable by their date permalinks as the history grows. The recap is generated server-side from existing Google Sheets records using the current service-account read-only access; it does not create a second trading ledger or a write path.
 
 Public Day Trading recap ownership is deliberately narrower than the private 16:05 owner email:
 
 - `Trades!A:J` supplies the aggregate count of broker-confirmed `FILL` / `ENTRY_FILL` records for the selected New York trading date.
 - `Closed Trades!A:J` supplies the public closed-trade rows and recorded numeric realized P&L for positions whose close date is the selected date.
 - `Trade Metadata!A:H` may supply the already-recorded public system label for a closed trade. Raw technical metadata, execution IDs, payload JSON, reconciliation IDs, and broker identities are never rendered.
-- `Option Journal!A:S` is included only for rows already marked Closed whose **Exit Date** equals the recap date. Open option positions, notes, internal IDs, brokerage-proof paths, and other private journal fields are not published.
+- `Option Journal!A:S` is included only for rows already marked Closed whose **Exit Date** equals the recap date. Each published closed Options trade also shows its realized Result/P&L using the existing canonical `optionPnl()` calculation from `website_options_canonical_refinement.js` (Credit/Debit direction, entry price, exit price, contracts, multiplier, and fees). The daily recap must not implement a second Options P&L formula. Open option positions, notes, internal IDs, brokerage-proof paths, and other private journal fields are not published.
 - A fill that remains open after the selected date contributes only to the aggregate new-fill count. Its symbol, side, entry, target, stop, and quantity are not exposed by this public recap.
 
 Historical Open Positions or Pending state is intentionally not reconstructed after the fact because those worksheets are mutable operational state. The private end-of-day email may include the live Open/Pending snapshot captured at its scheduled run; the public permalink remains durable evidence of recorded fills and closes without pretending to preserve that point-in-time state.
