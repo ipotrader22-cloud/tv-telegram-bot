@@ -1545,37 +1545,89 @@ Before changing website layout or styling, preserve both English and Russian ren
 ### 11.4 Options public sales page
 
 The public `/trading-systems/options` route is a commercial product page, while
-`/trading-systems/options/viewer` remains the existing protected Options viewer.
-The sales page follows the customer flow Offer -> Product Preview -> What’s
-Included -> Results -> Subscription -> FAQ and keeps direct Day Trading / Swing
-Trading / Options product-family navigation.
+`/trading-systems/options/viewer` remains an authenticated read-only viewer for
+protected Options detail. The public sales page follows the customer flow Offer
+-> Product Preview -> What’s Included -> Results -> Subscription -> FAQ and keeps
+direct Day Trading / Swing Trading / Options product-family navigation.
 
-The single-system Options price remains `$49/month`. Paid onboarding is still a
-manual request through the canonical `singleSystemRequestUrl("Options")` flow;
-the customer-facing primary CTA therefore says `Request Options Access` and must
-not imply automatic checkout or instant activation. The public `/access` route is
-a separate free read-only viewer-request workflow and is not used as the paid
-Options subscription CTA.
+The single-system Options price remains `$49/month`. Paid onboarding uses the
+canonical `singleSystemRequestUrl("Options")` Telegram request. A paid Options
+CTA must therefore describe a subscription request (for example,
+`Request Options Subscription — $49/month`) and must not route to the free
+viewer-access form. The public `/access?system=options` route is a separate,
+free, read-only viewer request for protected material; it does not activate or
+purchase an Options subscription.
 
-The public product preview is sourced from the existing `Option Journal`
-`A:S` range and intentionally renders only the latest eligible **closed** trade.
-It exposes only customer-safe journal fields needed to demonstrate the product:
-underlying, option contract/legs, expiration, trade type, contract count, entry
-and exit dates/prices, recorded P&L, status, and strategy/note. It does not
-render current open-position rows, journal IDs, account/customer identifiers,
-credentials, or private brokerage data. The preview uses a five-minute
-process-local cache to bound public Google Sheets reads. If the journal cannot be
-loaded or no eligible closed trade exists, the page shows an unavailable state;
-it never substitutes a fabricated/sample trade.
+Public Options evidence now has two layers sourced from the existing
+`Option Journal` without changing its owner write path:
 
-The Options sales refinement is preloaded before the existing Options-results
-link refinement and conversion-system-page renderer so the serialized HTML
-transform order remains: base Options system page -> results-link refinement ->
-Options sales-page replacement -> Russian localization. English and Russian
-share the same structure, data preview, links, responsive CSS, and access
-semantics. The protected viewer, Option Journal write path, authentication,
-subscriber/dashboard behavior, trading logic, Telegram, Sheets schemas, Pine,
-bridge, and TWS execution are unchanged.
+- the sales-page preview may show the latest eligible closed trade using
+  customer-safe journal fields;
+- the public Options performance chart and public Option Journal expose the
+  published trade record and recorded closed-trade results;
+- available brokerage proof files remain protected by the existing viewer
+  authorization boundary.
+
+The public page must not expose credentials, private storage metadata, customer
+identifiers, or owner-only controls, and it must not fabricate sample trades or
+P&L when the source is unavailable. Options copy must also remain strategy-neutral:
+the product is not described as restricted to one trade structure or to 0DTE.
+
+English and Russian use the same commercial/access semantics. The protected
+viewer authorization, Option Journal writes, trading logic, Telegram lifecycle,
+Google Sheet trading schemas, Pine, bridge, TWS/IBKR execution, and risk logic
+remain unchanged.
+
+### 11.5 October 6 user-friendliness / conversion contract
+
+The October 6 site audit supersedes older public-presentation decisions where
+they conflict with this section. It does **not** supersede the underlying data,
+security, evidence, or trading boundaries.
+
+Primary public navigation is intentionally task-focused:
+
+```text
+Day Trading
+Swing Trading
+Options
+Results
+Pricing
+```
+
+Returning-user `Log In` remains an action. The main acquisition action is the
+30-day Day Trading trial (`Get 30 Days Free`). `How It Works`, the broader
+`Trading Systems` hub, Daily Recaps, Services, About, and Help remain available
+as secondary/footer discovery rather than competing primary tasks.
+
+The homepage uses plain customer language and keeps the existing authentic
+Day/Swing/Options previews and evidence sources. The Day Trading trial is
+explicitly Day Trading Telegram signals only. Free viewer access is a separate
+read-only path for protected detail. Paid Single System and Three-System Bundle
+requests remain separate commercial paths.
+
+Pricing must explain what the visitor receives and how to join without exposing
+internal implementation commentary such as "fake checkout", "existing
+destination", or release-engineering language. Manual onboarding may be
+described in customer terms: choose the plan, send the prepared Telegram
+request, then receive payment/access instructions.
+
+Results remain system-specific. Day Trading, Swing Trading, and Options keep
+their existing distinct evidence sources; the page may present a next action for
+each system, but it must not combine the three into one performance total or
+substitute one system's results for another.
+
+Acquisition measurement may record aggregate CTA metadata such as system,
+offer, CTA kind, and originating public path. It must not record names, email
+addresses, Telegram handles, viewer codes, tokens, IP addresses, user-agent
+strings, credentials, or other customer-identifying values in the website funnel
+metrics file.
+
+This presentation contract is implemented as a narrow final HTML refinement
+layer so the existing auth/data/trading owners stay unchanged. In particular it
+does not change Turnstile, email verification, manual viewer approval, viewer
+code creation/expiry, Options proof authorization, VECO strategy behavior,
+signals, Pine, bridge/TWS/IBKR execution, risk logic, Swing Trading Lab logic, or
+Google Sheet trading write paths.
 
 ---
 
@@ -2878,6 +2930,8 @@ CTA text must describe the actual destination. An access-form link uses request/
 
 ### ADR-019 — First-time-visitor homepage hierarchy (Issue #107 PR 2)
 
+**Superseded presentation note (2026-10-06):** The October 6 user-friendliness / conversion contract in §11.5 supersedes the hero CTA hierarchy and primary-navigation implications below where they conflict. The evidence-source, read-only access, no-synthetic-data, and trading-safety boundaries remain in force.
+
 **Decision:** The public homepage teaches a first-time visitor before asking them to interpret detailed performance or access workflows. The canonical top-of-home sequence is:
 
 ```text
@@ -2914,6 +2968,8 @@ The older lower-home beginner section beginning **“New to trading systems? Sta
 **Rollback:** Revert the Issue #107 PR 2 homepage/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, Option Journal, or customer-data rollback is required.
 
 ### ADR-020 — Standard public system-page teaching sequence (Issue #107 PR 3)
+
+**Superseded presentation note (2026-10-06):** The October 6 user-friendliness / conversion contract in §11.5 supersedes the older Options public/protected presentation and page-specific acquisition CTA wording below where they conflict. The system-specific evidence, authentication, and no-trading-change boundaries remain in force.
 
 **Decision:** The public Day Trading, Swing Trading, and Options system pages teach first-time visitors in the same semantic order:
 
