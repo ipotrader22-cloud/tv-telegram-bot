@@ -44,16 +44,25 @@ const out = refineSwingHtml(fixture);
 assert(out.includes(PAGE_MARKER));
 assert(out.includes(`id="${STYLE_ID}"`));
 assert(out.includes("font-size:clamp(30px,3.5vw,42px)!important"));
-assert(out.includes('[data-vx-conversion-system-page="swing"] .hero .hero-copy{box-sizing:border-box;padding:16px 20px;border:1px solid #d7e8df;border-radius:24px;background:linear-gradient(135deg,#eaf8f0 0%,#f6fbf8 52%,#fff 100%)'));
-assert(out.includes(".vx-swing-how-block h2{margin:0 0 18px;font-size:33px"));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .hero .hero-copy{box-sizing:border-box;margin-top:10px!important;padding:12px 16px;border:1px solid #d7e8df;border-radius:18px;background:linear-gradient(135deg,#eaf8f0 0%,#f6fbf8 52%,#fff 100%)'));
+assert(out.includes(".vx-swing-how-block h2{margin:0 0 10px;font-size:29px"));
 assert(out.includes("grid-template-columns:repeat(4,minmax(0,1fr))"));
-assert(out.includes(".vx-swing-how-list p{box-sizing:border-box;height:100%;margin:0;padding:18px 20px;border:1px solid #d7e8df;border-radius:24px;background:linear-gradient(145deg,#eaf8f0 0%,#f6fbf8 55%,#fff 100%)"));
-assert(out.includes("color:#5f6d67;font-size:18px;line-height:1.5"));
-assert(out.includes(".vx-swing-market-update h2{margin-bottom:10px;font-size:16.5px!important"));
-assert(out.includes(".vx-swing-posture-copy{margin:0;color:#5f6d67;font-size:18px;line-height:1.5"));
-assert(out.includes(".vx-swing-posture-copy{font-size:17px}"));
-assert(out.includes('[data-vx-conversion-system-page="swing"] .hero .hero-copy{padding:15px 17px;border-radius:21px}'));
-assert(out.includes(".vx-swing-how-list p{padding:16px 17px;border-radius:21px;font-size:17px}"));
+assert(out.includes(".vx-swing-how-list p{box-sizing:border-box;height:100%;margin:0;padding:14px 15px;border:1px solid #d7e8df;border-radius:18px;background:linear-gradient(145deg,#eaf8f0 0%,#f6fbf8 55%,#fff 100%)"));
+assert(out.includes("color:#5f6d67;font-size:15.5px;line-height:1.42"));
+assert(out.includes(".vx-swing-market-update{margin-top:16px!important;padding:16px 18px!important}"));
+assert(out.includes(".vx-swing-market-update h2{margin:0 0 7px!important;font-size:16px!important"));
+assert(out.includes(".vx-swing-posture-copy{margin:0;color:#5f6d67;font-size:16px;line-height:1.44"));
+assert(out.includes(".vx-swing-posture-copy{font-size:15.5px}"));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .hero .hero-copy{padding:12px 14px;border-radius:17px}'));
+assert(out.includes(".vx-swing-how-list p{padding:13px 14px;border-radius:17px;font-size:15.5px}"));
+
+
+assert(out.includes('[data-vx-conversion-system-page="swing"]{padding-top:24px!important;padding-bottom:44px!important}'));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .hero-layout{gap:14px!important}'));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .vx-conversion-swing-actions{margin-top:12px!important}'));
+assert(out.includes('[data-vx-conversion-system-page="swing"] .hero-layout .summary{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;margin-top:2px!important}'));
+assert(out.includes('[data-vx-conversion-system-page="swing"]>.section{margin-top:20px!important;padding:18px 20px!important}'));
+assert(out.includes('[data-vx-conversion-system-page="swing"]>.section .table-wrap{margin-top:10px!important}'));
 
 assert(!out.includes("Swing evidence context"));
 assert(!out.includes('data-vx-evidence-credibility="swing"'));
