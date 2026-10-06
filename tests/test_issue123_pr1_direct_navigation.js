@@ -40,7 +40,9 @@ const alignedDay = alignment.injectAlignmentStyles(day);
 assert(alignedDay.includes(`id="${alignment.STYLE_ID}"`), "public pages with unified navigation must receive the alignment stylesheet");
 assert(alignedDay.includes("grid-template-columns:minmax(0,1fr) auto!important"), "desktop header must keep primary links and actions on the same row");
 assert(alignedDay.includes("flex-wrap:nowrap!important"), "desktop public navigation must explicitly prevent wrapping");
-assert(alignedDay.includes("@media(min-width:1001px) and (max-width:1180px)"), "tight desktop widths must receive compact spacing instead of a second row");
+assert(alignedDay.includes("@media(min-width:1001px) and (max-width:1380px)"), "medium desktop widths must receive compact spacing before primary links can collide with Log In");
+assert(alignedDay.includes(".nav-links,.navlinks{column-gap:10px!important}"), "compact desktop layout must tighten the primary/action column gap");
+assert(alignedDay.includes(".vx-unified-public-nav{gap:8px!important}"), "compact desktop layout must tighten primary link spacing");
 assert.strictEqual(alignment.injectAlignmentStyles(alignedDay), alignedDay, "alignment refinement must be idempotent");
 assert.strictEqual(alignment.injectAlignmentStyles(base), base, "alignment stylesheet must not be injected before unified navigation exists");
 
