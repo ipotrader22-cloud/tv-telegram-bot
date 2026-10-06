@@ -1,0 +1,51 @@
+name: App Webhook Regression
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app.js"
+      - "tests/test_broker_eod_callback_idempotency.js"
+      - "tests/test_option_proof_payload.js"
+      - "tests/test_vixale_edge_app_integration.js"
+      - "tests/test_vixale_edge_pending_eod_cleanup.js"
+      - "tests/test_vixale_edge_pending_lifecycle.js"
+      - ".github/workflows/app-webhook-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  app-webhook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Syntax check app
+        run: node --check app.js
+
+      - name: Run broker callback regression
+        run: node tests/test_broker_eod_callback_idempotency.js
+
+      - name: Run option payload regression
+        run: node tests/test_option_proof_payload.js
+
+      - name: Run Edge app lifecycle regression
+        run: node tests/test_vixale_edge_app_integration.js
+
+      - name: Run Edge pending EOD cleanup regression
+        run: node tests/test_vixale_edge_pending_eod_cleanup.js
+
+      - name: Run Edge pending lifecycle regression
+        run: node tests/test_vixale_edge_pending_lifecycle.js
