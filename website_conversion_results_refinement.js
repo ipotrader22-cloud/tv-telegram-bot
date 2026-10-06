@@ -36,7 +36,64 @@ const axisMoney=v=>{const n=Number(v);if(!Number.isFinite(n))return'';if(Math.ab
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const setMoney=(id,v)=>{const e=document.getElementById(id);if(!e)return;e.textContent=money(v);e.classList.remove('positive','negative');const n=Number(v);if(n>0)e.classList.add('positive');if(n<0)e.classList.add('negative')};
 const svgNode=(ns,name,attrs,text)=>{const n=document.createElementNS(ns,name);Object.entries(attrs||{}).forEach(([k,v])=>n.setAttribute(k,String(v)));if(text!=null)n.textContent=String(text);return n};
-const renderPnlChart=(svgId,emptyId,points,valueKey,label,emptyMessage,chartOptions={})=>{const svg=document.getElementById(svgId),empty=document.getElementById(emptyId),rows=(Array.isArray(points)?points:[]).map(x=>({value:Number(x&&x[valueKey]),date:String(x&&(x.date||x.snapshot_date)||'')})).filter(x=>Number.isFinite(x.value));if(!svg||!rows.length){if(empty)empty.textContent=emptyMessage;return}if(empty)empty.remove();const w=720,h=Number(chartOptions.height)||230,l=76,r=20,t=18,b=chartOptions.weeklyDates?44:32,values=rows.map(x=>x.value),bounds=values.concat([0]),lo0=Math.min(...bounds),hi0=Math.max(...bounds),span=Math.max(hi0-lo0,1),pad=span*.12,lo=lo0-pad,hi=hi0+pad,x=i=>l+(rows.length===1?(w-l-r)/2:i*(w-l-r)/(rows.length-1)),y=v=>t+(hi-v)*(h-t-b)/(hi-lo),ns='http://www.w3.org/2000/svg';svg.replaceChildren();svg.setAttribute('viewBox','0 0 '+w+' '+h);svg.setAttribute('aria-label',label+'; latest '+money(rows[rows.length-1].value));svg.appendChild(svgNode(ns,'title',{},label+'; latest '+money(rows[rows.length-1].value)));const ticks=5;for(let i=0;i<ticks;i+=1){const value=hi-(hi-lo)*i/(ticks-1),yy=y(value);svg.appendChild(svgNode(ns,'line',{x1:l,x2:w-r,y1:yy,y2:yy,stroke:'rgba(185,206,195,.16)','stroke-width':1}));svg.appendChild(svgNode(ns,'text',{x:l-10,y:yy+3.5,'text-anchor':'end',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif'},axisMoney(value)))}svg.appendChild(svgNode(ns,'line',{x1:l,x2:l,y1:t,y2:h-b,stroke:'rgba(185,206,195,.36)','stroke-width':1}));if(lo<=0&&hi>=0){const yy=y(0);svg.appendChild(svgNode(ns,'line',{x1:l,x2:w-r,y1:yy,y2:yy,stroke:'#9bb4a8','stroke-width':1.25,'stroke-dasharray':'5 5'}))}svg.appendChild(svgNode(ns,'polyline',{fill:'none',stroke:'#66d99d','stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round',points:rows.map((row,i)=>x(i)+','+y(row.value)).join(' ')}));if(rows.length<=24||chartOptions.showAllPoints)rows.forEach((row,i)=>svg.appendChild(svgNode(ns,'circle',{cx:x(i),cy:y(row.value),r:3.2,fill:'#0f3b2c',stroke:'#66d99d','stroke-width':2,'data-equity-point':'1'})));if(chartOptions.weeklyDates){const dated=rows.map((row,i)=>({i,date:row.date,time:Date.parse(row.date)})).filter(item=>item.date&&Number.isFinite(item.time)),weekly=[];if(dated.length){weekly.push(dated[0]);let last=dated[0].time;for(const item of dated.slice(1,-1)){if(item.time-last>=6*86400000){weekly.push(item);last=item.time}}const end=dated[dated.length-1];if(!weekly.some(item=>item.i===end.i))weekly.push(end);let labels=weekly;if(labels.length>8){const step=(labels.length-1)/7,chosen=[];for(let i=0;i<8;i+=1)chosen.push(labels[Math.round(i*step)]);labels=chosen.filter((item,i,arr)=>i===0||item.i!==arr[i-1].i)}labels.forEach((item,index)=>svg.appendChild(svgNode(ns,'text',{x:x(item.i),y:h-12,'text-anchor':index===0?'start':index===labels.length-1?'end':'middle',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif','data-date-tick':'weekly'},item.date)))}else{if(rows[0].date)svg.appendChild(svgNode(ns,'text',{x:l,y:h-10,'text-anchor':'start',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif'},rows[0].date));if(rows[rows.length-1].date)svg.appendChild(svgNode(ns,'text',{x:w-r,y:h-10,'text-anchor':'end',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif'},rows[rows.length-1].date))}};
+const renderPnlChart=(svgId,emptyId,points,valueKey,label,emptyMessage,chartOptions={})=>{
+  const svg=document.getElementById(svgId);
+  const empty=document.getElementById(emptyId);
+  const rows=(Array.isArray(points)?points:[])
+    .map(x=>({value:Number(x&&x[valueKey]),date:String(x&&(x.date||x.snapshot_date)||'')}))
+    .filter(x=>Number.isFinite(x.value));
+  if(!svg||!rows.length){if(empty)empty.textContent=emptyMessage;return}
+  if(empty)empty.remove();
+  const w=720,h=Number(chartOptions.height)||230,l=76,r=20,t=18,b=chartOptions.weeklyDates?44:32;
+  const values=rows.map(x=>x.value),bounds=values.concat([0]),lo0=Math.min(...bounds),hi0=Math.max(...bounds);
+  const span=Math.max(hi0-lo0,1),pad=span*.12,lo=lo0-pad,hi=hi0+pad;
+  const x=i=>l+(rows.length===1?(w-l-r)/2:i*(w-l-r)/(rows.length-1));
+  const y=v=>t+(hi-v)*(h-t-b)/(hi-lo),ns='http://www.w3.org/2000/svg';
+  svg.replaceChildren();
+  svg.setAttribute('viewBox','0 0 '+w+' '+h);
+  svg.setAttribute('aria-label',label+'; latest '+money(rows[rows.length-1].value));
+  svg.appendChild(svgNode(ns,'title',{},label+'; latest '+money(rows[rows.length-1].value)));
+  const ticks=5;
+  for(let i=0;i<ticks;i+=1){
+    const value=hi-(hi-lo)*i/(ticks-1),yy=y(value);
+    svg.appendChild(svgNode(ns,'line',{x1:l,x2:w-r,y1:yy,y2:yy,stroke:'rgba(185,206,195,.16)','stroke-width':1}));
+    svg.appendChild(svgNode(ns,'text',{x:l-10,y:yy+3.5,'text-anchor':'end',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif'},axisMoney(value)));
+  }
+  svg.appendChild(svgNode(ns,'line',{x1:l,x2:l,y1:t,y2:h-b,stroke:'rgba(185,206,195,.36)','stroke-width':1}));
+  if(lo<=0&&hi>=0){
+    const yy=y(0);
+    svg.appendChild(svgNode(ns,'line',{x1:l,x2:w-r,y1:yy,y2:yy,stroke:'#9bb4a8','stroke-width':1.25,'stroke-dasharray':'5 5'}));
+  }
+  svg.appendChild(svgNode(ns,'polyline',{fill:'none',stroke:'#66d99d','stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round',points:rows.map((row,i)=>x(i)+','+y(row.value)).join(' ')}));
+  if(rows.length<=24||chartOptions.showAllPoints){
+    rows.forEach((row,i)=>svg.appendChild(svgNode(ns,'circle',{cx:x(i),cy:y(row.value),r:3.2,fill:'#0f3b2c',stroke:'#66d99d','stroke-width':2,'data-equity-point':'1'})));
+  }
+  if(chartOptions.weeklyDates){
+    const dated=rows.map((row,i)=>({i,date:row.date,time:Date.parse(row.date)})).filter(item=>item.date&&Number.isFinite(item.time));
+    const weekly=[];
+    if(dated.length){
+      weekly.push(dated[0]);
+      let last=dated[0].time;
+      for(const item of dated.slice(1,-1)){
+        if(item.time-last>=6*86400000){weekly.push(item);last=item.time}
+      }
+      const end=dated[dated.length-1];
+      if(!weekly.some(item=>item.i===end.i))weekly.push(end);
+      let labels=weekly;
+      if(labels.length>8){
+        const step=(labels.length-1)/7,chosen=[];
+        for(let i=0;i<8;i+=1)chosen.push(labels[Math.round(i*step)]);
+        labels=chosen.filter((item,i,arr)=>i===0||item.i!==arr[i-1].i);
+      }
+      labels.forEach((item,index)=>{
+        svg.appendChild(svgNode(ns,'text',{x:x(item.i),y:h-12,'text-anchor':index===0?'start':index===labels.length-1?'end':'middle',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif','data-date-tick':'weekly'},item.date));
+      });
+    }
+  }else{
+    if(rows[0].date)svg.appendChild(svgNode(ns,'text',{x:l,y:h-10,'text-anchor':'start',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif'},rows[0].date));
+    if(rows[rows.length-1].date)svg.appendChild(svgNode(ns,'text',{x:w-r,y:h-10,'text-anchor':'end',fill:'#b9cec3','font-size':10,'font-family':'system-ui, sans-serif'},rows[rows.length-1].date));
+  }
+};
 const optionsCard=document.querySelector('.vx-results-live-card.options[data-href]');if(optionsCard){const open=()=>{window.location.href=optionsCard.dataset.href};optionsCard.addEventListener('click',event=>{if(event.target.closest('a'))return;open()});optionsCard.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open()}})}
 Promise.allSettled([fetch('${DAY_PERFORMANCE_PATH}',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():Promise.reject()),fetch('${DAY_LIVE_OPEN_PNL_PATH}',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():Promise.reject()),fetch('${SWING_API_PATH}',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():Promise.reject()),fetch('${OPTIONS_PERFORMANCE_PATH}',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():Promise.reject())]).then(([day,live,swing,options])=>{if(day.status==='fulfilled'&&day.value&&day.value.ok){const d=day.value,s=d.summary||{},eq=d.equity_curve||{};const e=document.getElementById('vx-results-day-open');if(e)e.textContent=Number.isFinite(Number(s.open_count))?String(Number(s.open_count)):'—';setMoney('vx-results-day-closed',s.closed_pnl_today);setMoney('vx-results-day-total',eq.total_realized_pnl);renderPnlChart('vx-results-day-chart','vx-results-day-empty',eq.points,'cumulative_pnl','Day Trading realized P&L history','No realized history is available.');const st=document.getElementById('vx-results-day-state');if(st)st.textContent=(d.stale?'Last validated Day snapshot':'Closed Trades ledger loaded')+' · Open P&L shown separately'}else renderPnlChart('vx-results-day-chart','vx-results-day-empty',[],'cumulative_pnl','Day Trading realized P&L history','No realized history is available.');if(live.status==='fulfilled'&&live.value&&live.value.ok)setMoney('vx-results-day-open-pnl',live.value.open_pnl);if(swing.status==='fulfilled'&&swing.value){const d=swing.value,h=Array.isArray(d.equity_history)?d.equity_history:[],last=h.length?h[h.length-1]:null;for(const [id,val] of [['vx-results-swing-active',d.active_count],['vx-results-swing-candidates',d.intern_count]]){const e=document.getElementById(id);if(e)e.textContent=Number.isFinite(Number(val))?String(Number(val)):'—'}setMoney('vx-results-swing-total',last&&last.total_model_pnl);renderPnlChart('vx-results-swing-chart','vx-results-swing-chart-empty',h,'total_model_pnl','Swing Trading model P&L equity history','No Swing model equity history is available.');const box=document.getElementById('vx-results-swing-positions'),rows=(Array.isArray(d.active_portfolio)?d.active_portfolio.slice(0,4):[]);if(box)box.innerHTML=rows.length?rows.map(x=>'<div class="vx-results-swing-row"><strong>'+esc(x.ticker)+'</strong><span>Score '+esc(x.score)+'</span><span>'+esc(x.return_pct)+'</span></div>').join(''):'<p>No active model positions in the latest published snapshot.</p>';const st=document.getElementById('vx-results-swing-state');if(st)st.textContent='Research/model portfolio · latest published update '+esc(d.snapshot_date||'unavailable')+(d.stale?' · last validated snapshot':'')}else renderPnlChart('vx-results-swing-chart','vx-results-swing-chart-empty',[],'total_model_pnl','Swing Trading model P&L equity history','No Swing model equity history is available.');if(options.status==='fulfilled'&&options.value&&options.value.ok){const eq=options.value.equity_curve||{};setMoney('vx-results-options-total',eq.total_realized_pnl);renderPnlChart('vx-results-options-chart','vx-results-options-empty',eq.points,'cumulative_pnl','Options realized P&L history','No Options realized history is available.',{showAllPoints:true,weeklyDates:true,height:260});const st=document.getElementById('vx-results-options-state');if(st)st.textContent='Owner-entered Option Journal · closed trades only'}else{renderPnlChart('vx-results-options-chart','vx-results-options-empty',[],'cumulative_pnl','Options realized P&L history','Options performance history is temporarily unavailable.',{showAllPoints:true,weeklyDates:true,height:260});const st=document.getElementById('vx-results-options-state');if(st)st.textContent='Options performance history temporarily unavailable'}});
 })();</script>`;
