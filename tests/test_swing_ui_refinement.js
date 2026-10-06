@@ -74,8 +74,8 @@ assert(out.includes("Stocks that are currently in the Active portfolio. Position
 assert(out.includes("They are not open positions and may never be added."));
 assert(out.includes("<strong>Profit Target:</strong> A +10% target may fill during the day."));
 assert(out.includes("<strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review."));
-assert(out.includes("Position can also be removed from Active Portfolio if ranking goes below 70."));
-assert(out.includes("Closed positions due to Profit Target/Stop/Removal from the Active Portfolio."));
+assert(out.includes("<strong>Closed Trades</strong>Closed positions due to Profit Target/Stop/Removal from the Active Portfolio. Position can also be removed from Active Portfolio if ranking goes below 70.</p>"));
+assert(out.includes("<strong>Position size and exits</strong><span class=\"vx-swing-copy-row\">Each position uses a fixed $10,000 allocation.</span><span class=\"vx-swing-copy-row\"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class=\"vx-swing-copy-row\"><strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review.</span></p>"));
 assert(out.includes("$10K / position"));
 assert(!out.includes("$10K</strong><span>per position"));
 assert(out.includes("<small>Candidates</small>"));

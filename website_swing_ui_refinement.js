@@ -45,8 +45,8 @@ function renderHowSummaryCard() {
           <div class="vx-swing-how-list">
             <p><strong>Active Portfolio</strong>Stocks that are currently in the Active portfolio. Positions are monitored for Profit target/Stop Loss/or Removal due to ratings change. Check every morning around 10:06 for updates.</p>
             <p><strong>Candidates</strong>Stocks being watched for a possible future addition. They are not open positions and may never be added.</p>
-            <p><strong>Closed Trades</strong>Closed positions due to Profit Target/Stop/Removal from the Active Portfolio.</p>
-            <p><strong>Position size and exits</strong><span class="vx-swing-copy-row">Each position uses a fixed $10,000 allocation.</span><span class="vx-swing-copy-row"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class="vx-swing-copy-row"><strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review.</span><span class="vx-swing-copy-row">Position can also be removed from Active Portfolio if ranking goes below 70.</span></p>
+            <p><strong>Closed Trades</strong>Closed positions due to Profit Target/Stop/Removal from the Active Portfolio. Position can also be removed from Active Portfolio if ranking goes below 70.</p>
+            <p><strong>Position size and exits</strong><span class="vx-swing-copy-row">Each position uses a fixed $10,000 allocation.</span><span class="vx-swing-copy-row"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class="vx-swing-copy-row"><strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review.</span></p>
           </div>
         </section>`;
 }
