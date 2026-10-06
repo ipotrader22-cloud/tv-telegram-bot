@@ -3197,3 +3197,8 @@ The routes use the existing `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` 
 ### Primary navigation Daily Recaps (2026-10-06)
 
 The public primary navigation includes `Daily Recaps` between `Results` and `Pricing`, linking to `/daily-trading-summary`. The Russian label is `Ежедневные итоги`. The existing Daily Recaps link may also remain in secondary/footer navigation for discovery. This is a website navigation-only change and does not modify trading logic, data generation, execution, authentication, or the Daily Trading Summary data source.
+
+
+### Swing Total P&L QA label contract (2026-10-06)
+
+The Swing page's current summary calculation remains `active_unrealized_model_pnl + closed_realized_model_pnl`. The final public presentation label is `Total P&L` (with `Portfolio P&L` used for the chart heading), not the older `Total Model P&L` label. Regression tests must validate the unchanged arithmetic separately from the current presentation copy. Russian public-page localization maps these labels to `Общий P&L` and `P&L портфеля` respectively. This is presentation/test localization only and does not change Swing Trading Lab calculations, feed fields, portfolio logic, or execution behavior.
