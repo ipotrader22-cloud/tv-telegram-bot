@@ -9,7 +9,7 @@ Before stating that any website state is **CURRENT, LATEST, PRODUCTION, DEPLOYED
 ## Mandatory read order
 
 1. `PROJECT-SOURCE-OF-TRUTH/MASTER-INDEX.md`
-2. `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-06-PR253.md`
+2. `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-06-PR256.md`
 3. The live authoritative source relevant to the claim:
    - GitHub repository/branch/commit for code state
    - deployment provider/runtime for deployed state
@@ -18,7 +18,8 @@ Before stating that any website state is **CURRENT, LATEST, PRODUCTION, DEPLOYED
 
 ## Current-State manifest
 
-- **Website / Design / Copy:** `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-06-PR253.md`
+- **Website / Design / Copy:** `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-06-PR256.md`
+- Historical PR253 manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-06-PR253.md`
 - Historical PR251 manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-06-PR251.md`
 - Historical PR247 manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-01-PR247.md`
 - Historical PR245 manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-10-01-PR245.md`
