@@ -1850,20 +1850,20 @@ node --check app.js
 ```
 
 8. Review the complete diff.
-9. Present the files changed, test results, rollback plan, and `Handbook update required: YES / NO`.
-10. Obtain explicit approval before commit/push when the change affects production behavior.
-11. Commit code and handbook together.
-12. Push the feature branch.
-13. Merge to `main` only after approval.
+9. Record the files changed, test results, rollback plan, and `Handbook update required: YES / NO`.
+10. Commit code and handbook together when the requested scope is understood and safe.
+11. Push the feature branch.
+12. Create a Pull Request.
+13. For an eligible normal Engineering task, apply the standing owner merge/deploy authorization in §14.2 and merge after clean checks without requesting a second confirmation. If an exception applies, stop before merge.
 14. Confirm whether Render Auto-Deploy is enabled for `main`; do not assume it.
-15. Confirm the Render service reaches `Live` and inspect startup logs.
-16. Verify the complete VECO path with a controlled or natural signal.
+15. Confirm the exact merged commit reaches `Live` and inspect startup logs.
+16. Verify the complete affected VECO path with the safest appropriate test or evidence.
 
-Emergency direct-to-`main` changes are allowed only with explicit owner approval and a documented rollback commit.
+Emergency direct-to-`main` changes are allowed only with task-specific explicit owner approval and a documented rollback commit.
 
 When a manual artifact is required, deliver the complete `app.js` as `app.js.txt`, but the committed Git version becomes canonical after merge.
 
-### 14.2 Codex default operating workflow
+### 14.2 Codex default operating workflow and standing merge/deploy authorization
 
 Repository-root instructions live in:
 
@@ -1873,7 +1873,9 @@ Repository-root instructions live in:
 
 Codex must read both `AGENTS.md` and `/docs/VECO_DEVELOPER_HANDBOOK.md` before production work.
 
-Default normal-task behavior:
+**Standing owner instruction — 2026-10-06:** when the owner explicitly asks Codex to implement a normal Engineering change, that implementation request carries standing authorization to merge the resulting clean PR to `main` and allow the normal production deployment without asking the owner for a second “merge and deploy” message.
+
+Default eligible-task behavior:
 
 ```text
 sync clean main
@@ -1885,21 +1887,23 @@ sync clean main
 → commit
 → push feature branch
 → create Pull Request
-→ stop before merge
+→ merge when clean and eligible
+→ verify exact production deployment
 ```
 
-To reduce unnecessary user steps, Codex may commit, push the feature branch, and create the Pull Request in the same task after successful checks. GitHub/OS permission dialogs may still require **Allow once**.
+The standing authorization is valid only when the complete diff is scoped to the requested task, relevant checks pass (or no required CI exists and the available scoped checks pass), no Source-of-Truth conflict remains, rollback is clear, and deployment follows the normal approved path such as Render Auto-Deploy from `main`.
 
-Codex must not:
+It does **not** authorize:
 
-- push directly to `main`;
-- merge into `main`;
-- trigger production deployment;
-- use a Render Deploy Hook;
+- work the owner marks read-only, PR-only, “stop before merge,” or “do not deploy”;
+- merging with failed required checks, unresolved conflicts, or unexpected scope;
+- unvalidated Trading Lab strategy changes or silent changes to Pine entries/exits/filters/stops/targets/timeframes/session rules/validated parameters/signal timing;
+- destructive Git/history operations;
+- production secret or environment-value changes;
+- destructive database/data migrations or deletions;
+- bypassing a strategy-specific promotion, paper/shadow, activation, or other production gate explicitly documented elsewhere in this handbook.
 
-unless the user explicitly approves that exact action.
-
-A merge into `main` remains the production approval gate because it may trigger Render Auto-Deploy.
+A task-specific owner instruction overrides the standing default. Direct pushes to `main` remain prohibited for normal work; production changes continue to use the PR path. Render Deploy Hooks remain off-limits unless explicitly authorized for a specific task. GitHub/OS permission dialogs may still require **Allow once**.
 
 ### 14.3 Local bridge deployment
 
@@ -2162,15 +2166,15 @@ remains the execution source of truth.
 **Decision:** `/docs/VECO_DEVELOPER_HANDBOOK.md` in `ipotrader22-cloud/tv-telegram-bot` is the canonical project memory. Architectural changes update the handbook in the same branch and commit as the related code.  
 **Reason:** Chat history and temporary downloaded artifacts are not reliable long-term sources of truth.
 
-### ADR-009 — Approval-gated production deployment
+### ADR-009 — Standing owner authorization for normal merge/deploy
 
-**Decision:** Normal production changes use a feature branch, diff review, explicit approval, then merge to `main`.  
-**Reason:** A push to the production branch may trigger Render deployment and therefore must not happen implicitly.
+**Decision:** Normal owner-requested Engineering changes use a feature branch, checks, complete diff review, and Pull Request. When the task satisfies the eligibility rules in §14.2, the owner's standing 2026-10-06 instruction pre-authorizes Codex to merge the clean PR to `main` and allow the normal production deployment without a second confirmation message. Sensitive/excluded operations retain their task-specific approval or promotion gates.  
+**Reason:** This removes a repetitive confirmation click while preserving clean-PR, test, Source-of-Truth, rollback, trading-freeze, secrets/config, destructive-operation, and deployment-verification safeguards.
 
 ### ADR-010 — Repository-root Codex instructions
 
-**Decision:** `/AGENTS.md` is the persistent operating policy for Codex in this repository. Codex may create a feature branch, edit, test, commit, push the feature branch, and create a Pull Request in one task, but it must stop before merge.  
-**Reason:** This preserves a safe production gate while removing repetitive manual file downloads and Git steps.
+**Decision:** `/AGENTS.md` is the persistent operating policy for Codex in this repository. It records the standing owner merge/deploy authorization and its exceptions so future Engineering sessions do not rely on chat memory for that workflow preference.  
+**Reason:** Project chat memory may be unavailable or non-persistent; repository-root instructions provide a durable, reviewable workflow contract.
 
 ### ADR-011 — Public Vixale system names and Stop Loss terminology
 
