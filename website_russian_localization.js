@@ -52,6 +52,10 @@ const RUNTIME_TRANSLATION_PATTERNS = Object.freeze([
     source: "^Swing Trading model P&L equity history; latest (.+)$",
     replacement: "История капитала модельного P&L свинг-трейдинга; последнее значение: $1",
   }),
+  Object.freeze({
+    source: "^Options realized P&L history; latest (.+)$",
+    replacement: "История реализованного P&L по опционам; последнее значение: $1",
+  }),
   Object.freeze({ source: "^Last updated: (.+)$", replacement: "Последнее обновление: $1" }),
   Object.freeze({ source: "^Score (.+)$", replacement: "Рейтинг $1" }),
 ]);
