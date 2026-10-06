@@ -15,8 +15,8 @@ for (const [href, label] of [
   [nav.SWING_PATH, "Swing Trading"],
   [nav.OPTIONS_PATH, "Options"],
   [nav.RESULTS_PATH, "Results"],
+  [nav.DAILY_SUMMARY_PATH, "Daily Recaps"],
   [nav.PRICING_PATH, "Pricing"],
-  [nav.ABOUT_PATH, "About"],
   [nav.SERVICES_PATH, "Services"],
   [nav.HELP_PATH, "Help"],
 ]) {
@@ -52,8 +52,14 @@ const results = nav.refineConversionNavigation(base, nav.RESULTS_PATH);
 assert(results.includes(`href="${nav.RESULTS_PATH}" aria-current="page">Results</a>`));
 const pricing = nav.refineConversionNavigation(base, nav.PRICING_PATH);
 assert(pricing.includes(`href="${nav.PRICING_PATH}" aria-current="page">Pricing</a>`));
-const about = nav.refineConversionNavigation(base, nav.ABUT_PATH || nav.ABOUT_PATH);
-assert(about.includes(`href="${nav.ABOUT_PATH}" aria-current="page">About</a>`));
+const about = nav.refineConversionNavigation(base, nav.ABOUT_PATH);
+assert(!about.includes(`href="${nav.ABOUT_PATH}" aria-current="page">About</a>`), "About must no longer occupy the primary navigation");
+assert(about.includes('<nav class="vx-public-secondary-nav"') && about.includes('href="/about">About</a>'), "About must remain available in secondary navigation");
+const recaps = nav.refineConversionNavigation(base, nav.DAILY_SUMMARY_PATH);
+assert(recaps.includes(`href="${nav.DAILY_SUMMARY_PATH}" aria-current="page">Daily Recaps</a>`));
+const datedRecap = nav.refineConversionNavigation(base, `${nav.DAILY_SUMMARY_PATH}/2026-10-05`);
+assert(datedRecap.includes(`href="${nav.DAILY_SUMMARY_PATH}" aria-current="page">Daily Recaps</a>`), "dated recap pages must keep Daily Recaps active");
+assert(nav.isPublicPath(`${nav.DAILY_SUMMARY_PATH}/2026-10-05`), "dated recap pages must receive the unified public navigation");
 const services = nav.refineConversionNavigation(base, nav.SERVICES_PATH);
 assert(services.includes(`href="${nav.SERVICES_PATH}" aria-current="page">Services</a>`));
 const help = nav.refineConversionNavigation(base, nav.HELP_PATH);
@@ -71,7 +77,7 @@ const standaloneAligned = alignment.injectAlignmentStyles(standaloneRefined);
 assert(standaloneAligned.includes(`id="${alignment.STYLE_ID}"`), "standalone strategy pages must receive the same desktop alignment stylesheet");
 
 const ru = localizeRussianHtml(day, nav.DAY_PATH);
-for (const label of ["Как это работает", "Торговые системы", "Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Тарифы", "О нас", "Услуги", "Помощь", "Войти", "Live-доступ"]) {
+for (const label of ["Как это работает", "Торговые системы", "Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги", "Тарифы", "Услуги", "Помощь", "Войти", "Live-доступ"]) {
   assert(ru.includes(`>${label}</a>`), `missing RU navigation label ${label}`);
 }
 assert(ru.includes(`href="${nav.LIVE_ACCESS_HREF}">Live-доступ</a>`));

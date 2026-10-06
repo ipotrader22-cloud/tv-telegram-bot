@@ -11,6 +11,7 @@ const DAY_PATH = SYSTEMS[0].path;
 const SWING_PATH = SYSTEMS[1].path;
 const OPTIONS_PATH = SYSTEMS[2].path;
 const RESULTS_PATH = "/results";
+const DAILY_SUMMARY_PATH = "/daily-trading-summary";
 const PRICING_PATH = "/pricing";
 const ABOUT_PATH = "/about";
 const SERVICES_PATH = "/services";
@@ -26,6 +27,8 @@ for (const [source, translated] of [
   ["Swing Trading", "Свинг-трейдинг"],
   ["Options", "Опционы"],
   ["Results", "Результаты"],
+  ["Daily Recaps", "Ежедневные итоги"],
+  ["Daily Trading Recaps", "Ежедневные торговые итоги"],
   ["Pricing", "Тарифы"],
   ["About", "О нас"],
   ["Services", "Услуги"],
@@ -42,6 +45,7 @@ const PUBLIC_PATHS = new Set([
   SWING_PATH,
   OPTIONS_PATH,
   RESULTS_PATH,
+  DAILY_SUMMARY_PATH,
   PRICING_PATH,
   SERVICES_PATH,
   "/access",
@@ -94,7 +98,7 @@ function replaceInnerHtml(html, range, inner) {
 }
 
 function navAnchor(path, href, label, className = "") {
-  const active = path === href;
+  const active = path === href || (href === DAILY_SUMMARY_PATH && path.startsWith(DAILY_SUMMARY_PATH + "/"));
   const classAttr = [className, active ? "is-active" : ""].filter(Boolean).join(" ");
   return `<a${classAttr ? ` class="${classAttr}"` : ""} href="${href}"${active ? ' aria-current="page"' : ""}>${label}</a>`;
 }
@@ -107,16 +111,20 @@ function renderPublicNavLinks(path = "/") {
     navAnchor(path, SWING_PATH, "Swing Trading"),
     navAnchor(path, OPTIONS_PATH, "Options"),
     navAnchor(path, RESULTS_PATH, "Results"),
+    navAnchor(path, DAILY_SUMMARY_PATH, "Daily Recaps"),
     navAnchor(path, PRICING_PATH, "Pricing"),
-    navAnchor(path, ABOUT_PATH, "About"),
     navAnchor(path, SERVICES_PATH, "Services"),
     navAnchor(path, HELP_PATH, "Help"),
   ].join("");
   return `<div class="vx-unified-public-nav" aria-label="Primary navigation">${links}</div><div class="vx-direct-nav-actions"><a class="vx-public-nav-login" href="${LOGIN_PATH}">Log In</a><a class="vx-public-nav-cta" href="${LIVE_ACCESS_HREF}">Live Access</a></div>`;
 }
 
+function isPublicPath(path) {
+  return PUBLIC_PATHS.has(path) || path === DAILY_SUMMARY_PATH || path.startsWith(DAILY_SUMMARY_PATH + "/");
+}
+
 function normalizePublicNavigation(html, path = "/") {
-  if (typeof html !== "string" || !PUBLIC_PATHS.has(path)) return html;
+  if (typeof html !== "string" || !isPublicPath(path)) return html;
   const standard = findTagByClass(html, "div", "nav-links");
   if (standard) return replaceInnerHtml(html, standard, renderPublicNavLinks(path));
   const guide = findTagByClass(html, "div", "navlinks");
@@ -182,7 +190,7 @@ function injectStyles(html) {
 }
 
 function refineConversionNavigation(html, path) {
-  if (typeof html !== "string" || !PUBLIC_PATHS.has(path)) return html;
+  if (typeof html !== "string" || !isPublicPath(path)) return html;
   let out = normalizePublicNavigation(html, path);
   out = normalizeSecondaryNavigation(out);
   out = injectStyles(out);
@@ -194,7 +202,7 @@ function installConversionNavigationRefinement(app) {
     const method = String(req.method || "GET").toUpperCase();
     if (method !== "GET" && method !== "HEAD") return next();
     const path = String(req.path || req.url || "/").split("?")[0];
-    if (!PUBLIC_PATHS.has(path)) return next();
+    if (!isPublicPath(path)) return next();
     const send = res.send.bind(res);
     res.send = function sendWithConversionNavigation(body) {
       const type = String(res.getHeader?.("Content-Type") || "");
@@ -240,6 +248,7 @@ module.exports = {
   SWING_PATH,
   OPTIONS_PATH,
   RESULTS_PATH,
+  DAILY_SUMMARY_PATH,
   PRICING_PATH,
   ABOUT_PATH,
   SERVICES_PATH,
@@ -249,6 +258,7 @@ module.exports = {
   DAY_TRIAL_TEXT,
   DAY_TRIAL_URL,
   PUBLIC_PATHS,
+  isPublicPath,
   findTagRangeFromOpen,
   findTagByClass,
   findFirstTag,

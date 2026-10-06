@@ -16,6 +16,8 @@ assert(!/swing|options/i.test(offer.DAY_TRIAL_REQUEST_TEXT), "trial request must
 const hero = home.renderHeroAndPreview();
 assert(hero.includes("Trading signals. Three systems. Your choice."));
 assert(hero.includes("Follow Day Trading live, explore a daily Swing portfolio, or track Options positions. See the trades and results, then choose your system."));
+assert(hero.includes('class="vx-conversion-btn recaps" href="/daily-trading-summary">Daily Trading Recaps</a>'));
+assert(hero.indexOf("Daily Trading Recaps") < hero.indexOf("Telegram Signals"), "Daily Trading Recaps must appear first in the hero action row");
 assert(hero.includes(`href="${offer.DAY_TRIAL_URL}"`));
 assert(hero.includes(">Telegram Signals</a>"));
 assert(hero.includes('class="vx-conversion-btn" href="/#password-access">Live Access</a>'));
@@ -74,6 +76,7 @@ assert(refined.includes('class="vx-conversion-home"'));
 assert(!refined.includes("Old How It Works wall"), "old pre-data explanatory wall must be replaced");
 assert(refined.includes('class="vx-home-day-trading"'), "existing lower Day data source must remain for safe mirroring");
 assert(refined.includes(`id="${home.STYLE_ID}"`));
+assert(refined.includes(".vx-conversion-btn.recaps{"), "Daily Trading Recaps CTA must have a distinct visible treatment");
 assert(refined.includes(`id="${home.SCRIPT_ID}"`));
 assert(refined.includes("fetch('/api/swing-leaders'"), "Swing tab must reuse the existing public Swing API");
 assert(refined.includes("d.active_unrealized_model_pnl"), "Swing homepage total must use current unrealized Model P&L");
