@@ -3,33 +3,30 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
+const offer = require("../lib/website-commercial-offer");
 
 const EN_ORIGIN = process.env.QA_EN_ORIGIN || "https://www.vixale.com";
 const RU_ORIGIN = process.env.QA_RU_ORIGIN || "https://ru.vixale.com";
 const OUTPUT_DIR = process.env.QA_OUTPUT_DIR || "artifacts/production-locale-qa";
 
 const EXPECTED_NAV_HREFS = [
-  "/trading-systems#vx-how-to-trade-title",
-  "/trading-systems",
   "/trading-systems/day-trading",
   "/trading-systems/swing-trading",
   "/trading-systems/options",
   "/results",
+  "/daily-trading-summary",
   "/pricing",
-  "/about",
-  "/services",
-  "/trading-guide",
 ];
-const EXPECTED_EN_NAV = ["How It Works", "Trading Systems", "Day Trading", "Swing Trading", "Options", "Results", "Pricing", "About", "Services", "Help"];
-const EXPECTED_RU_NAV = ["Как это работает", "Торговые системы", "Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Тарифы", "О нас", "Услуги", "Помощь"];
-const EXPECTED_EN_ACTIONS = ["Log In", "Live Access"];
-const EXPECTED_RU_ACTIONS = ["Войти", "Live-доступ"];
-const EXPECTED_ACTION_HREFS = ["/dashboard", "/#password-access"];
+const EXPECTED_EN_NAV = ["Day Trading", "Swing Trading", "Options", "Results", "Daily Recaps", "Pricing"];
+const EXPECTED_RU_NAV = ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги", "Тарифы"];
+const EXPECTED_EN_ACTIONS = ["Log In", "Get 30 Days Free"];
+const EXPECTED_RU_ACTIONS = ["Войти", "30 дней бесплатно"];
+const EXPECTED_ACTION_HREFS = [offer.LOGIN_URL, offer.DAY_TRIAL_URL];
 
 const ROUTES = [
   {
     path: "/",
-    requiredRu: ["Торговые сигналы. Три системы. Выбор за вами.", "Сигналы в Telegram", "Live-доступ"],
+    requiredRu: ["Торговые сигналы. Три системы. Выбор за вами.", "30 дней бесплатно", "Посмотреть результаты", "Запросить бесплатный viewer-доступ"],
     forbiddenRu: ["Trading signals. Three systems. Your choice.", "Live Trade Dashboard"],
   },
   { path: "/trading-systems" },
@@ -51,7 +48,7 @@ const ROUTES = [
   },
   {
     path: "/pricing",
-    requiredRu: ["Выберите одну систему или следите за всеми тремя."],
+    requiredRu: ["Выберите одну систему или все три."],
     forbiddenRu: ["Choose one system or follow all three."],
   },
   { path: "/access" },
@@ -274,10 +271,10 @@ async function run() {
           if (route.path === "/") {
             const enText = normalizeText(en.text);
             const ruText = normalizeText(ru.text);
-            for (const phrase of ["Telegram Signals", "Live Access", "View Trading Results"]) {
+            for (const phrase of ["Get 30 Days Free", "View Trading Results", "Request Free Viewer Access"]) {
               if (!enText.includes(phrase)) addFailure(report, `${viewportName} /: EN hero action missing: ${phrase}`);
             }
-            for (const phrase of ["Сигналы в Telegram", "Live-доступ"]) {
+            for (const phrase of ["30 дней бесплатно", "Посмотреть результаты", "Запросить бесплатный viewer-доступ"]) {
               if (!ruText.includes(phrase)) addFailure(report, `${viewportName} /: RU hero action missing: ${phrase}`);
             }
           }
@@ -329,8 +326,9 @@ async function run() {
                   journal: Boolean(journal),
                   chartBeforePreview: Boolean(chart && preview && (chart.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING)),
                   journalAfterPreview: Boolean(previewSection && journal && (previewSection.compareDocumentPosition(journal) & Node.DOCUMENT_POSITION_FOLLOWING)),
-                  paid: links.filter((item) => item.text === "Request Options Access"),
-                  benefits: Array.from(document.querySelectorAll(".vx-options-benefit-grid a.vx-options-benefit-card")).map((node) => node.getAttribute("href") || ""),
+                  paid: links.filter((item) => item.text === "Request Options Subscription — $49/month"),
+                  benefitCards: document.querySelectorAll(".vx-options-benefit-grid article.vx-options-benefit-card").length,
+                  benefitLinks: document.querySelectorAll(".vx-options-benefit-grid a.vx-options-benefit-card").length,
                   proofs: links.find((item) => item.text.toLowerCase() === "proofs") || null,
                   protectedProofLinks: links.filter((item) => item.href.startsWith("/dashboard/options/") && item.href.includes("/proofs/")),
                   how: links.find((item) => item.text === "See How It Works ↓") || null,
@@ -345,7 +343,8 @@ async function run() {
                 preview: Boolean(document.querySelector('#options-preview-card.vx-options-dashboard-shot')),
                 chart: Boolean(document.querySelector("#options-public-chart")),
                 journal: Boolean(document.querySelector("#option-journal-public")),
-                benefits: Array.from(document.querySelectorAll(".vx-options-benefit-grid a.vx-options-benefit-card")).map((node) => node.getAttribute("href") || ""),
+                benefitCards: document.querySelectorAll(".vx-options-benefit-grid article.vx-options-benefit-card").length,
+                benefitLinks: document.querySelectorAll(".vx-options-benefit-grid a.vx-options-benefit-card").length,
                 overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
               })),
             ]);
@@ -355,14 +354,15 @@ async function run() {
             if (!enOptions.journal || !ruOptions.journal) addFailure(report, `${viewportName} ${route.path}: public Option Journal is missing`);
             if (!enOptions.chartBeforePreview) addFailure(report, `${viewportName} ${route.path}: public Options chart is not above the dashboard example`);
             if (!enOptions.journalAfterPreview) addFailure(report, `${viewportName} ${route.path}: public Option Journal is not below the Product Preview block`);
-            if (enOptions.paid.length < 2 || enOptions.paid.some((item) => item.href !== "/#password-access")) {
-              addFailure(report, `${viewportName} ${route.path}: Request Options Access destination is incorrect: ${JSON.stringify(enOptions.paid)}`);
+            const optionsSubscriptionUrl = offer.systemOffer("options").subscription_request_url;
+            if (enOptions.paid.length < 2 || enOptions.paid.some((item) => item.href !== optionsSubscriptionUrl)) {
+              addFailure(report, `${viewportName} ${route.path}: Options subscription destination is incorrect: ${JSON.stringify(enOptions.paid)}`);
             }
-            if (!sameArray(enOptions.benefits, ["/#password-access", "/#password-access", "/#password-access"])) {
-              addFailure(report, `${viewportName} ${route.path}: EN benefit-card destinations differ: ${JSON.stringify(enOptions.benefits)}`);
+            if (enOptions.benefitCards !== 3 || enOptions.benefitLinks !== 0) {
+              addFailure(report, `${viewportName} ${route.path}: EN benefit-card structure differs: cards=${enOptions.benefitCards} links=${enOptions.benefitLinks}`);
             }
-            if (!sameArray(ruOptions.benefits, ["/#password-access", "/#password-access", "/#password-access"])) {
-              addFailure(report, `${viewportName} ${route.path}: RU benefit-card destinations differ: ${JSON.stringify(ruOptions.benefits)}`);
+            if (ruOptions.benefitCards !== 3 || ruOptions.benefitLinks !== 0) {
+              addFailure(report, `${viewportName} ${route.path}: RU benefit-card structure differs: cards=${ruOptions.benefitCards} links=${ruOptions.benefitLinks}`);
             }
             if (!enOptions.proofs || enOptions.proofs.href !== "#option-journal-public") {
               addFailure(report, `${viewportName} ${route.path}: Results proofs link does not target the public Option Journal`);
@@ -449,7 +449,7 @@ async function run() {
     "",
     "- Screenshots are paired EN/RU artifacts for manual visual review; text length may legitimately change layout details such as wrapping.",
     "- Automated parity compares top-level `<main>` structure and stylesheet URLs, not pixel identity.",
-    "- Unified public navigation labels, destinations, Log In, and Live Access are verified on every configured public route at desktop and mobile widths.",
+    "- Unified public navigation labels, destinations, Log In, and the Day Trading trial CTA are verified on every configured public route at desktop and mobile widths.",
     "- Strict translation assertions target known production regressions on Home, Day Trading, Options, Results, Pricing, and Services.",
     ""
   );
