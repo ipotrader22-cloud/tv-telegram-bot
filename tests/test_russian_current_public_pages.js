@@ -15,6 +15,8 @@ const representative = [
   ["Options — Daily Position Updates", "Опционы — ежедневные обновления позиций"],
   ["Trading results, by system.", "Результаты торговли по каждой системе."],
   ["Latest published Swing portfolio", "Последний опубликованный свинг-портфель"],
+  ["Total P&L", "Общий P&L"],
+  ["Portfolio P&L", "P&L портфеля"],
   ["Options Trading results", "Результаты торговли опционами"],
   ["Owner-entered Option Journal · closed trades only", "Журнал опционов, заполняемый владельцем · только закрытые сделки"],
   ["Choose one system or follow all three.", "Выберите одну систему или следите за всеми тремя."],
