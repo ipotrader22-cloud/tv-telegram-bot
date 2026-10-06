@@ -68,7 +68,7 @@ assert(out.includes('data-label="P&L, $" class="vx-model-open-pnl gain">+$536.67
 assert(out.includes('data-label="Quantity" class="vx-model-shares">30</td>'));
 assert(out.includes('data-label="P&L, $" class="vx-model-open-pnl loss">-$381.83</td>'));
 assert(out.includes('<strong class="gain">+$1,339.00</strong>'), "server-rendered Active aggregate remains visible before the first client refresh");
-assert(out.includes('<small>Total Model P&L</small><span class="vx-current-model-pnl gain">+$2,148.00</span>'), "current total must equal visible Unrealized plus Realized Model P&L");
+assert(out.includes('<small>Total P&amp;L</small><span class="vx-current-model-pnl gain">+$2,148.00</span>'), "current total must equal visible Unrealized plus Realized Model P&L while preserving the current Total P&L presentation label");
 assert(out.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "client must reuse the sanitized Swing API rather than another quote source");
 assert(out.includes(`const REFRESH_MS=${QUOTE_REFRESH_MS}`), "client refresh cadence must be explicit");
 assert(out.includes('fetch(API_PATH,{credentials:"same-origin",headers:{Accept:"application/json"}})'), "client must poll the existing same-origin Swing endpoint");
@@ -89,7 +89,7 @@ const ru = localizeRussianHtml(out, "/trading-systems/swing-trading");
 assert(ru.includes(`id="${SCRIPT_ID}"`), "RU page must retain the quote-refresh client");
 assert(ru.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "RU page must keep the same sanitized quote endpoint");
 assert(ru.includes('data-vx-model-entry-price="193.23"'), "RU localization must preserve quote-refresh row metadata");
-assert(ru.includes("Общий модельный P&L"), "RU page must localize the current Total Model P&L label");
+assert(ru.includes("Общий P&L"), "RU page must localize the current Total P&L label");
 assert(ru.includes('class="vx-current-model-pnl gain">+$2,148.00</span>'), "RU page must preserve the current total value and wiring");
 assert(ru.includes('data-label="TP" class="vx-model-reference-price">$212.55</td>'));
 assert(ru.includes('data-label="SL" class="vx-model-reference-price">$183.57</td>'));
