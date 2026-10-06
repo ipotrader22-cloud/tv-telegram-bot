@@ -114,7 +114,8 @@ for (const amounts of [[0], [-2000, -4000], [2000, 6000], [-2000, 4000], [0.1, 0
 }
 const densePoints = Array.from({ length: 30 }, (_, i) => ({ date: `2026-09-${String(i + 1).padStart(2, "0")}`, cumulative_pnl: (i + 1) * 100 }));
 const denseChart = mod.renderCompactChart({ curve: { points: densePoints, total_realized_pnl: 3000 } });
-assert.equal((denseChart.match(/<circle /g) || []).length, densePoints.length, "point markers must remain visible when the curve has more than 24 daily points");
+assert.equal((denseChart.match(/<circle /g) || []).length, 15, "dense curves should render approximately half as many point markers");
+assert(denseChart.includes("2026-09-30 · +$3,000.00"), "the latest equity point should keep a circular marker");
 assert.equal(mod.optionPnl({ ...evidence.trades[0], trade_type: "Credit", entry_price: 24, exit_price: 20.70 }), 3197.58);
 assert.equal(mod.optionPnl(evidence.trades[1]), null);
 const sameDay = mod.buildOptionsEquityCurve([evidence.trades[0], evidence.trades[0], evidence.trades[1]]);

@@ -196,7 +196,12 @@ function compactChartSvg(points) {
   const tickIndices = [...new Set(Array.from({ length: Math.min(4, safe.length) }, (_, index) => Math.round(index * (safe.length - 1) / (Math.min(4, safe.length) - 1 || 1))))];
   const dates = tickIndices.map(index => `<text class="vx-options-x-tick" x="${x(index).toFixed(2)}" y="${height - 8}" text-anchor="middle">${escapeHtml(String(safe[index].date).slice(5).replace("-", "/"))}</text>`).join("");
   const polyline = safe.map((point, index) => `${x(index).toFixed(2)},${y(Number(point.cumulative_pnl)).toFixed(2)}`).join(" ");
-  const circles = safe.map((point, index) => `<circle cx="${x(index).toFixed(2)}" cy="${y(Number(point.cumulative_pnl)).toFixed(2)}" r="3.2"><title>${escapeHtml(point.date)} · ${escapeHtml(formatMoney(point.cumulative_pnl))}</title></circle>`).join("");
+  const markerParity = (safe.length - 1) % 2;
+  const circles = safe
+    .map((point, index) => ({ point, index }))
+    .filter(({ index }) => safe.length <= 4 || index % 2 === markerParity)
+    .map(({ point, index }) => `<circle cx="${x(index).toFixed(2)}" cy="${y(Number(point.cumulative_pnl)).toFixed(2)}" r="3.2"><title>${escapeHtml(point.date)} · ${escapeHtml(formatMoney(point.cumulative_pnl))}</title></circle>`)
+    .join("");
   return `<svg class="vx-options-public-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Options cumulative realized profit and loss"><title>Options realized P&amp;L in dollars by exit date</title>${grid.join("")}${dates}<polyline points="${polyline}"></polyline>${circles}</svg>`;
 }
 
