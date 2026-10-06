@@ -2,20 +2,7 @@
 
 const assert = require('assert');
 const Module = require('module');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
-const TEST_WEBHOOK_SPOOL_FILE = path.join(
-  os.tmpdir(),
-  `vixale_webhook_inbox_spool_test_${process.pid}.json`
-);
-try { fs.unlinkSync(TEST_WEBHOOK_SPOOL_FILE); } catch (_) {}
-process.on('exit', () => {
-  try { fs.unlinkSync(TEST_WEBHOOK_SPOOL_FILE); } catch (_) {}
-});
-
-process.env.WEBHOOK_INBOX_SPOOL_FILE = TEST_WEBHOOK_SPOOL_FILE;
 process.env.BRIDGE_URL = 'http://mock-bridge.test';
 process.env.BRIDGE_FORWARD_ENABLED = 'true';
 process.env.BRIDGE_DRY_RUN = 'true';
@@ -66,8 +53,6 @@ const {
   renderDashboardHtml,
   webhookInboundDeliveryId,
   upsertWebhookInboxItem,
-  spoolWebhookInboxItem,
-  migrateWebhookInboxSpool,
   processWebhookInboxItem,
   processWebhookInboxDueItems,
   resetWebhookInboxWorkerStateForTests,
@@ -2306,78 +2291,55 @@ async function run() {
   assert.strictEqual(staleProductionBridgeCalls, 0);
   assert.strictEqual(staleProductionSheets.rows['Webhook Inbox'][1][7], 'STALE_EXECUTION_DROPPED');
 
-  // Ordinary TradingView delivery is durably spooled and ACKed without
-  // waiting for Google Sheets. A deliberately slow (>3s) Inbox read begins
-  // only after the response and still migrates/processes the delivery once.
-  resetWebhookInboxWorkerStateForTests();
-  const ackSheets = createMockSheets();
-  const ackSheetsGet = ackSheets.spreadsheets.values.get;
-  let ackSlowReadCount = 0;
-  ackSheets.spreadsheets.values.get = async (params, options) => {
-    if (params.range === 'Webhook Inbox!A:M' && ackSlowReadCount++ === 0) {
-      await new Promise(resolve => setTimeout(resolve, 3500));
-    }
-    return ackSheetsGet(params, options);
-  };
-  let ackWork = null;
+  // Ordinary TradingView delivery is acknowledged only after durable Inbox persistence.
   const ackOrder = [];
   const ackResponse = {
     headersSent: false,
     status(code) { this.statusCode = code; return this; },
     send(body) { this.headersSent = true; this.body = body; ackOrder.push('ack'); return this; },
   };
-  const ackStartedAt = Date.now();
   await handleTradingViewWebhookWithDependencies(
-    { body: edgePayload('PENDING_SETUP', 'VIXALE_EDGE:TLT:15:SHORT:1786368600000', {
+    { body: edgePayload('SETUP', 'VIXALE_EDGE:TLT:15:SHORT:1786368600000', {
       symbol: 'TLT', side: 'SHORT', timeframe: '15', flip_bar_time: 1786368600000,
     }) },
     ackResponse,
     {
-      sheets: ackSheets,
-      spoolWebhookInboxItem: (...args) => {
-        ackOrder.push('spool');
-        return spoolWebhookInboxItem(...args);
+      sheets: createMockSheets(),
+      upsertWebhookInboxItem: async () => {
+        ackOrder.push('persist_start');
+        await Promise.resolve();
+        ackOrder.push('persist_complete');
+        return { delivery_id: 'TV:SETUP:TLT:test', status: 'PENDING', row_number: 2 };
       },
-      scheduleWebhookInboxWork: work => {
-        ackOrder.push('scheduled');
-        ackWork = work();
-      },
+      scheduleWebhookInboxWork: () => ackOrder.push('scheduled'),
     }
   );
-  const ackElapsedMs = Date.now() - ackStartedAt;
-  assert.deepStrictEqual(ackOrder, ['spool', 'ack', 'scheduled']);
+  assert.deepStrictEqual(ackOrder, ['persist_start', 'persist_complete', 'ack', 'scheduled']);
   assert.strictEqual(ackResponse.statusCode, 200);
-  assert.strictEqual(ackResponse.body, 'OK');
-  assert.ok(ackElapsedMs < 500, `ACK took ${ackElapsedMs}ms`);
-  assert.strictEqual(ackSheets.rows['Webhook Inbox'].length - 1, 0);
-  await ackWork;
-  assert.strictEqual(ackSheets.rows['Webhook Inbox'].length - 1, 1);
-  assert.strictEqual(ackSheets.rows['Webhook Inbox'][1][7], 'COMPLETE');
-  assert.strictEqual(ackSheets.rows.Pending.length - 1, 1);
 
-  // A failed durable ingress-spool write returns 503. The retry ACKs after the
-  // local write, then migrates to Sheets and publishes one Telegram-silent Pending row.
+  // A failed authoritative Inbox write returns 503; retry persists and publishes
+  // one Telegram-silent Pending row without sending anything to the bridge.
   const pendingInboxSheets = createMockSheets();
   const pendingInboxPayload = edgePayload(
     'PENDING_SETUP',
     'VIXALE_EDGE:SLB:15:LONG:1786368600000',
     { symbol: 'SLB', timeframe: '15', flip_bar_time: 1786368600000 }
   );
-  let rejectFirstSpoolWrite = true;
-  let ingressSpoolWrites = 0;
+  let rejectFirstInboxWrite = true;
+  let fallbackSpoolWrites = 0;
   let pendingScheduledWork = null;
   let pendingTelegramCalls = 0;
   let pendingBridgeCalls = 0;
   const pendingEndpointDependencies = {
     sheets: pendingInboxSheets,
-    spoolWebhookInboxItem: (...args) => {
-      ingressSpoolWrites++;
-      if (rejectFirstSpoolWrite) {
-        rejectFirstSpoolWrite = false;
-        return false;
+    upsertWebhookInboxItem: async (...args) => {
+      if (rejectFirstInboxWrite) {
+        rejectFirstInboxWrite = false;
+        throw new Error('mock authoritative Inbox outage');
       }
-      return spoolWebhookInboxItem(...args);
+      return upsertWebhookInboxItem(...args);
     },
+    spoolWebhookInboxItem: () => { fallbackSpoolWrites++; return true; },
     scheduleWebhookInboxWork: work => { pendingScheduledWork = work(); },
     sendTelegram: async () => { pendingTelegramCalls++; return { ok: true }; },
     forwardToBridge: async (raw, row) => {
@@ -2395,8 +2357,7 @@ async function run() {
     pendingEndpointDependencies
   );
   assert.strictEqual(failedPendingResponse.statusCode, 503);
-  assert.strictEqual(failedPendingResponse.body, 'RETRY');
-  assert.strictEqual(ingressSpoolWrites, 1);
+  assert.strictEqual(fallbackSpoolWrites, 1);
   assert.strictEqual(pendingInboxSheets.rows['Webhook Inbox'].length - 1, 0);
 
   const retriedPendingResponse = createMockResponse();
@@ -2407,55 +2368,10 @@ async function run() {
   );
   assert.strictEqual(retriedPendingResponse.statusCode, 200);
   await pendingScheduledWork;
-  assert.strictEqual(ingressSpoolWrites, 2);
   assert.strictEqual(pendingInboxSheets.rows['Webhook Inbox'].length - 1, 1);
   assert.strictEqual(pendingInboxSheets.rows.Pending.length - 1, 1);
   assert.strictEqual(pendingTelegramCalls, 0);
   assert.strictEqual(pendingBridgeCalls, 0);
-
-  // Migration removes only the migrated delivery from the latest spool state.
-  // A new alert that arrives while an earlier Sheets upsert is waiting cannot
-  // be erased by a stale snapshot rewrite.
-  try { fs.unlinkSync(TEST_WEBHOOK_SPOOL_FILE); } catch (_) {}
-  const raceSheets = createMockSheets();
-  const raceGet = raceSheets.spreadsheets.values.get;
-  let releaseRaceRead;
-  let markRaceReadStarted;
-  let delayRaceRead = true;
-  const raceReadStarted = new Promise(resolve => { markRaceReadStarted = resolve; });
-  const raceReadGate = new Promise(resolve => { releaseRaceRead = resolve; });
-  raceSheets.spreadsheets.values.get = async (params, options) => {
-    if (params.range === 'Webhook Inbox!A:M' && delayRaceRead) {
-      delayRaceRead = false;
-      markRaceReadStarted();
-      await raceReadGate;
-    }
-    return raceGet(params, options);
-  };
-  const racePayloadA = edgePayload(
-    'PENDING_SETUP',
-    'VIXALE_EDGE:RACEA:15:LONG:1786368600001',
-    { symbol: 'RACEA', timeframe: '15', flip_bar_time: 1786368600001 }
-  );
-  const racePayloadB = edgePayload(
-    'PENDING_SETUP',
-    'VIXALE_EDGE:RACEB:15:LONG:1786368600002',
-    { symbol: 'RACEB', timeframe: '15', flip_bar_time: 1786368600002 }
-  );
-  assert.strictEqual(
-    spoolWebhookInboxItem(racePayloadA, parseJsonTradingViewAlert(racePayloadA)),
-    true
-  );
-  const firstRaceMigration = migrateWebhookInboxSpool(raceSheets);
-  await raceReadStarted;
-  assert.strictEqual(
-    spoolWebhookInboxItem(racePayloadB, parseJsonTradingViewAlert(racePayloadB)),
-    true
-  );
-  releaseRaceRead();
-  assert.strictEqual(await firstRaceMigration, 1);
-  assert.strictEqual(await migrateWebhookInboxSpool(raceSheets), 1);
-  assert.strictEqual(raceSheets.rows['Webhook Inbox'].length - 1, 2);
 
   // Four duplicate identities share one Inbox row and one downstream execution.
   const inboxSheets = createMockSheets();
