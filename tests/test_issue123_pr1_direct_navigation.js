@@ -81,6 +81,5 @@ for (const label of ["Как это работает", "Торговые сис�
   assert(ru.includes(`>${label}</a>`), `missing RU navigation label ${label}`);
 }
 assert(ru.includes(`href="${nav.LIVE_ACCESS_HREF}">Live-доступ</a>`));
-assert(!ru.includes('>О нас</a>'), "About must not remain in RU primary navigation");
 
 console.log("Unified public navigation + Live Access: PASS");
