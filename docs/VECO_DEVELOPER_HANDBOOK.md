@@ -2835,7 +2835,7 @@ When a future change is made:
 7. Update source snapshot/version/hash information when the canonical production baseline changes.
 8. Review the code and handbook diff together.
 9. Commit code and handbook together.
-10. Push and merge only after explicit approval for production-impacting changes.
+10. Push the feature branch and merge under the §14.2 standing owner authorization when the task is eligible; otherwise obtain the required task-specific approval before merge.
 11. Verify Render and the complete VECO lifecycle after deployment.
 
 A handbook is not considered implemented until it is committed at its canonical Git path. Temporary chat/download copies are not canonical.
