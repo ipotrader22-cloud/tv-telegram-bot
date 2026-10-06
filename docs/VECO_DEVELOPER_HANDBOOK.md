@@ -3095,6 +3095,8 @@ Historical Open Positions or Pending state is intentionally not reconstructed af
 
 The routes use the existing `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` configuration, a bounded one-minute process cache, canonical/Open Graph metadata, and share actions for copying the permalink, X, and LinkedIn. No new environment variable or Google Sheets schema is introduced.
 
+**Public discovery:** Daily Trading Recaps is a first-class public discovery route. The homepage hero includes a prominent `Daily Trading Recaps` CTA to `/daily-trading-summary`. The unified primary navigation uses the shorter label `Daily Recaps` and occupies the former About slot so the main menu does not grow wider; About remains available in secondary/footer navigation. The recap index and dated permalink pages are treated as public-navigation routes, with Daily Recaps marked active on dated pages. Russian localization uses `Ежедневные торговые итоги` for the hero CTA and `Ежедневные итоги` for the main-menu label.
+
 **Execution / trading impact:** None. This is website/data presentation only. It does not change TradingView/Pine, strategy rules, signals, entries/exits/stops/targets, sizing, bridge/TWS/IBKR execution, Telegram trade lifecycle, Google Sheets writes, authentication, or risk logic.
 
 **Rollback:** Revert the daily-summary website module/preload commit and redeploy the prior confirmed website commit. No broker, Pine, trade-ledger, Option Journal, or customer-data rollback is required.
