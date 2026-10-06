@@ -24,7 +24,6 @@ assert(hero.includes('class="vx-conversion-btn" href="/#password-access">Live Ac
 assert(hero.includes('href="/results">View Trading Results</a>'));
 assert(!hero.includes(">Get 30 Days Free</a>"));
 assert(hero.includes("30-day free trial of Day Trading Telegram signals."));
-assert(hero.includes(".vx-conversion-btn.recaps{"), "Daily Trading Recaps CTA must have a distinct visible treatment");
 
 assert(hero.includes('role="tablist"'));
 for (const key of ["day", "swing", "options"]) {
@@ -77,6 +76,7 @@ assert(refined.includes('class="vx-conversion-home"'));
 assert(!refined.includes("Old How It Works wall"), "old pre-data explanatory wall must be replaced");
 assert(refined.includes('class="vx-home-day-trading"'), "existing lower Day data source must remain for safe mirroring");
 assert(refined.includes(`id="${home.STYLE_ID}"`));
+assert(refined.includes(".vx-conversion-btn.recaps{"), "Daily Trading Recaps CTA must have a distinct visible treatment");
 assert(refined.includes(`id="${home.SCRIPT_ID}"`));
 assert(refined.includes("fetch('/api/swing-leaders'"), "Swing tab must reuse the existing public Swing API");
 assert(refined.includes("d.active_unrealized_model_pnl"), "Swing homepage total must use current unrealized Model P&L");
