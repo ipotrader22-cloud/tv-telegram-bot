@@ -16,6 +16,7 @@ const navOrder = [
   'href="/trading-systems/swing-trading"',
   'href="/trading-systems/options"',
   'href="/results"',
+  'href="/daily-trading-summary"',
   'href="/pricing"',
 ];
 let previous = -1;
@@ -28,6 +29,7 @@ assert(nav.includes('href="/trading-systems/day-trading" class="is-active" aria-
 assert(nav.includes('class="vx-public-nav-login" href="/dashboard">Log In</a>'));
 assert(nav.includes('>Get 30 Days Free</a>'));
 assert(!nav.includes('>Live Access</a>'));
+assert(nav.includes('href="/daily-trading-summary">Daily Recaps</a>'), "Daily Recaps must be present in primary navigation");
 for (const secondary of ["How It Works", "Trading Systems", "Daily Recaps", "Services", "About", "Help"]) {
   assert(nav.includes(`>${secondary}</a>`), `missing secondary nav: ${secondary}`);
 }
@@ -101,7 +103,7 @@ assert(!fixedGuide.includes("ES straddle"));
 assert(!fixedGuide.includes("6:00–8:30"));
 
 const ruNav = ux.refineHtml(shell("content"), "/pricing", "ru");
-for (const label of ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Тарифы", "Войти", "30 дней бесплатно"]) {
+for (const label of ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги", "Тарифы", "Войти", "30 дней бесплатно"]) {
   assert(ruNav.includes(`>${label}</a>`), `missing RU audit nav label: ${label}`);
 }
 const ruHome = ux.refineHtml(homeHtml, "/", "ru");

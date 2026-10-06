@@ -3192,3 +3192,8 @@ The routes use the existing `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` 
 **Execution / trading impact:** None. This is website/data presentation only. It does not change TradingView/Pine, strategy rules, signals, entries/exits/stops/targets, sizing, bridge/TWS/IBKR execution, Telegram trade lifecycle, Google Sheets writes, authentication, or risk logic.
 
 **Rollback:** Revert the daily-summary website module/preload commit and redeploy the prior confirmed website commit. No broker, Pine, trade-ledger, Option Journal, or customer-data rollback is required.
+
+
+### Primary navigation Daily Recaps (2026-10-06)
+
+The public primary navigation includes `Daily Recaps` between `Results` and `Pricing`, linking to `/daily-trading-summary`. The Russian label is `Ежедневные итоги`. The existing Daily Recaps link may also remain in secondary/footer navigation for discovery. This is a website navigation-only change and does not modify trading logic, data generation, execution, authentication, or the Daily Trading Summary data source.

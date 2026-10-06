@@ -160,6 +160,7 @@ function renderPrimaryNavigation(path, locale) {
     navLink(path, "/trading-systems/swing-trading", c.swing),
     navLink(path, "/trading-systems/options", c.options),
     navLink(path, "/results", c.results),
+    navLink(path, "/daily-trading-summary", c.recaps),
     navLink(path, "/pricing", c.pricing),
   ].join("");
 }
