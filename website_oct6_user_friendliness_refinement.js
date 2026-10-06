@@ -52,25 +52,25 @@ function tagRange(html, tag, start) {
   if (start < 0) return null;
   const openEnd = html.indexOf(">", start);
   if (openEnd < 0) return null;
-  const re = new RegExp("<\\\\/?" + escapeRegex(tag) + "\\\\b[^>]*>", "gi");
+  const re = new RegExp("<\\/?" + escapeRegex(tag) + "\\b[^>]*>", "gi");
   re.lastIndex = start;
   let depth = 0;
   let match;
   while ((match = re.exec(html))) {
-    depth += new RegExp("^<\\\\/" + escapeRegex(tag) + "\\\\b", "i").test(match[0]) ? -1 : 1;
+    depth += new RegExp("^<\\/" + escapeRegex(tag) + "\\b", "i").test(match[0]) ? -1 : 1;
     if (depth === 0) return { start, end: re.lastIndex, openEnd: openEnd + 1, closeStart: match.index };
   }
   return null;
 }
 
 function rangeByClass(html, tag, className) {
-  const re = new RegExp("<" + escapeRegex(tag) + "\\\\b[^>]*\\\\bclass=([\"'])[^\"']*\\\\b" + escapeRegex(className) + "\\\\b[^\"']*\\\\1[^>]*>", "i");
+  const re = new RegExp("<" + escapeRegex(tag) + "\\b[^>]*\\bclass=([\"'])[^\"']*\\b" + escapeRegex(className) + "\\b[^\"']*\\1[^>]*>", "i");
   const match = re.exec(String(html || ""));
   return match ? tagRange(html, tag, match.index) : null;
 }
 
 function rangeById(html, tag, id) {
-  const re = new RegExp("<" + escapeRegex(tag) + "\\\\b[^>]*\\\\bid=([\"'])" + escapeRegex(id) + "\\\\1[^>]*>", "i");
+  const re = new RegExp("<" + escapeRegex(tag) + "\\b[^>]*\\bid=([\"'])" + escapeRegex(id) + "\\1[^>]*>", "i");
   const match = re.exec(String(html || ""));
   return match ? tagRange(html, tag, match.index) : null;
 }
@@ -241,7 +241,7 @@ function refineHome(html, locale) {
 }
 
 function rewriteAnchorByText(html, text, href, label, attrs = "") {
-  const re = new RegExp('<a\\\\b([^>]*)>' + escapeRegex(text) + '<\\\\/a>', "gi");
+  const re = new RegExp('<a\\b([^>]*)>' + escapeRegex(text) + '<\\/a>', "gi");
   return html.replace(re, (_match, existing) => {
     const clean = String(existing || "")
       .replace(/\s+href=(?:"[^"]*"|'[^']*')/gi, "")
