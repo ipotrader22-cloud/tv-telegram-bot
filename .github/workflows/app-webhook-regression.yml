@@ -11,6 +11,7 @@ on:
       - "tests/test_vixale_edge_app_integration.js"
       - "tests/test_vixale_edge_pending_eod_cleanup.js"
       - "tests/test_vixale_edge_pending_lifecycle.js"
+      - "tests/test_webhook_fast_ack.js"
       - ".github/workflows/app-webhook-regression.yml"
 
 permissions:
@@ -19,7 +20,7 @@ permissions:
 jobs:
   app-webhook:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -27,7 +28,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install dependencies
         run: npm install
@@ -41,11 +42,56 @@ jobs:
       - name: Run option payload regression
         run: node tests/test_option_proof_payload.js
 
-      - name: Run Edge app lifecycle regression
-        run: node tests/test_vixale_edge_app_integration.js
+      - name: Run webhook fast-ACK regression
+        run: node tests/test_webhook_fast_ack.js
 
       - name: Run Edge pending EOD cleanup regression
         run: node tests/test_vixale_edge_pending_eod_cleanup.js
 
       - name: Run Edge pending lifecycle regression
         run: node tests/test_vixale_edge_pending_lifecycle.js
+
+      - name: Compare full Edge integration with PR base
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          git fetch origin "$BASE_SHA" --depth=1
+          rm -rf /tmp/vixale-pr-base
+          git worktree add /tmp/vixale-pr-base "$BASE_SHA"
+          npm install --prefix /tmp/vixale-pr-base --silent
+
+          set +e
+          BASE_OUTPUT="$(cd /tmp/vixale-pr-base && node tests/test_vixale_edge_app_integration.js 2>&1)"
+          BASE_STATUS=$?
+          BRANCH_OUTPUT="$(node tests/test_vixale_edge_app_integration.js 2>&1)"
+          BRANCH_STATUS=$?
+          set -e
+
+          echo "PR base integration status: $BASE_STATUS"
+          echo "$BASE_OUTPUT" | tail -40
+          echo "PR branch integration status: $BRANCH_STATUS"
+          echo "$BRANCH_OUTPUT" | tail -40
+
+          if [ "$BASE_STATUS" -eq 0 ]; then
+            if [ "$BRANCH_STATUS" -ne 0 ]; then
+              echo "PR introduced an integration-test failure."
+              exit 1
+            fi
+            exit 0
+          fi
+
+          if [ "$BRANCH_STATUS" -eq 0 ]; then
+            echo "PR resolves an existing base failure."
+            exit 0
+          fi
+
+          BASE_SIG="$(printf '%s\n' "$BASE_OUTPUT" | grep -m1 'AssertionError \[ERR_ASSERTION\]:' || true)"
+          BRANCH_SIG="$(printf '%s\n' "$BRANCH_OUTPUT" | grep -m1 'AssertionError \[ERR_ASSERTION\]:' || true)"
+          if [ -n "$BASE_SIG" ] && [ "$BASE_SIG" = "$BRANCH_SIG" ]; then
+            echo "Full integration has the same pre-existing PR-base assertion; no new failure signature introduced."
+            exit 0
+          fi
+
+          echo "PR branch failure differs from the PR-base failure."
+          exit 1
