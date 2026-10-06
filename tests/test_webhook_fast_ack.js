@@ -132,6 +132,10 @@ function webhookSheets() {
           },
         };
       },
+      async update({ requestBody }) {
+        rows[0] = [...requestBody.values[0]];
+        return { data: {} };
+      },
     },
   };
   return { spreadsheets, rows };
