@@ -8,7 +8,7 @@ const SITE_URL = "https://www.vixale.com";
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID || "";
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
 const CACHE_MS = 60_000;
-const MAX_INDEX_DAYS = 45;
+const FIRST_BLOG_DATE = "2026-10-05";
 const RANGES = ["Trades!A:J", "Closed Trades!A:J", "Trade Metadata!A:H", "Option Journal!A:S"];
 
 let sourceCache = { loadedAt: 0, source: null };
@@ -44,6 +44,10 @@ function validDateKey(value) {
   const parts = value.split("-").map(Number);
   const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
   return dt.getUTCFullYear() === parts[0] && dt.getUTCMonth() === parts[1] - 1 && dt.getUTCDate() === parts[2];
+}
+
+function publishedDateKey(value) {
+  return validDateKey(value) && String(value) >= FIRST_BLOG_DATE;
 }
 
 function formatDate(value) {
@@ -217,7 +221,7 @@ function availableDates(source) {
     const key = dateKey(row?.[11]);
     if (key) out.add(key);
   }
-  return [...out].sort((a, b) => b.localeCompare(a));
+  return [...out].filter(publishedDateKey).sort((a, b) => b.localeCompare(a));
 }
 
 async function sheetsClient() {
@@ -328,7 +332,7 @@ function renderIndexPage(items, stale = false) {
   const title = "Vixale Daily Trading Summaries";
   const cards = items.length ? items.map(summary => '<a class="card" href="' + INDEX_PATH + '/' + esc(summary.date) + '"><strong>' + esc(formatDate(summary.date)) + '</strong><span>' + esc(description(summary)) + '</span></a>').join("") : '<div class="card">No daily recaps are available yet.</div>';
   return head(title, "Shareable Vixale daily trading recaps built from recorded trading activity.", canonical) + header() +
-    '<main class="wrap"><section class="hero"><div class="eyebrow">Vixale Journal</div><h1>Daily Trading Summaries</h1><p class="lead">Shareable daily recaps of recorded trading activity and realized results.</p>' +
+    '<main class="wrap"><section class="hero"><div class="eyebrow">Vixale Journal</div><h1>Daily Trading Summaries</h1><p class="lead">Shareable daily recaps of recorded trading activity and realized results, archived from October 5, 2026 onward.</p>' +
     (stale ? '<div class="stale">Showing the last successfully loaded ledger snapshot.</div>' : '') + '</section><section class="archive">' + cards + '</section>' +
     '<section class="section"><div class="disclosure">Daily recaps publish closed-trade details and aggregate new-fill counts. They do not reveal still-open Day Trading positions or reconstruct historical Pending/Open state. NFA — Not Financial Advice.</div></section></main>' +
     '<footer class="footer"><div class="wrap">Vixale · <a href="/results">Results</a> · <a href="/closed-trades">Closed Trades ledger</a></div></footer></body></html>';
@@ -347,7 +351,7 @@ async function handleIndex(req, res, deps = {}) {
   if (isRussianHost(req)) return res.redirect(302, SITE_URL + INDEX_PATH);
   try {
     const snapshot = await getSourceSnapshot(deps);
-    const items = availableDates(snapshot.source).slice(0, MAX_INDEX_DAYS).map(date => buildDaySummary(snapshot.source, date)).filter(row => row.has_activity);
+    const items = availableDates(snapshot.source).map(date => buildDaySummary(snapshot.source, date)).filter(row => row.has_activity);
     setHeaders(res);
     return res.status(200).type("html").send(renderIndexPage(items, snapshot.stale));
   } catch (error) {
@@ -359,7 +363,7 @@ async function handleIndex(req, res, deps = {}) {
 async function handleDay(req, res, deps = {}) {
   const targetDate = String(req.params?.date || "").trim();
   if (isRussianHost(req)) return res.redirect(302, SITE_URL + INDEX_PATH + "/" + encodeURIComponent(targetDate));
-  if (!validDateKey(targetDate)) return res.status(404).type("text").send("Daily trading summary not found.");
+  if (!publishedDateKey(targetDate)) return res.status(404).type("text").send("Daily trading summary not found.");
   try {
     const snapshot = await getSourceSnapshot(deps);
     const summary = buildDaySummary(snapshot.source, targetDate);
@@ -405,8 +409,8 @@ Module._load = function dailySummaryModuleLoad(request, parent, isMain) {
 };
 
 module.exports = {
-  INDEX_PATH, SITE_URL, CACHE_MS, MAX_INDEX_DAYS, RANGES,
-  numberOrNull, dateKey, validDateKey, formatDate, formatTime, money, price, prettyEvent,
+  INDEX_PATH, SITE_URL, CACHE_MS, FIRST_BLOG_DATE, RANGES,
+  numberOrNull, dateKey, validDateKey, publishedDateKey, formatDate, formatTime, money, price, prettyEvent,
   metadataMaps, buildDaySummary, availableDates, getSourceSnapshot, renderDayPage, renderIndexPage,
   handleIndex, handleDay, install, wrapExpress
 };

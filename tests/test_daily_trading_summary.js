@@ -14,12 +14,14 @@ const source = {
   tradesValues: [
     ["timestamp","symbol","side","event","entry","size","target","stop","result","status"],
     ["2026-10-05 09:56:05","IWM","SHORT","FILL","280.35","71","280.01","282.27","","open"],
-    ["2026-10-05 15:45:00","TSLA","LONG","FILL","450","10","460","440","","open"]
+    ["2026-10-05 15:45:00","TSLA","LONG","FILL","450","10","460","440","","open"],
+    ["2026-10-04 11:00:00","OLD","LONG","FILL","10","1","11","9","","open"]
   ],
   closedValues: [
     ["trade_id","open_time","close_time","symbol","side","entry","exit","size","result","exit_reason"],
     ["IWM_SHORT","2026-10-05 09:56:05","2026-10-05 10:20:15","IWM","SHORT","280.38","282.59","71","-159.04","FLIP_CLOSE"],
-    ["NVDA_LONG","2026-10-02 09:49:47","2026-10-05 14:27:43","NVDA","LONG","236.71","238.53","84","152.88","TP"]
+    ["NVDA_LONG","2026-10-02 09:49:47","2026-10-05 14:27:43","NVDA","LONG","236.71","238.53","84","152.88","TP"],
+    ["OLD_LONG","2026-10-04 11:00:00","2026-10-04 14:00:00","OLD","LONG","10","11","1","1","TP"]
   ],
   metadataValues: [
     ["Metadata ID","Trade ID","System","Symbol","Side","Open Time","Close Time","Event"],
@@ -44,7 +46,25 @@ assert.strictEqual(summary.totals.carried_closed_count, 1);
 assert.strictEqual(summary.totals.options_closed_count, 1);
 assert.strictEqual(summary.closed[0].system, "Vixale Edge");
 assert.strictEqual(summary.closed[1].carried, true);
+assert.strictEqual(blog.FIRST_BLOG_DATE, "2026-10-05");
+assert.strictEqual(blog.publishedDateKey("2026-10-04"), false);
+assert.strictEqual(blog.publishedDateKey("2026-10-05"), true);
 assert.deepStrictEqual(blog.availableDates(source), ["2026-10-05"]);
+
+const historySource = {
+  tradesValues: [["timestamp","symbol","side","event","entry","size","target","stop","result","status"]],
+  closedValues: [["trade_id","open_time","close_time","symbol","side","entry","exit","size","result","exit_reason"]],
+  metadataValues: [["Metadata ID","Trade ID","System","Symbol","Side","Open Time","Close Time","Event"]],
+  optionValues: [["ID","Trade Date","Entry Time","Symbol","Strategy","Legs","Expiration","Contracts","Multiplier","Trade Type","Entry Price","Exit Date","Exit Time","Exit Price","Fees","Status","Notes"]]
+};
+for (let i = 0; i < 60; i += 1) {
+  const dt = new Date(Date.UTC(2026, 9, 5 + i));
+  const date = dt.toISOString().slice(0, 10);
+  historySource.tradesValues.push([date + " 10:00:00","T" + i,"LONG","FILL","10","1","11","9","","open"]);
+}
+const historyDates = blog.availableDates(historySource);
+assert.strictEqual(historyDates.length, 60);
+assert.strictEqual(historyDates[historyDates.length - 1], "2026-10-05");
 
 const html = blog.renderDayPage(summary, false);
 assert(html.includes("Vixale Daily Trading Summary"));
