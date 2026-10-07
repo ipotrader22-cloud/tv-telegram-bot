@@ -3675,15 +3675,18 @@ async function processLedgerUnlocked(row, dependencies = {}) {
       removedCount = await removePendingRowsBySymbol(sheets, row.symbol);
     }
 
-    // For open-on-SETUP strategies, a bridge/TWS rejection can come back as CANCEL
-    // after the app has already placed the SETUP in Open Positions. Clean it up too.
+    // Execution-first SETUP rejection/block callbacks represent entries that never
+    // became broker-confirmed Open positions. Never delete Open Positions from a
+    // generic CANCEL: legacy trade_id and symbol/side can collide across systems
+    // (for example Prime TEAM_LONG versus an active Edge TEAM_LONG).
+    // Broker-confirmed Open rows are removed only by confirmed close/reconcile paths.
     if (isOpenOnSetupRow(row)) {
-      const removedOpen = row.symbol && row.side
-        ? await removeOpenRowsBySymbolAndSide(sheets, row.symbol, row.side)
-        : row.symbol
-          ? await removeOpenRowsBySymbol(sheets, row.symbol)
-          : 0;
-      console.log('open-on-setup cancel open cleanup removed:', removedOpen);
+      console.log(
+        'open-on-setup cancel preserved broker-confirmed Open Positions:',
+        row.trade_id || '',
+        row.symbol || '',
+        row.side || ''
+      );
     }
 
     console.log('Cancel cleanup finished:', row.trade_id || '', row.symbol || '', row.side || '', 'removed:', removedCount);

@@ -527,6 +527,82 @@ async function run() {
     'restart duplicate sends no Telegram OPEN'
   );
 
+  // Cross-system rejected SETUP cleanup must never delete a broker-confirmed Open.
+  // This reproduces the 2026-10-07 TEAM incident: Edge owned TEAM, then a Prime
+  // SETUP was blocked by bridge ownership protection and returned as CANCEL.
+  const ownershipSheets = createMockSheets();
+  const ownershipTelegram = [];
+  const ownershipLifecycle = createLifecycleContext({
+    sheetStore: ownershipSheets,
+    telegramStore: ownershipTelegram,
+    bridgeStore: [],
+  });
+  const teamEdgeSetupId = 'VIXALE_EDGE:TEAM:5:LONG:1791379800000';
+  await ownershipLifecycle(edgePayload('PENDING_SETUP', teamEdgeSetupId, {
+    symbol: 'TEAM',
+    timeframe: '5',
+    flip_bar_time: 1791379800000,
+    entry: 195.76,
+    price: 195.76,
+    qty: 102,
+  }));
+  await ownershipLifecycle(edgePayload('ENTRY_FILL', teamEdgeSetupId, {
+    symbol: 'TEAM',
+    timeframe: '5',
+    flip_bar_time: 1791379800000,
+    entry: 195.76,
+    price: 195.76,
+    qty: 102,
+    render_forwarded_at: '2026-10-07T09:48:44-04:00',
+    ib_status: 'FILLED',
+    entry_filled: true,
+  }));
+  assert.strictEqual(
+    countRowsBySetupId(ownershipSheets.rows['Open Positions'], 11, teamEdgeSetupId),
+    1,
+    'broker-confirmed Edge TEAM fill creates one Open row'
+  );
+
+  await ownershipLifecycle({
+    source: 'TradingView',
+    system_id: 'VIXALE_PRIME',
+    strategy: 'SHREK_1_4',
+    variant: 'ATR_LIMIT_OPPOSITE_FLIP',
+    event: 'CANCEL',
+    symbol: 'TEAM',
+    side: 'LONG',
+    entry: 195.76,
+    price: 195.76,
+    qty: 102,
+    timeframe: '5',
+    reason: 'IB_REJECTED_OR_BLOCKED: Symbol is already owned by another managed bridge lifecycle; incoming broker mutation blocked.',
+    ib_status: 'entry_blocked_symbol_owned_by_other_system',
+    ib_result: {
+      status: 'entry_blocked_symbol_owned_by_other_system',
+      owner_family: 'VIXALE_EDGE',
+      owner_system_id: 'VIXALE_EDGE',
+      owner_setup_id: teamEdgeSetupId,
+      incoming_owner_family: 'VIXALE_PRIME',
+    },
+    render_forwarded_at: '2026-10-07T12:30:24-04:00',
+  });
+
+  assert.strictEqual(
+    countRowsBySetupId(ownershipSheets.rows['Open Positions'], 11, teamEdgeSetupId),
+    1,
+    'blocked Prime CANCEL preserves the broker-confirmed Edge TEAM Open row'
+  );
+  assert.strictEqual(
+    ownershipSheets.rows['Closed Trades'].length,
+    1,
+    'blocked Prime CANCEL does not fabricate a close'
+  );
+  assert.strictEqual(
+    ownershipSheets.rows.Trades.length,
+    2,
+    'blocked Prime CANCEL creates no execution row'
+  );
+
   const canceledId = 'VIXALE_EDGE:AAPL:60:LONG:1785261600000';
   await lifecycle(edgePayload('PENDING_SETUP', canceledId, { flip_bar_time: 1785261600000 }));
   const cancelPayload = edgePayload('CANCEL', canceledId, {
