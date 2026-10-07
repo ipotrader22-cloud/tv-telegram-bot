@@ -2,7 +2,7 @@
 
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
-**Last updated:** 2026-10-06
+**Last updated:** 2026-10-07
 **Owner:** Viktor / Vixale  
 **Canonical Git location:** `/docs/VECO_DEVELOPER_HANDBOOK.md`  
 
@@ -1889,6 +1889,28 @@ Final position: SHORT 100
 ```
 
 The attached target quantity covers only the final desired position, not the reversal delta.
+
+### 13.13.1 Rejected SETUP CANCEL cannot remove broker-confirmed Open state
+
+On October 7, 2026, an already-filled Vixale Edge TEAM position disappeared
+from the public `Open Positions` ledger after a later Vixale Prime TEAM SETUP
+was correctly blocked by the bridge's cross-system ownership guard. Render logs
+proved the Edge ENTRY_FILL had first appended the Open row, then the rejected
+Prime SETUP returned as a generic `CANCEL`, whose legacy cleanup deleted every
+Open row matching `TEAM/LONG`.
+
+This cleanup is unsafe because `symbol + side` and legacy trade IDs such as
+`TEAM_LONG` are not system-scoped and can collide across Prime, Edge, and
+other execution-first families. A rejected or blocked SETUP represents entry
+intent that never became a broker-confirmed new Open position. Therefore a
+generic setup `CANCEL` may clean Pending/legacy setup intent but must never
+delete a broker-confirmed `Open Positions` row.
+
+Broker-confirmed Open rows are removed only by the existing confirmed
+TP / Stop Loss / EOD / Manual Close / flat-reconciliation lifecycles. This is a
+Render/Sheets ledger-safety rule only; it does not change Pine signals,
+cross-system broker ownership, order submission, targets, stops, sizing, or
+TWS/IBKR execution.
 
 ### 13.14 Website HTML refinement middleware
 
