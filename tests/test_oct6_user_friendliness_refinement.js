@@ -48,6 +48,16 @@ assert(!refinedHome.includes('class="vx-conversion-btn recaps"'));
 assert(refinedHome.includes(">Explore Day Trading</a>"));
 assert(refinedHome.includes(">View Swing Portfolio</a>"));
 assert(refinedHome.includes(">Explore Options</a>"));
+assert(refinedHome.includes("<h2>AI Driven Day Trading Systems</h2>"));
+assert(refinedHome.includes("Live Day Trading signals are delivered instantly in real time to the website and through Telegram. All trades are recorded and posted on the website dashboard and results available on the website immediately."));
+assert(refinedHome.includes("Follow precise stock signals, entries, and exits. Vixale Prime closes at the end of the trading day; Vixale Edge may hold overnight."));
+assert(refinedHome.includes("<h2>Active Portfolio</h2>"));
+assert(refinedHome.includes("10 currently best stocks chosen by Vixale proprietary stock swing ranking system. Check for new additions and exits updates published everyday around 10:00am. Active Portfolio updates in real time on the website. Robust risk management. Full automation available"));
+assert(refinedHome.includes("<h2>Straddles, Calendars, Condors and More</h2>"));
+assert(!refinedHome.includes("Prime and Edge in one Day Trading product."));
+assert(!refinedHome.includes("A daily stock model portfolio."));
+assert(!refinedHome.includes("Positions, published updates, and completed trades."));
+assert(refinedHome.includes(".vx-conversion-system-cards article:first-child h2{white-space:nowrap;font-size:clamp(16px,1.9vw,23px)}"));
 assert(!refinedHome.includes("actively managed options 0DTE system"));
 assert(refinedHome.includes("Options chart and trade journal are public."));
 assert(refinedHome.includes('href="/access?system=options">Request Free Viewer Access</a>'));
@@ -109,6 +119,9 @@ for (const label of ["Дейтрейдинг", "Свинг-трейдинг", "�
 const ruHome = ux.refineHtml(homeHtml, "/", "ru");
 assert(ruHome.includes("Vixale публикует торговые сигналы и обновления портфеля."));
 assert(ruHome.includes("Запросить бесплатный viewer-доступ"));
+assert(ruHome.includes("<h2>Дейтрейдинговые системы на базе ИИ</h2>"));
+assert(ruHome.includes("<h2>Активный портфель</h2>"));
+assert(ruHome.includes("<h2>Стрэддлы, календари, кондоры и другое</h2>"));
 
 assert(refinedHome.includes('data-vx-funnel-kind="trial"'));
 assert(refinedHome.includes('data-vx-funnel-system="day-trading"'));
