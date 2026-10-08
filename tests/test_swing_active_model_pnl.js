@@ -71,7 +71,7 @@ assert(out.includes('<strong class="gain">+$1,339.00</strong>'), "server-rendere
 assert(out.includes('<small>Total P&amp;L</small><span class="vx-current-model-pnl gain">+$2,148.00</span>'), "current total must equal visible Unrealized plus Realized Model P&L while preserving the current Total P&L presentation label");
 assert(out.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "client must reuse the sanitized Swing API rather than another quote source");
 assert(out.includes(`const REFRESH_MS=${QUOTE_REFRESH_MS}`), "client refresh cadence must be explicit");
-assert(out.includes('fetch(API_PATH,{credentials:"same-origin",headers:{Accept:"application/json"}})'), "client must poll the existing same-origin Swing endpoint");
+assert(out.includes('fetch(API_PATH,{credentials:"same-origin",cache:"no-store",headers:{Accept:"application/json","Cache-Control":"no-cache"}})'), "client must poll the existing same-origin Swing endpoint");
 assert(out.includes('rows.length!==active.length||feed.size!==active.length'), "client must not mix quotes across changed portfolio membership");
 assert(out.includes('sameEntry(item.entry,moneyNumber(quote.entry_price))'), "client must not apply quotes to a different entry instance");
 assert(out.includes('td[data-label="Current"]'), "client must update Current cells");
