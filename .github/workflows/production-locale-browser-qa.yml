@@ -44,6 +44,7 @@ on:
       - "tests/test_services_ru_form_controls.js"
       - "scripts/qa-production-favicon.js"
       - "scripts/qa-production-locales.js"
+      - "scripts/qa-production-swing-parity.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
       - "scripts/qa-production-services-form-controls.js"
       - ".github/workflows/production-locale-browser-qa.yml"
@@ -68,6 +69,7 @@ on:
       - "tests/test_trading_guide_pdf_integrity.js"
       - "scripts/qa-production-favicon.js"
       - "scripts/qa-production-locales.js"
+      - "scripts/qa-production-swing-parity.js"
       - "scripts/qa-production-owner-copy-and-pdf.js"
       - "scripts/qa-production-services-form-controls.js"
       - ".github/workflows/production-locale-browser-qa.yml"
@@ -115,6 +117,7 @@ jobs:
           node --check website_russian_translations_regression.js
           node --check scripts/qa-production-favicon.js
           node --check scripts/qa-production-locales.js
+          node --check scripts/qa-production-swing-parity.js
           node --check scripts/qa-production-owner-copy-and-pdf.js
           node --check scripts/qa-production-services-form-controls.js
           node --check tests/test_favicon_consistency.js
@@ -202,6 +205,11 @@ jobs:
           QA_RU_ORIGIN: https://ru.vixale.com
           QA_OUTPUT_DIR: artifacts/production-locale-qa
         run: node scripts/qa-production-locales.js
+
+      - name: Verify live Swing HTML/API snapshot parity
+        env:
+          QA_EN_ORIGIN: https://www.vixale.com
+        run: node scripts/qa-production-swing-parity.js
 
       - name: Verify canonical favicon on public pages
         if: always()
