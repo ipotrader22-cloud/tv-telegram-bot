@@ -17,6 +17,8 @@ on:
       - "website_strategy_page_design_refinement.js"
       - "website_options_public_evidence_refinement.js"
       - "website_swing_active_model_pnl.js"
+      - "lib/swing-leaders-core.js"
+      - "tests/test_swing_leaders.js"
       - "website_swing_active_portfolio_rules_refinement.js"
       - "website_swing_strategy_nav_position_refinement.js"
       - "website_services_source_parity_fix.js"
@@ -99,6 +101,8 @@ jobs:
           node --check website_strategy_page_design_refinement.js
           node --check website_options_public_evidence_refinement.js
           node --check website_swing_active_model_pnl.js
+          node --check lib/swing-leaders-core.js
+          node --check tests/test_swing_leaders.js
           node --check website_swing_active_portfolio_rules_refinement.js
           node --check website_swing_strategy_nav_position_refinement.js
           node --check website_services_source_parity_fix.js
@@ -148,6 +152,7 @@ jobs:
 
       - name: Swing portfolio display regressions
         run: |
+          node tests/test_swing_leaders.js
           node tests/test_swing_active_model_pnl.js
           node tests/test_swing_active_portfolio_rules.js
           node tests/test_swing_strategy_nav_position.js
