@@ -13,6 +13,7 @@ const {
   parsePublicFeed,
   parseEquityHistory,
   createSwingLeadersService,
+  createSwingLeadersHandlers,
   renderSwingLeadersHtml,
 } = require('../lib/swing-leaders');
 
@@ -212,6 +213,67 @@ async function testCacheFallbackAndDailyAppend() {
   assert.deepStrictEqual(unavailable, { available: false, stale: true, data: null });
 }
 
+
+async function testSnapshotParityAndNoStoreHeaders() {
+  const data = parsePublicFeed(fixtureRows());
+  data.equity_history = parseEquityHistory(equityHistoryRows());
+  data.equity_history_stale = false;
+  const service = { getSnapshot: async () => ({ available: true, stale: false, data }) };
+  const handlers = createSwingLeadersHandlers({ service });
+  const response = () => ({
+    headers: {},
+    statusCode: 200,
+    setHeader(name, value) { this.headers[name.toLowerCase()] = value; },
+    status(value) { this.statusCode = value; return this; },
+    send(body) { this.body = body; return this; },
+    json(body) { this.body = body; return this; },
+  });
+
+  const apiResponse = response();
+  const pageResponse = response();
+  await handlers.api({}, apiResponse);
+  await handlers.page({}, pageResponse);
+
+  for (const res of [apiResponse, pageResponse]) {
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.headers['cache-control'], 'no-store, max-age=0');
+    assert.strictEqual(res.headers['surrogate-control'], 'no-store');
+    assert.strictEqual(res.headers.pragma, 'no-cache');
+    assert.strictEqual(res.headers.expires, '0');
+    assert.strictEqual(res.headers['x-vixale-swing-snapshot-date'], data.snapshot_date);
+    assert.strictEqual(res.headers['x-vixale-swing-feed-stale'], '0');
+    assert.match(res.headers['x-vixale-swing-snapshot-id'], /^[0-9a-f]{24}$/);
+  }
+  assert.strictEqual(
+    apiResponse.headers['x-vixale-swing-snapshot-id'],
+    pageResponse.headers['x-vixale-swing-snapshot-id'],
+    'server-rendered page and live API must report the same snapshot identity',
+  );
+  assert.strictEqual(apiResponse.body.snapshot_date, data.snapshot_date);
+  assert.ok(pageResponse.body.includes('Snapshot 2026-08-27 · 09:49 ET'));
+
+  const changed = deepClone(data);
+  changed.active_portfolio[0].brief_note = 'Fresh October 8 research review.';
+  const changedResponse = response();
+  await createSwingLeadersHandlers({ service: { getSnapshot: async () => ({ available: true, stale: false, data: changed }) } }).api({}, changedResponse);
+  assert.notStrictEqual(
+    changedResponse.headers['x-vixale-swing-snapshot-id'],
+    apiResponse.headers['x-vixale-swing-snapshot-id'],
+    'review-note changes must change the snapshot identity even without ticker changes',
+  );
+
+  const staleResponse = response();
+  await createSwingLeadersHandlers({ service: { getSnapshot: async () => ({ available: true, stale: true, data }) } }).api({}, staleResponse);
+  assert.strictEqual(staleResponse.headers['x-vixale-swing-feed-stale'], '1');
+  assert.strictEqual(staleResponse.headers['cache-control'], 'no-store, max-age=0');
+
+  const unavailableResponse = response();
+  await createSwingLeadersHandlers({ service: { getSnapshot: async () => ({ available: false, stale: true, data: null }) } }).api({}, unavailableResponse);
+  assert.strictEqual(unavailableResponse.statusCode, 503);
+  assert.strictEqual(unavailableResponse.headers['cache-control'], 'no-store, max-age=0');
+  assert.strictEqual(unavailableResponse.headers['x-vixale-swing-snapshot-id'], undefined);
+}
+
 async function run() {
   const parsed = parsePublicFeed(fixtureRows());
   assert.strictEqual(parsed.snapshot_date, '2026-08-27');
@@ -323,6 +385,7 @@ async function run() {
   assert.ok(!equityStaleHtml.includes('Stale — last valid snapshot'), 'Equity History warning must remain independent from Public Feed freshness');
 
   await testCacheFallbackAndDailyAppend();
+  await testSnapshotParityAndNoStoreHeaders();
   console.log('Swing Leaders daily Model P&L equity curve tests passed.');
 }
 
