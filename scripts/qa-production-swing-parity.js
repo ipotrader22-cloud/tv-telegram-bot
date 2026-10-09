@@ -54,7 +54,17 @@ async function verifyPair() {
     assert.ok(activeHtml.includes("Reviewed " + item.last_review_date), "HTML must retain Active review dates");
   }
   const expected = process.env.QA_SWING_EXPECTED_DATE;
-  if (expected) assert.equal(data.snapshot_date, expected, "Expected production review must be published");
+  if (expected) {
+    assert.equal(data.snapshot_date, expected, "Expected production review must be published");
+    assert.equal(data.equity_history_latest_date, expected, "Today's equity history must be published");
+    for (const item of data.active_portfolio) {
+      assert.equal(item.last_review_date, expected, item.ticker + " must display today's review");
+      assert.ok(String(item.brief_note || "").trim(), item.ticker + " must have a research note");
+    }
+    for (const item of data.interns) {
+      assert.equal(item.review_date, expected, item.ticker + " candidate review must be current");
+    }
+  }
   console.log(JSON.stringify({
     result: "PASS",
     origin: ORIGIN,
