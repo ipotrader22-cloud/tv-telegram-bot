@@ -1,0 +1,52 @@
+name: Swing Morning Publication Verification
+
+# A lightweight, independent production-only check for the 10:00 ET model review.
+# GitHub cron is UTC; 14:xx covers EDT and 15:xx covers EST.
+# The NY local-hour guard prevents duplicate off-hour checks at DST transitions.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "11,18 14,15 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-swing-publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve New York review window
+        id: review
+        shell: bash
+        run: |
+          set -euo pipefail
+          review_date="$(TZ=America/New_York date +%F)"
+          local_hour="$(TZ=America/New_York date +%H)"
+          echo "review_date=$review_date" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" && "$local_hour" != "10" ]]; then
+            echo "check=false" >> "$GITHUB_OUTPUT"
+            echo "Outside the 10 AM New York verification hour; no check is needed."
+          else
+            echo "check=true" >> "$GITHUB_OUTPUT"
+            echo "Verifying Swing publication for $review_date at local hour $local_hour ET."
+          fi
+
+      - name: Check out production main
+        if: steps.review.outputs.check == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node
+        if: steps.review.outputs.check == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify current-day Swing HTML/API parity
+        if: steps.review.outputs.check == 'true'
+        env:
+          QA_EN_ORIGIN: https://www.vixale.com
+          QA_SWING_EXPECTED_DATE: ${{ steps.review.outputs.review_date }}
+        run: node scripts/qa-production-swing-parity.js
