@@ -1,5 +1,43 @@
 # VECO Developer Handbook
 
+## Swing morning reliability incident — 2026-10-12
+
+The daily research/model writer is a ChatGPT task, not the website or the
+publication QA workflow. The October 12 primary task reported a platform safety
+rejection of its multi-sheet transaction, then disabled itself; the recovery
+task reported re-enabling it. Fail-closed must withhold unverified changes and
+delivery, never disable future schedules. The three retained prompts now state
+that rule explicitly, limit transient retries, require full-date Resend history
+pagination, preserve atomic writes/formulas, and identify independent DATA,
+PUBLICATION, and DELIVERY results. A platform safety rejection is not a transient
+API error and must not be bypassed.
+
+Publication QA uses `scripts/qa-swing-publication-retry.js`: up to four direct
+parity attempts with 60-second spacing and a 70-second per-process deadline.
+The workflow serializes its own checks without canceling a running check and
+retains dated JSON evidence for 30 days. Exhausted attempts keep the job failed.
+This concurrency group locks only publication QA, not ChatGPT portfolio writes.
+It does not certify research, formula integrity or Resend delivery, and it does
+not generate scores, trade decisions, missing equity rows, or email.
+
+Direct production checking on October 12 passed same-snapshot/cache/history
+checks but rejected the expected date: production and the source workbook were
+still October 9. Render was live on `75b0d33150e3017caf19e37791bc770c6ef3bd18`.
+Resend showed the October 8 and 9 morning reports eventually delivered at
+22:26:37Z and 22:40:12Z respectively; no October 12 report was found in the
+date-covered history. Routine delivered system tests do not prove report delivery.
+
+Remaining architecture gap: no approved executable research producer, durable
+shared writer lock or transactional report outbox exists in this publication
+runner. Prompt edits cannot guarantee those mechanisms or resolve a platform
+safety block. Do not claim end-to-end stabilization until a verified research
+artifact, atomic ledger commit, current-date production parity, and accepted /
+delivered Resend record all pass. Existing weekday QA still needs an authoritative
+market-calendar gate before treating every holiday date as a missing review.
+
+Rollback: revert the publication-retry workflow/script/test/handbook commit and
+restore the saved pre-change prompts. No workbook or broker rollback is required.
+
 **Project:** Vixale Ecosystem (VECO)  
 **Status:** Living canonical reference  
 **Last updated:** 2026-10-07
@@ -3224,3 +3262,4 @@ The public primary navigation includes `Daily Recaps` between `Results` and `Pri
 ### Swing Total P&L QA label contract (2026-10-06)
 
 The Swing page's current summary calculation remains `active_unrealized_model_pnl + closed_realized_model_pnl`. The final public presentation label is `Total P&L` (with `Portfolio P&L` used for the chart heading), not the older `Total Model P&L` label. Regression tests must validate the unchanged arithmetic separately from the current presentation copy. Russian public-page localization maps these labels to `Общий P&L` and `P&L портфеля` respectively. This is presentation/test localization only and does not change Swing Trading Lab calculations, feed fields, portfolio logic, or execution behavior.
+

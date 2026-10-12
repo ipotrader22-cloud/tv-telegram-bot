@@ -11,10 +11,15 @@ on:
 permissions:
   contents: read
 
+# Serializes publication checks only; this is not a lock for ChatGPT writers.
+concurrency:
+  group: swing-morning-publication-verification
+  cancel-in-progress: false
+
 jobs:
   verify-swing-publication:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Resolve New York review window
         id: review
@@ -49,4 +54,14 @@ jobs:
         env:
           QA_EN_ORIGIN: https://www.vixale.com
           QA_SWING_EXPECTED_DATE: ${{ steps.review.outputs.review_date }}
-        run: node scripts/qa-production-swing-parity.js
+        run: node scripts/qa-swing-publication-retry.js
+
+      - name: Retain exact publication gate evidence
+        if: always() && steps.review.outputs.check == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: swing-publication-${{ steps.review.outputs.review_date }}-${{ github.run_id }}
+          path: swing-publication-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
