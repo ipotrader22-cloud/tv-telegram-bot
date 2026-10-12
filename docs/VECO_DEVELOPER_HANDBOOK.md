@@ -3278,3 +3278,5 @@ The retained ChatGPT tasks were hardened against self-disabling after failures a
 
 Validation: existing Swing core, active-rule, and instructional regression suites cover shared English policy and Russian summary copy. No schema, credentials, broker execution, or model accounting arithmetic changes in this presentation patch.
 
+Swing deployed-page follow-up (2026-10-12): the UI summary preload replaces the core How It Works section, so core-only rule changes were insufficient. `website_swing_ui_refinement.js` now uses the same shared opening rule and immediate below-70 ranking exit, with Russian translations. Its regression suite verifies the actual transformed output; obsolete test assumptions about adjacent start-command preloads were updated to check required modules independently. Four relevant Swing suites pass. The approved 9:30 Codex heartbeat is now ACTIVE; this supersedes the earlier pending-activation note. The verified two-lot event alert was delivered, but full daily research and immutable historical valuation restoration remain pending.
+

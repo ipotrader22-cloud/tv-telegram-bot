@@ -11,8 +11,8 @@ const {
 } = require("../website_swing_ui_refinement");
 
 const start = pkg.scripts.start;
-assert(start.startsWith("node -r ./website_conversion_final_qa_refinement.js -r ./website_description_card_standard.js -r ./website_conversion_access_services_refinement.js"));
-assert(start.includes("-r ./website_swing_ui_refinement.js -r ./website_conversion_pricing_refinement.js"));
+assert(start.includes("-r ./website_conversion_final_qa_refinement.js"));
+assert(start.includes("-r ./website_swing_ui_refinement.js"));
 
 const fixture = `<!doctype html><html><head></head><body>
 <main data-vx-conversion-system-page="swing">
@@ -70,12 +70,12 @@ assert(!out.includes("Old technical wording"));
 assert(!out.includes("Old rules copy"));
 
 assert(out.includes('data-vx-swing-how="beginner"'));
-assert(out.includes("Stocks that are currently in the Active portfolio. Positions are monitored for Profit target/Stop Loss/or Removal due to ratings change. Check every morning around 10:06 for updates."));
+assert(out.includes("Open model positions monitored for targets, the 9:30 AM ET opening stop, and daily research rankings."));
 assert(out.includes("They are not open positions and may never be added."));
 assert(out.includes("<strong>Profit Target:</strong> A +10% target may fill during the day."));
-assert(out.includes("<strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review."));
-assert(out.includes("<strong>Closed Trades</strong>Closed positions due to Profit Target/Stop/Removal from the Active Portfolio. Position can also be removed from Active Portfolio if ranking goes below 70.</p>"));
-assert(out.includes("<strong>Position size and exits</strong><span class=\"vx-swing-copy-row\">Each position uses a fixed $10,000 allocation.</span><span class=\"vx-swing-copy-row\"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class=\"vx-swing-copy-row\"><strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review.</span></p>"));
+assert(out.includes("<strong>Stop:</strong> If the regular-session 9:30 AM ET opening price is at least 5% below entry, close the model position at the market price immediately after confirmation."));
+assert(out.includes("<strong>Closed Trades</strong>Completed model positions. A holding below the required score of 70 closes at market immediately after new rankings are established.</p>"));
+assert(out.includes("<strong>Position size and exits</strong><span class=\"vx-swing-copy-row\">Each position uses a fixed $10,000 allocation.</span><span class=\"vx-swing-copy-row\"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class=\"vx-swing-copy-row\"><strong>Stop:</strong> If the regular-session 9:30 AM ET opening price is at least 5% below entry, close the model position at the market price immediately after confirmation.</span></p>"));
 assert(out.includes("$10K / position"));
 assert(!out.includes("$10K</strong><span>per position"));
 assert(out.includes("<small>Candidates</small>"));
@@ -112,3 +112,4 @@ assert.strictEqual(refineSwingHtml(out), out, "Swing UI refinement must be idemp
 assert.strictEqual(SWING_PATH, "/trading-systems/swing-trading");
 
 console.log("Swing UI presentation refinement: PASS");
+
