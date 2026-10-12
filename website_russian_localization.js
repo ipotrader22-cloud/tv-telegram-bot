@@ -19,6 +19,7 @@ const PRIVATE_PREFIXES = Object.freeze([
 // responsive behavior, live-data wiring, forms and authorization remain identical.
 // Only user-facing copy and locale metadata are transformed here.
 const TRANSLATIONS = Object.freeze([
+  ...require("./website_russian_translations_swing_opening_rules"),
   ...require("./website_russian_translations_1"),
   ...require("./website_russian_translations_2"),
   ...require("./website_russian_translations_3"),
@@ -436,3 +437,4 @@ module.exports = {
   installRussianHomepageCanonicalRenderer,
   wrapExpress,
 };
+

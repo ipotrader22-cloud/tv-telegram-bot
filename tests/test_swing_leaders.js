@@ -335,9 +335,9 @@ async function run() {
   assert.ok(html.includes('+$505.00'));
   assert.ok(html.includes('+$1,261.00'));
   assert.ok(html.includes('profit target is +10% from entry and may trigger intraday'));
-  assert.ok(html.includes('Stop-losses are evaluated only during the scheduled morning review'));
-  assert.ok(html.includes('current review price is more than 5% below entry'));
-  assert.ok(html.includes('position is closed at that price'));
+  assert.ok(html.includes('regular-session 9:30 AM ET opening price is at least 5% below entry'));
+  assert.ok(html.includes('model position closes at the market price immediately after confirmation'));
+  assert.ok(html.includes('immediately after the new rankings are established'));
   assert.ok(!html.includes('daily closing price is more than 5% below entry'));
   assert.ok(!html.includes('intraday −5% stop'));
   assert.ok(!html.includes('EOD stop'));
@@ -393,3 +393,4 @@ run().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
+
