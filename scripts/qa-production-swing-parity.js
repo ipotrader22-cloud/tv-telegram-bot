@@ -3,6 +3,7 @@
 // Live production contract: HTML and JSON must expose one identical, noncacheable
 // Swing Leaders snapshot. No credentials or portfolio writes are required.
 const assert = require("node:assert/strict");
+const { assertDailyReview } = require("./swing-daily-review-gate");
 
 const ORIGIN = String(process.env.QA_EN_ORIGIN || "https://www.vixale.com").replace(/\/$/, "");
 const PAGE = "/trading-systems/swing-trading";
@@ -55,15 +56,7 @@ async function verifyPair() {
   }
   const expected = process.env.QA_SWING_EXPECTED_DATE;
   if (expected) {
-    assert.equal(data.snapshot_date, expected, "Expected production review must be published");
-    assert.equal(data.equity_history_latest_date, expected, "Today's equity history must be published");
-    for (const item of data.active_portfolio) {
-      assert.equal(item.last_review_date, expected, item.ticker + " must display today's review");
-      assert.ok(String(item.brief_note || "").trim(), item.ticker + " must have a research note");
-    }
-    for (const item of data.interns) {
-      assert.equal(item.review_date, expected, item.ticker + " candidate review must be current");
-    }
+    assertDailyReview(data, expected);
   }
   console.log(JSON.stringify({
     result: "PASS",
@@ -81,3 +74,4 @@ verifyPair().catch(error => {
   console.error("Swing production HTML/API parity verification failed:", error.message);
   process.exitCode = 1;
 });
+
