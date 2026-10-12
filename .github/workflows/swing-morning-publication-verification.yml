@@ -49,19 +49,28 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Verify current-day Swing HTML/API parity
+      - name: Check NYSE session calendar
+        id: calendar
         if: steps.review.outputs.check == 'true'
+        env:
+          REVIEW_DATE: ${{ steps.review.outputs.review_date }}
+        run: |
+          node -e 'const s=require("./scripts/swing-market-calendar").session(process.env.REVIEW_DATE); require("fs").appendFileSync(process.env.GITHUB_OUTPUT,"open="+s.open+"\n"); console.log(JSON.stringify({gate:"MARKET_SESSION",...s}));'
+
+      - name: Verify current-day Swing HTML/API parity
+        if: steps.review.outputs.check == 'true' && steps.calendar.outputs.open == 'true'
         env:
           QA_EN_ORIGIN: https://www.vixale.com
           QA_SWING_EXPECTED_DATE: ${{ steps.review.outputs.review_date }}
         run: node scripts/qa-swing-publication-retry.js
 
       - name: Retain exact publication gate evidence
-        if: always() && steps.review.outputs.check == 'true'
+        if: always() && steps.review.outputs.check == 'true' && steps.calendar.outputs.open == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: swing-publication-${{ steps.review.outputs.review_date }}-${{ github.run_id }}
           path: swing-publication-evidence.json
           if-no-files-found: error
           retention-days: 30
+
 
