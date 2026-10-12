@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+const riskCopy = require("./lib/swing-risk-copy");
 
 const SWING_PATH = "/trading-systems/swing-trading";
 const STYLE_ID = "vx-swing-ui-refinement-style";
@@ -43,10 +44,10 @@ function renderHowSummaryCard() {
   return `<section class="vx-swing-how-block" aria-label="How Swing Leaders works" data-vx-swing-how="beginner">
           <h2>How Swing Leaders Works</h2>
           <div class="vx-swing-how-list">
-            <p><strong>Active Portfolio</strong>Stocks that are currently in the Active portfolio. Positions are monitored for Profit target/Stop Loss/or Removal due to ratings change. Check every morning around 10:06 for updates.</p>
+            <p><strong>Active Portfolio</strong>Open model positions monitored for targets, the 9:30 AM ET opening stop, and daily research rankings.</p>
             <p><strong>Candidates</strong>Stocks being watched for a possible future addition. They are not open positions and may never be added.</p>
-            <p><strong>Closed Trades</strong>Closed positions due to Profit Target/Stop/Removal from the Active Portfolio. Position can also be removed from Active Portfolio if ranking goes below 70.</p>
-            <p><strong>Position size and exits</strong><span class="vx-swing-copy-row">Each position uses a fixed $10,000 allocation.</span><span class="vx-swing-copy-row"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class="vx-swing-copy-row"><strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review.</span></p>
+            <p><strong>Closed Trades</strong>Completed model positions. A holding below the required score of 70 closes at market immediately after new rankings are established.</p>
+            <p><strong>Position size and exits</strong><span class="vx-swing-copy-row">Each position uses a fixed $10,000 allocation.</span><span class="vx-swing-copy-row"><strong>Profit Target:</strong> A +10% target may fill during the day.</span><span class="vx-swing-copy-row"><strong>Stop:</strong> ${riskCopy.opening}</span></p>
           </div>
         </section>`;
 }
@@ -173,3 +174,4 @@ module.exports = {
   installSwingUiRefinement,
   wrapExpress,
 };
+
