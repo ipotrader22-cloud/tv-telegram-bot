@@ -43,17 +43,15 @@ assert(swingRu.includes(">руководство по торговле</a>."));
 assert(swingRu.includes('href="https://ru.vixale.com/trading-guide#swing-trading"'));
 
 const cards = renderHowSummaryCard();
-assert(cards.includes("Stocks that are currently in the Active portfolio. Positions are monitored for Profit target/Stop Loss/or Removal due to ratings change. Check every morning around 10:06 for updates."));
-assert(cards.includes("Closed positions due to Profit Target/Stop/Removal from the Active Portfolio."));
+assert(cards.includes("Open model positions monitored for targets, the 9:30 AM ET opening stop, and daily research rankings."));
+assert(cards.includes("Completed model positions. A holding below the required score of 70 closes at market immediately after new rankings are established."));
 assert(cards.includes("<strong>Profit Target:</strong> A +10% target may fill during the day."));
-assert(cards.includes("<strong>Stop:</strong> The 5% stop reference triggers only on daily close and checked during the scheduled morning review."));
-assert(cards.includes("Position can also be removed from Active Portfolio if ranking goes below 70."));
-const cardsRu = localizeRussianHtml(`<!doctype html><html><body>${cards}</body></html>`, SWING_PATH);
-assert(cardsRu.includes("Акции, которые в настоящее время находятся в Активном портфеле."));
-assert(cardsRu.includes("10:06"));
-assert(cardsRu.includes("<strong>Цель прибыли:</strong> Цель +10% может быть исполнена в течение дня."));
-assert(cardsRu.includes("<strong>Стоп:</strong> Уровень стопа 5% срабатывает только по закрытию дня"));
-assert(cardsRu.includes("рейтинг опустится ниже 70"));
+assert(cards.includes("<strong>Stop:</strong> If the regular-session 9:30 AM ET opening price is at least 5% below entry, close the model position at the market price immediately after confirmation."));
+assert(!cards.includes("triggers only on daily close"));
+const cardsRu = localizeRussianHtml(`<!doctype html><html><body>${cards}</body></html>`, SWING_PATH).split('<script')[0];
+assert(cardsRu.includes("Открытые модельные позиции: цели прибыли, стоп на открытии в 9:30 по Нью-Йорку"));
+assert(cardsRu.includes("При рейтинге ниже обязательных 70 позиция закрывается по рыночной цене сразу после обновления рейтингов."));
+assert(cardsRu.includes("Если цена открытия основной сессии в 9:30 по Нью-Йорку минимум на 5% ниже цены входа"));
 assert(cardsRu.includes("$10,000"));
 
 for (const source of [

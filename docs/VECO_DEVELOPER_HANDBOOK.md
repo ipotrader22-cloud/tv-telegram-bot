@@ -16,6 +16,9 @@ Q/R controls, Sheet formulas, API fields, history and review-aware refresh are
 unchanged. Tests cover gains/losses, precision, zero, invalid prices, EN/RU
 output, unchanged totals and source immutability. Rollback: revert this commit
 and allow the normal main-branch Render auto-deploy.
+The owner-copy QA fixture now expects the existing October 12 opening-stop
+and immediate below-70 exit text, replacing obsolete daily-close assertions.
+Russian assertions inspect rendered markup rather than the translation script.
 
 ## Swing morning reliability incident — 2026-10-12
 
