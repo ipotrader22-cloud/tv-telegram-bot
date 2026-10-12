@@ -21,8 +21,11 @@ assert(en.includes(`id="${STYLE_ID}"`));
 assert(en.includes(`class="${RULES_CLASS}"`));
 assert(en.includes("Target +10%"));
 assert(en.includes("May trigger intraday as soon as price reaches +10% from entry."));
-assert(en.includes("Stop -5%"));
-assert(en.includes("Evaluated on the daily close only; triggered when the closing price is more than 5% below entry."));
+assert(en.includes("Opening -5%"));
+assert(en.includes("9:30 AM ET opening price is at least 5% below entry"));
+assert(en.includes("Score exit"));
+assert(en.includes("immediately after the new rankings are established"));
+assert(!en.includes("daily close"));
 assert(en.includes("Open model positions using delayed GOOGLEFINANCE quotes for current valuation."));
 assert(en.includes("Unrealized Model P&amp;L"));
 assert(en.indexOf("Open model positions") < en.indexOf("Target +10%"));
@@ -32,13 +35,16 @@ assert.strictEqual(refineSwingActivePortfolioRules(en, "en"), en, "rule summary 
 const ru = refineSwingActivePortfolioRules(fixture, "ru");
 assert(ru.includes("Цель +10%"));
 assert(ru.includes("Может сработать внутри дня, как только цена достигнет +10% от цены входа."));
-assert(ru.includes("Стоп -5%"));
-assert(ru.includes("Оценивается только по дневному закрытию; срабатывает, если цена закрытия более чем на 5% ниже цены входа."));
+assert(ru.includes("Открытие -5%"));
+assert(ru.includes("на 5% или более ниже цены входа"));
+assert(ru.includes("Выход по баллу"));
+assert(ru.includes("сразу после формирования новых рейтингов"));
 
 const rules = renderRules("en");
-assert(rules.includes('aria-label="Profit target and stop rules"'));
+assert(rules.includes('aria-label="Profit target and exit rules"'));
 
 const unrelated = "<html><head></head><body><h2>Closed Trades</h2></body></html>";
 assert.strictEqual(refineSwingActivePortfolioRules(unrelated, "en"), unrelated);
 
 console.log("Swing Active Portfolio target/stop summary EN/RU: PASS");
+

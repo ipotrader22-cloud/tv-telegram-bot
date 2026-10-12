@@ -2,7 +2,7 @@
 
 **Freeze:** Vixale Swing Leaders v1.1  
 **Approved:** 2026-08-27  
-**Risk/exit rule clarification approved:** 2026-09-03  
+**Risk/exit rule clarification approved:** 2026-10-12 (owner opening-price and ranking clarification)
 **Daily Model P&L equity curve approved:** 2026-09-03  
 **Canonical public-route consolidation approved:** 2026-09-05  
 **Trading/research owner:** Trading Lab  
@@ -25,7 +25,7 @@ The canonical page continues to read the same Trading Lab-owned `Public Feed` an
 
 The public page uses exactly three research/model-portfolio categories:
 
-- **Active Portfolio** — open model positions currently monitored for target, scheduled morning-review stop, and ongoing Trading Lab qualification.
+- **Active Portfolio** — open model positions monitored for target, the regular-session opening stop, and ongoing Trading Lab qualification.
 - **Potential Candidates** — potential candidates under active research review. They are not confirmed entries and may never enter the portfolio.
 - **Closed Trades** — completed model positions with final return and Trading Lab-supplied exit reason.
 
@@ -51,15 +51,15 @@ Engineering renders the Trading Lab `brief_reason` text directly and must not re
 Each model position uses a fixed **$10,000 allocation at entry**.
 
 - Profit target: **+10% from entry** and may trigger **intraday**. If price touches or crosses the +10% target while the model position is open, Trading Lab closes the model trade at exactly the +10% target price.
-- Stop loss: **not intraday**. It is evaluated only during the scheduled **morning review**. If the current price at that review is more than **5% below entry**, Trading Lab closes the model position at the current review price. An intraday move below -5% at any other time does not trigger the stop by itself.
+- Opening stop: for a lot held at the regular-session **9:30 AM ET open**, a verified opening price **at least 5% below its original entry** triggers an immediate market close after confirmation. Exactly -5% qualifies. Compare opening price with entry, not prior close. Record the actual contemporaneous market quote and timestamp; a delayed recovery must never backdate its fill to 9:30 or substitute the threshold price.
 - The Swing Leaders stop must not be described as an EOD or daily-close rule.
-- Research exit: Trading Lab may remove a position from the Active Portfolio independently of the price stop/target.
+- Research exit: a holding below the existing minimum required score (70) closes at market immediately after verified new rankings are established. The preferred 80+ score is not the minimum. No additional continuous intraday stop is inferred from this clarification.
 
 Engineering displays these rules but does not execute, evaluate, or infer exits. The website must not independently compare prices with target/stop thresholds or change portfolio membership.
 
 ## Approved public Risk & Exit Rules copy
 
-> **Risk & Exit Rules:** Each model position starts with a $10,000 allocation. The profit target is +10% from entry and may trigger intraday. Stop-losses are evaluated only during the scheduled morning review; if the current review price is more than 5% below entry, the position is closed at that price. A position may also be closed when Trading Lab removes it from the Active Portfolio. **Research Score:** proprietary Vixale research metric shown on a 0–100 scale.
+> **Risk & Exit Rules:** Each model position starts with a $10,000 allocation. The profit target is +10% from entry and may trigger intraday. If the regular-session 9:30 AM ET opening price is at least 5% below entry, the model position closes at the market price immediately after confirmation. A holding that falls below the minimum required research score closes at the market price immediately after the new rankings are established. Market exit prices may differ from the opening price or stop reference. **Research Score:** proprietary Vixale research metric shown on a 0–100 scale.
 
 The public website must not use the superseded descriptions `daily closing price is more than 5% below entry`, `intraday -5% stop`, or `EOD stop` for Swing Leaders.
 
@@ -180,3 +180,4 @@ No scoring methodology is exposed or inferred by Engineering.
 Engineering may read, validate, whitelist, cache, format, render, and calculate the explicitly approved fixed-allocation Model P&L. Engineering must not independently score, select candidates, create entries/exits, infer exit reasons, change portfolio membership, substitute quotes, alter historical Trading Lab equity rows, alter Trading Lab strategy logic, or modify the morning automation that fills the Swing worksheets.
 
 This implementation remains isolated from Pine, TradingView alerts, UAM, TWS/IBKR execution, bridge order/risk logic, broker lifecycle behavior, and the owner-managed Option Journal workflow.
+

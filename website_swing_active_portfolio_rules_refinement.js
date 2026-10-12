@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+const riskCopy = require("./lib/swing-risk-copy");
 
 const SWING_PATH = "/trading-systems/swing-trading";
 const STYLE_ID = "vx-swing-active-portfolio-rules-style";
@@ -24,20 +25,25 @@ function renderRules(locale = "en") {
   const copy = ru ? {
     target: "Цель +10%",
     targetBody: "Может сработать внутри дня, как только цена достигнет +10% от цены входа.",
-    stop: "Стоп -5%",
-    stopBody: "Оценивается только по дневному закрытию; срабатывает, если цена закрытия более чем на 5% ниже цены входа.",
-    label: "Правила цели прибыли и стопа",
+    stop: "Открытие -5%",
+    stopBody: "Если цена открытия основной сессии в 9:30 по Нью-Йорку на 5% или более ниже цены входа, модельная позиция закрывается по рыночной цене сразу после подтверждения.",
+    score: "Выход по баллу",
+    scoreBody: "Если рейтинг позиции ниже минимально допустимого, она закрывается по рыночной цене сразу после формирования новых рейтингов.",
+    label: "Правила цели прибыли и выхода",
   } : {
     target: "Target +10%",
     targetBody: "May trigger intraday as soon as price reaches +10% from entry.",
-    stop: "Stop -5%",
-    stopBody: "Evaluated on the daily close only; triggered when the closing price is more than 5% below entry.",
-    label: "Profit target and stop rules",
+    stop: "Opening -5%",
+    stopBody: riskCopy.opening,
+    score: "Score exit",
+    scoreBody: riskCopy.score,
+    label: "Profit target and exit rules",
   };
 
   return `<div class="${RULES_CLASS}" aria-label="${copy.label}">
     <div class="vx-swing-rule-row"><strong class="target">${copy.target}</strong><span>${copy.targetBody}</span></div>
     <div class="vx-swing-rule-row"><strong class="stop">${copy.stop}</strong><span>${copy.stopBody}</span></div>
+    <div class="vx-swing-rule-row"><strong class="stop">${copy.score}</strong><span>${copy.scoreBody}</span></div>
   </div>`;
 }
 
@@ -124,3 +130,4 @@ module.exports = {
   installSwingActivePortfolioRules,
   wrapExpress,
 };
+

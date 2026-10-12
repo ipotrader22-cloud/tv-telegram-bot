@@ -49,10 +49,11 @@ const guideHtml = `<section id="swing-trading">
 const refinedGuide = refineSwingInstructionalHtml(guideHtml, GUIDE_PATH);
 for (const required of [
   REVIEW_WINDOW,
-  "updated once per trading day",
+  "Research rankings update during",
   "GTC sell limit",
-  "morning-review stop reference",
-  "not an automatic intraday stop order",
+  "9:30 AM ET open",
+  "not a continuous intraday stop order",
+  "immediately after the new rankings are established",
   "independent exit instruction",
   "6:00–8:30 PM ET",
 ]) assert(refinedGuide.includes(required), `missing guide content: ${required}`);
@@ -65,8 +66,8 @@ const systemsHtml = `<div>A systematic multi-session portfolio reviewed each tra
 <div>Check for updates each trading morning from 9:45–10:00 AM ET.</div>`;
 const refinedSystems = refineSwingInstructionalHtml(systemsHtml, SYSTEMS_PATH);
 assert(refinedSystems.includes(REVIEW_WINDOW));
-assert(refinedSystems.includes("scheduled morning review"));
-assert(refinedSystems.includes("not an intraday stop order"));
+assert(refinedSystems.includes("9:30 AM ET open"));
+assert(refinedSystems.includes("not a continuous intraday stop order"));
 assert(!refinedSystems.includes("9:45–10:00 AM ET"));
 assert(!refinedSystems.includes("evaluated on the daily close"));
 assert(!refinedSystems.includes("<video"));
@@ -77,3 +78,4 @@ assert.strictEqual(pdf.subarray(0, 5).toString("ascii"), "%PDF-");
 assert(pdf.length > 5000, "Trading Guide PDF must remain intact");
 
 console.log("Swing public timing refinement without instructional video: PASS");
+

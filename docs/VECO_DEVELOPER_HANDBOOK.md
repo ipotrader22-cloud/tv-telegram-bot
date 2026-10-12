@@ -3263,3 +3263,18 @@ The public primary navigation includes `Daily Recaps` between `Results` and `Pri
 
 The Swing page's current summary calculation remains `active_unrealized_model_pnl + closed_realized_model_pnl`. The final public presentation label is `Total P&L` (with `Portfolio P&L` used for the chart heading), not the older `Total Model P&L` label. Regression tests must validate the unchanged arithmetic separately from the current presentation copy. Russian public-page localization maps these labels to `Общий P&L` and `P&L портфеля` respectively. This is presentation/test localization only and does not change Swing Trading Lab calculations, feed fields, portfolio logic, or execution behavior.
 
+
+### Swing opening-stop clarification and recovery findings (2026-10-12)
+
+Owner-approved model policy uses the verified regular-session 9:30 AM ET opening price, at least 5% below original lot entry (inclusive), for lots held at that opening. Close using the actual contemporaneous market quote after confirmation. Late recovery is recorded at its real quote timestamp, never as an opening fill. A verified score below the existing minimum 70 closes immediately after new rankings. The +10% target remains unchanged.
+
+The shared `lib/swing-risk-copy.js` and English/Russian presentation now describe this policy consistently. Website runtime remains read-only: it does not research, score, execute exits, write Sheets, or send alerts. A separate 9:30 scheduled checker was proposed but its creation was blocked by automatic approval review pending explicit owner approval; this patch does not activate it.
+
+Recovery producer failure: explanatory text appended to `snapshot_time_et` invalidated the feed. Keep Public Feed B3 and Equity History B as strict `HH:MM ET`; place phase/status prose in market_posture or notes. An opening-event publication may retain explicitly labeled prior research dates. The daily-review gate must require fresh verified research for every active holding and candidate before a morning email. These are distinct gates, not interchangeable success claims.
+
+Current-day unrealized formulas must not remain in completed historical snapshots: October 9 D28 was found referencing mutable Open Positions after October 12 closes. Preserve Q/R inclusion-aware realized formulas and C+D / 100000+E totals. Restore historical marks only from dated verified evidence, disclose its true valuation time, and retain provenance; never manufacture the missing original morning mark.
+
+The retained ChatGPT tasks were hardened against self-disabling after failures and oversized read batches (at most four independent reads per invocation, lower if documented). This does not provide a distributed writer lock. PR287's concurrency protects publication verification only. A fully orchestrated research/ledger/delivery worker and immediate 9:30 scheduling remain separate work requiring their own verified activation.
+
+Validation: existing Swing core, active-rule, and instructional regression suites cover shared English policy and Russian summary copy. No schema, credentials, broker execution, or model accounting arithmetic changes in this presentation patch.
+
