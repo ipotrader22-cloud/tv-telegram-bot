@@ -1,5 +1,25 @@
 # VECO Developer Handbook
 
+## Swing Closed Trades dollar column — 2026-10-12
+
+`lib/swing-leaders-core.js` renders P&L ($) between Return and Entry Date.
+Each included public trade uses `$10,000 * (exit_price / entry_price - 1)`
+without rounding the return first or using shares. Dollars use two decimals,
+explicit profit/loss signs and existing green/red gain/loss classes; mobile
+rows retain data-labels and the empty row spans nine columns. Unsupported
+prices display a neutral dash rather than fabricated P&L.
+
+This is a read-only website column. Existing realized totals still use the
+published return percentages, so summing individually rounded price-ratio
+values can differ slightly from the preserved summary. Public Feed membership,
+Q/R controls, Sheet formulas, API fields, history and review-aware refresh are
+unchanged. Tests cover gains/losses, precision, zero, invalid prices, EN/RU
+output, unchanged totals and source immutability. Rollback: revert this commit
+and allow the normal main-branch Render auto-deploy.
+The owner-copy QA fixture now expects the existing October 12 opening-stop
+and immediate below-70 exit text, replacing obsolete daily-close assertions.
+Russian assertions inspect rendered markup rather than the translation script.
+
 ## Swing morning reliability incident — 2026-10-12
 
 The daily research/model writer is a ChatGPT task, not the website or the
