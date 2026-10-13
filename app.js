@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { isSmioRsiPayload } = require('./lib/smio-rsi-gate');
 const {
   createBrokerEodCallbackRegistry,
   runBrokerEodCallback,
@@ -12116,6 +12117,9 @@ async function processRecognizedTradingViewWebhook(
   message,
   dependencies = {}
 ) {
+  // Covers durable Inbox replay as well as direct lifecycle processing.
+  // Research callbacks cannot create public trades through legacy classifiers.
+  if (isSmioRsiPayload(reqBody)) return;
   const bridgeCallback = isBridgeExecutionCallback(reqBody);
   const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
   const brokerEodWatchdog = Boolean(reqBody && reqBody.broker_eod_watchdog);
@@ -12230,6 +12234,7 @@ async function processRecognizedTradingViewWebhookLifecycle(
   failOnPublicationError,
   dependencies = {}
 ) {
+  if (isSmioRsiPayload(reqBody)) return;
   const edgeSetupId =
     parsedRow?.event === 'FILL' && isVixaleEdgeV2SetupRow(parsedRow)
       ? parsedRow.setup_id
@@ -12716,6 +12721,13 @@ async function processWebhookInboxItem(item, dependencies = {}) {
     });
     try {
       const reqBody = JSON.parse(current.raw_json || '{}');
+      if (isSmioRsiPayload(reqBody)) {
+        return await updateWebhookInboxItem(sheets, current, {
+          status: 'COMPLETE', next_attempt_at: '',
+          last_error: 'SMIO_RSI_RESEARCH_FREEZE_AND_LIVE_SIZING_REQUIRED',
+          completed_at: new Date().toISOString(),
+        });
+      }
       const message = normalizeRawMessage(reqBody);
       const parsedRow = typeof reqBody === 'object' && reqBody !== null
         ? parseJsonTradingViewAlert(reqBody)
@@ -12856,6 +12868,10 @@ async function handleTradingViewWebhookWithDependencies(
     const parsedJsonBody = parseWebhookJsonObject(rawBody, bodyInspection);
     const reqBody = parsedJsonBody || rawBody;
     const isJsonObject = Boolean(parsedJsonBody);
+
+    if (isSmioRsiPayload(reqBody)) {
+      return res.status(422).send('SMIO_RSI_RESEARCH_FREEZE_AND_LIVE_SIZING_REQUIRED');
+    }
 
     const message = normalizeRawMessage(reqBody);
 

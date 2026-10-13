@@ -15,17 +15,20 @@ try:  # package import in repository/tests
     from .render_callback_compat import install_render_callback_compat
     from .smi_forward_adapter import install_smi_forward_adapter
     from .smi_runtime_safety import install_smi_runtime_safety
+    from .smio_rsi_gate import install_smio_rsi_gate
 except ImportError:  # standalone C:\\ib_bridge deployment
     import ib_bridge_core as _core
     from quote_reconnect_adapter import install_quote_reconnect_adapter
     from render_callback_compat import install_render_callback_compat
     from smi_forward_adapter import install_smi_forward_adapter
     from smi_runtime_safety import install_smi_runtime_safety
+    from smio_rsi_gate import install_smio_rsi_gate
 
 install_smi_forward_adapter(_core)
 install_smi_runtime_safety(_core)
 install_render_callback_compat(_core)
 install_quote_reconnect_adapter(_core)
+install_smio_rsi_gate(_core)
 
 # Imports of bridge.ib_bridge / ib_bridge should receive the patched core module
 # itself, preserving existing test monkeypatching and global-state semantics.

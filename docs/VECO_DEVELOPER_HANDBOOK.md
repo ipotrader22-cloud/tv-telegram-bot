@@ -365,6 +365,35 @@ Existing classification and lifecycle must remain backward compatible.
 
 ## 3A. Forward-Test Engineering Integrations (Not Production)
 
+### SMIO_RSI research identity gate — proposed offline source
+
+SMIO_RSI is not approved for deployment. The Trading Lab handoff identifies
+Research v0.1, explicitly records no Research Freeze, and leaves Pine/NT8
+warmup, fill timing, EOD and basket sizing unresolved. See
+`docs/SMIO_RSI_INTEGRATION_REVIEW.md` for inspection and test evidence.
+
+The proposed `lib/smio-rsi-gate.js` reserves payloads carrying SMIO_RSI in
+system_id, strategy_id, strategy or setup_id before generic classification.
+Render returns HTTP 422 with
+`SMIO_RSI_RESEARCH_FREEZE_AND_LIVE_SIZING_REQUIRED`, without ingress spooling,
+bridge forwarding, trade ledger writes or Telegram publication. Old Inbox
+items are marked processing COMPLETE with that rejection in Last Error before
+stale-entry Pending cleanup; COMPLETE means queue processing ended, not execution.
+The lifecycle gate also refuses SMIO callbacks.
+
+`bridge/smio_rsi_gate.py` wraps the shared action and background dispatch after
+the existing adapters. Research payloads never delegate to broker handling or
+callback publication, even when mode is changed to LIVE. Other payloads retain
+their original paths. The deployment script includes this dependency in compile,
+copy and rollback lists; it has not been run. No enable switch is provided.
+
+The intended integration must reuse the existing connected TWS session, with
+no separate account requirement in UAM. The earlier paper handoff's independent
+account/receiver proposal is superseded by the owner's Engineering request.
+The installed UAM preview-only restriction and Pine trading behavior remain
+unchanged. Enabling alerts, implementing an approved broker executor, merging
+or deploying requires the strategy-specific gates and explicit authorization.
+
 ### 3A.1 SMI Histogram v0.4-FWD
 
 **Research freeze:** `SMI Histogram Strategy v0.4-FWD`

@@ -5,6 +5,7 @@ param(
     [string]$RenderCallbackCompatSourcePath = "",
     [string]$SmiAdapterSourcePath = "",
     [string]$SmiRuntimeSafetySourcePath = "",
+    [string]$SmioGateSourcePath = "",
     [string]$TargetPath = "C:\ib_bridge\ib_bridge.py",
     [string]$HealthUrl = "http://127.0.0.1:8000/ib/status"
 )
@@ -17,6 +18,9 @@ if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
 }
 if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
     throw "Could not resolve the deploy script directory."
+}
+if ([string]::IsNullOrWhiteSpace($SmioGateSourcePath)) {
+    $SmioGateSourcePath = Join-Path $scriptRoot "..\bridge\smio_rsi_gate.py"
 }
 
 if ([string]::IsNullOrWhiteSpace($SourcePath)) {
@@ -54,8 +58,9 @@ $coreSource = (Resolve-Path -LiteralPath $CoreSourcePath).Path
 $renderCallbackCompatSource = (Resolve-Path -LiteralPath $RenderCallbackCompatSourcePath).Path
 $smiAdapterSource = (Resolve-Path -LiteralPath $SmiAdapterSourcePath).Path
 $smiRuntimeSafetySource = (Resolve-Path -LiteralPath $SmiRuntimeSafetySourcePath).Path
+$smioGateSource = (Resolve-Path -LiteralPath $SmioGateSourcePath).Path
 
-foreach ($requiredSource in @($source, $coreSource, $renderCallbackCompatSource, $smiAdapterSource, $smiRuntimeSafetySource)) {
+foreach ($requiredSource in @($source, $coreSource, $renderCallbackCompatSource, $smiAdapterSource, $smiRuntimeSafetySource, $smioGateSource)) {
     if (-not (Test-Path -LiteralPath $requiredSource -PathType Leaf)) {
         throw "Bridge source does not exist: $requiredSource"
     }
@@ -68,6 +73,7 @@ $coreTargetPath = Join-Path $targetDirectory "ib_bridge_core.py"
 $renderCallbackCompatTargetPath = Join-Path $targetDirectory "render_callback_compat.py"
 $smiAdapterTargetPath = Join-Path $targetDirectory "smi_forward_adapter.py"
 $smiRuntimeSafetyTargetPath = Join-Path $targetDirectory "smi_runtime_safety.py"
+$smioGateTargetPath = Join-Path $targetDirectory "smio_rsi_gate.py"
 
 $python = Join-Path $targetDirectory ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Existing bridge Python was not found: $python" }
@@ -111,6 +117,7 @@ Invoke-Compile $python $renderCallbackCompatSource
 Invoke-Compile $python $smiAdapterSource
 Invoke-Compile $python $smiRuntimeSafetySource
 Invoke-Compile $python $source
+Invoke-Compile $python $smioGateSource
 
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $files = @(
@@ -118,7 +125,8 @@ $files = @(
     @{ Source = $coreSource; Target = $coreTargetPath },
     @{ Source = $renderCallbackCompatSource; Target = $renderCallbackCompatTargetPath },
     @{ Source = $smiAdapterSource; Target = $smiAdapterTargetPath },
-    @{ Source = $smiRuntimeSafetySource; Target = $smiRuntimeSafetyTargetPath }
+    @{ Source = $smiRuntimeSafetySource; Target = $smiRuntimeSafetyTargetPath },
+    @{ Source = $smioGateSource; Target = $smioGateTargetPath }
 )
 
 foreach ($file in $files) {
@@ -136,6 +144,7 @@ try {
     Copy-Item -LiteralPath $renderCallbackCompatSource -Destination $renderCallbackCompatTargetPath -Force
     Copy-Item -LiteralPath $smiAdapterSource -Destination $smiAdapterTargetPath -Force
     Copy-Item -LiteralPath $smiRuntimeSafetySource -Destination $smiRuntimeSafetyTargetPath -Force
+    Copy-Item -LiteralPath $smioGateSource -Destination $smioGateTargetPath -Force
     Copy-Item -LiteralPath $source -Destination $TargetPath -Force
 
     Invoke-Compile $python $coreTargetPath
@@ -143,6 +152,7 @@ try {
     Invoke-Compile $python $smiAdapterTargetPath
     Invoke-Compile $python $smiRuntimeSafetyTargetPath
     Invoke-Compile $python $TargetPath
+    Invoke-Compile $python $smioGateTargetPath
 
     if ($launch) {
         Stop-Process -Id $launch.ProcessId -Force
@@ -182,6 +192,7 @@ try {
     Write-Output "Deployed: $renderCallbackCompatTargetPath"
     Write-Output "Deployed: $smiAdapterTargetPath"
     Write-Output "Deployed: $smiRuntimeSafetyTargetPath"
+    Write-Output "Deployed: $smioGateTargetPath"
 } catch {
     foreach ($file in $files) {
         if ($file.HadTarget -and (Test-Path -LiteralPath $file.Backup -PathType Leaf)) {
