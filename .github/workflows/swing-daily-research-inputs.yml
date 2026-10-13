@@ -16,10 +16,14 @@ jobs:
       - name: Resolve New York collection window
         id: window
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$(TZ=America/New_York date +%H)" == "09" ]]; then
+          local_hour="$(TZ=America/New_York date +%H)"
+          run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$local_hour" == "09" || "$run_attempt" -gt 1 ]]; then
             echo "collect=true" >> "$GITHUB_OUTPUT"
+            echo "Research collection enabled: event=$GITHUB_EVENT_NAME local_hour=$local_hour run_attempt=$run_attempt"
           else
             echo "collect=false" >> "$GITHUB_OUTPUT"
+            echo "Research collection skipped: event=$GITHUB_EVENT_NAME local_hour=$local_hour run_attempt=$run_attempt"
           fi
       - uses: actions/checkout@v4
         if: steps.window.outputs.collect == 'true'
@@ -38,4 +42,3 @@ jobs:
           path: swing-research-inputs.json
           if-no-files-found: warn
           retention-days: 30
-
