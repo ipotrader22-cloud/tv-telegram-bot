@@ -9,7 +9,7 @@ function contextGate({date,research,snapshot,news}){
  if(!/^\d{4}-\d\d-\d\d$/.test(date)||!session(date).open)blocked('NYSE session invalid');
  if(research?.gate!=='RESEARCH_INPUTS'||research.result!=='PASS'||research.date!==date)
    blocked('Current completed-session OHLCV artifact missing');
- const previous=previousSession(date),map=new Map(research.data.map(x=>[x.metrics?.symbol,x]));
+ const previous=previousSession(date),newsFloor=new Date(Date.parse(date+'T00:00:00Z')-7*86400000).toISOString().slice(0,10),map=new Map(research.data.map(x=>[x.metrics?.symbol,x]));
  if(map.size!==research.data.length)blocked('Duplicate OHLCV metric symbols');
  const benchmarks={};
  for(const ticker of ['SPY','QQQ','SMH','XLK','XLE']){
@@ -30,11 +30,11 @@ function contextGate({date,research,snapshot,news}){
   const articles=news[ticker];
   if(!Array.isArray(articles)||!articles.length||
     articles.some(x=>!validUrl(x.url)||!/^\d{4}-\d\d-\d\d$/.test(x.publishedDate)||
-      x.publishedDate>date||x.publishedDate<previous||x.verified!==true))
+      x.publishedDate>date||x.publishedDate<newsFloor||x.verified!==true))
      blocked('Independent dated news missing '+ticker);
   return {ticker,metrics:m,news:articles};
  });
- return {previous,symbols,input,benchmarks};
+ return {previous,newsFloor,symbols,input,benchmarks};
 }
 function schema(){
  const fields=Object.fromEntries(FACTORS.map(n=>[n,{type:'integer'}]));
@@ -61,7 +61,7 @@ function validate({date,research,snapshot,news},answer){
    const e=r.evidence?.[name];
    if(!e||!Array.isArray(e.sources)||!e.sources.length||
      e.sources.some(url=>!allowed.has(url))||
-     e.asOfDate<x.previous||e.asOfDate>date)blocked('Unverified evidence '+r.ticker+'/'+name);
+     e.asOfDate<x.newsFloor||e.asOfDate>date)blocked('Unverified evidence '+r.ticker+'/'+name);
   }
   const m=item.metrics;
   return {...r,sourceArtifact:artifact,
