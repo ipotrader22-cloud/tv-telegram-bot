@@ -13,5 +13,5 @@ test('rejects unallowlisted or non-https source',()=>assert.throws(()=>validateS
 test('rejects old timestamp falsely dated as current',()=>assert.throws(()=>validateSkim({...sample,reviewedAtET:'2026-10-13T10:37:00-04:00'},{todayET:'2026-10-14'}),/Timestamp/));
 test('rejects html injection and too-long skim',()=>{
  assert.throws(()=>validateSkim({...sample,summaryEn:sample.summaryEn+'<script>alert(1)</script>'},{todayET:'2026-10-14'}),/Malformed/);
- assert.throws(()=>validateSkim({...sample,summaryEn:('Market context ' ).repeat(48)},{todayET:'2026-10-14'}),/>90/);
+ assert.throws(()=>validateSkim({...sample,summaryEn:('Market remains mixed ' ).repeat(32)},{todayET:'2026-10-14'}),/>90/);
 });
