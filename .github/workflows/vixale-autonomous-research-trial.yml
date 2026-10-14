@@ -1,0 +1,47 @@
+name: VIXALE Autonomous Research Trial
+# Does not write Google Sheets, send email or publish website.
+on:
+  pull_request:
+    paths:
+      - 'scripts/vixale-news-evidence.js'
+      - 'scripts/vixale-article-verifier.js'
+      - 'scripts/vixale-live-research-snapshot.js'
+      - 'scripts/vixale-research-score-gate.js'
+      - 'scripts/vixale-research-trial.js'
+      - 'test/vixale-autonomous-research.test.js'
+      - '.github/workflows/vixale-autonomous-research-trial.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vixale-autonomous-research-trial
+  cancel-in-progress: false
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-autonomous-research.test.js
+  research:
+    if: github.event_name == 'workflow_dispatch'
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Capture current-session OHLCV from existing collector
+        run: node scripts/swing-daily-research-inputs.js
+      - name: Validate independent news and score all active/candidate positions
+        env:
+          VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON }}
+          VIXALE_OPENAI_API_KEY: ${{ secrets.VIXALE_OPENAI_API_KEY }}
+          VIXALE_ENABLE_PRODUCTION_WRITES: 'false'
+        run: node scripts/vixale-research-trial.js
