@@ -5,6 +5,7 @@ on:
       - 'lib/daily-market-skim-contract.js'
       - 'lib/public-daily-skim-feed.js'
       - 'test/vixale-public-daily-skim-feed.test.js'
+      - 'test/vixale-live-daily-skim-qa.test.js'
       - 'scripts/vixale-daily-skim.js'
       - 'scripts/qa-production-daily-skim.js'
       - 'website_swing_ui_refinement.js'
@@ -18,10 +19,20 @@ permissions:
 jobs:
   unit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: node --test test/daily-market-skim-contract.test.js test/vixale-daily-skim-integration.test.js test/vixale-public-daily-skim-feed.test.js
+  live-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify uncached EN/RU production market skim
+        run: node --test test/vixale-live-daily-skim-qa.test.js
