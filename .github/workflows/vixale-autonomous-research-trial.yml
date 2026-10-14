@@ -11,6 +11,15 @@ on:
       - 'test/vixale-autonomous-research.test.js'
       - '.github/workflows/vixale-autonomous-research-trial.yml'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/vixale-news-evidence.js'
+      - 'scripts/vixale-article-verifier.js'
+      - 'scripts/vixale-live-research-snapshot.js'
+      - 'scripts/vixale-research-score-gate.js'
+      - 'scripts/vixale-research-trial.js'
+      - '.github/workflows/vixale-autonomous-research-trial.yml'
 permissions:
   contents: read
 concurrency:
@@ -27,7 +36,7 @@ jobs:
           node-version: '20'
       - run: node --test test/vixale-autonomous-research.test.js
   research:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     needs: unit
     runs-on: ubuntu-24.04
     timeout-minutes: 25
