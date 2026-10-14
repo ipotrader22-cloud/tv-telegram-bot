@@ -113,3 +113,13 @@ test('publisher date variants are accepted only when source page supplies them',
    assert.equal(r.publishedDate,'2026-10-12');
  }
 });
+
+test('official Palantir investor-relations links are eligible for independent verification',()=>{
+ assert.equal(hostAllowed('https://investors.palantir.com/news-details/2026/example'),true);
+ assert.equal(hostAllowed('https://investors.palantir.com.evil.example/story'),false);
+});
+test('additional publisher-created dates still require a genuine date and sufficient excerpt',()=>{
+ const html='<meta name="date.created" content="2026-10-12">'+
+ '<meta name="description" content="An independently dated corporate investor release describing recent operations with enough context for careful verification.">';
+ assert.equal(articlePage(html,'https://investors.palantir.com/press','2026-10-14','2026-09-14').publishedDate,'2026-10-12');
+});
