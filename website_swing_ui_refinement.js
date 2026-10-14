@@ -1,15 +1,10 @@
 "use strict";
 
 const Module = require("module");
-const fs = require("node:fs");
-const path = require("node:path");
-const { validateSkim } = require("./lib/daily-market-skim-contract");
-const SKIM_PATH = path.join(__dirname, "data", "daily-market-skim.json");
-function skimTodayET(){return new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
-function liveDailySkim(){
- try { const raw=JSON.parse(fs.readFileSync(SKIM_PATH,"utf8")); return validateSkim(raw,{todayET:skimTodayET()}).data; }
- catch (_) {return null;}
-}
+const {createFeed} = require("./lib/public-daily-skim-feed");
+const dailySkimFeed = createFeed();
+function liveDailySkim(){return dailySkimFeed.read();}
+dailySkimFeed.start();
 function htmlEscape(x){return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function renderDailySkim(skim,lang){
  const ru=lang==="ru";
