@@ -7,13 +7,23 @@ const dailySkimFeed = createFeed();
 function liveDailySkim(){const value=dailySkimFeed.read();return isBroadMarket(value)?value:null;}
 dailySkimFeed.start();
 function htmlEscape(x){return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-function renderDailySkim(skim,lang){
- const ru=lang==="ru";
- const title=ru?"Коротко о рынке":"Daily Market Skim";
- const summary=skim?(ru?skim.summaryRu:skim.summaryEn):(ru?"Сегодняшний обзор ожидает подтверждения публичных источников.":"Today's brief is pending public-source verification.");
- const stamp=skim?htmlEscape(skim.reviewedAtET.replace("T"," ").slice(0,16))+" ET":"";
- const links=skim?skim.sources.map(s=>'<a href="'+htmlEscape(s.url)+'" rel="noopener noreferrer" target="_blank">'+htmlEscape(s.issuer)+'</a>').join(" · "):"";
- return '<section id="vx-daily-market-skim" class="vx-daily-market-skim" data-date="'+htmlEscape(skim?.dateET||"pending")+'"><h2>'+title+'</h2><p>'+htmlEscape(summary)+'</p><p class="vx-daily-skim-meta">'+stamp+(links?" · "+links:"")+'</p></section>';
+function renderMarketPulse(skim,lang){
+ if(!skim||!isBroadMarket(skim))return "";
+ const ru=lang==="ru",metrics=skim.marketIndicators.indices;
+ const dir=(v,up,down)=>v>0?up:v<0?down:(ru?"без изменений":"flat");
+ const date=metrics.sp500.asOfET.slice(0,10);
+ const sp=dir(metrics.sp500.changePct,ru?"вырос":"advanced",ru?"снизился":"declined");
+ const nq=dir(metrics.nasdaq.changePct,ru?"вырос":"advanced",ru?"снизился":"declined");
+ const vix=skim.marketIndicators.volatility?.vix;
+ const risk=vix?dir(vix.changePct,ru?"вырос":"rose",ru?"снизился":"eased"):"";
+ const copy=ru
+  ? 'Последнее подтверждённое закрытие ('+date+'): S&P 500 '+sp+', Nasdaq '+nq+
+    '. Волатильность VIX '+risk+'. Фокус — сила лидирующих секторов и избирательный поиск возможностей.'
+  : 'At the last verified close ('+date+'), the S&P 500 '+sp+' and Nasdaq '+nq+
+    '. VIX '+risk+'. Sector leadership and selective setups remain the focus.';
+ const links=skim.sources.map(x=>'<a href="'+htmlEscape(x.url)+'" rel="noopener noreferrer" target="_blank">'+htmlEscape(x.issuer)+'</a>').join(' · ');
+ return '<div class="vx-market-pulse" data-date="'+htmlEscape(skim.dateET)+'"><p>'+htmlEscape(copy)+'</p><p class="vx-market-pulse-source">'+
+  (ru?'Данные закрытия · ':'Prior-close data · ')+htmlEscape(skim.reviewedAtET.replace('T',' ').slice(0,16))+' ET · '+links+'</p></div>';
 }
 
 const riskCopy = require("./lib/swing-risk-copy");
@@ -23,11 +33,10 @@ const STYLE_ID = "vx-swing-ui-refinement-style";
 const PAGE_MARKER = 'data-vx-swing-ui-refinement="1"';
 
 const styles = `<style id="${STYLE_ID}">
-.vx-daily-market-skim{border:1px solid #d9e7df;border-radius:16px;padding:15px 18px;margin:14px 0 20px;background:#f8fcf9}
-.vx-daily-market-skim h2{margin:0 0 8px;font-size:21px;letter-spacing:-.02em;color:#15241c}
-.vx-daily-market-skim p{margin:0 0 7px;line-height:1.55;color:#304439}
-.vx-daily-market-skim .vx-daily-skim-meta{font-size:12px;color:#597064;margin-bottom:0}
-.vx-daily-market-skim a{color:#06784b;text-decoration:underline}
+.vx-market-pulse{margin-top:9px;border-top:1px solid #dce9e1;padding-top:11px}
+.vx-market-pulse p{margin:0 0 6px;line-height:1.5;color:#304439}
+.vx-market-pulse .vx-market-pulse-source{font-size:11.5px;color:#5c7064;margin:0}
+.vx-market-pulse a{color:#06784b;text-decoration:underline}
 
 [data-vx-conversion-system-page="swing"]{padding-top:24px!important;padding-bottom:44px!important}
 [data-vx-conversion-system-page="swing"] .hero-layout{gap:14px!important}
@@ -127,9 +136,8 @@ function refineSwingHtml(html, lang="en") {
     out = out.replace(how[0], () => renderMarketUpdate(posture[1], release));
   }
 
-  const skimLang = lang;
-  const skimHtml = renderDailySkim(liveDailySkim(),skimLang);
-  out = out.replace(/(<section\b[^>]*data-vx-swing-market-update=["']1["'][^>]*>[\s\S]*?<\/section>)/i,'$1'+skimHtml);
+  const marketPulseHtml = renderMarketPulse(liveDailySkim(),lang);
+  if(marketPulseHtml) out = out.replace(/(<section\b[^>]*data-vx-swing-market-update=["']1["'][^>]*>[\s\S]*?)(<\/section>)/i,(_all,head,tail)=>head+marketPulseHtml+tail);
   out = renameCandidateLabels(out);
   out = injectStyles(out);
   return out.replace(/<body(\s[^>]*)?>/i, match => (
@@ -184,7 +192,7 @@ Module._load = function vixaleSwingUiModuleLoad(request, parent, isMain) {
 
 module.exports = {
   liveDailySkim,
-  renderDailySkim,
+  renderMarketPulse,
   SWING_PATH,
   STYLE_ID,
   PAGE_MARKER,
