@@ -68,3 +68,20 @@ test('recent dated company facts may predate prior NYSE session, never older tha
  x.news.PLTR[0].publishedDate='2026-09-01';
  assert.throws(()=>contextGate(x),/news missing/);
 });
+
+test('OpenAI search is restricted to verified publisher domains',async()=>{
+ const {getNews}=require('../scripts/vixale-news-evidence');
+ let args;
+ const request=async(url,requestArgs)=>{
+  args=JSON.parse(requestArgs.body);
+  return {ok:true,json:async()=>({status:'completed',output:[
+   {type:'web_search_call',id:'test'},
+   {type:'message',content:[{type:'output_text',text:'A dated and published corporate news source is available for this company and its latest position.',
+     annotations:[{type:'url_citation',url:'https://investors.ao-inc.com/news/press'}]}]}]})};
+ };
+ const result=await getNews({ticker:'AAOI',date:'2026-10-14',key:'TEST_ONLY',request});
+ assert.ok(args.tools[0].filters.allowed_domains.includes('ao-inc.com'));
+ assert.ok(!args.tools[0].filters.allowed_domains.includes('6ix.com'));
+ assert.ok(args.input.includes('Applied Optoelectronics'));
+ assert.equal(result.urls.length,1);
+});
