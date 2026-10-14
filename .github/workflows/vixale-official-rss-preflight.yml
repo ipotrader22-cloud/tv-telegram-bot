@@ -1,0 +1,21 @@
+name: VIXALE Official RSS Live Preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/vixale-rss-preflight.js'
+      - '.github/workflows/vixale-official-rss-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  verify-official-rss:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Fetch NVIDIA official RSS and validate publisher dates
+        run: node scripts/vixale-rss-preflight.js
