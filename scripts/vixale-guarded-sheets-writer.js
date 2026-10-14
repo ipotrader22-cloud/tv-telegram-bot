@@ -24,12 +24,14 @@ function nyParts(now){
 function assertWriteWindow(kind, now=new Date()){
   if(!(now instanceof Date) || Number.isNaN(now.getTime())) block('Invalid clock');
   const {date,minutes}=nyParts(now);
-  if(!session(date).open) block('NYSE is closed');
+  const market=session(date);
+  if(!market.open) block('NYSE is closed');
+  const closeMinutes=Number(market.closeEt.slice(0,2))*60+Number(market.closeEt.slice(3));
   const range = kind==='target'
-    ? (minutes>=640 && minutes<=1430 && minutes%60>=40 && minutes%60<50
+    ? (minutes>=640 && minutes<closeMinutes && minutes%60>=40 && minutes%60<50
        ? [minutes-minutes%60+40,minutes-minutes%60+50] : null)
     : WINDOWS[kind];
-  if(!range || minutes<range[0] || minutes>=range[1]-2) block('Outside safe '+kind+' writer window');
+  if(!range || minutes<range[0] || minutes>=range[1]-2 || minutes>=closeMinutes-2) block('Outside safe '+kind+' writer window');
   return {date, minutes};
 }
 function readRecords(sheet){
@@ -100,6 +102,9 @@ class GuardedWriter {
   async commit({requests,validateFresh,validateQuotes}){
     if(!this.owned) block('Acquire lease first');
     if(!Array.isArray(requests) || requests.length===0) block('No financial requests');
+    if(requests.some(r=>!r || typeof r!=='object' || Object.keys(r).length!==1 ||
+      ['createDeveloperMetadata','deleteDeveloperMetadata','updateDeveloperMetadata'].some(k=>k in r)))
+      block('Financial requests may not alter guard metadata');
     if(typeof validateFresh!=='function' || typeof validateQuotes!=='function')
       block('Live state and quote validators required');
     // The caller's validators must re-read exact lot membership, Q/R, formulas, quotes
