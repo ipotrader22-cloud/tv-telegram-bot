@@ -27,6 +27,33 @@ function attribute(html,key){
  }
  return '';
 }
+
+function htmlText(html){
+ return decode(String(html||'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
+  .replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim());
+}
+function structuralPublicationDate(html){
+ const scriptTags=html.match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi)||[];
+ const walk=(node)=>{
+  if(!node||typeof node!=='object')return '';
+  if(Array.isArray(node)){for(const v of node){const d=walk(v);if(d)return d;}return '';}
+  if(typeof node.datePublished==='string')return node.datePublished;
+  for(const k of ['@graph','mainEntity','article','itemListElement']){
+   const d=walk(node[k]);if(d)return d;
+  }
+  return '';
+ };
+ for(const script of scriptTags){
+  const src=script.replace(/^<script[^>]*>/i,'').replace(/<\/script>\s*$/i,'');
+  try{const d=walk(JSON.parse(src));if(d)return d;}catch{}
+ }
+ return '';
+}
+function secFilingDate(html){
+ const m=html.match(/<div\b[^>]*class=["'][^"']*\binfoHead\b[^"']*["'][^>]*>\s*Filing Date\s*<\/div>\s*<div\b[^>]*class=["'][^"']*\binfo\b[^"']*["'][^>]*>\s*(\d{4}-\d{2}-\d{2})/i);
+ return m?.[1]||'';
+}
 function articlePage(html,ref,reviewDate,previous){
  const published=attribute(html,'article:published_time')||attribute(html,'datePublished')||
   attribute(html,'pubdate')||attribute(html,'date')||
@@ -34,10 +61,12 @@ function articlePage(html,ref,reviewDate,previous){
   attribute(html,'parsely-pub-date')||attribute(html,'sailthru.date')||
   attribute(html,'date.created')||attribute(html,'article.published')||
   (html.match(/\"datePublished\"\s*:\s*\"(\d{4}-\d\d-\d\d[^\"]*)\"/i)||[])[1]||
-  (html.match(/<time[^>]*datetime=[\"'](\d{4}-\d\d-\d\d)/i)||[])[1];
+  (html.match(/<time[^>]*datetime=[\"'](\d{4}-\d\d-\d\d)/i)||[])[1]||
+  structuralPublicationDate(html)||
+  (new URL(ref).hostname.endsWith('sec.gov')?secFilingDate(html):'');
  if(typeof published!=='string' || !published.trim()) blocked('Publisher date metadata missing');
  const date=published.slice(0,10);
- const excerpt=attribute(html,'og:description')||attribute(html,'description');
+ const excerpt=attribute(html,'og:description')||attribute(html,'description')||htmlText(html).slice(0,850);
  if(!/^\d{4}-\d\d-\d\d$/.test(date)||date>reviewDate||date<previous)blocked('Cannot confirm current publication date');
  if(excerpt.trim().length<65)blocked('Insufficient directly retrieved article text');
  return {url:ref,publishedDate:date,excerpt:excerpt.slice(0,850),verified:true,

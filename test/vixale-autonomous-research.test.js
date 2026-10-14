@@ -123,3 +123,19 @@ test('additional publisher-created dates still require a genuine date and suffic
  '<meta name="description" content="An independently dated corporate investor release describing recent operations with enough context for careful verification.">';
  assert.equal(articlePage(html,'https://investors.palantir.com/press','2026-10-14','2026-09-14').publishedDate,'2026-10-12');
 });
+
+test('JSON-LD publication date from genuine publisher source is accepted',()=>{
+ const html='<script type="application/ld+json">'+JSON.stringify({
+  '@context':'https://schema.org','@type':'NewsArticle',datePublished:'2026-10-12T10:00:00Z'})+'</script>'+
+  '<main>This publicly published company release describes operating results and commentary supported by an independent source with sufficient detail.</main>';
+ const record=articlePage(html,'https://www.reuters.com/release','2026-10-14','2026-09-14');
+ assert.equal(record.publishedDate,'2026-10-12');
+ assert.ok(record.verified);
+});
+test('SEC Filing Date must be visibly contained in page',()=>{
+ const html='<div class="formGrouping"><div class="infoHead">Filing Date</div><div class="info">2026-10-09</div></div>'+
+ '<p>SEC filing report includes legal information about the company and its financial disclosures in sufficient detail for evidence.</p>';
+ const result=articlePage(html,'https://www.sec.gov/Archives/example','2026-10-14','2026-09-14');
+ assert.equal(result.publishedDate,'2026-10-09');
+ assert.throws(()=>articlePage('<p>Nothing dated</p>','https://www.sec.gov/test','2026-10-14','2026-09-14'),/Publisher date metadata missing/);
+});
