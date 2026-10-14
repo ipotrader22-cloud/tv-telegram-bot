@@ -39,7 +39,7 @@ async function main(){
   const response=await getNews({ticker,date,key});
   const verified=[];
   const newsFloor=new Date(Date.parse(date+'T00:00:00Z')-30*86400000).toISOString().slice(0,10);
-  for(const url of response.urls.slice(0,4)){
+  for(const url of response.urls.slice(0,10)){
    try{verified.push(await checkUrl(url,{reviewDate:date,previous:newsFloor}));}
    catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,sourceRejected:true,reason:String(e.message||'SOURCE_ERROR').slice(0,110),
       sourceHost:(()=>{try{return new URL(url).hostname;}catch{return 'invalid'}})()}));}
