@@ -4,7 +4,9 @@
 const crypto=require('node:crypto');
 const trust=['reuters.com','cnbc.com','marketwatch.com','barrons.com','wsj.com',
   'apnews.com','businesswire.com','prnewswire.com','sec.gov','finance.yahoo.com',
-  'nasdaq.com','investing.com','fool.com','investors.com'];
+  'nasdaq.com','investing.com','fool.com','investors.com',
+  'ao-inc.com','appliedoptoelectronics.gcs-web.com','globenewswire.com',
+  'zacks.com','seekingalpha.com','marketscreener.com','stockanalysis.com'];
 function blocked(m){throw Error('ARTICLE BLOCKED: '+m);}
 function hostAllowed(url){
  try{
@@ -24,7 +26,9 @@ function attribute(html,key){
 }
 function articlePage(html,ref,reviewDate,previous){
  const published=attribute(html,'article:published_time')||attribute(html,'datePublished')||
-  attribute(html,'pubdate')||attribute(html,'date');
+  attribute(html,'pubdate')||attribute(html,'date')||
+  (html.match(/\"datePublished\"\s*:\s*\"(\d{4}-\d\d-\d\d[^\"]*)\"/i)||[])[1]||
+  (html.match(/<time[^>]*datetime=[\"'](\d{4}-\d\d-\d\d)/i)||[])[1];
  const date=published.slice(0,10);
  const excerpt=attribute(html,'og:description')||attribute(html,'description');
  if(!/^\d{4}-\d\d-\d\d$/.test(date)||date>reviewDate||date<previous)blocked('Cannot confirm current publication date');
