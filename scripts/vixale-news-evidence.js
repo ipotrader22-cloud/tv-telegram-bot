@@ -10,13 +10,20 @@ function annotationUrls(response){
       catch{return false;}
     }))];
 }
+const companies=Object.freeze({PLTR:'Palantir Technologies',NVDA:'NVIDIA',DELL:'Dell Technologies',
+ PANW:'Palo Alto Networks',AAOI:'Applied Optoelectronics',COHR:'Coherent Corp',
+ XOM:'Exxon Mobil',FTNT:'Fortinet'});
+const allowedDomains=['reuters.com','cnbc.com','marketwatch.com','barrons.com','wsj.com',
+ 'apnews.com','businesswire.com','prnewswire.com','sec.gov','finance.yahoo.com',
+ 'nasdaq.com','globenewswire.com','ao-inc.com','appliedoptoelectronics.gcs-web.com',
+ 'zacks.com','seekingalpha.com','marketscreener.com'];
 async function getNews({ticker,date,key,model='gpt-4.1-mini',request=fetch}){
   if(!/^[A-Z0-9.\-]{1,15}$/.test(ticker) || !/^\d{4}-\d\d-\d\d$/.test(date))blocker('Invalid research target');
   if(!key)blocker('Missing OpenAI key');
   const r=await request('https://api.openai.com/v1/responses',{
     method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
-    body:JSON.stringify({model,store:false,tools:[{type:'web_search',search_context_size:'medium'}],
-      input:'Search for verifiable, date-specific business developments relevant to US-listed ticker '+ticker+
+    body:JSON.stringify({model,store:false,tools:[{type:'web_search',search_context_size:'medium',filters:{allowed_domains:allowedDomains}}],
+      input:'Search for verifiable, date-specific business developments for '+(companies[ticker]||ticker)+' (US-listed ticker '+ticker+') ' +
       ' within the 30 days ending '+date+'. Cite primary or established financial reporting URLs. '+
       'State exactly what the cited source supports and publication date. Do not guess facts.',
       max_output_tokens:650}),
