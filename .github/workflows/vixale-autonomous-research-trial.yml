@@ -6,12 +6,14 @@ on:
       - 'scripts/vixale-news-evidence.js'
       - 'scripts/vixale-article-verifier.js'
       - 'scripts/vixale-official-rss.js'
+      - 'scripts/vixale-aaoi-official-release.js'
       - 'scripts/vixale-live-research-snapshot.js'
       - 'scripts/vixale-research-score-gate.js'
       - 'scripts/vixale-research-trial.js'
       - 'scripts/vixale-research-ohlcv.js'
       - 'test/vixale-autonomous-research.test.js'
       - 'test/vixale-official-rss.test.js'
+      - 'test/vixale-aaoi-official-release.test.js'
       - 'test/vixale-research-ohlcv.test.js'
       - 'test/vixale-live-research-snapshot.test.js'
       - '.github/workflows/vixale-autonomous-research-trial.yml'
@@ -31,7 +33,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: node --test test/vixale-official-rss.test.js test/vixale-autonomous-research.test.js test/vixale-research-ohlcv.test.js test/vixale-live-research-snapshot.test.js
+      - run: node --test test/vixale-aaoi-official-release.test.js test/vixale-official-rss.test.js test/vixale-autonomous-research.test.js test/vixale-research-ohlcv.test.js test/vixale-live-research-snapshot.test.js
   research:
     if: github.event_name == 'workflow_dispatch'
     needs: unit
