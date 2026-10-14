@@ -30,7 +30,9 @@ allowing only the demo title and transport marker lines.
   coverage, restart observation and ordered durable callback delivery. RSI-only
   has no target; ATR/First-of-Either use the signal's frozen target. No reversals,
   quantity fallback or foreign order cancellation. Outside-RTH closes retain the
-  target and queue for permitted RTH. Unproven history/ambiguous submission blocks.
+  target and queue for permitted RTH even when the shared legacy bridge has its
+  optional BLOCK_MARKET_CLOSES_OUTSIDE_RTH switch disabled. Both incoming CLOSE
+  and journal recovery are gated; unproven history/ambiguous submission blocks.
 - UAM: additive Experimental Demo profile in existing v0.23.2 application; standard
   selected/bulk controls, per-chart strict Properties verification, exact Excel
   Inputs/source snapshots and receiver readiness. Installer verifies baseline
@@ -79,3 +81,10 @@ and restore all backed-up bridge dependencies together. Do not delete journal or
 callback outbox state while a position/order is unresolved. Disable the affected
 TV demo alert before rolling back its receiver. Documentation export is a local
 snapshot only; upload and production deployment are separate facts.
+
+## 2026-10-14 scoped RTH safety correction
+
+- Source trace found that SMIO demo CLOSE previously consulted the *shared optional* `BLOCK_MARKET_CLOSES_OUTSIDE_RTH` setting, so a false value could allow an out-of-session close or recovery pass to cancel the attached target and submit a market order.
+- The SMIO-specific adapter now checks `is_us_stock_rth_now()` for every close, independent of the shared switch; it persists the signal reservation and keeps the owned target intact outside RTH.
+- The broker-fixture regression tests the shared switch OFF, repeated outside-RTH reconciliation (no target cancellation, no market close), and resume inside stock RTH. It does not mutate Prime/Edge behavior or Trading Lab entry/exit conditions.
+- These are source and offline test assertions; broker session behavior, holiday calendar verification, real TradingView delivery and demo TWS execution are still NOT YET VERIFIED. Live-account execution remains forbidden.
