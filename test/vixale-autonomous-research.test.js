@@ -98,3 +98,8 @@ test('web research has adequate token budget and fails closed on incomplete resp
    /status=incomplete reason=max_output_tokens/);
  assert.ok(payload.max_output_tokens>=1600);
 });
+
+test('missing publisher date is a controlled rejection, not a runtime crash',()=>{
+ const html='<meta property="og:description" content="A relevant business announcement with enough contextual information to audit the publication.">';
+ assert.throws(()=>articlePage(html,'https://www.reuters.com/a','2026-10-14','2026-09-14'),/Publisher date metadata missing/);
+});
