@@ -38,9 +38,10 @@ async function main(){
  for(const ticker of symbols){
   const response=await getNews({ticker,date,key});
   const verified=[];
+  const sevenDaysBack=new Date(Date.parse(date+'T00:00:00Z')-7*86400000).toISOString().slice(0,10);
   for(const url of response.urls.slice(0,4)){
-   try{verified.push(await checkUrl(url,{reviewDate:date,previous:previousSession(date)}));}
-   catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,sourceRejected:true}));}
+   try{verified.push(await checkUrl(url,{reviewDate:date,previous:sevenDaysBack}));}
+   catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,sourceRejected:true,reason:String(e.message||'SOURCE_ERROR').slice(0,110)}));}
   }
   if(!verified.length)fail('No independently verified recent article '+ticker);
   news[ticker]=verified;

@@ -61,3 +61,10 @@ test('all nine weighted points validated against immutable lot and feed membersh
  assert.equal(out.reviews[0].score,100);assert.equal(out.reviews[0].marketEvidence.relativePerformance,0);
  assert.equal(out.status,'RESEARCH_ONLY');
 });
+
+test('recent dated company facts may predate prior NYSE session, never older than seven days',()=>{
+ const x=setup();x.news.PLTR[0].publishedDate='2026-10-09';
+ assert.equal(contextGate(x).symbols[0],'PLTR');
+ x.news.PLTR[0].publishedDate='2026-10-01';
+ assert.throws(()=>contextGate(x),/news missing/);
+});

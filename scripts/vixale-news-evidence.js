@@ -17,7 +17,7 @@ async function getNews({ticker,date,key,model='gpt-4.1-mini',request=fetch}){
     method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
     body:JSON.stringify({model,store:false,tools:[{type:'web_search',search_context_size:'medium'}],
       input:'Search for verifiable, date-specific business developments relevant to US-listed ticker '+ticker+
-      ' on or before '+date+'. Cite primary or established financial reporting URLs. '+
+      ' within the seven days ending '+date+'. Cite primary or established financial reporting URLs. '+
       'State exactly what the cited source supports and publication date. Do not guess facts.',
       max_output_tokens:650}),
     signal:AbortSignal.timeout(90000)
