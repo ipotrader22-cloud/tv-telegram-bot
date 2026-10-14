@@ -14,11 +14,13 @@ function hostAllowed(url){
 }
 function decode(s){return s.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');}
 function attribute(html,key){
- const escaped=key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
- const regexp=new RegExp('<meta\\s+[^>]*(?:property|name)=["\\']'+escaped+
-  '["\\'][^>]*content=["\\']([^"\\']+)["\\']','i');
- const alt=new RegExp('<meta\\s+[^>]*content=["\\']([^"\\']+)["\\'][^>]*(?:property|name)=["\\']'+escaped+'["\\']','i');
- return decode((html.match(regexp)||html.match(alt)||[])[1]||'');
+ const tags=html.match(/<meta\\b[^>]*>/gi)||[];
+ for(const tag of tags){
+  const name=tag.match(/(?:property|name)=["']([^"']+)["']/i)?.[1];
+  const value=tag.match(/content=["']([^"']+)["']/i)?.[1];
+  if(name===key && value)return decode(value);
+ }
+ return '';
 }
 function articlePage(html,ref,reviewDate,previous){
  const published=attribute(html,'article:published_time')||attribute(html,'datePublished')||
