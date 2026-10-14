@@ -5,6 +5,9 @@ on:
       - 'scripts/vixale-guarded-sheets-writer.js'
       - 'scripts/swing-market-calendar.js'
       - 'test/vixale-guarded-sheets-writer.test.js'
+      - 'test/vixale-review-evidence-gate.test.js'
+      - 'scripts/vixale-review-evidence-gate.js'
+      - 'scripts/vixale-staging-readonly-audit.js'
       - '.github/workflows/vixale-guarded-writer-tests.yml'
   workflow_dispatch:
 permissions:
@@ -18,4 +21,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: node --test test/vixale-guarded-sheets-writer.test.js
+      - run: node --test test/vixale-guarded-sheets-writer.test.js test/vixale-review-evidence-gate.test.js
