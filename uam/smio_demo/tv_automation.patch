@@ -1,0 +1,89 @@
+--- tv_automation.py
++++ tv_automation.py
+@@ -15,6 +15,7 @@
+ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+ 
+ from uam_core import Candidate, load_profile
++from smio_demo_contract import is_demo, validate_candidate, save_snapshot
+ 
+ 
+ class TradingViewAutomationError(RuntimeError):
+@@ -215,6 +216,12 @@
+         - an unverified post-click state is returned as CREATE_UNCONFIRMED and must
+           never be retried automatically.
+         """
++        try:
++            validate_candidate(self.profile, winner)
++        except ValueError as exc:
++            raise TradingViewAutomationError(str(exc)) from exc
++        if is_demo(self.profile) and not dry_run:
++            self._verify_smio_demo_receivers()
+         # An experimental paper profile may be reviewed but must not create
+         # TradingView alerts pointing at the shared production webhook.
+         if self.profile.raw.get("paper_preview_only") and not dry_run:
+@@ -265,6 +272,8 @@
+             self._ensure_script_on_chart()
+             self._apply_inputs(winner)
+             self._verify_strategy_properties_contract()
++            if is_demo(self.profile):
++                save_snapshot(self.profile, winner, "PREPARED" if not dry_run else "DRY_RUN")
+ 
+             if self.profile.raw.get("paper_preview_only"):
+                 # Dry run verifies the Pine input bindings, but deliberately does
+@@ -305,6 +314,8 @@
+                 expected_alert_name,
+                 timeout_seconds=POST_CREATE_CONFIRM_TIMEOUT_SECONDS,
+             ):
++                if is_demo(self.profile):
++                    save_snapshot(self.profile, winner, "CREATED")
+                 self.log(f"[{label}] Alert creation verified in TradingView.")
+                 return {
+                     "ok": True,
+@@ -340,6 +351,17 @@
+     # ------------------------------------------------------------------
+     # Exact-name duplicate protection through TradingView Alerts manager
+     # ------------------------------------------------------------------
++    def _verify_smio_demo_receivers(self) -> None:
++        from smio_demo_contract import CONTRACT
++        for url in ("https://www.vixale.com/health/smio-demo", "http://127.0.0.1:8000/ib/smio-demo-status"):
++            try:
++                with urllib.request.urlopen(url, timeout=10) as response:
++                    status = json.load(response)
++                if status.get("experimental_contract") != CONTRACT or status.get("demo_only") is not True or status.get("ready") is not True:
++                    raise ValueError("demo transport is not ready")
++            except Exception as exc:
++                raise TradingViewAutomationError("SMIO experimental demo receiver is not ready; no alert was created. " + str(exc)) from exc
++
+     def _alert_search_input(self):
+         page = self.page
+         direct = self._first_visible(
+@@ -2738,7 +2760,7 @@
+             return False
+ 
+     def _verify_strategy_properties_contract(self) -> None:
+-        if self._strategy_properties_contract_verified:
++        if self._strategy_properties_contract_verified and not is_demo(self.profile):
+             self.log("Strategy Properties contract already verified for this browser session; reusing verification.")
+             return
+ 
+@@ -2762,6 +2784,11 @@
+             self.page.wait_for_timeout(900)
+             dialog = self._settings_dialog()
+             text = dialog.inner_text(timeout=2_000)
++
++            if is_demo(self.profile):
++                capital_ok, _ = self._verify_property_numeric_value(dialog, "Initial capital", 1000000)
++                if not capital_ok:
++                    raise TradingViewAutomationError("SMIO Initial capital must be readable and exactly 1,000,000. Set it in Properties and retry.")
+ 
+             expected_type = str(expected.get("order_size_type") or "").strip()
+             if expected_type:
+@@ -2826,6 +2853,8 @@
+                     dialog, "Order size", expected_value, expected_type
+                 )
+                 if not value_ok:
++                    if is_demo(self.profile):
++                        raise TradingViewAutomationError("SMIO Order size must be readable and exactly 10% of equity. Set it in Properties and retry.")
+                     observed = repr(value_observations)
+                     if len(observed) > 500:
+                         observed = observed[:497] + "..."

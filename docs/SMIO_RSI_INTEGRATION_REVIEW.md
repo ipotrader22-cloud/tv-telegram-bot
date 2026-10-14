@@ -1,126 +1,81 @@
-# SMIO_RSI integration inspection — 2026-10-13
+# SMIO_RSI experimental demo integration â€” 2026-10-13
 
-Status: partial offline safety preparation; full integration NOT COMPLETE.
-This report is evidence for a proposed feature branch, not a deployment manifest
-or Trading Lab approval. Handbook update required: YES.
+Handbook update required: YES. Deployment/e2e status is recorded separately below.
 
-## Sources and state
+## Approved experimental boundary
 
-- Task attachment recovered from the referenced chat: `Pasted text.txt`.
-- Local AGENTS.md, UAM AGENTS.md, repository handbook and source index inspected.
-- GitHub source index selects `VIXALE-WEBSITE-CURRENT-STATE-2026-10-07-PR282.md`;
-  local original checkout selected PR247. Original checkout is stale; untouched.
-- Isolated repository cloned from the existing checkout and fetched from GitHub.
-  Base: `73e5f59a2baab1d9db4b46794df8b6fc6fe7b466`.
-  Branch: `feature/smio-rsi-offline-gates`.
-- Render read-only provider record: `dep-db7b49ui0phs738tinlg`, status live,
-  same base commit, finished `2026-10-13T22:36:16.792952Z`. Runtime startup logs
-  and end-to-end broker behavior were not verified in this task.
-- Repository and installed `C:/ib_bridge/ib_bridge.py` entrypoint hashes matched
-  before edits: `d055cb36a3d0b1d8bf982c52f58b866cc79e89bffe6fa6aeefed7acacb8ce442`.
-  Matching entrypoints alone do not establish all installed dependency versions,
-  connected account, running process version or broker health.
-- Trading Lab package found at
-  `C:/Users/tradi/.codex/.chatgpt-projects/g-p-6a8061532b508191b65e60c32c9f33c9/outputs/SMIO_RSI/SMIO_RSI_Engineering_Handoff.zip`.
-  Archive integrity passed. Read handoff, research specification, paper Pine,
-  NT8 companion and disabled draft adapter. No UAM.zip was found; actual installed
-  source at `C:/Users/tradi/Desktop/UAM` was used instead.
-- Existing shared boundary: TradingView -> Render app.js -> bridge background
-  dispatch -> handle_ib_action -> broker -> durable callback -> public ledger.
-  SMI Histogram is a different strategy with a 3% contract; its identity and
-  target-required executor must not be repurposed for SMIO RSI-only exits.
+The owner confirmed `SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013`: use Pine
+v0.1 trading behavior, $1,000,000 chart initial capital, 10% of chart equity,
+reject fractional shares without rounding, and permit orders only on the verified
+simulated shared TWS session. The owner authorized deployment and TV alert creation
+with TWS demo execution. Live accounts remain excluded. Trading Lab's research
+freeze is absent; no production strategy approval or Pine/NT8 parity is claimed.
 
-## Approval and execution blockers
+The supplied task and Trading Lab handoff were inspected, including original and
+paper Pine, NT8 and the disabled draft adapter. Pine/NT8 warmup, fill timing, EOD,
+and sizing discrepancies remain research limitations; no optimization or signal
+changes were introduced. Pine equivalence is enforced by a full-source comparison
+allowing only the demo title and transport marker lines.
 
-The recovered Trading Lab handoff explicitly states NOT APPROVED FOR DEPLOYMENT
-and Research Freeze absent. Earlier basket-paper authorization is not a frozen
-real-account contract. The user's desired shared-session routing is preserved;
-no separate broker account, endpoint or execution engine was installed.
+## Implementation
 
-Trading Lab must resolve and freeze:
+- Render: strict demo identity/configuration/timestamps/whole qty; exact event-ID
+  admission and body-conflict rejection; MARKET entries and reasoned CLOSE intents
+  route through the existing /tv bridge path. Broker callbacks require the existing
+  quote key. OPEN/CLOSE publish only actual fills, with exact setup IDs and durable
+  duplicate protection. Public label is explicitly SMIO_RSI Demo.
+- Bridge: same connected IB client/lock, local verified-demo attestation and exact
+  UAM snapshots. Write-ahead journal, exact order references, terminal/partial
+  fills, target cancellation race, remaining-position closes, execution-history
+  coverage, restart observation and ordered durable callback delivery. RSI-only
+  has no target; ATR/First-of-Either use the signal's frozen target. No reversals,
+  quantity fallback or foreign order cancellation. Outside-RTH closes retain the
+  target and queue for permitted RTH. Unproven history/ambiguous submission blocks.
+- UAM: additive Experimental Demo profile in existing v0.23.2 application; standard
+  selected/bulk controls, per-chart strict Properties verification, exact Excel
+  Inputs/source snapshots and receiver readiness. Installer verifies baseline
+  hashes, backs up targeted files, atomically installs and rolls back on failure.
+  Criteria, cookies, settings, original research profile and Prime/Edge are retained.
 
-1. NT8 200-bar warmup versus Pine's lack of that gate, recursive indicator
-   seeding and flat-series behavior.
-2. NT8 next-bar order fills versus Pine process_orders_on_close and immediate
-   RSI/EOD closes; approved signal timing and bar alignment.
-3. NT8 preventive EOD cutoff and native session-close behavior versus Pine's
-   final custom-session bar; holidays, early closes and extended-hours exits.
-4. Exact live whole/fractional quantity contract, account/equity provenance,
-   basket exposure and caps. Unrounded TV research quantity based on $1,000,000
-   and 10% per chart cannot silently become live account sizing.
-5. Approved frozen identifiers, parameters, target/RSI precedence and validation
-   evidence (Pine/NT8 parity, WFO/OOS/robustness as required by Trading Lab).
+## Verified evidence
 
-Engineering work still required after the contract is available: strict frozen
-payload validation, persistent event/body conflict detection, freshness,
-setup-scoped entry ownership and broker identity, RSI-only close handling,
-partial fills, exact target cancellation races, restart/retry reconciliation,
-broker-confirmed callbacks/publication and verified UAM snapshots.
-No approved production Pine or broker executor is delivered by this patch.
+- Source base 73e5f59a2baab1d9db4b46794df8b6fc6fe7b466; feature branch
+  feature/smio-rsi-offline-gates; PR #293.
+- Last inspected Render deploy dep-db7b49ui0phs738tinlg at base 73e5f59;
+  this was the pre-rollout service, not proof the demo changes are deployed.
+- Native TWS title explicitly said Simulated Trading; its account matched the
+  sole account on the existing bridge API. Account identifiers stay local.
+- Existing caps observed: bridge $100,000/order; Render 10,000 shares. Existing
+  Render forwarding enabled and dry-run false. No risk caps/secrets changed.
+- Installed UAM addon at C:/Users/tradi/Desktop/UAM. Backup:
+  SMIO_RSI_install_backups/demo-20261013-204707. Existing UAM suite, paper safety
+  checks and four new offline tests passed on the actual installed interpreter.
+- Actual saved user criteria on SMIORSI.xlsx yielded 51 candidates. Initial APA
+  candidate is 45m, source row 878, SMIO 197/38/13, RSI 3, ATR 2.9, Auto session.
+  No winner count or parameters forced; neither workbook was changed.
+- Private demo Pine compiled in TradingView. Editor copy matches installed source
+  after CRLF normalization. Native Properties readback: $1m, 10% equity,
+  pyramiding 0 and on-bar-close. Original research script preserved separately.
+- 132 offline bridge tests passed, including 15 SMIO lifecycle tests and existing
+  Edge/Prime protections. Authenticated Render callback/ledger tests pass for
+  BUY/SELL and all target modes, including one OPEN/CLOSE across duplicate delivery.
+- SMIO gate, broker EOD, fast ACK, Edge pending/EOD lifecycle tests passed.
+  app.js and deployment-script syntax passed.
+- Full Edge integration has the same pre-existing dashboard canonical setup-ID
+  visibility assertion as untouched origin/main; no unrelated UI fix included.
 
-## Offline changes
+## Rollout and limits
 
-- `app.js`: reject reserved SMIO identities before admission, stop direct
-  lifecycle/callback processing and old Inbox replay before stale cleanup.
-- `lib/smio-rsi-gate.js`: conservative reserved-identity classifier.
-- `bridge/smio_rsi_gate.py`: reject action and background paths before broker
-  handling/callbacks; no quantity fallback or activation switch.
-- `bridge/ib_bridge.py`: install that isolated wrapper after existing adapters.
-- `scripts/deploy-ib-bridge.ps1`: compile/copy/back up/restore the new module.
-  Syntax checked only; never executed.
-- `tests/test_smio_rsi_gate.js`, `tests/test_smio_rsi_gate.py`: offline boundary
-  and pass-through tests.
-- `docs/VECO_DEVELOPER_HANDBOOK.md`, this report: scope, gates and evidence.
+Backend merge/deploy, bridge restart, initial UAM APA alert creation and actual
+signal-to-broker fill validation: NOT YET VERIFIED in this checkpoint.
+No all-51 activation and no real-account orders. No synthetic live webhook/order
+is used as evidence of a real TradingView signal. Fractional Pine quantities
+remain rejected as expressly selected; target precision is not silently changed.
+Ambiguous broker submission and unproven history require reconciliation/review.
+Research robustness, NT8 parity and live sizing/production approval remain separate.
 
-Pine, bridge core, Prime/Edge classifiers, UAM source, profile criteria and
-installed runtime directories were not modified. Existing original checkout's
-untracked caches were not discarded.
-
-## Verification
-
-PASS:
-
-- Node syntax check for app.js; Python compile for gate and entrypoint;
-  PowerShell deployment-script parse; git diff whitespace check.
-- SMIO Node tests: object/text/Buffer ingress; BUY/SELL/close-family callbacks
-  with each reserved identity; mixed legacy identity; old Inbox replay before
-  foreign Pending cleanup; repeat completed replay.
-- SMIO Python tests (2): rejected quantities including missing/fractional,
-  LIVE relabeling, no generic/background delegation, repeat installation and
-  concurrent unchanged Prime/Edge/SMI pass-through.
-- Existing SMI Render contract, bridge isolation, concurrency and runtime safety.
-- Existing Edge bridge isolation and Prime/Shrek EOD: 121 offline tests.
-- Edge Pending lifecycle and EOD cleanup; durable webhook fast ACK.
-- Copied installed UAM `tests/run_tests.py`: Edge/Prime selection, mapping,
-  duplicate/status/snapshot safety and SMIO no-alert tests.
-- Local Excel parsing with default code criteria, not the user's saved GUI criteria:
-  `SMIO_RSI .xlsx`: 1950 rows, 208 eligible, 57 winners;
-  `SMIORSI.xlsx`: 1950 rows, 247 eligible, 51 winners. Both parse successfully.
-  These are separate workbooks; no winner count is enforced or user criteria changed.
-
-FAIL, reproduced on untouched origin/main:
-
-- `tests/test_vixale_edge_app_integration.js`: dashboard canonical Edge setup_id
-  visibility assertion at line 375. No unrelated dashboard fix included.
-
-NOT RUN:
-
-- SMIO broker entry/exit/ATR/First-of-Either/EOD/race/restart execution acceptance
-  tests (executor and approved contract absent).
-- Pine/NT8 compilation, numerical parity or strategy backtests in this task.
-- Browser alert creation, alert snapshot readback, broker connection/order tests,
-  production deployment/startup checks and user-session changes.
-
-## Review and rollout
-
-This patch is a draft safety boundary, not complete end-to-end integration.
-Do not merge or deploy from this task. No alerts (including APA 45m or all 51),
-orders, bridge restarts, environment changes or automatic activation are authorized.
-The user must obtain the frozen Trading Lab contract and live sizing decision
-before the execution integration can be completed and staged for approval.
-
-Rollback for this proposed source patch: revert its feature commit; if a later
-separately authorized bridge rollout occurs, restore the backed-up entrypoint
-and dependency set together. This patch creates no broker or trading-ledger state.
-Documentation export/upload: NOT PERFORMED; central exporter points to other
-working copies and cannot be presented as an export of this isolated branch.
+Rollback: restore the UAM code backup/profile additions, revert the feature merge
+and restore all backed-up bridge dependencies together. Do not delete journal or
+callback outbox state while a position/order is unresolved. Disable the affected
+TV demo alert before rolling back its receiver. Documentation export is a local
+snapshot only; upload and production deployment are separate facts.

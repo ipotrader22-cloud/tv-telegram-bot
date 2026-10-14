@@ -365,34 +365,57 @@ Existing classification and lifecycle must remain backward compatible.
 
 ## 3A. Forward-Test Engineering Integrations (Not Production)
 
-### SMIO_RSI research identity gate — proposed offline source
+### SMIO_RSI experimental demo contract — 2026-10-13
 
-SMIO_RSI is not approved for deployment. The Trading Lab handoff identifies
-Research v0.1, explicitly records no Research Freeze, and leaves Pine/NT8
-warmup, fill timing, EOD and basket sizing unresolved. See
-`docs/SMIO_RSI_INTEGRATION_REVIEW.md` for inspection and test evidence.
+Trading Lab has not issued a research freeze or production approval. The owner
+separately confirmed the experimental contract
+`SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013`: unchanged Pine v0.1 trading
+logic, TradingView 10% equity sizing from $1,000,000 initial chart capital,
+fractional shares rejected without rounding, and orders only on the verified
+shared simulated TWS session. This authorizes Engineering demo integration and
+deployment; it does not authorize real-money trading or claim Pine/NT8 parity.
+See `docs/SMIO_RSI_INTEGRATION_REVIEW.md` for source/install/deploy evidence.
 
-The proposed `lib/smio-rsi-gate.js` reserves payloads carrying SMIO_RSI in
-system_id, strategy_id, strategy or setup_id before generic classification.
-Render returns HTTP 422 with
-`SMIO_RSI_RESEARCH_FREEZE_AND_LIVE_SIZING_REQUIRED`, without ingress spooling,
-bridge forwarding, trade ledger writes or Telegram publication. Old Inbox
-items are marked processing COMPLETE with that rejection in Last Error before
-stale-entry Pending cleanup; COMPLETE means queue processing ended, not execution.
-The lifecycle gate also refuses SMIO callbacks.
+The original research profile remains preview-only. The additive UAM profile
+`smio_rsi_demo.json` uses the existing selected/bulk workflow and requires both
+`/health/smio-demo` and loopback `/ib/smio-demo-status` to report the exact ready
+contract before creation. Every chart verifies $1m/10% Properties, exact Excel
+Inputs and an atomic source/settings snapshot. User criteria, alert ledgers,
+Prime/Edge profiles and existing research Pine are preserved. The demo Pine
+changes only its title and transport marker; the behavior-equivalence test
+removes those lines and compares the entire remaining source.
 
-`bridge/smio_rsi_gate.py` wraps the shared action and background dispatch after
-the existing adapters. Research payloads never delegate to broker handling or
-callback publication, even when mode is changed to LIVE. Other payloads retain
-their original paths. The deployment script includes this dependency in compile,
-copy and rollback lists; it has not been run. No enable switch is provided.
+The existing `/tv` route admits only strict tagged demo signals, records durable
+event identities, and defers trade publication until authenticated broker fills.
+Old/partial SMIO identities and LIVE mode remain rejected before generic routing.
+Callbacks use the existing quote-bridge key in a header; no new key or secret in
+payloads. Confirmed records display `SMIO_RSI Demo`, with actual execution qty,
+weighted fill prices, exact setup ownership and existing publication deduplication.
 
-The intended integration must reuse the existing connected TWS session, with
-no separate account requirement in UAM. The earlier paper handoff's independent
-account/receiver proposal is superseded by the owner's Engineering request.
-The installed UAM preview-only restriction and Pine trading behavior remain
-unchanged. Enabling alerts, implementing an approved broker executor, merging
-or deploying requires the strategy-specific gates and explicit authorization.
+`bridge/smio_demo_adapter.py` reuses the same core IB client and lock. Its local
+`smio_demo_config.json` attests the observed simulated UI/account and references
+UAM's snapshot directory; account identity is never an extra UAM setting or Git
+artifact. Durable `smio_demo_journal.json` writes intent before mutation. Exact
+SMIO entry/target/close references, execution history coverage, position proofs,
+partial parent/target/close handling, cancellation confirmation and ordered
+outbox delivery prevent symbol fallback, reversals and duplicate retries. A
+foreign execution cancels only the stale owned target and reserves the setup for
+review. Unproven restart history remains blocked. No broker record is fabricated.
+
+Existing risk caps and RTH restrictions apply. Outside-RTH close intent remains
+durable and retains the target until the next permitted RTH; the signal timestamp
+is preserved. Retry of a terminal failed/partial market close is capped at two
+replacements and requires fresh exact executions and remaining-position proof.
+Ambiguous submission/ownership remains reserved for operator review, never blindly
+resubmitted. Fractional chart quantities and broker-invalid target increments can
+prevent execution; Engineering does not round shares or silently change targets.
+
+ADR: use a strategy-specific lifecycle adapter on the shared session because the
+existing SMI executor requires a target and cannot represent RSI-only exits.
+Deployment uses the existing bridge script's compile/backup/restore/restart path,
+including all imported adapters. Rollback restores the dependency set together;
+never discard a demo journal/outbox with unsettled broker state. Source inclusion
+is not deployment proof; the integration review records rollout separately.
 
 ### 3A.1 SMI Histogram v0.4-FWD
 

@@ -1,0 +1,23 @@
+{
+  "experimental_contract": "SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013",
+  "patches": {
+    "tv_automation.py": {
+      "sha256": "c8a3f6b53a60443d5bc4d631dc02242938462431960079de2c8f1632c3ca8b43",
+      "patch": "tv_automation.patch"
+    },
+    "tests/test_uam_phase1.py": {
+      "sha256": "80263c6b207664fdd46c43e40962f44ca05baadf150a80fecbda89c60f9da00b",
+      "patch": "test_uam_phase1.patch"
+    }
+  },
+  "copies": [
+    "smio_demo_contract.py",
+    "profiles/smio_rsi_demo.json",
+    "tests/test_smio_demo.py",
+    "Pine/SMIO_RSI_Research_v0_1_UAM_Demo.pine"
+  ],
+  "pine": {
+    "path": "Pine/SMIO_RSI_Research_v0_1_Paper.pine",
+    "sha256": "d4eda1b8c3aa40d3219894b9a462e7bbd0d9eae5e3a52015bf12a23cb8a9db0e"
+  }
+}

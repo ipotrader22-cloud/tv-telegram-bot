@@ -1,0 +1,238 @@
+//@version=6
+strategy("SMIO_RSI Research v0.1 — UAM Demo", overlay=false,
+     initial_capital=1000000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=10,
+     pyramiding=0,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     calc_on_order_fills=false)
+
+// ─────────────────────────────────────────
+// SMIO PARAMETERS
+// ─────────────────────────────────────────
+smioFast = input.int(20, "SMIO fast EMA", minval=1, group="SMIO")
+smioSlow = input.int(5, "SMIO slow EMA", minval=1, group="SMIO")
+smioSignal = input.int(5, "SMIO signal EMA", minval=1, group="SMIO")
+
+useExternal = input.bool(false, "Use external SMIO histogram", group="SMIO")
+externalSMIO = input.source(close, "External histogram source", group="SMIO")
+
+// ─────────────────────────────────────────
+// RSI AND TRADE DIRECTION
+// ─────────────────────────────────────────
+rsiLen = input.int(2, "RSI of SMIO period", minval=1, group="Signal")
+allowLong = input.bool(true, "Allow longs", group="Signal")
+allowShort = input.bool(true, "Allow shorts", group="Signal")
+
+// ─────────────────────────────────────────
+// EMA FILTERS
+// ─────────────────────────────────────────
+emaFastLen = input.int(8, "EMA fast", minval=1, group="EMA filters")
+emaMidLen = input.int(21, "EMA medium", minval=1, group="EMA filters")
+emaSlowLen = input.int(200, "EMA long", minval=1, group="EMA filters")
+
+// ─────────────────────────────────────────
+// EXIT SETTINGS
+// ─────────────────────────────────────────
+profitMode = input.string("ATR", "Profit target mode",
+     options=["ATR", "RSI 80/20", "First of either"], group="Exits")
+
+atrMultiple = input.float(1.0, "ATR target multiplier",
+     minval=0.1, step=0.1, group="Exits")
+
+// ATR PERIOD HARD-CODED TO 14
+float atr14 = ta.atr(14)
+
+// ─────────────────────────────────────────
+// SESSION SETTINGS
+// ─────────────────────────────────────────
+sessionMode = input.string("Auto", "Session mode",
+     options=["Auto", "Stocks RTH", "Futures Full"], group="Session")
+
+flattenRTH = input.bool(true, "Close stocks at RTH end", group="Session")
+
+string NY = "America/New_York"
+string RTH = "0930-1600:23456"
+
+bool useRTH = sessionMode == "Stocks RTH" or
+     (sessionMode == "Auto" and syminfo.type != "futures")
+
+int rthOpenTime = time(timeframe.period, RTH, NY)
+int rthCloseTime = time_close(timeframe.period, RTH, NY)
+
+bool inRTH = not na(rthOpenTime)
+bool inAllowedSession = not useRTH or inRTH
+
+bool rthLastBar = useRTH and inRTH and not na(rthCloseTime) and
+     hour(rthCloseTime, NY) == 16 and minute(rthCloseTime, NY) == 0
+
+bool endOfDayExit = flattenRTH and rthLastBar
+
+// ─────────────────────────────────────────
+// SMIO CALCULATION
+// ─────────────────────────────────────────
+float delta = ta.change(close)
+
+float smoothedDelta = ta.ema(ta.ema(delta, smioFast), smioSlow)
+float smoothedAbs = ta.ema(ta.ema(math.abs(delta), smioFast), smioSlow)
+
+float smi = smoothedAbs != 0.0 ? smoothedDelta / smoothedAbs : 0.0
+float internalSMIO = smi - ta.ema(smi, smioSignal)
+
+float smio = useExternal ? externalSMIO : internalSMIO
+
+// RSI OF SMIO, NOT RSI OF PRICE
+float smioRSI = ta.rsi(smio, rsiLen)
+
+// ─────────────────────────────────────────
+// EMA FILTER CONDITIONS
+// ─────────────────────────────────────────
+float ema8 = ta.ema(close, emaFastLen)
+float ema21 = ta.ema(close, emaMidLen)
+float ema200 = ta.ema(close, emaSlowLen)
+
+bool longEMA = close > ema8 and close > ema21 and close > ema200
+bool shortEMA = close < ema8 and close < ema21 and close < ema200
+
+// ─────────────────────────────────────────
+// RSI CROSSINGS
+// ─────────────────────────────────────────
+bool crossUp20 = ta.crossover(smioRSI, 20)
+bool crossDown20 = ta.crossunder(smioRSI, 20)
+bool crossUp80 = ta.crossover(smioRSI, 80)
+bool crossDown80 = ta.crossunder(smioRSI, 80)
+
+bool enableAtrPT = profitMode == "ATR" or profitMode == "First of either"
+bool enableRsiPT = profitMode == "RSI 80/20" or profitMode == "First of either"
+
+// ─────────────────────────────────────────
+// ENTRY CONDITIONS
+// ─────────────────────────────────────────
+var float frozenTarget = na
+
+// Engineering serialization only. Research order conditions remain unchanged.
+// Dedicated PAPER receiver required; mode is not an account safety guarantee.
+paperAlerts = input.bool(false, "Enable paper payload alerts", group="Paper transport")
+demoContract = input.string("SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013", "Demo execution contract", options=["SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013"], group="Paper transport")
+const string PAPER_SYSTEM = "TRADING_LAB_SMIO_RSI_PAPER"
+const string PAPER_STRATEGY = "SMIO_RSI_RESEARCH"
+f_escape(string x) =>
+    string v = str.replace_all(x, "\\", "\\\\")
+    v := str.replace_all(v, "\"", "\\\"")
+    v := str.replace_all(v, "\n", "\\n")
+    v := str.replace_all(v, "\r", "\\r")
+    v := str.replace_all(v, "\t", "\\t")
+    v
+f_num(float x) =>
+    na(x) ? "null" : str.tostring(x, "#.##########")
+// Includes every research input that can change signals. External source disabled
+// for this NT8-based paper contract. Quantity is sent unrounded from TV properties.
+string paperConfig = "PINE01:" + str.tostring(smioFast) + ":" + str.tostring(smioSlow) + ":" + str.tostring(smioSignal) + ":" + str.tostring(rsiLen) + ":" + str.tostring(allowLong) + ":" + str.tostring(allowShort) + ":" + str.tostring(emaFastLen) + ":" + str.tostring(emaMidLen) + ":" + str.tostring(emaSlowLen) + ":" + profitMode + ":" + str.tostring(atrMultiple) + ":" + sessionMode + ":" + str.tostring(flattenRTH)
+var string paperSetup = ""
+var float paperEntry = na
+// Emulator target fills are not market CLOSE signals. Broker execution owns fills.
+if strategy.closedtrades > nz(strategy.closedtrades[1])
+    paperSetup := ""
+    paperEntry := na
+f_setup(string side) =>
+    PAPER_STRATEGY + ":" + paperConfig + ":" + syminfo.tickerid + ":" + timeframe.period + ":" + side + ":" + str.tostring(time)
+f_emit(string signal, string side, string setup, float entryRef, float quantity, string reason) =>
+    bool validTarget = not enableAtrPT or (not na(frozenTarget) and frozenTarget > 0 and (side == "LONG" ? frozenTarget > entryRef : frozenTarget < entryRef))
+    bool transportOK = paperAlerts and barstate.isconfirmed and syminfo.type == "stock" and not useExternal and setup != "" and not na(time_close) and not na(quantity) and quantity > 0
+    if transportOK and (signal == "CLOSE" or validTarget)
+        string event = signal == "CLOSE" ? "CLOSE_POSITION" : "SETUP"
+        string eventId = setup + ":" + signal + ":" + str.tostring(time_close) + ":" + reason
+        string targetMode = profitMode == "RSI 80/20" ? "RSI_80_20" : profitMode == "First of either" ? "FirstOfEither" : "ATR"
+        string j = "{\"source\":\"TradingView\",\"payload_version\":1,\"schema_version\":2,\"paper_contract_version\":1,\"mode\":\"PAPER\""
+        j += ",\"experimental_contract\":\"" + demoContract + "\""
+        j += ",\"system_id\":\"" + PAPER_SYSTEM + "\",\"strategy_id\":\"" + PAPER_STRATEGY + "\",\"research_version\":\"PINE_0.1\""
+        j += ",\"configuration_id\":\"" + f_escape(paperConfig) + "\",\"setup_id\":\"" + f_escape(setup) + "\",\"event_id\":\"" + f_escape(eventId) + "\""
+        j += ",\"signal\":\"" + signal + "\",\"event\":\"" + event + "\",\"side\":\"" + side + "\",\"reason\":\"" + reason + "\""
+        j += ",\"symbol\":\"" + f_escape(syminfo.ticker) + "\",\"tickerid\":\"" + f_escape(syminfo.tickerid) + "\",\"sec_type\":\"STK\",\"currency\":\"" + f_escape(syminfo.currency) + "\""
+        j += ",\"timeframe\":\"" + f_escape(timeframe.period) + "\",\"session_timezone\":\"America/New_York\",\"signal_bar_time\":" + str.tostring(time) + ",\"signal_bar_close\":" + str.tostring(time_close)
+        j += ",\"entry\":" + f_num(entryRef) + ",\"price\":" + f_num(close) + ",\"qty\":" + f_num(quantity) + ",\"qty_source\":\"TV Strategy Properties\",\"initial_capital\":" + f_num(strategy.initial_capital)
+        j += ",\"entry_order_type\":\"MARKET\",\"target_mode\":\"" + targetMode + "\",\"target\":" + f_num(enableAtrPT ? frozenTarget : na) + ",\"target_price\":" + f_num(enableAtrPT ? frozenTarget : na)
+        j += ",\"target_anchor\":\"SIGNAL_CLOSE\",\"stop\":null,\"stop_type\":\"RSI_BAR_CLOSE\",\"rsi\":" + f_num(smioRSI) + ",\"smio\":" + f_num(smio) + ",\"atr14\":" + f_num(atr14) + "}"
+        alert(j, alert.freq_once_per_bar_close)
+
+
+bool canEnter = barstate.isconfirmed and inAllowedSession and
+     not endOfDayExit and strategy.position_size == 0
+
+bool goLong = canEnter and allowLong and crossUp20 and longEMA
+bool goShort = canEnter and allowShort and crossDown80 and shortEMA
+
+if goLong
+    frozenTarget := math.round_to_mintick(close + atr14 * atrMultiple)
+    paperSetup := f_setup("LONG")
+    paperEntry := close
+    f_emit("BUY", "LONG", paperSetup, paperEntry, strategy.default_entry_qty(close), "RSI_ENTRY")
+    strategy.entry("Long", strategy.long, comment="RSI crosses up 20")
+    if enableAtrPT
+        strategy.exit("Long ATR PT", from_entry="Long", limit=frozenTarget)
+
+if goShort
+    frozenTarget := math.round_to_mintick(close - atr14 * atrMultiple)
+    paperSetup := f_setup("SHORT")
+    paperEntry := close
+    f_emit("SELL", "SHORT", paperSetup, paperEntry, strategy.default_entry_qty(close), "RSI_ENTRY")
+    strategy.entry("Short", strategy.short, comment="RSI crosses down 80")
+    if enableAtrPT
+        strategy.exit("Short ATR PT", from_entry="Short", limit=frozenTarget)
+
+// ─────────────────────────────────────────
+// STOP AND PROFIT EXITS
+// ─────────────────────────────────────────
+if endOfDayExit and strategy.position_size != 0
+    strategy.cancel("Long ATR PT")
+    strategy.cancel("Short ATR PT")
+    f_emit("CLOSE", strategy.position_size > 0 ? "LONG" : "SHORT", paperSetup, paperEntry, math.abs(strategy.position_size), "RTH_EOD")
+    strategy.close_all(comment="RTH EOD", immediately=true)
+
+else if barstate.isconfirmed
+    if strategy.position_size > 0
+        if crossDown20
+            strategy.cancel("Long ATR PT")
+            f_emit("CLOSE", "LONG", paperSetup, paperEntry, math.abs(strategy.position_size), "RSI_STOP")
+            strategy.close("Long", comment="RSI stop <20", immediately=true)
+        else if enableRsiPT and crossUp80
+            strategy.cancel("Long ATR PT")
+            f_emit("CLOSE", "LONG", paperSetup, paperEntry, math.abs(strategy.position_size), "RSI_PROFIT")
+            strategy.close("Long", comment="RSI PT >80", immediately=true)
+        else if enableAtrPT and not na(frozenTarget)
+            strategy.exit("Long ATR PT", from_entry="Long", limit=frozenTarget)
+
+    else if strategy.position_size < 0
+        if crossUp80
+            strategy.cancel("Short ATR PT")
+            f_emit("CLOSE", "SHORT", paperSetup, paperEntry, math.abs(strategy.position_size), "RSI_STOP")
+            strategy.close("Short", comment="RSI stop >80", immediately=true)
+        else if enableRsiPT and crossDown20
+            strategy.cancel("Short ATR PT")
+            f_emit("CLOSE", "SHORT", paperSetup, paperEntry, math.abs(strategy.position_size), "RSI_PROFIT")
+            strategy.close("Short", comment="RSI PT <20", immediately=true)
+        else if enableAtrPT and not na(frozenTarget)
+            strategy.exit("Short ATR PT", from_entry="Short", limit=frozenTarget)
+
+// ─────────────────────────────────────────
+// VISUALS
+// ─────────────────────────────────────────
+plot(smioRSI, "RSI of SMIO", color=color.aqua, linewidth=2)
+
+hline(80, "RSI 80", color=color.red, linestyle=hline.style_dashed)
+hline(50, "RSI 50", color=color.gray, linestyle=hline.style_dotted)
+hline(20, "RSI 20", color=color.lime, linestyle=hline.style_dashed)
+
+plot(smio, "SMIO histogram value", display=display.data_window)
+plot(frozenTarget, "Frozen ATR target", display=display.data_window)
+
+plot(ema8, "EMA 8", color=color.yellow, force_overlay=true)
+plot(ema21, "EMA 21", color=color.orange, force_overlay=true)
+plot(ema200, "EMA 200", color=color.blue, linewidth=2, force_overlay=true)
+
+plotshape(goLong, title="Long signal", style=shape.triangleup,
+     location=location.belowbar, color=color.lime, size=size.tiny, force_overlay=true)
+
+plotshape(goShort, title="Short signal", style=shape.triangledown,
+     location=location.abovebar, color=color.red, size=size.tiny, force_overlay=true)
