@@ -7,7 +7,7 @@ const RANGES=["'Portfolio'!A8:M40","'Open Positions'!A4:R40",
   "'Public Feed'!A1:I45","'Closed Trades'!A4:R110","'Equity History'!A1:G60"];
 function parseBlocks([port,positions,publicRows,closed,equity],formulaBlocks){
  const ticker=x=>String(x||'').trim().toUpperCase();
- const num=x=>typeof x==='number'?x:Number(x);
+ const num=x=>typeof x==='number'?x:Number(String(x||'').replace(/[$,%]/g,'').trim());
  const portfolio=port.filter(r=>r[12]==='Active Portfolio'&&ticker(r[2])).map(r=>({
    ticker:ticker(r[2]),status:r[12],score:num(r[3]),entryPrice:num(r[5])}));
  const openPositions=positions.filter(r=>r[4]==='Active Portfolio'&&ticker(r[2])).map(r=>({
