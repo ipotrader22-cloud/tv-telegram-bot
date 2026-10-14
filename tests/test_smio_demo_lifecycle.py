@@ -104,12 +104,13 @@ class Core:
     MarketOrder = LimitOrder = Order
     def __init__(self):
         self.ib, self.ib_lock, self.outbox, self.managed = Broker(), asyncio.Lock(), {}, {}
+        self.rth = True
     async def ensure_ib_connected(self): pass
     async def get_position_size(self, symbol): return self.ib.position
     async def qualify_contract(self, data): return N(symbol=data["symbol"])
     def validate_pretrade_risk(self, *args): pass
     def validate_entry_timing(self, *args): pass
-    def is_us_stock_rth_now(self): return False
+    def is_us_stock_rth_now(self): return self.rth
     def load_managed_positions(self): return self.managed
     def load_render_outbox(self): return self.outbox
     def render_quote_update_url(self): return "https://example.test/bridge/quotes?key=fixture"
@@ -230,11 +231,18 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_outside_rth_retains_target_and_eod_does_not_fake_close(self):
         data = signal()
         await self.open_position(data)
-        self.core.BLOCK_MARKET_CLOSES_OUTSIDE_RTH = True
+        # Global legacy block is disabled; the SMIO demo still queues outside RTH.
+        self.assertFalse(self.core.BLOCK_MARKET_CLOSES_OUTSIDE_RTH)
+        self.core.rth = False
         self.assertEqual((await self.engine.handle(close_signal(data, "RTH_EOD")))["status"], "smio_demo_blocked")
+        await self.engine.reconcile()  # recovery must not bypass the RTH gate
         self.assertEqual(self.core.ib.cancels, [])
         self.assertEqual(self.core.ib.position, 10)
         self.assertEqual(self.core.outbox, {})
+        self.assertFalse(any(ref.startswith("SMIOC_") for ref in self.core.ib.mutations))
+        self.core.rth = True
+        await self.engine.reconcile()  # the queued close resumes only inside RTH
+        self.assertTrue(any(ref.startswith("SMIOC_") for ref in self.core.ib.mutations))
 
     async def test_manual_same_side_close_reopen_is_not_our_position(self):
         data = signal()
