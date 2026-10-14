@@ -14,7 +14,7 @@ function hostAllowed(url){
 }
 function decode(s){return s.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');}
 function attribute(html,key){
- const tags=html.match(/<meta\\b[^>]*>/gi)||[];
+ const tags=html.match(/<meta\b[^>]*>/gi)||[];
  for(const tag of tags){
   const name=tag.match(/(?:property|name)=["']([^"']+)["']/i)?.[1];
   const value=tag.match(/content=["']([^"']+)["']/i)?.[1];
