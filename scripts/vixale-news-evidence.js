@@ -29,7 +29,13 @@ async function getNews({ticker,date,key,model='gpt-4.1-mini',request=fetch}){
       max_output_tokens:650}),
     signal:AbortSignal.timeout(90000)
   });
-  if(!r.ok)blocker('OpenAI news HTTP '+r.status);
+  if(!r.ok){
+   const err=await r.json().catch(()=>({}));
+   const info=err?.error||{};
+   const detail=[info.type||'unknown',info.code||'none',info.param||'none',
+     String(info.message||'').slice(0,160)].join(' / ');
+   blocker('OpenAI news HTTP '+r.status+' '+detail.replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]'));
+  }
   const response=await r.json();
   if(response.status!=='completed')blocker('Incomplete web research '+ticker);
   if(!(response.output||[]).some(x=>x.type==='web_search_call'))blocker('No actual web search '+ticker);
