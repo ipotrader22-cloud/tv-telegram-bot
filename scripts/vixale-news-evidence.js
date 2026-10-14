@@ -16,7 +16,10 @@ const companies=Object.freeze({PLTR:'Palantir Technologies',NVDA:'NVIDIA',DELL:'
 const allowedDomains=['reuters.com','cnbc.com','marketwatch.com','barrons.com','wsj.com',
  'apnews.com','businesswire.com','prnewswire.com','sec.gov','finance.yahoo.com',
  'nasdaq.com','globenewswire.com','ao-inc.com','appliedoptoelectronics.gcs-web.com',
- 'zacks.com','seekingalpha.com','marketscreener.com'];
+ 'zacks.com','seekingalpha.com','marketscreener.com',
+ 'investors.palantir.com','investor.nvidia.com','investors.delltechnologies.com',
+ 'investors.paloaltonetworks.com','investors.coherent.com','investor.exxonmobil.com',
+ 'investor.fortinet.com'];
 async function getNews({ticker,date,key,model='gpt-5.5',request=fetch}){
   if(!/^[A-Z0-9.\-]{1,15}$/.test(ticker) || !/^\d{4}-\d\d-\d\d$/.test(date))blocker('Invalid research target');
   if(!key)blocker('Missing OpenAI key');
