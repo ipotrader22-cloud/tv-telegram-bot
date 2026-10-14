@@ -26,7 +26,7 @@ async function getNews({ticker,date,key,model='gpt-5.5',request=fetch}){
       input:'Search for verifiable, date-specific business developments for '+(companies[ticker]||ticker)+' (US-listed ticker '+ticker+') ' +
       ' within the 30 days ending '+date+'. Cite primary or established financial reporting URLs. '+
       'State exactly what the cited source supports and publication date. Do not guess facts.',
-      max_output_tokens:650}),
+      max_output_tokens:1800}),
     signal:AbortSignal.timeout(90000)
   });
   if(!r.ok){
@@ -37,7 +37,7 @@ async function getNews({ticker,date,key,model='gpt-5.5',request=fetch}){
    blocker('OpenAI news HTTP '+r.status+' '+detail.replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]'));
   }
   const response=await r.json();
-  if(response.status!=='completed')blocker('Incomplete web research '+ticker);
+  if(response.status!=='completed')blocker('Incomplete web research '+ticker+' status='+String(response.status||'unknown')+' reason='+String(response.incomplete_details?.reason||'unspecified'));
   if(!(response.output||[]).some(x=>x.type==='web_search_call'))blocker('No actual web search '+ticker);
   const urls=annotationUrls(response);
   if(!urls.length)blocker('No cited independent news sources '+ticker);

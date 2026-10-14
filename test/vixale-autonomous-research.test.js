@@ -85,3 +85,16 @@ test('OpenAI search is restricted to verified publisher domains',async()=>{
  assert.ok(args.input.includes('Applied Optoelectronics'));
  assert.equal(result.urls.length,1);
 });
+
+test('web research has adequate token budget and fails closed on incomplete response',async()=>{
+ const {getNews}=require('../scripts/vixale-news-evidence');
+ let payload;
+ await assert.rejects(
+   ()=>getNews({ticker:'AAOI',date:'2026-10-14',key:'TEST_ONLY',
+     request:async (url,args)=>{
+       payload=JSON.parse(args.body);
+       return {ok:true,json:async()=>({status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[]})};
+     }}),
+   /status=incomplete reason=max_output_tokens/);
+ assert.ok(payload.max_output_tokens>=1600);
+});
