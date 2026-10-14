@@ -38,10 +38,12 @@ async function commitStagingReviewedModel({
        const current=await readFreshSnapshot();
        if(stable(current)!==fingerprint)blocked('Workbook changed after plan: discard and rebuild');
        reviewSet(current,verifiedReviews,expectedDate);
+       return true;
      },
      validateQuotes:async()=>{
        const result=await validateQuotes({baseline,verifiedReviews,expectedDate,clock:clock()});
        if(result!==true)blocked('Timestamped regular-session quote verification incomplete');
+       return true;
      }
    });
    return {status:'STAGING_COMMIT',fence:receipt.fence,date:expectedDate};
