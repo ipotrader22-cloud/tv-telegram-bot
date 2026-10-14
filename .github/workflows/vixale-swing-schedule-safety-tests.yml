@@ -1,0 +1,20 @@
+name: VIXALE Swing Schedule Safety Tests
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/swing-daily-research-inputs.yml'
+      - '.github/workflows/swing-morning-publication-verification.yml'
+      - 'test/vixale-scheduled-gates.test.js'
+      - '.github/workflows/vixale-swing-schedule-safety-tests.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-scheduled-gates.test.js
