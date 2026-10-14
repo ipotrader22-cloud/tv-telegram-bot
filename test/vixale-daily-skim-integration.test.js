@@ -24,3 +24,13 @@ test('missing brief is clearly pending, never a fabricated current review',()=>{
  assert.match(body,/pending public-source verification/);
  assert.match(body,/data-date="pending"/);
 });
+
+test('actual swing HTML transformer inserts skim after Market Update without changing portfolio table',()=>{
+ const {refineSwingHtml}=require('../website_swing_ui_refinement');
+ const html='<html><body><main><section class="summary" aria-label="Swing Leaders summary"><div class="summary-card posture"><small>Market Posture</small><strong>Neutral</strong></div></section><section class="how" aria-label="How Swing Leaders works"><h2>How</h2></section><table><tbody><tr><td>PLTR</td></tr></tbody></table></main></body></html>';
+ const result=refineSwingHtml(html,'en');
+ assert.match(result,/vx-daily-market-skim/);
+ assert.ok(result.indexOf('vx-daily-market-skim')>result.indexOf('vx-swing-market-update'));
+ assert.match(result,/<td>PLTR<\/td>/);
+ assert.equal((result.match(/id="vx-daily-market-skim"/g)||[]).length,1);
+});
