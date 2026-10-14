@@ -1,0 +1,21 @@
+name: VIXALE Market vs Research Source Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/vixale-public-macro-feeds.js'
+      - 'scripts/vixale-sec-research-evidence.js'
+      - 'test/vixale-market-vs-research-sources.test.js'
+      - '.github/workflows/vixale-market-vs-research-source-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-market-vs-research-sources.test.js
