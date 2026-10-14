@@ -27,6 +27,12 @@ const STYLE_ID = "vx-swing-ui-refinement-style";
 const PAGE_MARKER = 'data-vx-swing-ui-refinement="1"';
 
 const styles = `<style id="${STYLE_ID}">
+.vx-daily-market-skim{border:1px solid #d9e7df;border-radius:16px;padding:15px 18px;margin:14px 0 20px;background:#f8fcf9}
+.vx-daily-market-skim h2{margin:0 0 8px;font-size:21px;letter-spacing:-.02em;color:#15241c}
+.vx-daily-market-skim p{margin:0 0 7px;line-height:1.55;color:#304439}
+.vx-daily-market-skim .vx-daily-skim-meta{font-size:12px;color:#597064;margin-bottom:0}
+.vx-daily-market-skim a{color:#06784b;text-decoration:underline}
+
 [data-vx-conversion-system-page="swing"]{padding-top:24px!important;padding-bottom:44px!important}
 [data-vx-conversion-system-page="swing"] .hero-layout{gap:14px!important}
 [data-vx-conversion-system-page="swing"] .hero{padding-top:4px!important;padding-bottom:6px!important}
