@@ -371,3 +371,9 @@ Owner-authorized website-only daily factual brief alongside the Swing Market Upd
 - After git commit, deployment MUST occur via the existing Render source-driven pipeline, then independently verify uncached EN/RU live pages match date and source. Failure is not success. Source verification or rendering failures must not write synthetic replacement content.
 - No separate financial writer, scheduling updates to cloud portfolio automations, broker orders or cloud upload of TWS-derived data.
 - See `docs/VIXALE_DAILY_MARKET_SKIM_IMPLEMENTATION.md`. Release is NOT complete until actual production deploy and live parity have been checked. Avoid confusing CI PASS with publication PASS.
+
+## 2026-10-14 — Daily Skim deployment gap and runtime content refresh repair (PR #322)
+
+Confirmed production Render auto-deploy of web app commit `00f91c2d` finished at 21:54Z, but the daily skim JSON follow-up commit `f836d7fa` created at 20:55Z was not included in that deployment and Render had not deployed it. Previous GitHub skim live QA failed after six minutes because the new block was missing at that time. This was timing/version skew, not a brokerage or spreadsheet error.
+
+Fix introduces separate, tightly validated **PUBLIC owner-authored** JSON read from the public VIXALE GitHub repository every ~60 seconds, with a current-day local fallback. Only the approved public source can drive the website Daily Market Skim, and old or unauthorized provenance is rejected. No IBKR/TWS, Dow Jones or Briefing.com feed contents are transmitted. The Render application deploy process remains required for code changes. Daily **content** changes no longer need a new Render deploy after this code revision becomes live. Completion requires Render live commit verification and uncached bilingual page content parity. No claim of live readiness based solely on GitHub unit test or merge.

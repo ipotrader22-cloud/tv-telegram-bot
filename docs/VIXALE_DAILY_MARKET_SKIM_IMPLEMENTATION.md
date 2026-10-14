@@ -30,3 +30,11 @@ The user's locally installed TWS News Collector remains **local only**, for pers
 - Stage first, then QA both page locales; deploy through canonical site workflow.
 - Confirm 10:35 ET cadence doesn't conflict with the 10:00/10:25 model review and recovery windows; this research job is not a financial writer.
 - Validate one genuine read-only brief before scheduling any live publication.
+
+## 2026-10-14 incident and root-cause repair
+
+The first build for the Daily Market Skim code (`00f91c2d`) began at 20:54Z and became live only at 21:54Z, about an hour later. During that build the independently verified daily JSON was committed (`f836d7fa`) at 20:55Z. The Render deploy history recorded only `00f91c2d` live, leaving its local checked-out `data/daily-market-skim.json` absent. The early six-minute QA failed correctly; JSON production visibility was not established.
+
+**Repair:** `lib/public-daily-skim-feed.js` reads the immutable-path, publicly accessible owner-authored JSON from `raw.githubusercontent.com/ipotrader22-cloud/tv-telegram-bot/refs/heads/main/data/daily-market-skim.json` using a background poll every 60 seconds and an edge-cache-busting request. It validates exact review date, source allowlist, provenance, locales and payload size, caches the vetted object locally in memory, and falls back to the current-deploy local JSON if available. No IBKR, TWS, Dow Jones or other licensed content is transported. A failed remote refresh never replaces a validated local object with invalid data; yesterday's cached news cannot masquerade as today's news.
+
+This decouples **daily content delivery** from the slow Render code deploy. Render remains the canonical **application/code** deploy path for website changes; only the separate, non-financial public news JSON is refreshed from the repository. Do not modify public feed formulas, financial reviews, website API snapshot headers or portfolio locks. The code change itself still needs one complete Render deploy; verify it via Render live commit plus uncached EN/RU HTML. No production success claim until both pass.
