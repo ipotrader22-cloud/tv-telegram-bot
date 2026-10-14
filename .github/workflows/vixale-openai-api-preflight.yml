@@ -1,0 +1,21 @@
+name: VIXALE OpenAI API Connection Preflight
+# Deliberately no daily schedule. Runs one tiny API request only.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vixale-openai-api-preflight.yml'
+      - 'scripts/vixale-openai-api-preflight.js'
+permissions:
+  contents: read
+jobs:
+  connection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test OpenAI Responses API without private portfolio data
+        env:
+          VIXALE_OPENAI_API_KEY: ${{ secrets.VIXALE_OPENAI_API_KEY }}
+        run: node scripts/vixale-openai-api-preflight.js
