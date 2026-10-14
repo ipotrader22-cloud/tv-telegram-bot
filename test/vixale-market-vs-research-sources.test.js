@@ -29,3 +29,17 @@ test('SEC date and exact accession filtering; never mark filing as full review',
 test('SEC refuses ambiguous ticker registry',()=>{
  assert.throws(()=>mapRegistry({0:{ticker:'XOM',cik_str:34088,title:'Exxon Mobil'},1:{ticker:'XOM',cik_str:999,title:'Different'}}),/duplicated/);
 });
+
+test('legacy NVIDIA issuer recap is not a US market skim',()=>{
+ const {isBroadMarket}=require('../lib/daily-skim-market-focus');
+ const legacy={scope:undefined,summaryEn:'NVIDIA announced a new product',sources:[{issuer:'NVIDIA Newsroom'}]};
+ assert.equal(isBroadMarket(legacy),false);
+});
+test('full market context requires all three benchmark indices and a macro-market source',()=>{
+ const {isBroadMarket}=require('../lib/daily-skim-market-focus');
+ const idx=()=>({asOfET:'2026-10-14T10:40:00-04:00',sourceUrl:'https://www.cboe.com/example',level:100,changePct:0.25});
+ const model={scope:'broad-us-equities',marketIndicators:{indices:{sp500:idx(),nasdaq:idx(),russell2000:idx()}},sources:[{issuer:'Federal Reserve'}]};
+ assert.equal(isBroadMarket(model),true);
+ assert.equal(isBroadMarket({...model,marketIndicators:{indices:{sp500:idx(),nasdaq:idx()}}}),false);
+ assert.equal(isBroadMarket({...model,sources:[{issuer:'NVIDIA Newsroom'}]}),false);
+});
