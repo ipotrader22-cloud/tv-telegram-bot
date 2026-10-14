@@ -360,3 +360,14 @@ For every future website-facing change:
 Website/dashboard work must not alter VECO trading logic, strategy rules, signal generation, order logic, risk logic, broker lifecycle behavior, TWS/IBKR execution behavior, or trading algorithms unless explicitly requested by the user.
 
 The Day Trading/Options dashboard separation, realized-equity charts, viewer authentication reuse, and public presentation changes must remain independent of trading/execution logic. PR #69 bridge/runtime safety changes are Engineering-owned execution protections and must not be treated as Trading Lab strategy changes.
+
+## 2026-10-14 — Daily Market Skim publishing architecture (release pending validation)
+
+Owner-authorized website-only daily factual brief alongside the Swing Market Update. PR #321 contains the guarded pipeline:
+- Source is an independent company-publisher NVIDIA RSS feed (no IBKR/TWS, Dow Jones, Briefing.com, or material derived from proprietary news APIs). Other issuers are not yet implemented. It is a **company-news** snapshot and must not imply comprehensive market coverage.
+- NYSE-day GitHub Actions at ~10:40 ET (14:40/15:40 UTC DST companions), plus explicit manual dispatch. The workflow only writes the dedicated `data/daily-market-skim.json` public content file and no Portfolio/Public Feed/Equity History, broker, or email data.
+- The current-day publication file must have independently verified, ≤14-day official announcement, its actual publication date, source URL and bilingual summaries. A file stale relative to NY date displays a pending-verification message, not a false current brief. No false claims of "news published today" for older source documents.
+- The current website uses `website_swing_ui_refinement.js` Express response middleware, renders a separate EN/RU Skim card, and no portfolio formulas or reviews are affected.
+- After git commit, deployment MUST occur via the existing Render source-driven pipeline, then independently verify uncached EN/RU live pages match date and source. Failure is not success. Source verification or rendering failures must not write synthetic replacement content.
+- No separate financial writer, scheduling updates to cloud portfolio automations, broker orders or cloud upload of TWS-derived data.
+- See `docs/VIXALE_DAILY_MARKET_SKIM_IMPLEMENTATION.md`. Release is NOT complete until actual production deploy and live parity have been checked. Avoid confusing CI PASS with publication PASS.
