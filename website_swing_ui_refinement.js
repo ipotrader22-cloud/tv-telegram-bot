@@ -1,6 +1,25 @@
 "use strict";
 
 const Module = require("module");
+const fs = require("node:fs");
+const path = require("node:path");
+const { validateSkim } = require("./lib/daily-market-skim-contract");
+const SKIM_PATH = path.join(__dirname, "data", "daily-market-skim.json");
+function skimTodayET(){return new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
+function liveDailySkim(){
+ try { const raw=JSON.parse(fs.readFileSync(SKIM_PATH,"utf8")); return validateSkim(raw,{todayET:skimTodayET()}).data; }
+ catch (_) {return null;}
+}
+function htmlEscape(x){return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function renderDailySkim(skim,lang){
+ const ru=lang==="ru";
+ const title=ru?"Коротко о рынке":"Daily Market Skim";
+ const summary=skim?(ru?skim.summaryRu:skim.summaryEn):(ru?"Сегодняшний обзор ожидает подтверждения публичных источников.":"Today's brief is pending public-source verification.");
+ const stamp=skim?htmlEscape(skim.reviewedAtET.replace("T"," ").slice(0,16))+" ET":"";
+ const links=skim?skim.sources.map(s=>'<a href="'+htmlEscape(s.url)+'" rel="noopener noreferrer" target="_blank">'+htmlEscape(s.issuer)+'</a>').join(" · "):"";
+ return '<section id="vx-daily-market-skim" class="vx-daily-market-skim" data-date="'+htmlEscape(skim?.dateET||"pending")+'"><h2>'+title+'</h2><p>'+htmlEscape(summary)+'</p><p class="vx-daily-skim-meta">'+stamp+(links?" · "+links:"")+'</p></section>';
+}
+
 const riskCopy = require("./lib/swing-risk-copy");
 
 const SWING_PATH = "/trading-systems/swing-trading";
@@ -86,7 +105,7 @@ function renameCandidateLabels(html) {
   return String(html).replace(/(<(?:small|strong|h[1-6])\b[^>]*>\s*)Potential Candidates(\s*<\/)/gi, "$1Candidates$2");
 }
 
-function refineSwingHtml(html) {
+function refineSwingHtml(html, lang="en") {
   if (typeof html !== "string" || html.includes(PAGE_MARKER)) return html;
   let out = removeSwingEvidenceContext(html);
 
@@ -106,6 +125,9 @@ function refineSwingHtml(html) {
     out = out.replace(how[0], () => renderMarketUpdate(posture[1], release));
   }
 
+  const skimLang = lang;
+  const skimHtml = renderDailySkim(liveDailySkim(),skimLang);
+  out = out.replace(/(<section\\b[^>]*data-vx-swing-market-update=["']1["'][^>]*>[\\s\\S]*?<\\/section>)/i,'$1'+skimHtml);
   out = renameCandidateLabels(out);
   out = injectStyles(out);
   return out.replace(/<body(\s[^>]*)?>/i, match => (
@@ -124,7 +146,7 @@ function installSwingUiRefinement(app) {
     const send = res.send.bind(res);
     res.send = function sendSwingUi(body) {
       const type = String(res.getHeader?.("Content-Type") || "");
-      if (typeof body === "string" && (!type || type.includes("html"))) body = refineSwingHtml(body);
+      if (typeof body === "string" && (!type || type.includes("html"))) body = refineSwingHtml(body, /(?:^|[?&])lang=ru(?:&|$)/i.test(String(req.originalUrl||req.url||""))?"ru":"en");
       return send(body);
     };
     return next();
@@ -159,6 +181,8 @@ Module._load = function vixaleSwingUiModuleLoad(request, parent, isMain) {
 };
 
 module.exports = {
+  liveDailySkim,
+  renderDailySkim,
   SWING_PATH,
   STYLE_ID,
   PAGE_MARKER,
