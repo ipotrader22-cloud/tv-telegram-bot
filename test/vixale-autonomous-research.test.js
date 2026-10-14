@@ -1,0 +1,63 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {annotationUrls}=require('../scripts/vixale-news-evidence');
+const {articlePage,hostAllowed}=require('../scripts/vixale-article-verifier');
+const {contextGate,validate}=require('../scripts/vixale-research-score-gate');
+const {FACTORS,CAPS}=require('../scripts/vixale-review-evidence-gate');
+const date='2026-10-14',prev='2026-10-13';
+function setup(){
+ const mk=ticker=>({metrics:{symbol:ticker,quoteDate:date,lastCompleteDate:prev,
+  dailyBars:250,price:100,sma20:95,sma50:90,sma200:80,
+  return20Pct:12,return60Pct:30,lastCompleteRelativeVolume:1.1}});
+ const symbols=['PLTR','SPY','QQQ','SMH','XLK','XLE'];
+ const research={gate:'RESEARCH_INPUTS',result:'PASS',date,data:symbols.map(mk)};
+ const row={ticker:'PLTR',entryPrice:90,score:75,reviewDate:prev};
+ const snapshot={openPositions:[{...row,status:'Active Portfolio',entryDate:'2026-10-08',entryScore:80}],
+  portfolio:[{...row,status:'Active Portfolio'}],publicActive:[row],candidates:[],
+  closedTrades:[],formulas:{cashPct:true,closedSpill:true,equityHistoryProtected:true}};
+ const url='https://www.reuters.com/markets/verified';
+ const news={PLTR:[{url,publishedDate:date,excerpt:'An independent, dated company announcement supported by a verified article.',verified:true}]};
+ return {date,research,snapshot,news,url};
+}
+test('citations exclude non-HTTPS and duplicates',()=>{
+ const x=annotationUrls({output:[{content:[{annotations:[{type:'url_citation',url:'https://www.reuters.com/a'},
+  {type:'url_citation',url:'https://www.reuters.com/a'},{type:'url_citation',url:'http://localhost/'}]}]}]});
+ assert.deepEqual(x,['https://www.reuters.com/a']);
+});
+test('publisher allowlist rejects attacker-controlled lookalikes',()=>{
+ assert.equal(hostAllowed('https://www.reuters.com/a'),true);
+ assert.equal(hostAllowed('https://reuters.com.evil.com/a'),false);
+ assert.equal(hostAllowed('http://www.reuters.com/a'),false);
+});
+test('publisher date requires independently fetched metadata',()=>{
+ const html='<meta property="article:published_time" content="2026-10-14T10:00:00Z">'+
+ '<meta property="og:description" content="A published company report states an independently dated result with sufficient detail to review.">';
+ const x=articlePage(html,'https://www.reuters.com/a',date,prev);
+ assert.equal(x.verified,true);assert.equal(x.publishedDate,date);
+ assert.throws(()=>articlePage(html,'https://www.reuters.com/a','2026-10-12','2026-10-09'),/publication date/);
+});
+test('benchmarks and per-stock fresh daily metrics are required',()=>{
+ const x=setup();
+ assert.equal(contextGate(x).symbols[0],'PLTR');
+ x.research.data=x.research.data.filter(z=>z.metrics.symbol!=='SPY');
+ assert.throws(()=>contextGate(x),/Missing benchmark SPY/);
+});
+test('no news blocks proposed scores',()=>{
+ const x=setup();x.news.PLTR=[];
+ assert.throws(()=>contextGate(x),/news missing/);
+});
+test('fake sources block full review even with all scores',()=>{
+ const x=setup(),factors=Object.fromEntries(FACTORS.map(n=>[n,CAPS[n]]));
+ const evidence=Object.fromEntries(FACTORS.map(n=>[n,{asOfDate:date,sources:['https://false.example/x'],
+  rationale:'A sufficiently long rationale from dated information'}]));
+ assert.throws(()=>validate(x,{reviews:[{ticker:'PLTR',reviewDate:date,score:100,factors,evidence}]}),
+   /Unverified evidence/);
+});
+test('all nine weighted points validated against immutable lot and feed membership',()=>{
+ const x=setup(),factors=Object.fromEntries(FACTORS.map(n=>[n,CAPS[n]]));
+ const evidence=Object.fromEntries(FACTORS.map(n=>[n,{asOfDate:date,sources:[x.url],
+  rationale:'Dated evidence substantiates the component scoring judgment'}]));
+ const out=validate(x,{reviews:[{ticker:'PLTR',reviewDate:date,score:100,factors,evidence}]});
+ assert.equal(out.reviews[0].score,100);assert.equal(out.reviews[0].marketEvidence.relativePerformance,0);
+ assert.equal(out.status,'RESEARCH_ONLY');
+});
