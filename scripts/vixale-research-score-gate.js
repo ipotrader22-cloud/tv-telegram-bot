@@ -9,7 +9,7 @@ function contextGate({date,research,snapshot,news}){
  if(!/^\d{4}-\d\d-\d\d$/.test(date)||!session(date).open)blocked('NYSE session invalid');
  if(research?.gate!=='RESEARCH_INPUTS'||research.result!=='PASS'||research.date!==date)
    blocked('Current completed-session OHLCV artifact missing');
- const previous=previousSession(date),newsFloor=new Date(Date.parse(date+'T00:00:00Z')-7*86400000).toISOString().slice(0,10),map=new Map(research.data.map(x=>[x.metrics?.symbol,x]));
+ const previous=previousSession(date),newsFloor=new Date(Date.parse(date+'T00:00:00Z')-30*86400000).toISOString().slice(0,10),map=new Map(research.data.map(x=>[x.metrics?.symbol,x]));
  if(map.size!==research.data.length)blocked('Duplicate OHLCV metric symbols');
  const benchmarks={};
  for(const ticker of ['SPY','QQQ','SMH','XLK','XLE']){
