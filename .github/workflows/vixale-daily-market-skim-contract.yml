@@ -1,0 +1,20 @@
+name: VIXALE Daily Market Skim Contract
+on:
+  pull_request:
+    paths:
+      - 'lib/daily-market-skim-contract.js'
+      - 'test/daily-market-skim-contract.test.js'
+      - '.github/workflows/vixale-daily-market-skim-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/daily-market-skim-contract.test.js
