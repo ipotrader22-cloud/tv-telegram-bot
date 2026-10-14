@@ -8,6 +8,7 @@ on:
       - 'scripts/vixale-live-research-snapshot.js'
       - 'scripts/vixale-research-score-gate.js'
       - 'scripts/vixale-research-trial.js'
+      - 'scripts/vixale-research-ohlcv.js'
       - 'test/vixale-autonomous-research.test.js'
       - '.github/workflows/vixale-autonomous-research-trial.yml'
   workflow_dispatch:
@@ -46,8 +47,10 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Capture current-session OHLCV from existing collector
-        run: node scripts/swing-daily-research-inputs.js
+      - name: Capture current-session OHLCV from canonical Google Sheet universe
+        env:
+          VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/vixale-research-ohlcv.js
       - name: Validate independent news and score all active/candidate positions
         env:
           VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON }}
