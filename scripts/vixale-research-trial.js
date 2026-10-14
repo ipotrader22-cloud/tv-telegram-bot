@@ -4,6 +4,7 @@ const fs=require('node:fs'),crypto=require('node:crypto');
 const {readSnapshot}=require('./vixale-live-research-snapshot');
 const {getNews}=require('./vixale-news-evidence');
 const {checkUrl}=require('./vixale-article-verifier');
+const {fetchNvidiaOfficial}=require('./vixale-official-rss');
 const {contextGate,schema,validate,CAPS}=require('./vixale-research-score-gate');
 const {previousSession,session}=require('./swing-market-calendar');
 function fail(message){throw Error('RESEARCH RUN BLOCKED: '+message);}
@@ -36,10 +37,17 @@ async function main(){
   ...snapshot.candidates.map(x=>x.ticker)])].sort();
  const news={};
  for(const ticker of symbols){
-  const response=await getNews({ticker,date,key});
-  const verified=[];
   const newsFloor=new Date(Date.parse(date+'T00:00:00Z')-30*86400000).toISOString().slice(0,10);
-  for(const url of response.urls.slice(0,10)){
+  let verified=[];
+  // Prefer directly publisher-dated official RSS; avoid a paid model search for NVDA.
+  if(ticker==='NVDA'){
+    try{verified=await fetchNvidiaOfficial({reviewDate:date,earliest:newsFloor});}
+    catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,officialRssRejected:true,
+      reason:String(e.message||'SOURCE_ERROR').slice(0,100)}));}
+  }
+  let response=null;
+  if(!verified.length)response=await getNews({ticker,date,key});
+  for(const url of (response?.urls||[]).slice(0,10)){
    try{verified.push(await checkUrl(url,{reviewDate:date,previous:newsFloor}));}
    catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,sourceRejected:true,reason:String(e.message||'SOURCE_ERROR').slice(0,110),
       sourceHost:(()=>{try{return new URL(url).hostname;}catch{return 'invalid'}})()}));}
