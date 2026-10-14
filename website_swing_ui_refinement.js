@@ -2,8 +2,9 @@
 
 const Module = require("module");
 const {createFeed} = require("./lib/public-daily-skim-feed");
+const {isBroadMarket} = require("./lib/daily-skim-market-focus");
 const dailySkimFeed = createFeed();
-function liveDailySkim(){return dailySkimFeed.read();}
+function liveDailySkim(){const value=dailySkimFeed.read();return isBroadMarket(value)?value:null;}
 dailySkimFeed.start();
 function htmlEscape(x){return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function renderDailySkim(skim,lang){
