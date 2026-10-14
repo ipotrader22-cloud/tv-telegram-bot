@@ -18,3 +18,17 @@ test('live fetch uses pinned official AAOI source and never makes an LLM call',a
  const res=await fetchAaoiPrimary({...options,request:async u=>{url=u;return {ok:true,text:async()=>article}}});
  assert.equal(url,URL);assert.equal(res.length,1);
 });
+
+test('issuer distribution wire is accepted after official investor site rejects with HTTP 403',async()=>{
+ const {PRESSWIRE_URL}=require('../scripts/vixale-aaoi-official-release');
+ const visited=[];
+ const res=await fetchAaoiPrimary({...options,request:async url=>{
+   visited.push(url);
+   if(url===URL)return {ok:false,status:403};
+   if(url===PRESSWIRE_URL)return {ok:true,text:async()=>article};
+   return {ok:false,status:404};
+ }});
+ assert.deepEqual(visited,[URL,PRESSWIRE_URL]);
+ assert.equal(res[0].url,PRESSWIRE_URL);
+ assert.equal(res[0].publishedDate,'2026-10-05');
+});

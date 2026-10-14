@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/vixale-aaoi-official-preflight.js'
+      - 'scripts/vixale-aaoi-official-release.js'
       - '.github/workflows/vixale-aaoi-official-preflight.yml'
 permissions:
   contents: read
