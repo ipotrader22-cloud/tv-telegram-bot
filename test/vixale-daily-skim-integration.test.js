@@ -30,7 +30,7 @@ test('actual swing HTML transformer inserts skim after Market Update without cha
  const html='<html><body><main><section class="summary" aria-label="Swing Leaders summary"><div class="summary-card posture"><small>Market Posture</small><strong>Neutral</strong></div></section><section class="how" aria-label="How Swing Leaders works"><h2>How</h2></section><table><tbody><tr><td>PLTR</td></tr></tbody></table></main></body></html>';
  const result=refineSwingHtml(html,'en');
  assert.match(result,/vx-daily-market-skim/);
- assert.ok(result.indexOf('vx-daily-market-skim')>result.indexOf('vx-swing-market-update'));
+ assert.ok(result.indexOf('id="vx-daily-market-skim"')>result.indexOf('data-vx-swing-market-update="1"'));
  assert.match(result,/<td>PLTR<\/td>/);
  assert.equal((result.match(/id="vx-daily-market-skim"/g)||[]).length,1);
 });
