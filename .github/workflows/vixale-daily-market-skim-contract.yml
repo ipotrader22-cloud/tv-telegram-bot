@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'lib/daily-market-skim-contract.js'
+      - 'scripts/vixale-daily-skim.js'
+      - 'scripts/qa-production-daily-skim.js'
+      - 'website_swing_ui_refinement.js'
+      - 'test/vixale-daily-skim-integration.test.js'
+      - '.github/workflows/vixale-public-daily-market-skim.yml'
       - 'test/daily-market-skim-contract.test.js'
       - '.github/workflows/vixale-daily-market-skim-contract.yml'
   workflow_dispatch:
@@ -17,4 +22,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: node --test test/daily-market-skim-contract.test.js
+      - run: node --test test/daily-market-skim-contract.test.js test/vixale-daily-skim-integration.test.js
