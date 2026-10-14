@@ -1,0 +1,43 @@
+name: VIXALE Staging Read-Only Audit
+# Never writes to staging or production. Never sends email.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/vixale-review-evidence-gate.js'
+      - 'scripts/vixale-staging-readonly-audit.js'
+      - 'test/vixale-review-evidence-gate.test.js'
+      - '.github/workflows/vixale-staging-readonly-audit.yml'
+  pull_request:
+    paths:
+      - 'scripts/vixale-review-evidence-gate.js'
+      - 'scripts/vixale-staging-readonly-audit.js'
+      - 'test/vixale-review-evidence-gate.test.js'
+      - '.github/workflows/vixale-staging-readonly-audit.yml'
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-review-evidence-gate.test.js
+  live-staging-read:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Audit isolated staging workbook without changes
+        env:
+          VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON }}
+          VIXALE_STAGING_SPREADSHEET_ID: 10uRxpyGrItn_5rGrbhEsb-xoMJU7uv9NEhkCNcO8q80
+        run: node scripts/vixale-staging-readonly-audit.js
