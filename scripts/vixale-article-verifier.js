@@ -6,7 +6,10 @@ const trust=['reuters.com','cnbc.com','marketwatch.com','barrons.com','wsj.com',
   'apnews.com','businesswire.com','prnewswire.com','sec.gov','finance.yahoo.com',
   'nasdaq.com','investing.com','fool.com','investors.com',
   'ao-inc.com','appliedoptoelectronics.gcs-web.com','globenewswire.com',
-  'zacks.com','seekingalpha.com','marketscreener.com','stockanalysis.com'];
+  'zacks.com','seekingalpha.com','marketscreener.com','stockanalysis.com',
+  'investors.palantir.com','investor.nvidia.com','investors.delltechnologies.com',
+  'investors.paloaltonetworks.com','investors.coherent.com','investor.exxonmobil.com',
+  'investor.fortinet.com'];
 function blocked(m){throw Error('ARTICLE BLOCKED: '+m);}
 function hostAllowed(url){
  try{
@@ -29,6 +32,7 @@ function articlePage(html,ref,reviewDate,previous){
   attribute(html,'pubdate')||attribute(html,'date')||
   attribute(html,'publication_date')||attribute(html,'dc.date.issued')||
   attribute(html,'parsely-pub-date')||attribute(html,'sailthru.date')||
+  attribute(html,'date.created')||attribute(html,'article.published')||
   (html.match(/\"datePublished\"\s*:\s*\"(\d{4}-\d\d-\d\d[^\"]*)\"/i)||[])[1]||
   (html.match(/<time[^>]*datetime=[\"'](\d{4}-\d\d-\d\d)/i)||[])[1];
  if(typeof published!=='string' || !published.trim()) blocked('Publisher date metadata missing');
