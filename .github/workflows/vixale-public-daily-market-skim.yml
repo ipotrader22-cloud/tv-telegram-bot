@@ -55,8 +55,12 @@ jobs:
         run: |
           mkdir -p data
           if node scripts/vixale-daily-skim.js > /tmp/vixale-public-skim.json; then
-            node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('/tmp/vixale-public-skim.json'));const {validateSkim}=require('./lib/daily-market-skim-contract');validateSkim(d,{todayET:d.dateET});"
-            echo "verified=true" >> "$GITHUB_OUTPUT"
+            if node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('/tmp/vixale-public-skim.json'));const {validateSkim}=require('./lib/daily-market-skim-contract');const {isBroadMarket}=require('./lib/daily-skim-market-focus');validateSkim(d,{todayET:d.dateET});if(!isBroadMarket(d))process.exit(10);"; then
+              echo "verified=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "No independently verified broad US market indexes. Company-only news is not published as Market Skim."
+              echo "verified=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "No current-day independently verified publisher news. No publication."
             echo "verified=false" >> "$GITHUB_OUTPUT"
