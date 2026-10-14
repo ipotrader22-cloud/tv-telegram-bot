@@ -1,6 +1,11 @@
 name: VIXALE Public Daily Market Skim
 # Independent official publisher RSS only. Never reads IBKR/TWS data or writes model financial state.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/vixale-daily-skim.js'
+      - 'website_swing_ui_refinement.js'
   workflow_dispatch:
   schedule:
     - cron: '40 14,15 * * 1-5'
@@ -61,7 +66,6 @@ jobs:
         id: saved
         shell: bash
         run: |
-          date_et="$(TZ=America/New_York date +%F)"
           if [ -f data/daily-market-skim.json ] && node -e "const d=require('./data/daily-market-skim.json');process.exit(d.dateET===process.env.DATE_ET?0:1)" ; then
             echo "Existing daily brief retained; same-day idempotency."
             echo "changed=false" >> "$GITHUB_OUTPUT"
