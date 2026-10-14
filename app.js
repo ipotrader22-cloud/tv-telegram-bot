@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { isSmioRsiPayload } = require('./lib/smio-rsi-gate');
+const { validateSmioSignal, validSmioCallback, blockedSmio } = require('./lib/smio-demo-contract');
 const {
   createBrokerEodCallbackRegistry,
   runBrokerEodCallback,
@@ -412,6 +414,7 @@ function isOppositeFlipRow(row) {
 function publicSystemLabelFromRaw(...rawValues) {
   const joined = rawValues.map(value => String(value || '')).join('\n');
   const upper = joined.toUpperCase();
+  if (upper.includes('SMIO_RSI')) return 'SMIO_RSI Demo';
 
   // SMI must never fall through the legacy stop=0 => Vixale Prime classifier.
   if (
@@ -730,7 +733,7 @@ function isPersistentSmiBrokerExitCallback(reqBody, row) {
 }
 
 function isOpenOnSetupRow(row) {
-  return isVixaleEdgeV2SetupRow(row) ||
+  return isSmioRsiPayload(parseRawJsonSafe(row?.raw)) || isVixaleEdgeV2SetupRow(row) ||
     isV51IntradayRow(row) ||
     isOppositeFlipRow(row) ||
     isEmaPullbackRow(row) ||
@@ -1698,7 +1701,7 @@ function parseJsonTradingViewAlert(data) {
   const isOppositeFlip = isOppositeFlipName(strategyName) || isOppositeFlipName(profileName) || isOppositeFlipName(variantName) || isOppositeFlipName(data.target_type);
   const isEmaPullback = isEmaPullbackName(strategyName) || isEmaPullbackName(profileName) || isEmaPullbackName(variantName);
   const isSmiForward = isSmiForwardPayload(data);
-  const openOnSetup = isV51Intraday || isOppositeFlip || isEmaPullback || isSmiForward;
+  const openOnSetup = isV51Intraday || isOppositeFlip || isEmaPullback || isSmiForward || isSmioRsiPayload(data);
 
   const eventMap = {
     PENDING_SETUP: 'PENDING_SETUP',
@@ -1740,6 +1743,7 @@ function parseJsonTradingViewAlert(data) {
   };
 
   let event = eventMap[eventRaw] || eventRaw || 'UNKNOWN';
+  if (isSmioRsiPayload(data) && eventRaw === 'CLOSE_POSITION') event = data.reason === 'RTH_EOD' ? 'EOD' : 'SL';
 
   if (eventRaw === 'EXIT') {
     if (exitTypeRaw === 'TARGET') event = 'TP';
@@ -1763,7 +1767,7 @@ function parseJsonTradingViewAlert(data) {
   const suppliedSize = event === 'EXTERNAL_CLOSE' && data.exit_quantity_available === false
     ? ''
     : firstCleanNumber(data.qty, data.size, data.quantity);
-  const size = event === 'EXTERNAL_CLOSE' || isSmiForward
+  const size = event === 'EXTERNAL_CLOSE' || isSmiForward || isSmioRsiPayload(data)
     ? suppliedSize
     : suppliedSize || BRIDGE_DEFAULT_QTY;
 
@@ -1807,7 +1811,7 @@ function parseJsonTradingViewAlert(data) {
       data.percent
     );
 
-  const trade_id = makeTradeId(symbol, side);
+  const trade_id = isSmioRsiPayload(data) ? data.setup_id : makeTradeId(symbol, side);
 
   const status =
     event === 'PENDING_SETUP' ? 'pending' :
@@ -1922,6 +1926,16 @@ function shouldSuppressTelegram(row) {
 
 function formatTelegramMessage(row, originalMessage) {
   if (!row || row.event === 'UNKNOWN') return originalMessage;
+  if (isSmioRsiPayload(parseRawJsonSafe(row.raw)) && ['FILL', 'TP', 'SL', 'EOD'].includes(row.event)) {
+    const action = row.event === 'FILL' ? `opened ${row.side}` : row.event === 'TP' ? 'Take Profit' : row.event === 'EOD' ? 'EOD close' : 'RSI Stop Loss';
+    return [
+      `🧪 <b>SMIO_RSI Demo ${action}</b>`, '', `<b>${row.symbol} · ${row.timeframe}m</b>`,
+      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+      row.event !== 'FILL' && row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+      row.event === 'FILL' && row.target !== '' ? `Target: <b>${row.target}</b>` : '',
+      `Qty: <b>${row.size}</b>`, pnlTelegramLine(row),
+    ].filter(Boolean).join('\n');
+  }
 
   const titleBase = `${row.symbol || ''} ${row.side || ''}`.trim();
   const pnlLine = pnlTelegramLine(row);
@@ -3589,7 +3603,7 @@ async function processLedgerUnlocked(row, dependencies = {}) {
   if (row.event === 'FILL') {
     if (!row.trade_id) return row;
 
-    const edgeSetupId = isVixaleEdgeV2SetupRow(row) ? row.setup_id : '';
+    const edgeSetupId = isVixaleEdgeV2SetupRow(row) || validSmioCallback(parseRawJsonSafe(row.raw)) ? row.setup_id : '';
     if (edgeSetupId) {
       const publicationState = await getEdgeEntryFillPublicationState(sheets, edgeSetupId);
       if (publicationState.publication_complete) {
@@ -4448,6 +4462,9 @@ function canonicalJson(value) {
 }
 
 function webhookInboundDeliveryId(reqBody, parsedRow) {
+  if (isSmioRsiPayload(reqBody) && reqBody.event_id) {
+    return 'SMIO:' + crypto.createHash('sha256').update(reqBody.event_id).digest('hex');
+  }
   const raw = reqBody && typeof reqBody === 'object' ? reqBody : {};
   const identity = {
     system_id: String(raw.system_id || parsedRow?.system_id || parsedRow?.strategy || '').trim().toUpperCase(),
@@ -4540,6 +4557,9 @@ async function upsertWebhookInboxItemUnlocked(
   const rows = await readWebhookInboxSheet(sheets, readRequestOptions);
   for (let index = 1; index < rows.length; index++) {
     if (String(rows[index][0] || '').trim() === deliveryId) {
+      if (isSmioRsiPayload(reqBody) && canonicalJson(JSON.parse(rows[index][11] || '{}')) !== canonicalJson(reqBody)) {
+        throw new Error('SMIO event ID/body conflict');
+      }
       return { ...parseWebhookInboxRow(rows[index], index + 1), duplicate: true };
     }
   }
@@ -4639,6 +4659,10 @@ function writeWebhookInboxSpool(items) {
 function spoolWebhookInboxItem(reqBody, parsedRow, receivedAt = new Date().toISOString()) {
   const items = readWebhookInboxSpool();
   const deliveryId = webhookInboundDeliveryId(reqBody, parsedRow);
+  if (isSmioRsiPayload(reqBody) && items[deliveryId] &&
+      canonicalJson(JSON.parse(items[deliveryId].raw_json)) !== canonicalJson(reqBody)) {
+    throw new Error('SMIO event ID/body conflict');
+  }
   items[deliveryId] = items[deliveryId] || {
     delivery_id: deliveryId,
     received_at: receivedAt,
@@ -11646,6 +11670,7 @@ function requiresBridgeExecutionConfirmation(row) {
 
   const event = String(row.event || '').toUpperCase();
   const rawEvent = String(row.raw_event || '').toUpperCase();
+  if (isSmioRsiPayload(parseRawJsonSafe(row.raw))) return ['SETUP', 'CLOSE_POSITION'].includes(rawEvent);
 
   if (
     event === 'SETUP' &&
@@ -11672,6 +11697,7 @@ function hasConfirmedEntryExecution(reqBody, row) {
 }
 
 function hasConfirmedCloseExecution(reqBody) {
+  if (isSmioRsiPayload(reqBody)) return validSmioCallback(reqBody);
   if (typeof reqBody !== 'object' || reqBody === null || Buffer.isBuffer(reqBody)) return false;
 
   return reqBody.close_filled === true ||
@@ -11794,6 +11820,7 @@ function shouldForwardToBridge(reqBody, row) {
   // TradingView v51 sends SETUP for opened position and CLOSE_STOP for market stop.
   // TP/FILL/CANCEL/RECONCILE_FLAT are produced by bridge/IB or server cleanup and must not be sent back to bridge.
   const forwardable =
+    (isSmioRsiPayload(reqBody) && validateSmioSignal(reqBody).ok) ||
     event === 'SETUP' ||
     (event === 'SL' && rawEvent === 'CLOSE_STOP') ||
     (event === 'EOD' && (rawEvent === 'EOD' || rawEvent === 'EOD_CLOSE'));
@@ -11844,7 +11871,7 @@ function bridgePayload(reqBody, parsedRow) {
     payload.timeframe = parsedRow.timeframe;
   }
   if (
-    !isSmiForwardPayload(payload) &&
+    !isSmiForwardPayload(payload) && !isSmioRsiPayload(payload) &&
     cleanNumber(payload.qty) === '' &&
     cleanNumber(payload.size) === '' &&
     cleanNumber(payload.quantity) === ''
@@ -11864,6 +11891,11 @@ function bridgePayload(reqBody, parsedRow) {
 }
 
 function validateBridgePayload(payload, parsedRow) {
+  if (isSmioRsiPayload(payload)) {
+    const result = validateSmioSignal(payload);
+    if (!result.ok) return result;
+    return payload.qty <= MAX_BRIDGE_QTY ? result : { ok: false, reason: 'SMIO exceeds existing MAX_BRIDGE_QTY' };
+  }
   const event = String(parsedRow?.event || payload?.event || '').toUpperCase();
   const rawEvent = String(parsedRow?.raw_event || payload?.event || '').toUpperCase();
   const side = String(parsedRow?.side || payload?.side || '').toUpperCase();
@@ -12052,6 +12084,7 @@ function ignoredWebhookDiagnostics(req, rawBody, bodyInspection, parsedBody) {
 
 function isRecognizedTradeWebhook(row, reqBody = null) {
   if (!row) return false;
+  if (isSmioRsiPayload(reqBody)) return validateSmioSignal(reqBody).ok || validSmioCallback(reqBody);
 
   if (isSmiForwardPayload(reqBody)) {
     const rawEvent = String(reqBody?.event || '').trim().toUpperCase();
@@ -12116,6 +12149,9 @@ async function processRecognizedTradingViewWebhook(
   message,
   dependencies = {}
 ) {
+  // Covers durable Inbox replay as well as direct lifecycle processing.
+  // Research callbacks cannot create public trades through legacy classifiers.
+  if (blockedSmio(reqBody)) return;
   const bridgeCallback = isBridgeExecutionCallback(reqBody);
   const executionConfirmationRequired = requiresBridgeExecutionConfirmation(parsedRow);
   const brokerEodWatchdog = Boolean(reqBody && reqBody.broker_eod_watchdog);
@@ -12230,8 +12266,9 @@ async function processRecognizedTradingViewWebhookLifecycle(
   failOnPublicationError,
   dependencies = {}
 ) {
+  if (blockedSmio(reqBody)) return;
   const edgeSetupId =
-    parsedRow?.event === 'FILL' && isVixaleEdgeV2SetupRow(parsedRow)
+    parsedRow?.event === 'FILL' && (isVixaleEdgeV2SetupRow(parsedRow) || validSmioCallback(reqBody))
       ? parsedRow.setup_id
       : '';
   const edgeExternalCloseKey =
@@ -12437,7 +12474,7 @@ async function processRecognizedTradingViewWebhookLifecycleCore(
 
   if (
     parsedRow.event === 'FILL' &&
-    isVixaleEdgeV2SetupRow(parsedRow) &&
+    (isVixaleEdgeV2SetupRow(parsedRow) || validSmioCallback(reqBody)) &&
     finalRow.status !== 'ignored_duplicate_entry_fill' &&
     (
       telegramPublishedNow ||
@@ -12716,6 +12753,13 @@ async function processWebhookInboxItem(item, dependencies = {}) {
     });
     try {
       const reqBody = JSON.parse(current.raw_json || '{}');
+      if (blockedSmio(reqBody)) {
+        return await updateWebhookInboxItem(sheets, current, {
+          status: 'COMPLETE', next_attempt_at: '',
+          last_error: 'SMIO_RSI_RESEARCH_FREEZE_AND_LIVE_SIZING_REQUIRED',
+          completed_at: new Date().toISOString(),
+        });
+      }
       const message = normalizeRawMessage(reqBody);
       const parsedRow = typeof reqBody === 'object' && reqBody !== null
         ? parseJsonTradingViewAlert(reqBody)
@@ -12857,6 +12901,18 @@ async function handleTradingViewWebhookWithDependencies(
     const reqBody = parsedJsonBody || rawBody;
     const isJsonObject = Boolean(parsedJsonBody);
 
+    if (blockedSmio(reqBody)) {
+      const reason = reqBody?.experimental_contract
+        ? validateSmioSignal(reqBody).reason
+        : 'SMIO_RSI_RESEARCH_FREEZE_AND_LIVE_SIZING_REQUIRED';
+      return res.status(422).send(reason);
+    }
+
+    if (isSmioRsiPayload(reqBody) && String(reqBody?.source || '').toUpperCase() === 'IB_BRIDGE' &&
+        !isQuoteBridgeAuthorized(req)) {
+      return res.status(401).send('SMIO_BROKER_AUTH_REQUIRED');
+    }
+
     const message = normalizeRawMessage(reqBody);
 
     const parsedRow = isJsonObject
@@ -12889,6 +12945,7 @@ async function handleTradingViewWebhookWithDependencies(
       );
 
     if (
+      validSmioCallback(reqBody) ||
       (reqBody && reqBody.broker_eod_watchdog) ||
       durableBridgeCloseCallback ||
       edgeEntryFillCallback ||
@@ -14145,6 +14202,13 @@ app.get('/logout', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
+});
+app.get('/health/smio-demo', (req, res) => {
+  res.status(200).json({
+    experimental_contract: 'SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013',
+    demo_only: true,
+    ready: Boolean(BRIDGE_URL && BRIDGE_FORWARD_ENABLED && !BRIDGE_DRY_RUN && MAX_BRIDGE_QTY > 1 && QUOTE_BRIDGE_KEY.trim()),
+  });
 });
 
 // Webhook endpoints

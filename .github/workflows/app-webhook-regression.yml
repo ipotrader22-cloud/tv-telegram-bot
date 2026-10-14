@@ -39,6 +39,9 @@ jobs:
       - name: Run broker callback regression
         run: node tests/test_broker_eod_callback_idempotency.js
 
+      - name: Run SMIO demo execution and authenticated callback regression
+        run: node tests/test_smio_demo_render.js
+
       - name: Run option payload regression
         run: node tests/test_option_proof_payload.js
 

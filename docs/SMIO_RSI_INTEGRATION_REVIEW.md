@@ -1,0 +1,146 @@
+# SMIO_RSI experimental demo integration â€” 2026-10-13
+
+Handbook update required: YES. Deployment/e2e status is recorded separately below.
+
+## Approved experimental boundary
+
+The owner confirmed `SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013`: use Pine
+v0.1 trading behavior, $1,000,000 chart initial capital, 10% of chart equity,
+reject fractional shares without rounding, and permit orders only on the verified
+simulated shared TWS session. The owner authorized deployment and TV alert creation
+with TWS demo execution. Live accounts remain excluded. Trading Lab's research
+freeze is absent; no production strategy approval or Pine/NT8 parity is claimed.
+
+The supplied task and Trading Lab handoff were inspected, including original and
+paper Pine, NT8 and the disabled draft adapter. Pine/NT8 warmup, fill timing, EOD,
+and sizing discrepancies remain research limitations; no optimization or signal
+changes were introduced. Pine equivalence is enforced by a full-source comparison
+allowing only the demo title and transport marker lines.
+
+## Implementation
+
+- Render: strict demo identity/configuration/timestamps/whole qty; exact event-ID
+  admission and body-conflict rejection; MARKET entries and reasoned CLOSE intents
+  route through the existing /tv bridge path. Broker callbacks require the existing
+  quote key. OPEN/CLOSE publish only actual fills, with exact setup IDs and durable
+  duplicate protection. Public label is explicitly SMIO_RSI Demo.
+- Bridge: same connected IB client/lock, local verified-demo attestation and exact
+  UAM snapshots. Write-ahead journal, exact order references, terminal/partial
+  fills, target cancellation race, remaining-position closes, execution-history
+  coverage, restart observation and ordered durable callback delivery. RSI-only
+  has no target; ATR/First-of-Either use the signal's frozen target. No reversals,
+  quantity fallback or foreign order cancellation. Outside-RTH closes retain the
+  target and queue for permitted RTH even when the shared legacy bridge has its
+  optional BLOCK_MARKET_CLOSES_OUTSIDE_RTH switch disabled. Both incoming CLOSE
+  and journal recovery are gated; unproven history/ambiguous submission blocks.
+- UAM: additive Experimental Demo profile in existing v0.23.2 application; standard
+  selected/bulk controls, per-chart strict Properties verification, exact Excel
+  Inputs/source snapshots and receiver readiness. Installer verifies baseline
+  hashes, backs up targeted files, atomically installs and rolls back on failure.
+  Criteria, cookies, settings, original research profile and Prime/Edge are retained.
+
+## Verified evidence
+
+- Source base 73e5f59a2baab1d9db4b46794df8b6fc6fe7b466; feature branch
+  feature/smio-rsi-offline-gates; PR #293.
+- Last inspected Render deploy dep-db7b49ui0phs738tinlg at base 73e5f59;
+  this was the pre-rollout service, not proof the demo changes are deployed.
+- Native TWS title explicitly said Simulated Trading; its account matched the
+  sole account on the existing bridge API. Account identifiers stay local.
+- Existing caps observed: bridge $100,000/order; Render 10,000 shares. Existing
+  Render forwarding enabled and dry-run false. No risk caps/secrets changed.
+- Installed UAM addon at C:/Users/tradi/Desktop/UAM. Backup:
+  SMIO_RSI_install_backups/demo-20261013-204707. Existing UAM suite, paper safety
+  checks and four new offline tests passed on the actual installed interpreter.
+- Actual saved user criteria on SMIORSI.xlsx yielded 51 candidates. Initial APA
+  candidate is 45m, source row 878, SMIO 197/38/13, RSI 3, ATR 2.9, Auto session.
+  No winner count or parameters forced; neither workbook was changed.
+- Private demo Pine compiled in TradingView. Editor copy matches installed source
+  after CRLF normalization. Native Properties readback: $1m, 10% equity,
+  pyramiding 0 and on-bar-close. Original research script preserved separately.
+- 132 offline bridge tests passed, including 15 SMIO lifecycle tests and existing
+  Edge/Prime protections. Authenticated Render callback/ledger tests pass for
+  BUY/SELL and all target modes, including one OPEN/CLOSE across duplicate delivery.
+- SMIO gate, broker EOD, fast ACK, Edge pending/EOD lifecycle tests passed.
+  app.js and deployment-script syntax passed.
+- Full Edge integration has the same pre-existing dashboard canonical setup-ID
+  visibility assertion as untouched origin/main; no unrelated UI fix included.
+
+## Rollout and limits
+
+Backend merge/deploy, bridge restart, initial UAM APA alert creation and actual
+signal-to-broker fill validation: NOT YET VERIFIED in this checkpoint.
+No all-51 activation and no real-account orders. No synthetic live webhook/order
+is used as evidence of a real TradingView signal. Fractional Pine quantities
+remain rejected as expressly selected; target precision is not silently changed.
+Ambiguous broker submission and unproven history require reconciliation/review.
+Research robustness, NT8 parity and live sizing/production approval remain separate.
+
+Rollback: restore the UAM code backup/profile additions, revert the feature merge
+and restore all backed-up bridge dependencies together. Do not delete journal or
+callback outbox state while a position/order is unresolved. Disable the affected
+TV demo alert before rolling back its receiver. Documentation export is a local
+snapshot only; upload and production deployment are separate facts.
+
+## 2026-10-14 scoped RTH safety correction
+
+- Source trace found that SMIO demo CLOSE previously consulted the *shared optional* `BLOCK_MARKET_CLOSES_OUTSIDE_RTH` setting, so a false value could allow an out-of-session close or recovery pass to cancel the attached target and submit a market order.
+- The SMIO-specific adapter now checks `is_us_stock_rth_now()` for every close, independent of the shared switch; it persists the signal reservation and keeps the owned target intact outside RTH.
+- The broker-fixture regression tests the shared switch OFF, repeated outside-RTH reconciliation (no target cancellation, no market close), and resume inside stock RTH. It does not mutate Prime/Edge behavior or Trading Lab entry/exit conditions.
+- These are source and offline test assertions; broker session behavior, holiday calendar verification, real TradingView delivery and demo TWS execution are still NOT YET VERIFIED. Live-account execution remains forbidden.
+
+## Staging dependency observed 2026-10-14
+
+Do **not** merge the server's executable demo webhook path before confirming that the destination local bridge has been replaced by the reviewed SMIO-aware adapter. The Render PR can accept strictly tagged demo `SETUP` payloads and forward them over the existing shared route; the previous bridge's handling of that new payload cannot be treated as a safe or verified rejection. UAM's receiver check guards automated alert creation but is **not** a server-side transport guarantee against arbitrary/manual webhook deliveries. Keep the PR unmerged until bridge-first deployment safety is confirmed, or add and test a fail-closed server-side downstream readiness gate in a separate scoped patch.
+
+Before any local bridge restart, inspect current open orders/managed positions and choose a window that does not interrupt existing Prime/Edge positions. Require local attested simulated-session status and the backup/rollback procedure; a repository commit or a static attestation file alone does not establish the running account's state. After bridge confirmation, merge/deploy Render and recheck the exact deploy, then create only APA 45m. This note is a release gate, not an authorization to restart TWS, deploy the bridge, merge the PR, or place an order.
+
+## 2026-10-14 owner-provided local read-only bridge evidence
+
+The owner ran read-only GETs to `http://127.0.0.1:8000/ib/status` and `/ib/smio-demo-status`. The reports show the shared bridge **connected**, `dry_run=false`, stock RTH **false**, the legacy `block_market_closes_outside_rth=false`, and the SMIO endpoint returning the exact experimental contract with `demo_only=true` and `ready=true`. The connected account identifier is intentionally not copied into Git, logs, or this report.
+
+This confirms that a local runtime exposes the SMIO demo readiness route, **not** that its running adapter contains the October 14 RTH correction, that its disk files match this PR head, or that the TWS window still visibly identifies a simulated session. The readiness method checks the saved local UI attestation and account match; it cannot independently prove the TWS window label at the time of the GET. Live broker orders remain prohibited. At the time of this record the Render service also remained on a non-SMIO PR commit, and PR #293 remained draft/unmerged.
+
+**Next release gate:** read the installed adapter's exact `close()` RTH guard and file/process timestamps without restarting the bridge. A legacy guard conditional on `BLOCK_MARKET_CLOSES_OUTSIDE_RTH` requires deployment of the reviewed dependency set at a safe window; `ready=true` is not grounds to merge or create alerts. Then independently inspect TWS simulated-session identity, outstanding orders/managed positions and the Render/bridge rollout sequence before staging one APA 45m demo alert.
+
+## 2026-10-14 bridge pre-restart diagnostic checkpoint
+
+Owner-provided local PowerShell evidence: the installed `C:\\ib_bridge\\smio_demo_adapter.py` passed `py_compile`, was backed up before an atomic file replacement, and now displays `if not self.core.is_us_stock_rth_now():` at the SMIO-only close guard. The owner preserved the prepatch backup; its filename and machine/account-identifying data are not recorded in the repository. This establishes **disk source patched**, not in-memory loaded module equivalence.
+
+Read-only broker endpoints at the moment of inspection reported **zero** positions, **zero** open orders, **zero** managed positions, and **zero** pending Render-outbox items. The bridge continued responding `ok=true`, `connected=true`, `dry_run=false` and `is_stock_rth_now=true`. This is only a point-in-time snapshot; orders and positions may change while the market is open. The earlier demo contract readiness GET returned ready=true; no fresh UI simulated-session banner evidence accompanied this checkpoint.
+
+Windows `Get-NetTCPConnection` reported a listener PID that `Get-Process` could not resolve. A second process discovery returned no valid process identity. The computed `RestartRequired=True` from a null PowerShell process object is **invalid/unverified** and must not be used as a restart decision. Investigate port listener ownership (TCP/netstat + process inventory), running Python executable and startup method **without interrupting** any processes. No bridge restart, Render deployment, PR merge, alert creation, or test trade was performed as part of this checkpoint.
+
+Release gate: identify the actual active bridge process and verify that the patched disk adapter is loaded only after a controlled safe-window restart, with refreshed broker positions/orders, no pending callback deliveries, and independent TWS **Simulated Trading** confirmation. The server/bridge version sequencing guard remains unresolved; do not merge the executable Render path until it is resolved.
+
+## 2026-10-14 local autostart script correction (not yet exercised)
+
+Owner inspected Windows Task Scheduler task `Vixale OppositeFlip Stack`: scheduled daily 08:00, last recorded run 2026-10-14 08:00:01 and Task Scheduler result 0. Its action points to `C:\\ib_bridge\\Vixale_AutoStart_v3.ps1`. This script can manage TWS/ngrok as well as the bridge; **do not rerun the whole scheduled task solely to load SMIO changes**. The task's successful return code does not establish bridge startup success.
+
+At line 155, the local PowerShell launcher assembled `cd "<BridgeDir>"; "<BridgePython>" "<BridgeScript>"` without the call operator `&`. The owner separately used PowerShell Parser.ParseInput on the expanded command and confirmed an **Unexpected token** parser error. The owner made a one-line **local disk-only** correction to include `&` before the quoted Python executable, backed up the script, and validated the outer script syntax before replacement. The final local line was verified with Select-String. **The resulting expanded inner command and an actual restart have not been runtime-verified.** No repository version of this local autostart script was modified here.
+
+The 8000/TCP listener advertises a PID not found by Get-Process, tasklist or CIM process lookups, even though read-only GET `/ib/status` returned `ok=true`, `connected=true`, `dry_run=false`. Other visible Python processes were ES Straddle publishers, not ib_bridge.py. A full stack restart can impact TWS and ngrok and risks duplicate/conflicting bridge instances until the service ownership is established. Maintain the deployment hold; do not infer loaded SMIO code from a patched file or a working health endpoint.
+
+**Next safeguards:** verify the corrected expanded launcher *without executing it*, avoid automatic/interactive full-stack restart while listener ownership remains unexplained, and perform a fresh zero-position/order/outbox and TWS Simulated Trading check immediately before any controlled maintenance. Pending Windows virtualization-component reboot is unrelated to this bridge fix and must not be conflated with a restart authorization.
+
+## 2026-10-14 Task Scheduler next-run risk confirmed
+
+The owner independently confirmed `Vixale OppositeFlip Stack` is **enabled**, its installed Task Scheduler action **does specify -RunStack**, and the next trigger is **2026-10-15 08:00 local time**. The launcher `Start-VixaleStack` invokes `Start-TWS`, then `Restart-Ngrok`, then `Restart-Bridge` (not a bridge-only restart). The corrected *expanded* Bridge command was independently parsed using `Parser.ParseInput` and returned **PARSE OK**, but was not executed and is not proof that a restarted bridge can bind port 8000.
+
+**Unresolved risk for next trigger:** the local 127.0.0.1:8000 listener responds with bridge health yet reports PID 35836, which Windows process inventory cannot resolve. The local script's `Restart-Bridge` searches for processes by command line substring `ib_bridge.py`, so may not stop the true owner of port 8000, and a second bridge startup could fail or conflict. No scheduled-task run, manual launch, restart, account change, trade, merge, or deployment has been authorized/performed as part of this check. Before the next scheduled trigger, arrange a non-trading maintenance and operational fallback covering TWS, ngrok, broker account attestation, bridge health and a way to avoid duplicate startup. Do not assume Task Scheduler's 0 exit code proves its spawned processes are healthy.
+
+## 2026-10-14 post-reboot owner attestation and pending bridge file parity
+
+After a manual Windows reboot, the owner restarted the Bridge separately and supplied read-only evidence: loopback `/ib/status` returned `ok=true`, `connected=true`, `dry_run=false`; `/ib/smio-demo-status` reported `demo_only=true`, `ready=true`, and the exact experimental contract. A single Windows Python process matching the Bridge executable and `ib_bridge.py` was observed, PID 7516, started 2026-10-14 19:14 local, after the local RTH guard patch. The loopback TCP listener advertised a distinct PID 22712; exact PID mapping remained unexplained. No order was sent in this inspection.
+
+The broker API showed four existing positions, acknowledged by the owner as **manually opened Options Trading positions** unrelated to SMIO; these must not be modified, interpreted as SMIO ownership or treated as an unexpected restart residue. The owner also reported zero open orders, zero managed positions and zero callback outbox items. Finally, the owner explicitly confirmed in chat that **the TWS window connected to this Bridge shows Simulated Trading, not Live Trading**. This is an owner-observed session attestation, not a code-verified account identity and not an enduring guarantee if TWS switches sessions.
+
+Before server merge/deploy or a TradingView demo alert, perform read-only file/blob parity verification of **all nine** installed bridge source dependencies against the PR branch and verify exact simulated-account binding again. The owner-confirmed UI label, no open orders and process start after patch are encouraging, but do not alone establish code parity or readiness for first execution. Maintain a hard hold on real orders and all-51 activation.
+
+## 2026-10-14 complete Windows Bridge source parity (owner verified)
+
+The owner ran read-only `git hash-object` comparisons against the feature branch's recorded Git blob SHA for the **nine** installed files at `C:\\ib_bridge`: `ib_bridge.py`, `ib_bridge_core.py`, `render_callback_compat.py`, `smi_forward_adapter.py`, `smi_runtime_safety.py`, `smio_demo_adapter.py`, `smio_demo_contract.py`, `quote_reconnect_adapter.py`, and `smio_rsi_gate.py`. **All nine returned MATCH.** This confirms on-disk byte-for-byte parity with the reviewed Git blobs at the time of the check, including the SMIO-specific unconditional stock-RTH close guard. No changed secrets, `.env` contents or account identifiers were requested or recorded. The same owner independently confirmed the attached TWS GUI was marked **Simulated Trading** after reboot and that the four existing positions are manual Options Trading holdings unrelated to this experiment; those positions must not be touched.
+
+The entrypoint runs Uvicorn with `reload=True`: this can explain a distinct parent command-process PID and TCP listener child PID, but the precise observed PID parent-child mapping has **not yet been demonstrated**. Source parity, postpatch launch and successful health/readiness requests together support the bridge-first staging prerequisite; do not treat them as proof of a broker fill, cross-machine Render/ngrok reachability or TradingView alert creation.
+
+Next server release tasks: rerun CI on the documentation-updated PR head, check the narrow executable diff against the newer main, merge and verify the **exact** Render deployed commit only if all existing review and rollback gates hold, then verify the public `/health/smio-demo` readiness plus private loopback readiness before staging **APA 45m only**. The research strategy remains not frozen; no production/live-account authorization is implied.

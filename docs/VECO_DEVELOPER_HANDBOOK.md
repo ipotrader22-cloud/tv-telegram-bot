@@ -365,6 +365,61 @@ Existing classification and lifecycle must remain backward compatible.
 
 ## 3A. Forward-Test Engineering Integrations (Not Production)
 
+### SMIO_RSI experimental demo contract — 2026-10-13
+
+Trading Lab has not issued a research freeze or production approval. The owner
+separately confirmed the experimental contract
+`SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013`: unchanged Pine v0.1 trading
+logic, TradingView 10% equity sizing from $1,000,000 initial chart capital,
+fractional shares rejected without rounding, and orders only on the verified
+shared simulated TWS session. This authorizes Engineering demo integration and
+deployment; it does not authorize real-money trading or claim Pine/NT8 parity.
+See `docs/SMIO_RSI_INTEGRATION_REVIEW.md` for source/install/deploy evidence.
+
+The original research profile remains preview-only. The additive UAM profile
+`smio_rsi_demo.json` uses the existing selected/bulk workflow and requires both
+`/health/smio-demo` and loopback `/ib/smio-demo-status` to report the exact ready
+contract before creation. Every chart verifies $1m/10% Properties, exact Excel
+Inputs and an atomic source/settings snapshot. User criteria, alert ledgers,
+Prime/Edge profiles and existing research Pine are preserved. The demo Pine
+changes only its title and transport marker; the behavior-equivalence test
+removes those lines and compares the entire remaining source.
+
+The existing `/tv` route admits only strict tagged demo signals, records durable
+event identities, and defers trade publication until authenticated broker fills.
+Old/partial SMIO identities and LIVE mode remain rejected before generic routing.
+Callbacks use the existing quote-bridge key in a header; no new key or secret in
+payloads. Confirmed records display `SMIO_RSI Demo`, with actual execution qty,
+weighted fill prices, exact setup ownership and existing publication deduplication.
+
+`bridge/smio_demo_adapter.py` reuses the same core IB client and lock. Its local
+`smio_demo_config.json` attests the observed simulated UI/account and references
+UAM's snapshot directory; account identity is never an extra UAM setting or Git
+artifact. Durable `smio_demo_journal.json` writes intent before mutation. Exact
+SMIO entry/target/close references, execution history coverage, position proofs,
+partial parent/target/close handling, cancellation confirmation and ordered
+outbox delivery prevent symbol fallback, reversals and duplicate retries. A
+foreign execution cancels only the stale owned target and reserves the setup for
+review. Unproven restart history remains blocked. No broker record is fabricated.
+
+Existing risk caps apply. The SMIO demo close path independently requires
+confirmed stock RTH even when the shared bridge's optional
+`BLOCK_MARKET_CLOSES_OUTSIDE_RTH` switch is false. Outside-RTH close intent
+remains durable and retains the exact target until the next permitted RTH; the
+signal timestamp is preserved. This is a demo execution guard only, not a change
+to the research Pine exit condition or Prime/Edge behavior. Retry of a terminal failed/partial market close is capped at two
+replacements and requires fresh exact executions and remaining-position proof.
+Ambiguous submission/ownership remains reserved for operator review, never blindly
+resubmitted. Fractional chart quantities and broker-invalid target increments can
+prevent execution; Engineering does not round shares or silently change targets.
+
+ADR: use a strategy-specific lifecycle adapter on the shared session because the
+existing SMI executor requires a target and cannot represent RSI-only exits.
+Deployment uses the existing bridge script's compile/backup/restore/restart path,
+including all imported adapters. Rollback restores the dependency set together;
+never discard a demo journal/outbox with unsettled broker state. Source inclusion
+is not deployment proof; the integration review records rollout separately.
+
 ### 3A.1 SMI Histogram v0.4-FWD
 
 **Research freeze:** `SMI Histogram Strategy v0.4-FWD`

@@ -1,0 +1,10 @@
+--- tests/test_uam_phase1.py
++++ tests/test_uam_phase1.py
+@@ -690,6 +690,7 @@
+     profiles = sorted(path.name for path in (root / "profiles").glob("*.json"))
+     assert profiles == [
+         "smi_histogram_v0_4_fwd.json",
++        "smio_rsi_demo.json",
+         "smio_rsi_paper.json",
+         "vixale_edge_1_2_safety.json",
+         "vixale_prime_shrek_1_4_5.json",

@@ -30,3 +30,6 @@ jobs:
 
       - name: Run Vixale Edge bridge regression
         run: python -m unittest tests.test_vixale_edge_bridge_isolation
+
+      - name: Run SMIO experimental demo lifecycle and isolation
+        run: python -m unittest tests.test_smio_demo_lifecycle tests.test_smio_rsi_gate

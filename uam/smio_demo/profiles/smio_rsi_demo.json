@@ -1,0 +1,366 @@
+{
+  "strategy_id": "SMIO_RSI_RESEARCH",
+  "display_name": "SMIO_RSI — Experimental Demo",
+  "script_title": "SMIO_RSI Research v0.1 — UAM Demo",
+  "contract_id": "SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013",
+  "alert_name_template": "SMIO_RSI_DEMO_{symbol}_{timeframe}",
+  "dialog_identity_labels": [
+    "SMIO fast EMA",
+    "RSI of SMIO period"
+  ],
+  "metric_aliases": {
+    "symbol": [
+      "Instrument"
+    ],
+    "timeframe": [
+      "Period"
+    ],
+    "trades": [
+      "Total # of trades"
+    ],
+    "net_profit": [
+      "Total net profit"
+    ],
+    "max_drawdown": [
+      "Max. drawdown"
+    ],
+    "profit_factor": [
+      "Profit factor"
+    ],
+    "win_rate": [
+      "Percent profitable"
+    ]
+  },
+  "parameter_fields": [
+    {
+      "key": "SmioFastPeriod",
+      "aliases": [
+        "SMIO Fast EMA"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": true,
+      "tv": {
+        "label": "SMIO fast EMA",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "SmioSlowPeriod",
+      "aliases": [
+        "SMIO Slow EMA"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": true,
+      "tv": {
+        "label": "SMIO slow EMA",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "SmioSignalPeriod",
+      "aliases": [
+        "SMIO Signal EMA"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": true,
+      "tv": {
+        "label": "SMIO signal EMA",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "RsiPeriod",
+      "aliases": [
+        "RSI of SMIO Period"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": true,
+      "tv": {
+        "label": "RSI of SMIO period",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "AllowLong",
+      "aliases": [
+        "Allow Long"
+      ],
+      "type": "bool",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "Allow longs",
+        "kind": "checkbox",
+        "optional": false
+      }
+    },
+    {
+      "key": "AllowShort",
+      "aliases": [
+        "Allow Short"
+      ],
+      "type": "bool",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "Allow shorts",
+        "kind": "checkbox",
+        "optional": false
+      }
+    },
+    {
+      "key": "EmaFastPeriod",
+      "aliases": [
+        "EMA Fast"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "EMA fast",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "EmaMidPeriod",
+      "aliases": [
+        "EMA Medium"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "EMA medium",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "EmaSlowPeriod",
+      "aliases": [
+        "EMA Long"
+      ],
+      "type": "int",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "EMA long",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "TargetMode",
+      "aliases": [
+        "Profit Target Mode"
+      ],
+      "type": "text",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "Profit target mode",
+        "kind": "dropdown",
+        "optional": false
+      },
+      "transform": {
+        "kind": "map",
+        "values": {
+          "ATR": "ATR",
+          "RSI_80_20": "RSI 80/20",
+          "FirstOfEither": "First of either",
+          "0": "ATR",
+          "1": "RSI 80/20",
+          "2": "First of either"
+        }
+      }
+    },
+    {
+      "key": "AtrTargetMultiplier",
+      "aliases": [
+        "ATR Target Multiplier (ATR period 14)"
+      ],
+      "type": "float",
+      "required": true,
+      "optimize": true,
+      "tv": {
+        "label": "ATR target multiplier",
+        "kind": "text",
+        "optional": false
+      }
+    },
+    {
+      "key": "SessionMode",
+      "aliases": [
+        "Session"
+      ],
+      "type": "text",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "Session mode",
+        "kind": "dropdown",
+        "optional": false
+      },
+      "transform": {
+        "kind": "map",
+        "values": {
+          "Auto": "Auto",
+          "StocksRTH": "Stocks RTH",
+          "FuturesFull": "Futures Full",
+          "0": "Auto",
+          "1": "Stocks RTH",
+          "2": "Futures Full"
+        }
+      }
+    },
+    {
+      "key": "FlattenStocksAtRthEnd",
+      "aliases": [
+        "Flatten Stocks at RTH End"
+      ],
+      "type": "bool",
+      "required": true,
+      "optimize": false,
+      "tv": {
+        "label": "Close stocks at RTH end",
+        "kind": "checkbox",
+        "optional": false
+      }
+    },
+    {
+      "key": "ResearchStartingCapital",
+      "aliases": [
+        "Research Starting Capital"
+      ],
+      "type": "float",
+      "required": true,
+      "optimize": false
+    },
+    {
+      "key": "CapitalAllocationPercent",
+      "aliases": [
+        "Capital Allocation %"
+      ],
+      "type": "float",
+      "required": true,
+      "optimize": false
+    }
+  ],
+  "static_tv_inputs": [
+    {
+      "label": "Use external SMIO histogram",
+      "kind": "checkbox",
+      "value": false
+    },
+    {
+      "label": "Enable paper payload alerts",
+      "kind": "checkbox",
+      "value": true,
+      "optional": false
+    },
+    {
+      "label": "Demo execution contract",
+      "kind": "dropdown",
+      "value": "SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013",
+      "optional": false
+    }
+  ],
+  "notes": "Explicit experimental demo contract; exact Pine v0.1 trading behavior, serializer marker only. Shared session verified separately, no live-account fallback.",
+  "pine_reference": {
+    "path": "Pine/SMIO_RSI_Research_v0_1_UAM_Demo.pine",
+    "git_blob_sha": "0b5d2baecb2371890216c71f54d4a230d2da19d8"
+  },
+  "paper_preview_only": false,
+  "setup_note": "Experimental demo: unchanged Pine v0.1; shared TWS session; exact TV quantity, fractional shares rejected. Research is not approved for production. Verify 1,000,000 capital and 10% equity in Properties. No automatic 51-alert activation.",
+  "alert_contract": {
+    "condition": "SMIO_RSI Research v0.1 — UAM Demo",
+    "trigger": "alert() function calls only",
+    "expiration": "Open-ended",
+    "strategy_properties": {
+      "mode": "verify_only",
+      "order_size_type": "Percent of equity",
+      "order_size_value": 10,
+      "initial_capital": 1000000,
+      "verify_per_chart": true
+    },
+    "webhook": "https://www.vixale.com/tv"
+  },
+  "constraints": [
+    {
+      "kind": "one_of",
+      "field": "TargetMode",
+      "values": [
+        "ATR",
+        "RSI 80/20",
+        "First of either"
+      ]
+    },
+    {
+      "kind": "one_of",
+      "field": "SessionMode",
+      "values": [
+        "Auto",
+        "Stocks RTH",
+        "Futures Full"
+      ]
+    },
+    {
+      "kind": "range",
+      "field": "SmioFastPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "SmioSlowPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "SmioSignalPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "RsiPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "EmaFastPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "EmaMidPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "EmaSlowPeriod",
+      "min": 1
+    },
+    {
+      "kind": "range",
+      "field": "AtrTargetMultiplier",
+      "min": 0.1
+    },
+    {
+      "kind": "one_of",
+      "field": "SessionMode",
+      "values": [
+        "Auto",
+        "Stocks RTH"
+      ]
+    }
+  ],
+  "experimental_contract": "SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013"
+}
