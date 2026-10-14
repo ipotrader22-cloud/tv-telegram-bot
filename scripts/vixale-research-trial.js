@@ -5,6 +5,7 @@ const {readSnapshot}=require('./vixale-live-research-snapshot');
 const {getNews}=require('./vixale-news-evidence');
 const {checkUrl}=require('./vixale-article-verifier');
 const {fetchNvidiaOfficial}=require('./vixale-official-rss');
+const {fetchAaoiPrimary}=require('./vixale-aaoi-official-release');
 const {contextGate,schema,validate,CAPS}=require('./vixale-research-score-gate');
 const {previousSession,session}=require('./swing-market-calendar');
 function fail(message){throw Error('RESEARCH RUN BLOCKED: '+message);}
@@ -40,7 +41,11 @@ async function main(){
   const newsFloor=new Date(Date.parse(date+'T00:00:00Z')-30*86400000).toISOString().slice(0,10);
   let verified=[];
   // Prefer directly publisher-dated official RSS; avoid a paid model search for NVDA.
-  if(ticker==='NVDA'){
+  if(ticker==='AAOI'){
+    try{verified=await fetchAaoiPrimary({reviewDate:date,earliest:newsFloor});}
+    catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,officialReleaseRejected:true,reason:String(e.message||'SOURCE_ERROR').slice(0,100)}));}
+  }
+  if(ticker==='NVDA'&&!verified.length){
     try{verified=await fetchNvidiaOfficial({reviewDate:date,earliest:newsFloor});}
     catch(e){console.log(JSON.stringify({stage:'NEWS',ticker,officialRssRejected:true,
       reason:String(e.message||'SOURCE_ERROR').slice(0,100)}));}
