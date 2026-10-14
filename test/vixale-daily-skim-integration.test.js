@@ -15,8 +15,8 @@ test('independent primary release produces bounded bilingual brief and source li
  assert.match(renderDailySkim(s,'ru'),/Коротко о рынке/);
  assert.match(renderDailySkim(s,'en'),/Daily Market Skim/);
 });
-test('strictly rejects prior-day source and unverified TWS/news',()=>{
- assert.throws(()=>createBrief([{...sample,publishedDate:'2026-10-13'}],{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/PENDING/);
+test('strictly rejects future-dated source and unverified TWS/news',()=>{
+ assert.throws(()=>createBrief([{...sample,publishedDate:'2026-10-15'}],{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/PENDING/);
  assert.throws(()=>createBrief([{...sample,verified:false}],{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/PENDING/);
 });
 test('missing brief is clearly pending, never a fabricated current review',()=>{
