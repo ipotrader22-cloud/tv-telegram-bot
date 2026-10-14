@@ -35,6 +35,7 @@ test('calendar guard blocks late minutes and NYSE holidays',()=>{
   assert.doesNotThrow(()=>assertWriteWindow('review',t()));
   assert.throws(()=>assertWriteWindow('review',at('2026-10-14T14:18:00Z')),/Outside safe/);
   assert.throws(()=>assertWriteWindow('review',at('2026-12-25T15:05:00Z')),/NYSE is closed/);
+  assert.throws(()=>assertWriteWindow('target',at('2026-10-14T20:42:00Z')),/Outside safe/);
 });
 test('metadata fence is mandatory and duplicates block',()=>{
   assert.throws(()=>readRecords({developerMetadata:[]}),/Missing fence/);
@@ -75,5 +76,12 @@ test('commit fails closed if live validators missing',async()=>{
   const db=fake(),w=new GuardedWriter({sheets:db.sheets,spreadsheetId:'s',owner:'test',kind:'review',clock:t});
   await w.acquire();
   await assert.rejects(()=>w.commit({requests:[{updateCells:{}}]}),/validators required/);
+  assert.equal(db.batches.length,1);
+});
+
+test('financial payload cannot manipulate lock metadata',async()=>{
+  const db=fake(),w=new GuardedWriter({sheets:db.sheets,spreadsheetId:'s',owner:'test',kind:'review',clock:t});
+  await w.acquire();
+  await assert.rejects(()=>w.commit({requests:[{deleteDeveloperMetadata:{}}],validateFresh:async()=>{},validateQuotes:async()=>{}}),/may not alter guard metadata/);
   assert.equal(db.batches.length,1);
 });
