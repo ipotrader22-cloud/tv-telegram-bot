@@ -10,9 +10,9 @@ function timestampNY(now=new Date()){
  return dayNY(now)+'T'+hh+':'+parts.minute+':'+parts.second+offset;
 }
 function createBrief(items,{dateET,reviewedAtET}){
- const today=items.filter(x=>x.verified && x.publishedDate===dateET);
- if(!today.length)throw Error('SKIM PENDING: No independently verified current-day primary releases; no publishing.');
- const source=today[0];
+ const recent=items.filter(x=>x.verified && x.publishedDate<=dateET);
+ if(!recent.length)throw Error('SKIM PENDING: No independently verified primary releases; no publishing.');
+ const source=recent.sort((a,b)=>b.publishedDate.localeCompare(a.publishedDate))[0];
  const txt=source.excerpt.toLowerCase();
  const themes=[];
  if(/\b(?:chip design|semiconductor|fabrication|manufactur|fab)\b/.test(txt))themes.push('semiconductor design and manufacturing');
@@ -22,15 +22,16 @@ function createBrief(items,{dateET,reviewedAtET}){
  const ruThemes=themes.length?themes.map(t=>({'semiconductor design and manufacturing':'разработки и производства микросхем','AI technology':'технологий искусственного интеллекта','data-center technology':'технологий центров обработки данных'}[t])).join(' и '):'деятельности и продуктов компании';
  const value={
   dateET,reviewedAtET,universeDate:dateET,provenance:'independent-public-sources',stance:'neutral',
-  summaryEn:'NVIDIA published a company announcement today. Its official release covers '+enThemes+'. This is a company-news snapshot, not a comprehensive assessment of the market or an Active Portfolio ranking update.',
-  summaryRu:'Сегодня NVIDIA опубликовала корпоративное сообщение. Официальный релиз посвящён теме: '+ruThemes+'. Это краткий обзор корпоративных новостей, а не полная оценка рынка или обновление рейтинга Active Portfolio.',
+  summaryEn:'NVIDIA’s latest verified company announcement is dated '+source.publishedDate+'. Its official release covers '+enThemes+'. This is a dated company-news snapshot, not a comprehensive assessment of the market or an Active Portfolio ranking update.',
+  summaryRu:'Последнее подтверждённое корпоративное сообщение NVIDIA датировано '+source.publishedDate+'. Официальный релиз посвящён теме: '+ruThemes+'. Это обзор датированных корпоративных новостей, а не полная оценка рынка или обновление рейтинга Active Portfolio.',
   sources:[{url:source.url,issuedDate:source.publishedDate,issuer:'NVIDIA Newsroom'}]
  };
  return validateSkim(value,{todayET:dateET}).data;
 }
 async function collect({now=new Date(),fetcher=fetchNvidiaOfficial}={}){
  const dateET=dayNY(now);
- const items=await fetcher({reviewDate:dateET,earliest:dateET});
+ const floor=new Date(Date.parse(dateET+'T00:00:00Z')-14*86400000).toISOString().slice(0,10);
+ const items=await fetcher({reviewDate:dateET,earliest:floor});
  return createBrief(items,{dateET,reviewedAtET:timestampNY(now)});
 }
 if(require.main===module){
