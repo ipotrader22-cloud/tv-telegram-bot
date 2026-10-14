@@ -103,3 +103,13 @@ test('missing publisher date is a controlled rejection, not a runtime crash',()=
  const html='<meta property="og:description" content="A relevant business announcement with enough contextual information to audit the publication.">';
  assert.throws(()=>articlePage(html,'https://www.reuters.com/a','2026-10-14','2026-09-14'),/Publisher date metadata missing/);
 });
+
+test('publisher date variants are accepted only when source page supplies them',()=>{
+ const description='Verified source text describing a company development with enough information to justify evidence handling.';
+ for(const property of ['publication_date','dc.date.issued','parsely-pub-date','sailthru.date']){
+   const html='<meta name="'+property+'" content="2026-10-12T10:30:00Z">'+
+      '<meta name="description" content="'+description+'">';
+   const r=articlePage(html,'https://www.reuters.com/test','2026-10-14','2026-09-14');
+   assert.equal(r.publishedDate,'2026-10-12');
+ }
+});

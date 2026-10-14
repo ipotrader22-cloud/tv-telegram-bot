@@ -27,6 +27,8 @@ function attribute(html,key){
 function articlePage(html,ref,reviewDate,previous){
  const published=attribute(html,'article:published_time')||attribute(html,'datePublished')||
   attribute(html,'pubdate')||attribute(html,'date')||
+  attribute(html,'publication_date')||attribute(html,'dc.date.issued')||
+  attribute(html,'parsely-pub-date')||attribute(html,'sailthru.date')||
   (html.match(/\"datePublished\"\s*:\s*\"(\d{4}-\d\d-\d\d[^\"]*)\"/i)||[])[1]||
   (html.match(/<time[^>]*datetime=[\"'](\d{4}-\d\d-\d\d)/i)||[])[1];
  if(typeof published!=='string' || !published.trim()) blocked('Publisher date metadata missing');
