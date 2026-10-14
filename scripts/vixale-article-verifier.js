@@ -29,6 +29,7 @@ function articlePage(html,ref,reviewDate,previous){
   attribute(html,'pubdate')||attribute(html,'date')||
   (html.match(/\"datePublished\"\s*:\s*\"(\d{4}-\d\d-\d\d[^\"]*)\"/i)||[])[1]||
   (html.match(/<time[^>]*datetime=[\"'](\d{4}-\d\d-\d\d)/i)||[])[1];
+ if(typeof published!=='string' || !published.trim()) blocked('Publisher date metadata missing');
  const date=published.slice(0,10);
  const excerpt=attribute(html,'og:description')||attribute(html,'description');
  if(!/^\d{4}-\d\d-\d\d$/.test(date)||date>reviewDate||date<previous)blocked('Cannot confirm current publication date');
