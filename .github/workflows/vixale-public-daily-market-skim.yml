@@ -70,7 +70,7 @@ jobs:
         id: saved
         shell: bash
         run: |
-          if [ -f data/daily-market-skim.json ] && node -e "const d=require('./data/daily-market-skim.json');process.exit(d.dateET===process.env.DATE_ET?0:1)" ; then
+          if [ -f data/daily-market-skim.json ] && node -e "const d=require('./data/daily-market-skim.json');const {isBroadMarket}=require('./lib/daily-skim-market-focus');process.exit(d.dateET===process.env.DATE_ET&&isBroadMarket(d)?0:1)" ; then
             echo "Existing daily brief retained; same-day idempotency."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
