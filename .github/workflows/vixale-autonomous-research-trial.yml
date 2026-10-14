@@ -10,6 +10,7 @@ on:
       - 'scripts/vixale-research-trial.js'
       - 'scripts/vixale-research-ohlcv.js'
       - 'test/vixale-autonomous-research.test.js'
+      - 'test/vixale-research-ohlcv.test.js'
       - '.github/workflows/vixale-autonomous-research-trial.yml'
   workflow_dispatch:
   push:
@@ -35,7 +36,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: node --test test/vixale-autonomous-research.test.js
+      - run: node --test test/vixale-autonomous-research.test.js test/vixale-research-ohlcv.test.js
   research:
     if: github.event_name != 'pull_request'
     needs: unit
