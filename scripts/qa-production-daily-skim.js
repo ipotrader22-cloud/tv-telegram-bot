@@ -23,9 +23,9 @@ async function check(){
   assert.match(x.cache,/no-store/i,'Public live brief must not be cached stale');
  }
  assert.match(en.html,/Daily Market Skim/);
- assert.match(en.html,/NVIDIA published a company announcement today/);
+ assert.match(en.html,/NVIDIA’s latest verified company announcement is dated/);
  assert.match(ru.html,/Коротко о рынке/);
- assert.match(ru.html,/Сегодня NVIDIA опубликовала/);
+ assert.match(ru.html,/Последнее подтверждённое корпоративное сообщение NVIDIA датировано/);
  console.log(JSON.stringify({status:'PASS',gate:'DAILY_SKIM_DEPLOY',date:brief.dateET,localeParity:true,sourceLink:true}));
 }
 (async()=>{
