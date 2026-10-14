@@ -53,7 +53,7 @@ async function main(){
   'For each factor give dated concise reasoning and cite one or more exact URLs supplied for that ticker. '+
   'Never invent dates or sources or declare unsupported news verified. '+
   'When evidence is incomplete do not claim a complete assessment. Model-only, no broker orders.',
-  input:[{role:'user',content:JSON.stringify({date,universe:source.input})}],
+  input:[{role:'user',content:JSON.stringify({date,universe:source.input,benchmarks:source.benchmarks})}],
   text:{format:{type:'json_schema',name:'vixale_nine_factor_research',
     strict:true,schema:schema()}}},key);
  const proposal=validate(context,result);
