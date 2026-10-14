@@ -402,9 +402,12 @@ outbox delivery prevent symbol fallback, reversals and duplicate retries. A
 foreign execution cancels only the stale owned target and reserves the setup for
 review. Unproven restart history remains blocked. No broker record is fabricated.
 
-Existing risk caps and RTH restrictions apply. Outside-RTH close intent remains
-durable and retains the target until the next permitted RTH; the signal timestamp
-is preserved. Retry of a terminal failed/partial market close is capped at two
+Existing risk caps apply. The SMIO demo close path independently requires
+confirmed stock RTH even when the shared bridge's optional
+`BLOCK_MARKET_CLOSES_OUTSIDE_RTH` switch is false. Outside-RTH close intent
+remains durable and retains the exact target until the next permitted RTH; the
+signal timestamp is preserved. This is a demo execution guard only, not a change
+to the research Pine exit condition or Prime/Edge behavior. Retry of a terminal failed/partial market close is capped at two
 replacements and requires fresh exact executions and remaining-position proof.
 Ambiguous submission/ownership remains reserved for operator review, never blindly
 resubmitted. Fractional chart quantities and broker-invalid target increments can
