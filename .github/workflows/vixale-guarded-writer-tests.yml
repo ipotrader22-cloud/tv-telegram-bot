@@ -1,0 +1,21 @@
+name: VIXALE Guarded Writer Unit Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/vixale-guarded-sheets-writer.js'
+      - 'scripts/swing-market-calendar.js'
+      - 'test/vixale-guarded-sheets-writer.test.js'
+      - '.github/workflows/vixale-guarded-writer-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-guarded-sheets-writer.test.js
