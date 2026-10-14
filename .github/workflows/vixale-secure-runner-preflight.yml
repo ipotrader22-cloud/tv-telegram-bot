@@ -1,0 +1,24 @@
+name: VIXALE Secure Runner Read-Only Preflight
+# Deliberately manual and read-only; not a portfolio writer.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vixale-secure-runner-preflight
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci --ignore-scripts
+      - name: Validate Sheets access and secret presence without writing
+        env:
+          VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.VIXALE_GOOGLE_SERVICE_ACCOUNT_JSON }}
+          VIXALE_RESEND_API_KEY: ${{ secrets.VIXALE_RESEND_API_KEY }}
+        run: node scripts/vixale-secure-runner-preflight.js
