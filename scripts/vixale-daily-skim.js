@@ -1,40 +1,53 @@
 'use strict';
-// Primary public company press releases ONLY. No TWS, IBKR or paid news material.
-const {fetchNvidiaOfficial}=require('./vixale-official-rss');
+// Broad US equity MARKET recap, NOT company press-release reporting.
+// Dated primary-source observations, original bilingual commentary, no broker APIs or portfolio writes.
+const {collectMarket}=require('./vixale-broad-market-fred');
 const {validateSkim}=require('../lib/daily-market-skim-contract');
+const {isBroadMarket}=require('../lib/daily-skim-market-focus');
 function dayNY(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function timestampNY(now=new Date()){
  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZoneName:'shortOffset'}).formatToParts(now).map(p=>[p.type,p.value]));
- const hh=parts.hour==='24'?'00':parts.hour;const offset=parts.timeZoneName==='GMT-4'?'-04:00':parts.timeZoneName==='GMT-5'?'-05:00':null;
- if(!offset)throw Error('Unexpected America/New_York timezone offset');
- return dayNY(now)+'T'+hh+':'+parts.minute+':'+parts.second+offset;
+ const hh=parts.hour==='24'?'00':parts.hour,offset=parts.timeZoneName==='GMT-4'?'-04:00':parts.timeZoneName==='GMT-5'?'-05:00':null;
+ if(!offset)throw Error('Invalid NY offset');return dayNY(now)+'T'+hh+':'+parts.minute+':'+parts.second+offset;
 }
-function createBrief(items,{dateET,reviewedAtET}){
- const recent=items.filter(x=>x.verified && x.publishedDate<=dateET);
- if(!recent.length)throw Error('SKIM PENDING: No independently verified primary releases; no publishing.');
- const source=recent.sort((a,b)=>b.publishedDate.localeCompare(a.publishedDate))[0];
- const txt=source.excerpt.toLowerCase();
- const themes=[];
- if(/\b(?:chip design|semiconductor|fabrication|manufactur|fab)\b/.test(txt))themes.push('semiconductor design and manufacturing');
- if(/\b(?:artificial intelligence|ai)\b/.test(txt))themes.push('AI technology');
- if(/\b(?:data center|datacenter)\b/.test(txt))themes.push('data-center technology');
- const enThemes=themes.length?themes.join(' and '):'the company’s operations and products';
- const ruThemes=themes.length?themes.map(t=>({'semiconductor design and manufacturing':'разработки и производства микросхем','AI technology':'технологий искусственного интеллекта','data-center technology':'технологий центров обработки данных'}[t])).join(' и '):'деятельности и продуктов компании';
- const value={
-  dateET,reviewedAtET,universeDate:dateET,provenance:'independent-public-sources',stance:'neutral',
-  summaryEn:'NVIDIA’s latest verified company announcement is dated '+source.publishedDate+'. Its official release covers '+enThemes+'. This is a dated company-news snapshot, not a comprehensive assessment of the market or an Active Portfolio ranking update.',
-  summaryRu:'Последнее подтверждённое корпоративное сообщение NVIDIA датировано '+source.publishedDate+'. Официальный релиз посвящён теме: '+ruThemes+'. Это обзор датированных корпоративных новостей, а не полная оценка рынка или обновление рейтинга Active Portfolio.',
-  sources:[{url:source.url,issuedDate:source.publishedDate,issuer:'NVIDIA Newsroom'}]
+function offsetAt(date){
+ const dt=new Date(date+'T16:00:00Z');
+ return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'shortOffset'}).formatToParts(dt).find(p=>p.type==='timeZoneName')?.value==='GMT-4'?'-04:00':'-05:00';
+}
+function createBrief(data,{dateET,reviewedAtET}){
+ const {sp500,nasdaq,vix,treasury10y}=data;
+ if(![sp500,nasdaq,vix,treasury10y].every(Boolean)||sp500.date!==nasdaq.date||sp500.date!==vix.date)
+   throw Error('MARKET PENDING: index observation dates must match');
+ const sign=x=>x>0?'rose':x<0?'fell':'was flat';
+ const ru=x=>x>0?'вырос':x<0?'снизился':'не изменился';
+ const pct=x=>Math.abs(x).toFixed(2)+'%';
+ const environment=sp500.changePct>=0&&nasdaq.changePct>=0?'constructive':sp500.changePct<0&&nasdaq.changePct<0?'defensive':'mixed';
+ const vixChange=vix.changePct>0?'increased':vix.changePct<0?'declined':'was little changed';
+ const vixRu=vix.changePct>0?'вырос':vix.changePct<0?'снизился':'почти не изменился';
+ const result={
+  dateET,reviewedAtET,universeDate:dateET,provenance:'independent-public-sources',scope:'broad-us-equities',stance:environment,
+  summaryEn:'At the '+sp500.date+' US market close, the S&P 500 '+sign(sp500.changePct)+' '+pct(sp500.changePct)+
+    ' and the Nasdaq Composite '+sign(nasdaq.changePct)+' '+pct(nasdaq.changePct)+'. The VIX '+vixChange+
+    ' versus its preceding close. The latest available 10-year US Treasury yield observation is dated '+treasury10y.date+
+    '. These are dated closing observations, not live intraday prices or a completed portfolio review.',
+  summaryRu:'По итогам торгов '+sp500.date+' индекс S&P 500 '+ru(sp500.changePct)+' на '+pct(sp500.changePct)+
+    ', а Nasdaq Composite '+ru(nasdaq.changePct)+' на '+pct(nasdaq.changePct)+'. Индекс волатильности VIX '+vixRu+
+    ' относительно предыдущего закрытия. Последнее доступное наблюдение доходности 10-летних казначейских облигаций США датировано '+treasury10y.date+
+    '. Это данные закрытия, а не текущие внутридневные котировки или завершённый обзор портфеля.',
+  sources:[{url:sp500.sourceUrl,issuedDate:sp500.date,issuer:'Federal Reserve Bank of St. Louis (FRED)'},
+    {url:nasdaq.sourceUrl,issuedDate:nasdaq.date,issuer:'Federal Reserve Bank of St. Louis (FRED)'}],
+  marketIndicators:{indices:{
+    sp500:{...metric(sp500)},nasdaq:{...metric(nasdaq)}},
+    volatility:{vix:{...metric(vix)}},rates:{treasury10y:{...metric(treasury10y)}}}
  };
- return validateSkim(value,{todayET:dateET}).data;
+ if(!isBroadMarket(result))throw Error('MARKET PENDING: Broad-market editorial gate');
+ return validateSkim(result,{todayET:dateET}).data;
 }
-async function collect({now=new Date(),fetcher=fetchNvidiaOfficial}={}){
- const dateET=dayNY(now);
- const floor=new Date(Date.parse(dateET+'T00:00:00Z')-14*86400000).toISOString().slice(0,10);
- const items=await fetcher({reviewDate:dateET,earliest:floor});
- return createBrief(items,{dateET,reviewedAtET:timestampNY(now)});
+function metric(m){return {level:m.level,changePct:m.changePct,asOfET:m.date+'T16:00:00'+offsetAt(m.date),sourceUrl:m.sourceUrl};}
+async function collect({now=new Date(),fetcher=collectMarket}={}){
+ const dateET=dayNY(now),snapshot=await fetcher({reviewDate:dateET});
+ return createBrief(snapshot.data,{dateET,reviewedAtET:timestampNY(now)});
 }
-if(require.main===module){
- collect().then(x=>{process.stdout.write(JSON.stringify(x)+'\n');}).catch(e=>{console.error(e.message);process.exitCode=1;});
-}
+if(require.main===module)collect().then(v=>process.stdout.write(JSON.stringify(v)+'\n'))
+ .catch(e=>{console.error(e.message);process.exitCode=1;});
 module.exports={dayNY,timestampNY,createBrief,collect};
