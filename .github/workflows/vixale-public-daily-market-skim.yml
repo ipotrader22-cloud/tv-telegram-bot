@@ -1,0 +1,83 @@
+name: VIXALE Public Daily Market Skim
+# Independent official publisher RSS only. Never reads IBKR/TWS data or writes model financial state.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '40 14,15 * * 1-5'
+permissions:
+  contents: write
+concurrency:
+  group: vixale-public-daily-market-skim
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check official NYSE session and ET time
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          date_et="$(TZ=America/New_York date +%F)"
+          hour_et="$(TZ=America/New_York date +%H)"
+          minute_et="$(TZ=America/New_York date +%M)"
+          export DATE_ET="$date_et"
+          node -e "if (!require('./scripts/swing-market-calendar').session(process.env.DATE_ET).open) process.exit(3)"
+          if [ "$EVENT" = "schedule" ] && { [ "$hour_et" != "10" ] || [ "$minute_et" -lt 35 ] || [ "$minute_et" -gt 59 ]; }; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate local source and website schemas
+        if: steps.gate.outputs.publish == 'true'
+        run: node --test test/daily-market-skim-contract.test.js test/vixale-daily-skim-integration.test.js
+      - name: Fetch independent public primary news
+        if: steps.gate.outputs.publish == 'true'
+        id: news
+        shell: bash
+        run: |
+          mkdir -p data
+          if node scripts/vixale-daily-skim.js > /tmp/vixale-public-skim.json; then
+            node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('/tmp/vixale-public-skim.json'));const {validateSkim}=require('./lib/daily-market-skim-contract');validateSkim(d,{todayET:d.dateET});"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No current-day independently verified publisher news. No publication."
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Commit vetted public-source brief (never financial state)
+        if: steps.news.outputs.verified == 'true'
+        id: saved
+        shell: bash
+        run: |
+          date_et="$(TZ=America/New_York date +%F)"
+          if [ -f data/daily-market-skim.json ] && node -e "const d=require('./data/daily-market-skim.json');process.exit(d.dateET===process.env.DATE_ET?0:1)" ; then
+            echo "Existing daily brief retained; same-day idempotency."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp /tmp/vixale-public-skim.json data/daily-market-skim.json
+          git config user.name 'vixale-public-skim-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- data/daily-market-skim.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "docs: publish independently sourced daily market skim"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        env:
+          DATE_ET: ${{ steps.gate.outputs.date_et }}
+      - name: Verify actual deployed daily brief (EN and RU)
+        if: steps.news.outputs.verified == 'true'
+        shell: bash
+        run: |
+          node scripts/qa-production-daily-skim.js
