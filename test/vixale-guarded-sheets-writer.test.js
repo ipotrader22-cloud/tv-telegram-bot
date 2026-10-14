@@ -45,7 +45,7 @@ test('one guarded commit contains guard operations before financial requests',as
   const db=fake(),w=new GuardedWriter({sheets:db.sheets,spreadsheetId:'s',owner:'test',kind:'review',clock:t});
   await w.acquire();
   await w.commit({requests:[{updateCells:{start:{sheetId:42,rowIndex:1,columnIndex:1},rows:[],fields:'userEnteredValue'}}],
-    validateFresh:async()=>{},validateQuotes:async()=>{}});
+    validateFresh:async()=>true,validateQuotes:async()=>true});
   const batch=db.batches[1];
   assert.deepEqual(batch.slice(0,4).map(x=>Object.keys(x)[0]),
     ['deleteDeveloperMetadata','createDeveloperMetadata','deleteDeveloperMetadata','createDeveloperMetadata']);
@@ -62,7 +62,7 @@ test('stale expected fence causes atomic rollback of financial cells',async()=>{
     }
     return originalBatch(arg);
   };
-  await assert.rejects(()=>w.commit({requests:[{updateCells:{}}],validateFresh:async()=>{},validateQuotes:async()=>{}}),/duplicate metadata ID/);
+  await assert.rejects(()=>w.commit({requests:[{updateCells:{}}],validateFresh:async()=>true,validateQuotes:async()=>true}),/duplicate metadata ID/);
   assert.equal(db.batches.length,1);
   assert.equal(db.metadata.find(x=>x.metadataId===1030101).metadataValue,'concurrent-revision');
 });
@@ -82,6 +82,6 @@ test('commit fails closed if live validators missing',async()=>{
 test('financial payload cannot manipulate lock metadata',async()=>{
   const db=fake(),w=new GuardedWriter({sheets:db.sheets,spreadsheetId:'s',owner:'test',kind:'review',clock:t});
   await w.acquire();
-  await assert.rejects(()=>w.commit({requests:[{deleteDeveloperMetadata:{}}],validateFresh:async()=>{},validateQuotes:async()=>{}}),/may not alter guard metadata/);
+  await assert.rejects(()=>w.commit({requests:[{deleteDeveloperMetadata:{}}],validateFresh:async()=>true,validateQuotes:async()=>true}),/may not alter guard metadata/);
   assert.equal(db.batches.length,1);
 });
