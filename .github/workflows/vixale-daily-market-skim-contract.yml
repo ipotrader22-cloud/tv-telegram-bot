@@ -4,8 +4,11 @@ on:
     paths:
       - 'lib/daily-market-skim-contract.js'
       - 'lib/public-daily-skim-feed.js'
-      - 'test/vixale-public-daily-skim-feed.test.js'
+      - 'test/vixale-public-daily-skim-feed.test.js test/vixale-broad-market-fred.test.js'
       - 'scripts/vixale-daily-skim.js'
+      - 'scripts/vixale-broad-market-fred.js'
+      - 'test/vixale-broad-market-fred.test.js'
+      - 'lib/daily-skim-market-focus.js'
       - 'scripts/qa-production-daily-skim.js'
       - 'website_swing_ui_refinement.js'
       - 'test/vixale-daily-skim-integration.test.js'

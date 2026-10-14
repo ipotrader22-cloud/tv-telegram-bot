@@ -35,11 +35,14 @@ test('legacy NVIDIA issuer recap is not a US market skim',()=>{
  const legacy={scope:undefined,summaryEn:'NVIDIA announced a new product',sources:[{issuer:'NVIDIA Newsroom'}]};
  assert.equal(isBroadMarket(legacy),false);
 });
-test('full market context requires all three benchmark indices and a macro-market source',()=>{
+test('broad-market focus requires independent indices volatility yield, excludes single company',()=>{
  const {isBroadMarket}=require('../lib/daily-skim-market-focus');
- const idx=()=>({asOfET:'2026-10-14T10:40:00-04:00',sourceUrl:'https://www.cboe.com/example',level:100,changePct:0.25});
- const model={scope:'broad-us-equities',marketIndicators:{indices:{sp500:idx(),nasdaq:idx(),russell2000:idx()}},sources:[{issuer:'Federal Reserve'}]};
- assert.equal(isBroadMarket(model),true);
- assert.equal(isBroadMarket({...model,marketIndicators:{indices:{sp500:idx(),nasdaq:idx()}}}),false);
- assert.equal(isBroadMarket({...model,sources:[{issuer:'NVIDIA Newsroom'}]}),false);
+ const m=(id)=>({asOfET:'2026-10-13T16:00:00-04:00',sourceUrl:'https://fred.stlouisfed.org/series/'+id,level:100,changePct:0.2});
+ const x={scope:'broad-us-equities',
+  marketIndicators:{indices:{sp500:m('SP500'),nasdaq:m('NASDAQCOM')},
+   volatility:{vix:m('VIXCLS')},rates:{treasury10y:m('DGS10')}},
+  sources:[{issuer:'Federal Reserve Bank of St. Louis (FRED)'}]};
+ assert.equal(isBroadMarket(x),true);
+ assert.equal(isBroadMarket({...x,marketIndicators:{...x.marketIndicators,volatility:{}}}),false);
+ assert.equal(isBroadMarket({...x,sources:[{issuer:'NVIDIA Newsroom'}]}),false);
 });

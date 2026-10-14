@@ -1,0 +1,24 @@
+name: VIXALE Broad Market Source Preflight
+on:
+  pull_request:
+    paths:
+      - 'scripts/vixale-broad-market-fred.js'
+      - 'scripts/vixale-daily-skim.js'
+      - '.github/workflows/vixale-broad-market-source-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Probe live government-hosted market series without publishing
+        shell: bash
+        run: |
+          node scripts/vixale-daily-skim.js > /tmp/vixale-market-preflight.json
+          node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('/tmp/vixale-market-preflight.json'));const {isBroadMarket}=require('./lib/daily-skim-market-focus');if(!isBroadMarket(d))process.exit(3);console.log(JSON.stringify({gate:'BROAD_MARKET_SOURCE',status:'PASS',date:d.dateET,closeDate:d.marketIndicators.indices.sp500.asOfET.slice(0,10),sourceCount:d.sources.length}));"
