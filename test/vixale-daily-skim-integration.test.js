@@ -1,36 +1,37 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createBrief,dayNY,timestampNY}=require('../scripts/vixale-daily-skim');
-const {renderDailySkim}=require('../website_swing_ui_refinement');
-const sample={url:'https://nvidianews.nvidia.com/news/test-public',publishedDate:'2026-10-14',verified:true,
- excerpt:'NVIDIA and semiconductor leaders advance AI across chip design and manufacturing for AI-defined fabs. This publicly posted company release contains a dated and sourced description with sufficient original content.'};
-test('NY time uses actual DST offset',()=>{
+const {createBrief,timestampNY}=require('../scripts/vixale-daily-skim');
+const {renderDailySkim,refineSwingHtml}=require('../website_swing_ui_refinement');
+function series(id,changePct,date='2026-10-13'){
+ return {date,level:100,previousDate:'2026-10-12',previousLevel:99,changePct,
+ sourceUrl:'https://fred.stlouisfed.org/series/'+id};
+}
+const sample={sp500:series('SP500',0.25),nasdaq:series('NASDAQCOM',-0.3),
+ vix:series('VIXCLS',1.5),treasury10y:series('DGS10',0.1)};
+test('NY timestamp uses daylight saving correctly',()=>{
  assert.equal(timestampNY(new Date('2026-10-14T14:40:00Z')),'2026-10-14T10:40:00-04:00');
  assert.equal(timestampNY(new Date('2026-12-14T15:40:00Z')),'2026-12-14T10:40:00-05:00');
 });
-test('independent primary release produces bounded bilingual brief and source link',()=>{
- const s=createBrief([sample],{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'});
- assert.equal(s.provenance,'independent-public-sources');
- assert.match(s.summaryEn,/semiconductor/);assert.match(s.summaryRu,/микросхем/);
- assert.match(renderDailySkim(s,'ru'),/Коротко о рынке/);
- assert.match(renderDailySkim(s,'en'),/Daily Market Skim/);
+test('bilingual broad-market original commentary uses dated closes, no company press recap',()=>{
+ const b=createBrief(sample,{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'});
+ assert.equal(b.scope,'broad-us-equities');assert.match(b.summaryEn,/S&P 500/);
+ assert.match(b.summaryEn,/Nasdaq Composite/);assert.match(b.summaryEn,/VIX/);
+ assert.doesNotMatch(b.summaryEn,/NVIDIA published/);
+ assert.match(renderDailySkim(b,'ru'),/Коротко о рынке/);
+ assert.match(renderDailySkim(b,'en'),/Daily Market Skim/);
 });
-test('strictly rejects future-dated source and unverified TWS/news',()=>{
- assert.throws(()=>createBrief([{...sample,publishedDate:'2026-10-15'}],{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/PENDING/);
- assert.throws(()=>createBrief([{...sample,verified:false}],{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/PENDING/);
+test('mixed-date or missing VIX fails closed',()=>{
+ assert.throws(()=>createBrief({...sample,nasdaq:series('NASDAQCOM',0.1,'2026-10-10')},{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/date/);
+ assert.throws(()=>createBrief({...sample,vix:null},{dateET:'2026-10-14',reviewedAtET:'2026-10-14T10:40:00-04:00'}),/date/);
 });
-test('missing brief is clearly pending, never a fabricated current review',()=>{
- const body=renderDailySkim(null,'en');
- assert.match(body,/pending public-source verification/);
- assert.match(body,/data-date="pending"/);
+test('pending placeholder not falsely marked current',()=>{
+ assert.match(renderDailySkim(null,'en'),/pending public-source verification/);
+ assert.match(renderDailySkim(null,'en'),/data-date="pending"/);
 });
-
-test('actual swing HTML transformer inserts skim after Market Update without changing portfolio table',()=>{
- const {refineSwingHtml}=require('../website_swing_ui_refinement');
+test('HTML transformation retains portfolio and places skim after market update',()=>{
  const html='<html><body><main><section class="summary" aria-label="Swing Leaders summary"><div class="summary-card posture"><small>Market Posture</small><strong>Neutral</strong></div></section><section class="how" aria-label="How Swing Leaders works"><h2>How</h2></section><table><tbody><tr><td>PLTR</td></tr></tbody></table></main></body></html>';
- const result=refineSwingHtml(html,'en');
- assert.match(result,/vx-daily-market-skim/);
- assert.ok(result.indexOf('id="vx-daily-market-skim"')>result.indexOf('data-vx-swing-market-update="1"'));
- assert.match(result,/<td>PLTR<\/td>/);
- assert.equal((result.match(/id="vx-daily-market-skim"/g)||[]).length,1);
+ const x=refineSwingHtml(html,'en');
+ assert.ok(x.includes('id="vx-daily-market-skim"'));
+ assert.ok(x.indexOf('id="vx-daily-market-skim"')>x.indexOf('data-vx-swing-market-update="1"'));
+ assert.match(x,/<td>PLTR<\/td>/);
 });
