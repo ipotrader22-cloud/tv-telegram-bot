@@ -36,6 +36,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - run: npm install --ignore-scripts --no-audit --no-fund
       - run: node --test test/vixale-autonomous-research.test.js test/vixale-research-ohlcv.test.js
   research:
     if: github.event_name != 'pull_request'
