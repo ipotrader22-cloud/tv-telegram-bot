@@ -109,8 +109,8 @@ class GuardedWriter {
       block('Live state and quote validators required');
     // The caller's validators must re-read exact lot membership, Q/R, formulas, quotes
     // and build only coherent native batchUpdate financial requests.
-    await validateFresh();
-    await validateQuotes();
+    if(await validateFresh()!==true) block('Fresh workbook validator did not explicitly pass');
+    if(await validateQuotes()!==true) block('Current quote validator did not explicitly pass');
     assertWriteWindow(this.kind,this.clock());
     const before=await this.state();
     if(before.lease!==this.owned) block('Lease ownership changed');
