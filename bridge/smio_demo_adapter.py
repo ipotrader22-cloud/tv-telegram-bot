@@ -322,7 +322,9 @@ class DemoLifecycle:
         row["close_signal"] = dict(data)
         row["state"] = "TARGET_CANCEL_PENDING"
         self.save(state)
-        if self.core.BLOCK_MARKET_CLOSES_OUTSIDE_RTH and not self.core.is_us_stock_rth_now():
+        # Demo close orders must respect RTH even when the shared legacy
+        # bridge's optional market-close block is disabled.
+        if not self.core.is_us_stock_rth_now():
             raise ValueError("market close queued for permitted RTH; target retained")
         if owned and owned.orderStatus.status not in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
             self.core.ib.cancelOrder(owned.order)
