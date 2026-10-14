@@ -2,6 +2,13 @@ name: VIXALE Staging Read-Only Audit
 # Never writes to staging or production. Never sends email.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/vixale-review-evidence-gate.js'
+      - 'scripts/vixale-staging-readonly-audit.js'
+      - 'test/vixale-review-evidence-gate.test.js'
+      - '.github/workflows/vixale-staging-readonly-audit.yml'
   pull_request:
     paths:
       - 'scripts/vixale-review-evidence-gate.js'
@@ -20,7 +27,7 @@ jobs:
           node-version: '20'
       - run: node --test test/vixale-review-evidence-gate.test.js
   live-staging-read:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
