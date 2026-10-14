@@ -127,7 +127,7 @@ function refineSwingHtml(html, lang="en") {
 
   const skimLang = lang;
   const skimHtml = renderDailySkim(liveDailySkim(),skimLang);
-  out = out.replace(/(<section\\b[^>]*data-vx-swing-market-update=["']1["'][^>]*>[\\s\\S]*?<\\/section>)/i,'$1'+skimHtml);
+  out = out.replace(/(<section\b[^>]*data-vx-swing-market-update=["']1["'][^>]*>[\s\S]*?<\/section>)/i,'$1'+skimHtml);
   out = renameCandidateLabels(out);
   out = injectStyles(out);
   return out.replace(/<body(\s[^>]*)?>/i, match => (
