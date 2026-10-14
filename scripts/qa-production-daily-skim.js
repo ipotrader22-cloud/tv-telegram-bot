@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const brief=JSON.parse(fs.readFileSync('data/daily-market-skim.json','utf8'));
 const {validateSkim}=require('../lib/daily-market-skim-contract');
 const {isBroadMarket}=require('../lib/daily-skim-market-focus');
+const {renderMarketPulse}=require('../website_swing_ui_refinement');
 validateSkim(brief,{todayET:brief.dateET});
 assert.ok(isBroadMarket(brief),'Site must publish real broad-US-market context, not issuer-only releases');
 const base=(process.env.VIXALE_SKIM_SITE_ORIGIN||'https://www.vixale.com').replace(/\/$/,'');
@@ -19,16 +20,18 @@ async function check(){
   get('/trading-systems/swing-trading?lang=ru')
  ]);
  for(const x of [en,ru]){
-  assert.match(x.html,/id="vx-daily-market-skim"/,'Skim section missing in deployed HTML');
+  assert.match(x.html,/data-vx-swing-market-update="1"/,'Market Update missing');
+  assert.ok(!x.html.includes('id="vx-daily-market-skim"'),'Duplicate Daily Market Skim card found');
+  assert.equal((x.html.match(/data-vx-swing-market-update="1"/g)||[]).length,1,'Expected one Market Update card');
   assert.ok(x.html.includes('data-date="'+brief.dateET+'"'),'Stale skim date on deployed site');
   assert.ok(x.html.includes(brief.sources[0].url.replace(/&/g,'&amp;')),'Source URL absent from site');
   assert.match(x.cache,/no-store/i,'Public live brief must not be cached stale');
  }
- assert.match(en.html,/Daily Market Skim/);
- assert.ok(en.html.includes(brief.summaryEn.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')),'English broad market text mismatch');
- assert.match(ru.html,/Коротко о рынке/);
- assert.ok(ru.html.includes(brief.summaryRu.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')),'Russian broad market text mismatch');
- console.log(JSON.stringify({status:'PASS',gate:'DAILY_SKIM_DEPLOY',date:brief.dateET,localeParity:true,sourceLink:true}));
+ assert.match(en.html,/Market Update/);
+ assert.ok(en.html.includes(renderMarketPulse(brief,'en')),'English updated market pulse mismatch');
+ assert.ok(ru.html.includes(renderMarketPulse(brief,'ru')),'Russian updated market pulse mismatch');
+ assert.ok(!en.html.includes('Treasury yield observation'),'Bond-focused market copy must not be displayed');
+ console.log(JSON.stringify({status:'PASS',gate:'UNIFIED_MARKET_UPDATE_DEPLOY',date:brief.dateET,localeParity:true,sourceLink:true}));
 }
 (async()=>{
  for(let i=0;i<24;i++){
