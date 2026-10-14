@@ -17,7 +17,7 @@ function parseSnapshot(blocks){
    .map(r=>({ticker:ticker(r[2]),score:number(r[3]),entryPrice:number(r[5]),status:r[12]}));
  const open=(op||[]).filter(r=>ticker(r[2])&&r[4]==='Active Portfolio')
    .map(r=>({ticker:ticker(r[2]),entryScore:number(r[3]),entryDate:String(r[0]),entryPrice:number(r[5]),status:r[4],reviewDate:String(r[13])}));
- const feed=(pub||[]).slice(14,23).filter(r=>ticker(r[0]) && /^[A-Z.]+$/.test(ticker(r[0])))
+ const feed=(pub||[]).slice(13,22).filter(r=>ticker(r[0]) && /^[A-Z.]+$/.test(ticker(r[0])))
    .map(r=>({ticker:ticker(r[0]),score:number(r[2]),entryPrice:number(r[4]),reviewDate:String(r[7])}));
  const candidates=(pub||[]).slice(25,30).filter(r=>ticker(r[0]))
    .map(r=>({ticker:ticker(r[0]),score:number(r[1]),reviewDate:String(r[3])}));
