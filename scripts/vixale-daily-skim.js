@@ -26,7 +26,7 @@ function createBrief(items,{dateET,reviewedAtET}){
   summaryRu:'Сегодня NVIDIA опубликовала корпоративное сообщение. Официальный релиз посвящён теме: '+ruThemes+'. Это краткий обзор корпоративных новостей, а не полная оценка рынка или обновление рейтинга Active Portfolio.',
   sources:[{url:source.url,issuedDate:source.publishedDate,issuer:'NVIDIA Newsroom'}]
  };
- return validateSkim(value,{todayET}).data;
+ return validateSkim(value,{todayET:dateET}).data;
 }
 async function collect({now=new Date(),fetcher=fetchNvidiaOfficial}={}){
  const dateET=dayNY(now);
