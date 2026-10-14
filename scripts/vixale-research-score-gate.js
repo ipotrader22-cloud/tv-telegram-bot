@@ -10,6 +10,14 @@ function contextGate({date,research,snapshot,news}){
  if(research?.gate!=='RESEARCH_INPUTS'||research.result!=='PASS'||research.date!==date)
    blocked('Current completed-session OHLCV artifact missing');
  const previous=previousSession(date),map=new Map(research.data.map(x=>[x.metrics?.symbol,x]));
+ if(map.size!==research.data.length)blocked('Duplicate OHLCV metric symbols');
+ const benchmarks={};
+ for(const ticker of ['SPY','QQQ','SMH','XLK','XLE']){
+  const b=map.get(ticker)?.metrics;
+  if(!b || b.lastCompleteDate!==previous || b.dailyBars<200 || !Number.isFinite(b.return20Pct))
+    blocked('Missing benchmark '+ticker);
+  benchmarks[ticker]=b;
+ }
  const symbols=[...new Set([
   ...snapshot.openPositions.filter(x=>x.status==='Active Portfolio').map(x=>x.ticker),
   ...snapshot.candidates.map(x=>x.ticker)])].sort();
@@ -26,7 +34,7 @@ function contextGate({date,research,snapshot,news}){
      blocked('Independent dated news missing '+ticker);
   return {ticker,metrics:m,news:articles};
  });
- return {previous,symbols,input};
+ return {previous,symbols,input,benchmarks};
 }
 function schema(){
  const fields=Object.fromEntries(FACTORS.map(n=>[n,{type:'integer'}]));
@@ -59,7 +67,7 @@ function validate({date,research,snapshot,news},answer){
   return {...r,sourceArtifact:artifact,
    marketEvidence:{lastCompletedSession:m.lastCompleteDate,completedDailyBars:m.dailyBars,
     exchangeVolume:true,sma20:m.sma20,sma50:m.sma50,sma200:m.sma200,
-    relativePerformance:m.return20Pct,relativeVolume:m.lastCompleteRelativeVolume}};
+    relativePerformance:m.return20Pct-x.benchmarks.SPY.return20Pct,relativeVolume:m.lastCompleteRelativeVolume}};
  });
  reviewSet(snapshot,reviews,date);
  return {date,artifact,reviews,status:'RESEARCH_ONLY'};
