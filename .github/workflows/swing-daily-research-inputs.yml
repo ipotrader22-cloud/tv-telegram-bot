@@ -34,10 +34,10 @@ jobs:
             if [[ "$SCHEDULED_CRON" == "$expected" ]]; then
               echo "collect=true" >> "$GITHUB_OUTPUT"
               echo "Canonical research collection accepted at actual ET hour=$local_hour. Collector must validate dated source bars and retain evidence; schedule alone is never PASS."
+            else
+              echo "collect=false" >> "$GITHUB_OUTPUT"
+              echo "Expected DST companion schedule skipped, not a research PASS."
             fi
-            echo "collect=false" >> "$GITHUB_OUTPUT"
-            echo "Expected DST companion schedule skipped, not a research PASS."
-            exit 0
           else
             echo "collect=false" >> "$GITHUB_OUTPUT"
             echo "Off-hour DST companion schedule skipped cleanly: local_hour=$local_hour run_attempt=$run_attempt"
