@@ -32,7 +32,7 @@ jobs:
           review_date="$(TZ=America/New_York date +%F)"
           local_hour="$(TZ=America/New_York date +%H)"
           echo "review_date=$review_date" >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_EVENT_NAME" == "schedule" && "$local_hour" != "10" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             offset="$(TZ=America/New_York date +%z)"
             case "$offset" in
               -0400) expected="11,18 14 * * 1-5" ;;
@@ -40,11 +40,12 @@ jobs:
               *) echo "::error::Unexpected ET UTC offset"; exit 1 ;;
             esac
             if [[ "$SCHEDULED_CRON" == "$expected" ]]; then
-              echo "::error::Canonical 10:11/10:18 ET publication verification ran late at hour=$local_hour; no verification occurred. Do not treat this job as publication PASS."
-              exit 1
+              echo "check=true" >> "$GITHUB_OUTPUT"
+              echo "Canonical publication run accepted (actual ET hour=$local_hour); verifying current-day production, not claiming PASS from schedule."
+            else
+              echo "check=false" >> "$GITHUB_OUTPUT"
+              echo "DST companion cron skipped; no publication PASS."
             fi
-            echo "check=false" >> "$GITHUB_OUTPUT"
-            echo "Expected UTC/DST companion skipped, not publication PASS."
           else
             echo "check=true" >> "$GITHUB_OUTPUT"
             echo "Verifying Swing publication for $review_date at local hour $local_hour ET."
