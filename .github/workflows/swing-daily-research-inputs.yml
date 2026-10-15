@@ -24,9 +24,6 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "collect=true" >> "$GITHUB_OUTPUT"
             echo "Manual recovery dispatch accepted at local_hour=$local_hour"
-          elif [[ "$GITHUB_EVENT_NAME" == "schedule" && "$local_hour" == "09" ]]; then
-            echo "collect=true" >> "$GITHUB_OUTPUT"
-            echo "Scheduled research collection accepted at local_hour=$local_hour"
           elif [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             offset="$(TZ=America/New_York date +%z)"
             case "$offset" in
@@ -35,8 +32,8 @@ jobs:
               *) echo "::error::Unsupported ET offset"; exit 1 ;;
             esac
             if [[ "$SCHEDULED_CRON" == "$expected" ]]; then
-              echo "::error::Due 09:50 ET research collection was delivered late (actual hour=$local_hour). This run produced NO OHLCV artifact. Never report RESEARCH_INPUTS PASS."
-              exit 1
+              echo "collect=true" >> "$GITHUB_OUTPUT"
+              echo "Canonical research collection accepted at actual ET hour=$local_hour. Collector must validate dated source bars and retain evidence; schedule alone is never PASS."
             fi
             echo "collect=false" >> "$GITHUB_OUTPUT"
             echo "Expected DST companion schedule skipped, not a research PASS."
