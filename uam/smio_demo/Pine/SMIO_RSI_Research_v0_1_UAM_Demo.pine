@@ -117,12 +117,12 @@ paperAlerts = input.bool(false, "Enable paper payload alerts", group="Paper tran
 demoContract = input.string("SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013", "Demo execution contract", options=["SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013"], group="Paper transport")
 const string PAPER_SYSTEM = "TRADING_LAB_SMIO_RSI_PAPER"
 const string PAPER_STRATEGY = "SMIO_RSI_RESEARCH"
+// Avoid Pine CR/tab escape substitutions: live alerts changed `true` into
+// `t\\rue`, corrupting config/setup/event IDs. Preserve ASCII identity tokens.
 f_escape(string x) =>
     string v = str.replace_all(x, "\\", "\\\\")
     v := str.replace_all(v, "\"", "\\\"")
     v := str.replace_all(v, "\n", "\\n")
-    v := str.replace_all(v, "\r", "\\r")
-    v := str.replace_all(v, "\t", "\\t")
     v
 f_num(float x) =>
     na(x) ? "null" : str.tostring(x, "#.##########")
