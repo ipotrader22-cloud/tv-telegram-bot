@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {normalize,marketData}=require('./market-data.cjs');
+const now='2026-10-16T14:31:00Z';
+const q={ticker:'PLTR',price:101.25,session:'REGULAR',source:'mock',observedAt:'2026-10-16T14:30:35Z'};
+const request={ticker:'PLTR',kind:'REGULAR_QUOTE',now,tradingDate:'2026-10-16'};
+test('valid timestamped quote passes',()=>assert.equal(normalize(q,request).price,101.25));
+test('stale quote fails rather than using it',()=>assert.throws(()=>normalize({...q,observedAt:'2026-10-16T14:00:00Z'},request),/stale/));
+test('wrong ticker and premarket fail',()=>{assert.throws(()=>normalize({...q,ticker:'NVDA'},request),/symbol/);assert.throws(()=>normalize({...q,session:'PREMARKET'},request),/session/)});
+test('opening must be at actual 09:30 ET',()=>{assert.equal(normalize({...q,observedAt:'2026-10-16T13:30:00Z'}, {...request,kind:'REGULAR_OPEN'}).verified,true);assert.throws(()=>normalize(q,{...request,kind:'REGULAR_OPEN'}),/opening minute/)});
+test('fallback only uses verified secondary',async()=>{let used=0;const a=marketData({primary:{getObservation:async()=>({...q,price:0})},secondary:{getObservation:async()=>{used++;return q}}});assert.equal((await a.observe(request)).price,101.25);assert.equal(used,1)});
+test('both providers invalid prevents a modeled fill',async()=>{const a=marketData({primary:{getObservation:async()=>({...q,price:0})},secondary:{getObservation:async()=>({...q,observedAt:'2026-10-15T14:30:00Z'})}});await assert.rejects(a.observe(request),AggregateError)});
