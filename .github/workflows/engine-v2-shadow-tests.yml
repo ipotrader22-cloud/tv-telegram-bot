@@ -1,0 +1,20 @@
+name: Engine 2 Shadow Tests
+on:
+  pull_request:
+    paths:
+      - 'engine-v2/**'
+      - '.github/workflows/engine-v2-shadow-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shadow-rules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run shadow-only decision-rule tests
+        run: node --test engine-v2/core.test.cjs
