@@ -25,6 +25,7 @@ async function transact({pool,event,shadowOnly=true}){
   const count=await client.query('SELECT COUNT(*)::int AS n FROM vixale_v2.model_lots WHERE exit_at IS NULL');
   if(event.type==='OPEN'){
    ok(existing.rows.length===0,'Duplicate historical lot');
+   ok(Number.isInteger(event.entryScore)&&event.entryScore>=0&&event.entryScore<=100,'Verified entry score required');
    ok(count.rows[0].n<10,'Active limit');
    reduce(undefined,event); // validate evidence and event fingerprint before insert
    const lotId=randomUUID();
@@ -33,7 +34,6 @@ async function transact({pool,event,shadowOnly=true}){
   } else {
    ok(existing.rows.length===1&&!existing.rows[0].exitAt,'Lot is not open');
    const row=existing.rows[0];
-   reduce(undefined,{eventId:'validated-opening',type:'OPEN',ticker:event.ticker,entryDate:event.entryDate,entryPrice:Number(row.entryPrice),entryTime:new Date(row.entryAt).toISOString()});
    // validate close with actual persisted original entry
    const original={eventId:'validated-opening',type:'OPEN',ticker:event.ticker,entryDate:event.entryDate,entryPrice:Number(row.entryPrice),entryTime:new Date(row.entryAt).toISOString()};
    const v=reduce(undefined,original);
