@@ -38,7 +38,10 @@ async function transact({pool,event,shadowOnly=true}){
    const original={eventId:'validated-opening',type:'OPEN',ticker:event.ticker,entryDate:event.entryDate,entryPrice:Number(row.entryPrice),entryTime:new Date(row.entryAt).toISOString()};
    const v=reduce(undefined,original);
    reduce(v.state,event);
-   await client.query('UPDATE vixale_v2.model_lots SET exit_at=$1,exit_price=$2,exit_reason=$3,include_public=$4,public_effective_date=$5 WHERE lot_id=$6 AND exit_at IS NULL',[event.exitTime,event.exitPrice,event.reason,event.includePublic,event.effectiveDate,row.lot_id]);
+   const canonicalReturn=event.exitPrice/Number(row.entryPrice)-1;
+   const storedReturn=event.returnPct===undefined?canonicalReturn:event.returnPct;
+   ok(Number.isFinite(storedReturn)&&Math.abs(storedReturn-canonicalReturn)<1e-8,'Exit return mismatch');
+   await client.query('UPDATE vixale_v2.model_lots SET exit_at=$1,exit_price=$2,exit_reason=$3,include_public=$4,public_effective_date=$5,realized_return_pct=$7 WHERE lot_id=$6 AND exit_at IS NULL',[event.exitTime,event.exitPrice,event.reason,event.includePublic,event.effectiveDate,row.lot_id,storedReturn]);
    await client.query('INSERT INTO vixale_v2.model_events(event_id,payload_hash,lot_id,kind,payload,occurred_at) VALUES($1,$2,$3,$4,$5,$6)',[event.eventId,digest,row.lot_id,'CLOSE',JSON.stringify(event),event.exitTime]);
   }
   await client.query('COMMIT');committed=true;return {applied:true};
