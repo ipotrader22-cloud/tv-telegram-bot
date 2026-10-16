@@ -13,6 +13,7 @@ services:
     buildCommand: npm install --no-save --no-package-lock pg@8
     startCommand: node engine-v2/shadow-health.cjs
     healthCheckPath: /health
+    initialDeployHook: node engine-v2/init-shadow.cjs
     envVars:
       - key: VIXALE_V2_SHADOW_DATABASE_URL
         fromDatabase:
@@ -21,4 +22,4 @@ services:
       - key: VIXALE_V2_SHADOW_MODE
         value: READ_ONLY
       - key: VIXALE_V2_SHADOW_INIT
-        value: 'NO'
+        value: 'YES'
