@@ -17,8 +17,10 @@ function replay({closed,active=[],equity=[],asOf}){
  for(const x of closed){
   const id=x.ticker+'|'+x.entryDate;ok(x.ticker&&x.entryDate&&x.exitDate&&!seen.has(id),'Duplicate/invalid historical lot '+id);seen.add(id);
   ok(['YES','NO'].includes(x.includePublic),'Missing Q for '+id);
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(x.effectiveDate||''),'Missing effective date R for '+id);
   const entry=parseMoney(x.entryPrice),exit=parseMoney(x.exitPrice);
-  const modelPnl=pnl(entry,exit);
+  const modelPnl=typeof x.returnPct==='number'&&Number.isFinite(x.returnPct)?10000*x.returnPct:pnl(entry,exit);
+  if(x.returnPct===undefined)warnings.push({gate:'MISSING_STORED_RETURN',lot:id,note:'Fallback from entry/exit prices may disagree with protected historical formula'});
   events.push({id,exitDate:x.exitDate,reason:x.reason,includePublic:x.includePublic,effectiveDate:x.effectiveDate,modelPnl});
   if(x.includePublic==='YES'&&x.effectiveDate<=asOf)realized+=modelPnl;
  }
