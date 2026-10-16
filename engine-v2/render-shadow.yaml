@@ -10,7 +10,7 @@ services:
     repo: https://github.com/ipotrader22-cloud/tv-telegram-bot
     branch: engine-v2-shadow-foundation-20261016
     autoDeployTrigger: off
-    buildCommand: npm install --prefix engine-v2 --no-package-lock pg@8
+    buildCommand: npm install --no-save --no-package-lock pg@8
     startCommand: node engine-v2/shadow-health.cjs
     healthCheckPath: /health
     envVars:
