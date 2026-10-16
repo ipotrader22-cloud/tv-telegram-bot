@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "app.js"
+      - "uam/smio_demo/Pine/SMIO_RSI_Research_v0_1_UAM_Demo.pine"
+      - "tests/test_smio_pine_identity_escape.js"
       - "tests/test_broker_eod_callback_idempotency.js"
       - "tests/test_option_proof_payload.js"
       - "tests/test_vixale_edge_app_integration.js"
@@ -38,6 +40,9 @@ jobs:
 
       - name: Run broker callback regression
         run: node tests/test_broker_eod_callback_idempotency.js
+
+      - name: Run SMIO Pine JSON identifier regression
+        run: node tests/test_smio_pine_identity_escape.js
 
       - name: Run SMIO demo execution and authenticated callback regression
         run: node tests/test_smio_demo_render.js
