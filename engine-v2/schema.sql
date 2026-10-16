@@ -15,13 +15,14 @@ CREATE TABLE IF NOT EXISTS vixale_v2.model_lots (
  entry_score smallint NOT NULL CHECK(entry_score BETWEEN 0 AND 100),
  current_score smallint CHECK(current_score BETWEEN 0 AND 100),
  exit_at timestamptz, exit_price numeric(20,8) CHECK(exit_price>0),
+ realized_return_pct numeric(22,16),
  exit_reason text CHECK(exit_reason IN ('TARGET','STOP LOSS','DROPPED FROM ACTIVE PORTFOLIO')),
  include_public text CHECK(include_public IN ('YES','NO')),
  public_effective_date date,
  CONSTRAINT consistent_exit CHECK (
-  (exit_at IS NULL AND exit_price IS NULL AND exit_reason IS NULL AND include_public IS NULL AND public_effective_date IS NULL)
+  (exit_at IS NULL AND exit_price IS NULL AND realized_return_pct IS NULL AND exit_reason IS NULL AND include_public IS NULL AND public_effective_date IS NULL)
   OR
-  (exit_at IS NOT NULL AND exit_price IS NOT NULL AND exit_reason IS NOT NULL AND include_public IS NOT NULL AND public_effective_date IS NOT NULL AND exit_at>=entry_at)
+  (exit_at IS NOT NULL AND exit_price IS NOT NULL AND realized_return_pct IS NOT NULL AND exit_reason IS NOT NULL AND include_public IS NOT NULL AND public_effective_date IS NOT NULL AND exit_at>=entry_at)
  ),
  UNIQUE(ticker,entry_date)
 );
