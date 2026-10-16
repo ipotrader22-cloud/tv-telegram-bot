@@ -10603,9 +10603,9 @@ function renderDashboardHtml(data, locale = 'en') {
           <table style="min-width:1230px">
             <thead>
               <tr>
-                <th>Trade Date</th><th>Symbol</th><th>Strategy</th><th>Legs</th>
+                <th>Trade Date</th><th>Symbol</th><th>Strategy</th><th style="text-align:center">Legs</th>
                 <th>Expiration</th><th>Contracts</th><th>Credit/Debit</th>
-                <th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th><th>Broker Proof</th>
+                <th>Entry Price</th><th>Exit Price</th><th>Status</th><th>P&amp;L</th><th style="text-align:center">Broker Proof</th>
               </tr>
             </thead>
             <tbody>${optionRows}</tbody>
