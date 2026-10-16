@@ -1,9 +1,17 @@
 name: Swing Daily Research Inputs
 on:
   workflow_dispatch:
+  # Run a fresh read-only collection when this workflow is repaired on main.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/swing-daily-research-inputs.yml'
+  # Multiple independent UTC opportunities mitigate GitHub cron delays/skips.
   schedule:
-    - cron: "50 13 * * 1-5"
-    - cron: "50 14 * * 1-5"
+    - cron: "50,58 13 * * 1-5"
+    - cron: "8,28 14 * * 1-5"
+    - cron: "50,58 14 * * 1-5"
+    - cron: "8,28 15 * * 1-5"
 permissions:
   contents: read
 concurrency:
@@ -21,17 +29,17 @@ jobs:
         run: |
           local_hour="$(TZ=America/New_York date +%H)"
           run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$GITHUB_EVENT_NAME" == "push" ]]; then
             echo "collect=true" >> "$GITHUB_OUTPUT"
             echo "Manual recovery dispatch accepted at local_hour=$local_hour"
           elif [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             offset="$(TZ=America/New_York date +%z)"
             case "$offset" in
-              -0400) expected="50 13 * * 1-5" ;;
-              -0500) expected="50 14 * * 1-5" ;;
+              -0400) expected="50,58 13 * * 1-5|8,28 14 * * 1-5" ;;
+              -0500) expected="50,58 14 * * 1-5|8,28 15 * * 1-5" ;;
               *) echo "::error::Unsupported ET offset"; exit 1 ;;
             esac
-            if [[ "$SCHEDULED_CRON" == "$expected" ]]; then
+            if [[ "|$expected|" == *"|$SCHEDULED_CRON|"* ]]; then
               echo "collect=true" >> "$GITHUB_OUTPUT"
               echo "Canonical research collection accepted at actual ET hour=$local_hour. Collector must validate dated source bars and retain evidence; schedule alone is never PASS."
             else
