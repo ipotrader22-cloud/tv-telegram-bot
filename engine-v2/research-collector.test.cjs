@@ -1,0 +1,11 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {collectEvidence,compareHistoricalDecisions}=require('./research-collector.cjs');
+const symbols=['PLTR','SPY','XLK'];
+const date=i=>new Date(Date.UTC(2025,0,1+i)).toISOString().slice(0,10);
+const series=symbols.map((ticker,j)=>({ticker,bars:Array.from({length:220},(_,i)=>({ticker,day:date(i),open:100+j*10+i/10,high:102+j*10+i/10,low:99+j*10+i/10,close:101+j*10+i/10,volume:1000000+i,source:'yahoo-chart-v8'}))}));
+const provider={async getDailyBars(ticker){const x=series.find(x=>x.ticker===ticker);return {bars:x.bars,purpose:'HISTORICAL_RESEARCH_ONLY',sourceUrl:'https://example.test/'+ticker,retrievedAt:'2026-10-17T00:00:00Z'}}};
+test('collects three explicitly selected comparable market series',async()=>{const x=await collectEvidence({ticker:'PLTR',marketTicker:'SPY',sectorTicker:'XLK',reviewDate:'2026-10-16',provider});assert.equal(x.sources.length,3);assert.equal(x.facts.completedBars,220);assert.equal(x.status,'FACTS_ONLY_REQUIRES_NINE_FACTOR_REVIEW')});
+test('does not include review day partial bar',async()=>{const augmented={async getDailyBars(s){const x=await provider.getDailyBars(s);return {...x,bars:[...x.bars,{...x.bars.at(-1),day:'2026-10-16'}]}}};const x=await collectEvidence({ticker:'PLTR',marketTicker:'SPY',sectorTicker:'XLK',reviewDate:'2026-10-16',provider:augmented});assert.equal(x.facts.completedBars,220)});
+test('rejects stale sector benchmark',async()=>{const stale={async getDailyBars(s){const x=await provider.getDailyBars(s);return {...x,bars:s==='XLK'?x.bars.slice(0,-1):x.bars}}};await assert.rejects(collectEvidence({ticker:'PLTR',marketTicker:'SPY',sectorTicker:'XLK',reviewDate:'2026-10-16',provider:stale}),/different sessions/)});
+test('historical comparison never invents missing scores',()=>{const r=compareHistoricalDecisions({reviews:[{ticker:'PLTR',reviewDate:'2026-10-16'}],recorded:[{ticker:'PLTR',date:'2026-10-16',score:83}]});assert.equal(r[0].status,'INSUFFICIENT_SCORE_EVIDENCE')});
