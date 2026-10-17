@@ -28,7 +28,7 @@ function sheetsReader({credentials,fetchImpl=globalThis.fetch}={}){
   token=x.access_token;expires=Date.now()+x.expires_in*1000;return token;
  }
  async function read(ranges){
-  check(Array.isArray(ranges)&&ranges.length&&ranges.every(x=>/^(?:'Closed Trades'|'Equity History'|'Open Positions'|'Public Feed')!/.test(x)===false),'Unauthorized Google Sheet range');
+  check(Array.isArray(ranges)&&ranges.length&&ranges.every(x=>/^(?:'Closed Trades'|'Equity History'|'Open Positions'|'Public Feed')![A-Z]+[1-9][0-9]*:[A-Z]+[1-9][0-9]*$/.test(x)),'Unauthorized Google Sheet range');
   const params=new URLSearchParams({valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'FORMATTED_STRING'});
   for(const range of ranges)params.append('ranges',range);
   const url='https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values:batchGet?'+params;
