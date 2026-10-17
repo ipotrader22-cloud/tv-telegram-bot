@@ -41,7 +41,8 @@ const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaP
     const live=await getLiveSnapshot({credentials:process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON});
     const {Client:PgClient}=require('pg');const conn=new PgClient({connectionString:url});await conn.connect();
     let imported;try{await conn.query('BEGIN READ ONLY');const q=await conn.query('SELECT payload FROM vixale_v2.source_snapshots ORDER BY received_at DESC LIMIT 1');await conn.query('COMMIT');if(!q.rows.length)throw Error('Historical import unavailable');imported=q.rows[0].payload}finally{await conn.end()}
-    liveStatus={status:'PASS',...compareImported(live,imported)};
+    const parity=compareImported(live,imported);
+    liveStatus={...parity,status:parity.parityStatus==='DRIFT'?'DRIFT':'PARTIAL',reason:parity.parityStatus==='DRIFT'?'SOURCE_DIFFERENCE':'FULL_PARITY_NOT_CERTIFIED'};
     await saveSummary(url,liveStatus);
     historyStats=await comparisonStats(url);
     console.log('Shadow LIVE Sheet comparison:',JSON.stringify({status:liveStatus.status,sourceDate:liveStatus.sourceDate,updated:liveStatus.updated,closedChanged:liveStatus.closedChanged}));
