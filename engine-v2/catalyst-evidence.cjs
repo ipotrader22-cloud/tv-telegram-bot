@@ -12,11 +12,11 @@ function verifyCompanyEvents({ticker,reviewDate,events}){
   if(e.ticker!==ticker)issues.push('TICKER_MISMATCH');
   if(!iso(e.publishedDate)||e.publishedDate>reviewDate)issues.push('PUBLICATION_AFTER_REVIEW');
   if(!domain(e.url))issues.push('SOURCE_URL_REQUIRED');
-  if(e.sourceType==='SEC_FILING'&&domain(e.url)&&!/(^|\\.)sec\\.gov$/i.test(new URL(e.url).hostname))issues.push('SEC_DOMAIN_MISMATCH');
+  if(e.sourceType==='SEC_FILING'&&domain(e.url)&&!/(^|\.)sec\.gov$/i.test(new URL(e.url).hostname))issues.push('SEC_DOMAIN_MISMATCH');
   if(!['COMPANY_IR','SEC_FILING','EXCHANGE_NOTICE','REPUTABLE_NEWS'].includes(e.sourceType))issues.push('UNSUPPORTED_SOURCE');
   if(typeof e.title!=='string'||e.title.trim().length<8)issues.push('EVENT_DESCRIPTION_MISSING');
   if(e.confirmed!==true)issues.push('FACT_NOT_VERIFIED');
-  if(typeof e.checkedAt!=='string'||!/^\\d{4}-\\d{2}-\\d{2}T/.test(e.checkedAt)||!Number.isFinite(Date.parse(e.checkedAt)))issues.push('VERIFICATION_TIMESTAMP_REQUIRED');
+  if(typeof e.checkedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(e.checkedAt)||!Number.isFinite(Date.parse(e.checkedAt)))issues.push('VERIFICATION_TIMESTAMP_REQUIRED');
   if(typeof e.checkedBy!=='string'||!e.checkedBy.trim())issues.push('VERIFIER_REQUIRED');
   return {index:i,ticker,verified:issues.length===0,issues,sourceType:e.sourceType||null,publishedDate:e.publishedDate||null,url:domain(e.url)?e.url:null};
  });
