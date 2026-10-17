@@ -1,0 +1,11 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {reviewFactors,verifyCompanyEvents}=require('./catalyst-evidence.cjs');
+const weights={market:8,sector:13,leadership:14,catalyst:9,base:12,compression:8,volume:12,ma:4,resistance:4};
+const evidence=Object.fromEntries(Object.keys(weights).map(k=>[k,{date:'2026-10-12',description:'Documented private evidence',url:'https://example.org/evidence/'+k}]));
+const event={ticker:'PLTR',publishedDate:'2026-10-12',url:'https://www.sec.gov/Archives/edgar/data/1/report',sourceType:'SEC_FILING',title:'Company earnings announcement',confirmed:true};
+const base={ticker:'PLTR',reviewDate:'2026-10-12',factors:weights,evidence,companyEvents:[event]};
+test('verified catalyst enables full analyst-supplied nine-factor review',()=>{const r=reviewFactors(base);assert.equal(r.status,'COMPLETE_ANALYST_REVIEW');assert.equal(r.score,84)});
+test('unsupported or future source cannot validate catalyst',()=>{const r=reviewFactors({...base,companyEvents:[{...event,publishedDate:'2026-10-13'}]});assert.equal(r.status,'INCOMPLETE');assert.match(r.missing.join(','),/VERIFIED_COMPANY_EVENT/)});
+test('absence of one factor is visible, not guessed',()=>{const r=reviewFactors({...base,evidence:{...evidence,volume:undefined}});assert.equal(r.status,'INCOMPLETE');assert.ok(r.missing.includes('volume'))});
+test('unverified news and non-HTTPS sources are rejected',()=>{const x=verifyCompanyEvents({ticker:'PLTR',reviewDate:'2026-10-12',events:[{...event,confirmed:false,url:'http://example.com'}]});assert.equal(x[0].verified,false)});
