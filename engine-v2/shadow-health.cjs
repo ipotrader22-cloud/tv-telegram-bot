@@ -3,6 +3,8 @@
 const http=require('node:http');
 const {Client}=require('pg');
 const {initialize}=require('./init-shadow.cjs');
+const {loadSnapshot}=require('./import-source.cjs');
+const {auditAll}=require('./replay-all.cjs');
 const mode=process.env.VIXALE_V2_SHADOW_MODE;
 if(mode!=='READ_ONLY')throw Error('Shadow-only mode required');
 const url=process.env.VIXALE_V2_SHADOW_DATABASE_URL;
@@ -35,6 +37,13 @@ const refresh=async()=>{try{last=await inspect()}catch(e){last={connected:false,
     console.log('Shadow schema initialized:',initialized.tables.length,'tables');
   }
  }catch(e){console.error('Shadow schema initialization FAILED:',e.message)}
+ if(process.env.VIXALE_V2_SOURCE_IMPORT_JSON){
+   const snapshot=JSON.parse(process.env.VIXALE_V2_SOURCE_IMPORT_JSON);
+   const audit=auditAll(snapshot);
+   if(audit.status!=='PASS')throw Error('Imported historical realized accounting failed replay');
+   const imported=await loadSnapshot({url,payload:snapshot});
+   console.log('Shadow historical import verified:',JSON.stringify({...imported,replayedDates:audit.dates}));
+ }
  await refresh();
  server.listen(port,'0.0.0.0');
 })().catch(e=>{console.error('Shadow observer startup failed:',e.message);process.exitCode=1});
