@@ -1,0 +1,13 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {validateResearch}=require('./research-gate.cjs');
+const {propose}=require('./decision-preview.cjs');
+const factors={market:8,sector:13,leadership:14,catalyst:9,base:12,compression:8,volume:12,ma:4,resistance:4};
+const bars=Array.from({length:200},(_,i)=>{const day=new Date(Date.UTC(2025,11,1+i)).toISOString().slice(0,10);return {day,open:100,high:102,low:99,close:101,volume:1000000,source:'EXCHANGE'}});
+const factorEvidence=Object.fromEntries(Object.keys(factors).map(k=>[k,{date:'2026-10-16',source:'documented market evidence',description:'Verified dated observation'}]));
+const research={ticker:'AAPL',bars,factors,factorEvidence,publicScore:84};
+test('valid complete research yields indicators but cannot publish',()=>{const r=validateResearch(research,{reviewDate:'2026-10-17'});assert.equal(r.score,84);assert.equal(r.bars,200);assert.ok(r.indicators.sma200>0)});
+test('missing factor evidence fails closed',()=>{const r={...research,factorEvidence:{...factorEvidence,volume:undefined}};assert.throws(()=>validateResearch(r,{reviewDate:'2026-10-17'}),/factor evidence/)});
+test('missing bars or incorrect public score rejects',()=>{assert.throws(()=>validateResearch({...research,bars:bars.slice(1)},{reviewDate:'2026-10-17'}),/200/);assert.throws(()=>validateResearch({...research,publicScore:90},{reviewDate:'2026-10-17'}),/reconcile/)});
+test('without contemporaneous quote, entry is deferred',()=>{const p=propose({date:'2026-10-17',positions:[],research:[research],quotes:{}});assert.equal(p.mode,'SHADOW_PROPOSAL_ONLY');assert.equal(p.proposed[0].type,'DEFER')});
+test('confirmed quote creates non-writing fixed-10k proposal',()=>{const p=propose({date:'2026-10-17',positions:[],research:[research],quotes:{AAPL:{confirmed:true,session:'REGULAR',price:150,time:'2026-10-17T10:00:00-04:00'}}});assert.equal(p.proposed[0].modelAllocation,10000);assert.equal(p.proposed[0].type,'OPEN_PROPOSAL')});

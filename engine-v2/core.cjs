@@ -1,0 +1,16 @@
+'use strict';
+// VIXALE Engine 2.0 shadow-only pure rules. No connectivity or portfolio writes.
+const CAPS=Object.freeze({market:10,sector:15,leadership:15,catalyst:10,base:15,compression:10,volume:15,ma:5,resistance:5});
+const fail=(m)=>{throw new Error(m)};
+const check=(x,m)=>{if(!x)fail(m)};
+const num=(n,m)=>{check(typeof n==='number'&&Number.isFinite(n)&&n>0,m);return n};
+const key=l=>{check(l&&/^[A-Z.-]+$/.test(l.ticker)&&/^\d{4}-\d{2}-\d{2}$/.test(l.entryDate),'Invalid lot');return l.ticker+'|'+l.entryDate};
+function score(f){check(f&&typeof f==='object','Missing factors');return Object.entries(CAPS).reduce((s,[k,cap])=>{const v=f[k];check(Number.isInteger(v)&&v>=0&&v<=cap,'Invalid factor '+k);return s+v},0)}
+function pnl(entry,mark){return 10000*(num(mark,'mark')/num(entry,'entry')-1)}
+function openingStop(l,e){check(e?.confirmed===true&&e.session==='REGULAR'&&e.minuteET==='09:30'&&e.date>=l.entryDate&&l.heldAtOpen===true,'Unverified opening');return num(e.open,'open')<=num(l.entryPrice,'entry')*.95}
+function targetTouch(l,e){check(e?.confirmed===true&&e.session==='REGULAR'&&typeof e.time==='string'&&typeof l.entryTime==='string','Unverified target');check(e.time>=l.entryTime&&(!l.closeTime||e.time<=l.closeTime),'Target outside lot lifetime');return num(e.high,'high')+1e-9>=num(l.entryPrice,'entry')*1.1}
+function targetClose(l,e){if(!targetTouch(l,e))return null;return {lot:key(l),reason:'TARGET',exitPrice:l.entryPrice*1.1,modelPnL:1000}}
+function stopClose(l,opening,quote){if(!openingStop(l,opening))return null;check(quote?.confirmed===true&&quote.session==='REGULAR'&&quote.time>=opening.time,'Missing current quote');return {lot:key(l),reason:'STOP LOSS',exitPrice:num(quote.price,'exit quote'),exitTime:quote.time,modelPnL:pnl(l.entryPrice,quote.price)}}
+function dropoutClose(l,verifiedScore,quote){check(Number.isInteger(verifiedScore)&&verifiedScore>=0&&verifiedScore<=100,'Unverified score');if(verifiedScore>=70)return null;check(quote?.confirmed===true&&quote.session==='REGULAR'&&quote.time,'Missing current quote');return {lot:key(l),reason:'DROPPED FROM ACTIVE PORTFOLIO',exitPrice:num(quote.price,'exit quote'),exitTime:quote.time,modelPnL:pnl(l.entryPrice,quote.price)}}
+function snapshot(s){check(s?.researchComplete===true&&/^\d{4}-\d{2}-\d{2}$/.test(s.reviewDate),'Research incomplete');check(Array.isArray(s.active)&&s.active.length<=10&&Array.isArray(s.closed),'Invalid ledgers');const opened=new Set(),closed=new Set();let realized=0,unrealized=0;for(const l of s.active){const k=key(l);check(!opened.has(k),'Duplicate open lot');opened.add(k);check(l.fullReviewDate===s.reviewDate&&score(l.factors)===l.currentScore&&l.currentScore>=70,'Unverified active score');unrealized+=pnl(l.entryPrice,l.currentPrice)}for(const l of s.closed){const k=key(l);check(!closed.has(k)&&!opened.has(k),'Duplicate or overlapping lot');closed.add(k);if(l.includePublic!=='NO'&&l.effectiveDate<=s.reviewDate)realized+=pnl(l.entryPrice,l.exitPrice)}return {date:s.reviewDate,active:opened.size,realized,unrealized,total:realized+unrealized,equity:100000+realized+unrealized}}
+module.exports={CAPS,score,key,pnl,openingStop,targetTouch,targetClose,stopClose,dropoutClose,snapshot};

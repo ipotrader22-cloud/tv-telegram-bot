@@ -1,0 +1,25 @@
+# OPTIONAL Render Blueprint for a SEPARATE, free, shadow-only service.
+# Do not sync onto the existing production service or redeploy main.
+# The existing database is referenced by name; do not create a second database.
+services:
+  - type: web
+    name: vixale-engine-v2-shadow-observer
+    runtime: node
+    plan: free
+    region: oregon
+    repo: https://github.com/ipotrader22-cloud/tv-telegram-bot
+    branch: engine-v2-shadow-foundation-20261016
+    autoDeployTrigger: off
+    buildCommand: npm install --no-save --no-package-lock pg@8
+    startCommand: node engine-v2/shadow-health.cjs
+    healthCheckPath: /health
+    initialDeployHook: node engine-v2/init-shadow.cjs
+    envVars:
+      - key: VIXALE_V2_SHADOW_DATABASE_URL
+        fromDatabase:
+          name: vixale-engine-v2-shadow-20261016
+          property: connectionString
+      - key: VIXALE_V2_SHADOW_MODE
+        value: READ_ONLY
+      - key: VIXALE_V2_SHADOW_INIT
+        value: 'YES'

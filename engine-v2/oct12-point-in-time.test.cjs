@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {gatePublication,gateDailyBars}=require('./oct12-point-in-time.cjs');
+const e={url:'https://www.sec.gov/Archives/example',publishedAt:'2026-10-12T13:00:00-04:00'};
+test('same-day source without timestamp is not eligible',()=>assert.equal(gatePublication({...e,publishedAt:null}).status,'UNVERIFIED_TIME'));
+test('same-day source after 13:48 ET is excluded',()=>assert.equal(gatePublication({...e,publishedAt:'2026-10-12T13:49:00-04:00'}).status,'EXCLUDED'));
+test('verified time still requires content verification',()=>assert.equal(gatePublication(e).status,'TIME_ELIGIBLE_REQUIRES_CONTENT_VERIFICATION'));
+const bars=Array.from({length:200},(_,i)=>({day:new Date(Date.UTC(2026,0,3+i)).toISOString().slice(0,10),open:10,high:12,low:9,close:11,volume:1000}));
+test('200 bars cannot include review-day or later data',()=>assert.throws(()=>gateDailyBars(bars),/future|stale/));
+test('insufficient sessions fail closed',()=>assert.throws(()=>gateDailyBars(bars.slice(1)),/200/));
