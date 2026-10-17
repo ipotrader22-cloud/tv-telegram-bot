@@ -18,7 +18,7 @@ async function compareStored({url}){
   await client.query('COMMIT');
   if(!r.rowCount)return {status:'MISSING_IMPORT'};
   const a=inspectPayload(r.rows[0].payload);
-  return {...a,checksum:r.rows[0].checksum,storedAt:r.rows[0].received_at,status:a.realized.status==='PASS'&&a.frozen.status!=='FAIL'?'PARTIAL':'BLOCKED'};
+  return {...a,checksum:r.rows[0].checksum,storedAt:r.rows[0].received_at,status:a.realized.status==='PASS'&&a.frozen.status==='PASS'?'PASS':a.realized.status==='PASS'&&a.frozen.status==='PARTIAL'?'PARTIAL':'BLOCKED'};
  }finally{await client.end()}
 }
 module.exports={inspectPayload,compareStored};
