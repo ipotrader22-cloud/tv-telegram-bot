@@ -7,7 +7,7 @@ const {auditSnapshots}=require('./snapshot-audit.cjs');
 function inspectPayload(p){
  const realized=auditAll(p);
  const frozen=auditSnapshots({closed:p.closed,active:p.active,marks:p.equity,asOf:p.asOf});
- return {asOf:p.asOf,realized:{status:realized.status,dates:realized.dates,failed:realized.failed},frozen:{status:frozen.status,errors:frozen.errors,unverified:frozen.unverified.length},activeCount:p.active.length,source:'IMPORTED_SNAPSHOT_NOT_LIVE'};
+ return {asOf:p.asOf,realized:{status:realized.status,dates:realized.dates,failed:realized.failed},frozen:{status:frozen.status,errors:frozen.errors,unverified:frozen.unverified.length,unverifiedByDate:frozen.unverified.map(x=>({date:x.date,gate:x.gate})).sort((a,b)=>a.date.localeCompare(b.date)||a.gate.localeCompare(b.gate))},activeCount:p.active.length,source:'IMPORTED_SNAPSHOT_NOT_LIVE'};
 }
 async function compareStored({url}){
  const client=new Client({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:5000});
