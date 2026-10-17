@@ -24,14 +24,14 @@ function auditSnapshots({closed,active,marks,asOf,tolerance=0.015}){
     closed.filter(l=>l.entryDate<m.date&&l.exitDate>m.date).length;
   const openedToday=[...active,...closed].filter(l=>l.entryDate===m.date).length;
   const closedToday=closed.filter(l=>l.exitDate===m.date&&l.entryDate<m.date).length;
-  const minimum=definitelyOpen-closedToday;
-  const maximum=definitelyOpen+openedToday;
+  const minimum=definitelyOpen;
+  const maximum=definitelyOpen+openedToday+closedToday;
   const membershipKnown=openedToday===0&&closedToday===0;
   if(!Number.isInteger(m.activeCount))unverified.push({date:m.date,gate:'MISSING_ACTIVE_COUNT'});
-  else if(m.activeCount<Math.max(0,minimum)||m.activeCount>maximum)issues.push('MEMBERSHIP_IMPOSSIBLE');
+  else if(m.activeCount<minimum||m.activeCount>maximum)unverified.push({date:m.date,gate:'MEMBERSHIP_SOURCE_INCOMPLETE',observed:m.activeCount,derivedMin:minimum,derivedMax:maximum});
   else if(!membershipKnown)unverified.push({date:m.date,gate:'INTRADAY_MEMBERSHIP_TIMING_NOT_RECONSTRUCTIBLE'});
   if(issues.length)errors.push({date:m.date,issues});
-  reports.push({date:m.date,recordedActive:m.activeCount,minimum:Math.max(0,minimum),maximum,issues});
+  reports.push({date:m.date,recordedActive:m.activeCount,minimum,maximum,issues});
  }
  return {status:errors.length?'FAIL':unverified.length?'PARTIAL':'PASS',errors,unverified,reports,scope:'FROZEN_FORMULAS_AND_BOUNDED_MEMBERSHIP'};
 }
