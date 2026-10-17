@@ -6,6 +6,7 @@ const {initialize}=require('./init-shadow.cjs');
 const {loadSnapshot}=require('./import-source.cjs');
 const {auditAll}=require('./replay-all.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
+const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const mode=process.env.VIXALE_V2_SHADOW_MODE;
 if(mode!=='READ_ONLY')throw Error('Shadow-only mode required');
 const url=process.env.VIXALE_V2_SHADOW_DATABASE_URL;
@@ -26,12 +27,21 @@ async function inspect(){
 }
 let last={connected:false,schemaPresent:false};
 let comparison={status:'PENDING'};
+let liveStatus={status:'NOT_CONFIGURED'};
 const server=http.createServer((req,res)=>{
  if(req.url!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
- res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE'}));
+ res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null}));
 });
-const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaPresent){comparison=await compareStored({url});console.log('Shadow stored comparison:',JSON.stringify({status:comparison.status,asOf:comparison.asOf,realized:comparison.realized?.status,frozen:comparison.frozen?.status}))}}catch(e){last={connected:false,schemaPresent:false};comparison={status:'ERROR'};console.error('Shadow database audit unavailable:',e.message)}};
+const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaPresent){comparison=await compareStored({url});console.log('Shadow stored comparison:',JSON.stringify({status:comparison.status,asOf:comparison.asOf,realized:comparison.realized?.status,frozen:comparison.frozen?.status}));if(process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON){
+  try{
+    const live=await getLiveSnapshot({credentials:process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON});
+    const {Client:PgClient}=require('pg');const conn=new PgClient({connectionString:url});await conn.connect();
+    let imported;try{await conn.query('BEGIN READ ONLY');const q=await conn.query('SELECT payload FROM vixale_v2.source_snapshots ORDER BY received_at DESC LIMIT 1');await conn.query('COMMIT');if(!q.rows.length)throw Error('Historical import unavailable');imported=q.rows[0].payload}finally{await conn.end()}
+    liveStatus={status:'PASS',...compareImported(live,imported)};
+    console.log('Shadow LIVE Sheet comparison:',JSON.stringify({status:liveStatus.status,sourceDate:liveStatus.sourceDate,updated:liveStatus.updated,closedChanged:liveStatus.closedChanged}));
+  }catch(e){liveStatus={status:'ERROR'};console.error('Shadow live Sheet read failed:',e.message)}
+}}}catch(e){last={connected:false,schemaPresent:false};comparison={status:'ERROR'};console.error('Shadow database audit unavailable:',e.message)}};
 (async()=>{
  try{
   if(process.env.VIXALE_V2_SHADOW_INIT==='YES'){
