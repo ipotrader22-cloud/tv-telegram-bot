@@ -7,6 +7,7 @@ const {loadSnapshot}=require('./import-source.cjs');
 const {auditAll}=require('./replay-all.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
+const {saveSummary}=require('./compare-history.cjs');
 const mode=process.env.VIXALE_V2_SHADOW_MODE;
 if(mode!=='READ_ONLY')throw Error('Shadow-only mode required');
 const url=process.env.VIXALE_V2_SHADOW_DATABASE_URL;
@@ -39,6 +40,7 @@ const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaP
     const {Client:PgClient}=require('pg');const conn=new PgClient({connectionString:url});await conn.connect();
     let imported;try{await conn.query('BEGIN READ ONLY');const q=await conn.query('SELECT payload FROM vixale_v2.source_snapshots ORDER BY received_at DESC LIMIT 1');await conn.query('COMMIT');if(!q.rows.length)throw Error('Historical import unavailable');imported=q.rows[0].payload}finally{await conn.end()}
     liveStatus={status:'PASS',...compareImported(live,imported)};
+    await saveSummary(url,liveStatus);
     console.log('Shadow LIVE Sheet comparison:',JSON.stringify({status:liveStatus.status,sourceDate:liveStatus.sourceDate,updated:liveStatus.updated,closedChanged:liveStatus.closedChanged}));
   }catch(e){liveStatus={status:'ERROR'};console.error('Shadow live Sheet read failed:',e.message)}
 }}}catch(e){last={connected:false,schemaPresent:false};comparison={status:'ERROR'};console.error('Shadow database audit unavailable:',e.message)}};
