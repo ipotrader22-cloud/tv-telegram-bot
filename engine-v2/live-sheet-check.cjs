@@ -21,9 +21,13 @@ async function getLiveSnapshot({credentials,fetchImpl}){
 function compareImported(live,stored){
  const old=new Map(stored.closed.map(x=>[x.ticker+'|'+x.entryDate,x]));
  const changed=live.closed.filter(x=>{const prev=old.get(x.ticker+'|'+x.entryDate);return !prev||x.includePublic!==prev.includePublic||x.effectiveDate!==prev.effectiveDate||x.returnPct!==prev.returnPct});
+ const removed=stored.closed.filter(x=>!live.closed.some(y=>y.ticker===x.ticker&&y.entryDate===x.entryDate));
+ const activeKey=x=>[x.ticker,x.entryDate,x.entryPrice,x.entryScore].join('|');
+ const activeChanged=live.active.map(activeKey).sort().join('\n')!==stored.active.map(activeKey).sort().join('\n');
+ const frozenChanged=stored.equity.filter(x=>x.date<stored.asOf).some(x=>{const y=live.equity.find(z=>z.date===x.date);return !y||JSON.stringify(y)!==JSON.stringify(x)})||live.equity.some(x=>x.date<stored.asOf&&!stored.equity.some(y=>y.date===x.date));
  const last=live.equity.at(-1);
  const realized=live.closed.filter(x=>x.includePublic!=='NO'&&x.effectiveDate<=last.date).reduce((sum,x)=>sum+10000*x.returnPct,0);
  if(!Number.isFinite(last.realized)||Math.abs(realized-last.realized)>1e-5)throw Error('Live realized P&L fails full-precision reconciliation');
- return {source:'GOOGLE_SHEETS_READONLY',sourceDate:live.asOf,previousDate:stored.asOf,updated:live.asOf>stored.asOf,closedChanged:changed.length,activeTickers:live.active.map(x=>x.ticker),realizedMatches:true,checkedAt:live.checkedAt};
+ return {source:'GOOGLE_SHEETS_READONLY',sourceDate:live.asOf,previousDate:stored.asOf,updated:live.asOf>stored.asOf,closedChanged:changed.length,closedRemoved:removed.length,activeChanged,frozenChanged,parityStatus:removed.length||changed.length||activeChanged||frozenChanged?'DRIFT':'UNCHANGED',activeTickers:live.active.map(x=>x.ticker),realizedMatches:true,checkedAt:live.checkedAt};
 }
 module.exports={fromRanges,getLiveSnapshot,compareImported,RANGES};
