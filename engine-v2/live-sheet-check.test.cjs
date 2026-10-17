@@ -7,5 +7,5 @@ const values=[
  {values:[['2026-10-08','NASDAQ','PLTR',85,'Active Portfolio',200.74,49,9836.26,186.03,9115.47,-720.79,-0.07328,0.1,'2026-10-13']]}
 ];
 test('parses fixed canonical ranges without privileged API',()=>{const p=fromRanges(values);assert.equal(p.active[0].ticker,'PLTR');assert.equal(p.closed[0].includePublic,'YES');assert.equal(p.equity.length,1)});
-test('rejects incorrect full-precision live accounting',()=>{const p=fromRanges(values);assert.throws(()=>compareImported(p,{asOf:'2026-10-15',closed:[]}),/reconciliation/)});
+test('rejects incorrect full-precision live accounting',()=>{const p=fromRanges(values);p.equity[0].realized+=1;assert.throws(()=>compareImported(p,{asOf:'2026-10-15',closed:[]}),/reconciliation/)});
 test('detects changed Q controls and fresh snapshot',()=>{const p=fromRanges(values);p.equity[0].realized=10000*p.closed[0].returnPct;const r=compareImported(p,{asOf:'2026-10-15',closed:[{...p.closed[0],includePublic:'NO'}]});assert.equal(r.updated,true);assert.equal(r.closedChanged,1)});
