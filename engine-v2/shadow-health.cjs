@@ -5,6 +5,7 @@ const {Client}=require('pg');
 const {initialize}=require('./init-shadow.cjs');
 const {loadSnapshot}=require('./import-source.cjs');
 const {auditAll}=require('./replay-all.cjs');
+const {compareStored}=require('./shadow-compare.cjs');
 const mode=process.env.VIXALE_V2_SHADOW_MODE;
 if(mode!=='READ_ONLY')throw Error('Shadow-only mode required');
 const url=process.env.VIXALE_V2_SHADOW_DATABASE_URL;
@@ -24,12 +25,13 @@ async function inspect(){
  }finally{await client.end()}
 }
 let last={connected:false,schemaPresent:false};
+let comparison={status:'PENDING'};
 const server=http.createServer((req,res)=>{
  if(req.url!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
- res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent}));
+ res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE'}));
 });
-const refresh=async()=>{try{last=await inspect()}catch(e){last={connected:false,schemaPresent:false};console.error('Shadow database unavailable:',e.message)}};
+const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaPresent){comparison=await compareStored({url});console.log('Shadow stored comparison:',JSON.stringify({status:comparison.status,asOf:comparison.asOf,realized:comparison.realized?.status,frozen:comparison.frozen?.status}))}}catch(e){last={connected:false,schemaPresent:false};comparison={status:'ERROR'};console.error('Shadow database audit unavailable:',e.message)}};
 (async()=>{
  try{
   if(process.env.VIXALE_V2_SHADOW_INIT==='YES'){
