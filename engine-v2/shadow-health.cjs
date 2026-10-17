@@ -45,7 +45,7 @@ const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaP
     liveStatus={...parity,status:parity.parityStatus==='DRIFT'?'DRIFT':'PARTIAL',reason:parity.parityStatus==='DRIFT'?'SOURCE_DIFFERENCE':'FULL_PARITY_NOT_CERTIFIED'};
     await saveSummary(url,liveStatus);
     historyStats=await comparisonStats(url);
-    console.log('Shadow LIVE Sheet comparison:',JSON.stringify({status:liveStatus.status,sourceDate:liveStatus.sourceDate,updated:liveStatus.updated,closedChanged:liveStatus.closedChanged}));
+    console.log('Shadow LIVE Sheet comparison:',JSON.stringify({status:liveStatus.status,sourceDate:liveStatus.sourceDate,updated:liveStatus.updated,closedChanged:liveStatus.closedChanged,closedRemoved:liveStatus.closedRemoved,activeChanged:liveStatus.activeChanged,frozenChanged:liveStatus.frozenChanged}));
   }catch(e){liveStatus={status:'ERROR'};console.error('Shadow live Sheet read failed:',e.message)}
 }}}catch(e){last={connected:false,schemaPresent:false};comparison={status:'ERROR'};console.error('Shadow database audit unavailable:',e.message)}};
 (async()=>{
