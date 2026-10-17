@@ -25,3 +25,12 @@ The historical revision CSV exports examined start with `Morning Leader Portfoli
 4. Google revision retrieval returned HTTP 429 rate limits during broader inspection; do not brute-force or assume unavailable revisions are empty.
 
 **Decision:** 0 of the 18 previously unverified historical dates newly certified by this investigation. Keep all 18 unresolved and preserve existing PASS for realized P&L, zero formula errors, and no detected live drift.
+
+
+## Correction and stronger source discovery — 2026-10-17
+
+**Correction:** The previous section incorrectly treated the Drive revision exports as tracker-only. A revision export requested with `exportMimeType: text/plain` actually returns a **multi-section text representation** of the complete workbook, with worksheet sections separated by form-feed characters (`\\f`). Verified revisions 159 (Sep 23), 241 (Oct 7), and 278 (Oct 16) each contain seven sections, including historical **Open Positions**, **Closed Trades**, and **Equity History**. The Equity History section has columns `snapshot_date,snapshot_time_et,realized_model_pnl,unrealized_model_pnl,total_model_pnl,model_equity,active_count`; Closed Trades contains `Exit Time ET`. This materially improves the historical reconstruction opportunity.
+
+The actual historical reconciliation of row-level positions against frozen marks is **not complete**. Follow-up export calls returned HTTP 429. Do not claim any date newly certified until each archived position list and mark's time is parsed and compared. A Drive revision modification timestamp is still not proof of the valuation cutoff; use `snapshot_time_et` and independently corroborate entry/exit times where available.
+
+Recommended deterministic comparison: parse each form-feed worksheet, extract canonical active lots (ticker + entry date) and the equity row for the matching snapshot date, convert ET clock times with the correct DST offset, reconcile active count and event ordering, and report exceptions by date. Preserve all 18 unresolved dates pending that audit. Avoid excessive revision requests during rate limiting.
