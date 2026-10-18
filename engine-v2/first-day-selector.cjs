@@ -13,7 +13,7 @@ function firstDayPortfolio({date,runAt,session,researchBatch,quotes,priorActive=
  const evidence=validateResearchBatch(researchBatch||{});
  if(evidence.status!=='PASS')return blocked('UNVERIFIED_FULL_UNIVERSE',evidence.errors);
  if(session?.date!==date||session?.isTradingDay!==true||session?.providerVerified!==true)return blocked('SESSION_NOT_CERTIFIED');
- const eligible=researchBatch.items.filter(x=>x.score>=70).sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker)).slice(0,10);
+ const eligible=researchBatch.items.filter(x=>x.score>=70&&x.entryEligible===true&&Boolean(x.entryEvidenceId)&&(x.score>=80||Boolean(x.compellingEntryEvidenceId))).sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker)).slice(0,2);
  const byTicker=new Map((quotes||[]).map(q=>[q.ticker,q]));
  const positions=[],failures=[];
  for(const candidate of eligible){
