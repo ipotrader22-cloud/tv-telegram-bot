@@ -51,7 +51,7 @@ function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openin
  if(errors.length)return bad('EXISTING_HOLDINGS_UNVERIFIED',errors);
  const held=new Set([...active,...closed].map(x=>x.ticker));
  const eligible=researchBatch.items.filter(x=>x.score>=70&&x.entryEligible===true&&Boolean(x.entryEvidenceId)&&(x.score>=80||Boolean(x.compellingEntryEvidenceId))&&!held.has(x.ticker)).sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker));
- for(const candidate of eligible.slice(0,Math.min(2,10-active.length))){
+ for(const candidate of eligible.slice(0,10-active.length)){
   const quote=byQuotes.get(candidate.ticker),check=validateQuote({ticker:candidate.ticker,quote,at:runAt,date});
   if(check.status!=='PASS')return bad('ENTRY_QUOTE_NOT_VERIFIED',[candidate.ticker+':'+check.reason]);
   active.push({ticker:candidate.ticker,entryDate:date,entryTime:quote.timestamp,entryPrice:check.price,currentPrice:check.price,shares:Math.floor(10000/check.price),entryScore:candidate.score,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date});
