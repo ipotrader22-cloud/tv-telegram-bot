@@ -5,7 +5,7 @@ const {compareImported}=require('./live-sheet-check.cjs');
 function fixture(){
  const closed=[{ticker:'ABC',entryDate:'2026-10-01',effectiveDate:'2026-10-02',includePublic:'YES',returnPct:0.02}];
  const equity=[{date:'2026-10-02',realized:200,unrealized:0,total:200,equity:10200,activeCount:1},{date:'2026-10-03',realized:200,unrealized:0,total:200,equity:10200,activeCount:1}];
- const active=[{ticker:'XYZ',entryDate:'2026-10-02',entryPrice:100,entryScore:5}];
+ const active=[{ticker:'XYZ',entryDate:'2026-10-02',entryPrice:100,shares:10,price:101,entryScore:5}];
  const base={asOf:'2026-10-03',closed,equity,active};
  return {live:structuredClone(base),stored:structuredClone(base)};
 }
@@ -34,3 +34,5 @@ test('incorrect realized accounting fails closed',()=>{
  const {live,stored}=fixture();live.equity[1].realized=199;
  assert.throws(()=>compareImported(live,stored),/reconciliation/);
 });
+
+test('missing quote blocks valuation parity explicitly',()=>{const {live,stored}=fixture();live.active[0].price=null;const x=compareImported(live,stored);assert.equal(x.parityStatus,'BLOCKED_VALUATION');assert.equal(x.valuation.status,'BLOCKED')});
