@@ -1515,6 +1515,11 @@ function clearDashboardSessionCookie(res) {
     secure: true,
     sameSite: 'lax',
   });
+  res.clearCookie('vixale_admin_key', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+  });
   // Remove the legacy shared-password cookie as part of the migration.
   res.clearCookie('vixale_dashboard_key', {
     httpOnly: true,
@@ -13582,11 +13587,11 @@ function safeSwingReturnPath(value) {
   return value === '/trading-systems/swing-trading' ? value : '';
 }
 
-async function requireSwingAuthorization(req, res, next) {
+async function requireSwingAuthorization(req, res, next, authorize = getDashboardAuthorization) {
   setPrivateNoStoreHeaders(res);
   res.vary('Cookie');
   try {
-    const authorization = await getDashboardAuthorization(req);
+    const authorization = await authorize(req);
     if (authorization.authorized) return next();
     if (req.path === '/api/swing-leaders') {
       return res.status(401).json({ ok: false, error: 'swing_unauthorized' });
@@ -14281,6 +14286,8 @@ module.exports.__test = {
   createDashboardSession,
   readDashboardSession,
   getDashboardAuthorization,
+  requireSwingAuthorization,
+  safeSwingReturnPath,
   displayTradeId,
   parsePendingRow,
   parseOpenPositionRow,
