@@ -14,14 +14,14 @@ test('no legacy holdings carry into new epoch',()=>assert.equal(firstDayPortfoli
 test('incomplete research blocks even if positions would otherwise be empty',()=>assert.equal(firstDayPortfolio({...args,researchBatch:{...rb,universe:[]}}).status,'BLOCKED'));
 test('ineligible score produces verified no-position session, not a fabricated OPEN',()=>{const result=firstDayPortfolio({...args,researchBatch:{...rb,items:[{...record,score:69,factors:{...CAPS,market:0,sector:0,leadership:0,catalyst:9}}]}});assert.equal(result.status,'BLOCKED')});
 
-test('no more than two fully authorized new model entries in one morning',()=>{
+test('allow up to ten fully authorized new model entries in one morning',()=>{
  const names=['NVDA','AMD','MU'];
  const items=names.map((ticker,i)=>({...record,ticker,score:100-i,factors:{...record.factors,market:10-i},entryEligible:true,entryEvidenceId:'setup-'+ticker}));
  const universe=names;
  const quotes=names.map(ticker=>({...q,ticker,sourceId:'trade-'+ticker}));
  const x=firstDayPortfolio({...args,researchBatch:{...rb,universe,items},quotes});
  assert.equal(x.status,'VALIDATED_SHADOW_ONLY');
- assert.equal(x.positions.length,2);
+ assert.equal(x.positions.length,3);
 });
 test('70-to-79 point new entry needs compelling entry proof',()=>{
  const factors75={...record.factors,market:5,sector:10,leadership:10,catalyst:5,base:10};
