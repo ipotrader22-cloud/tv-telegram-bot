@@ -16,10 +16,10 @@ async function probe(fetchImpl=fetch){
  if(!x||!Array.isArray(x.timestamp)||!q)throw Error('No intraday bars');
  const bars=x.timestamp.map((s,i)=>({time:new Date(s*1000).toISOString(),open:q.open?.[i],high:q.high?.[i],low:q.low?.[i],close:q.close?.[i],volume:q.volume?.[i]})).filter(b=>Number.isFinite(b.close)&&b.close>0&&Date.parse(b.time)>=start*1000&&Date.parse(b.time)<end*1000);
  if(!bars.length)throw Error('No valid intraday bars');
- const eligible=bars.filter(b=>Date.parse(b.time)<=cutoff);
- if(!eligible.length)throw Error('No bar timestamped at or before cutoff');
+ const eligible=bars.filter(b=>Date.parse(b.time)<cutoff);
+ if(!eligible.length)throw Error('No bar timestamped before cutoff (fully completed 1m bar)');
  const last=eligible.at(-1);report.status='PRE_CUTOFF_ONE_MINUTE_BAR_AVAILABLE';report.lastBar=last;report.minuteBarCount=bars.length;
- report.warning='Bar timestamp normally denotes its start. Historical vendor data is not original broker execution evidence; must validate bar semantics and vendor timing.';
+ report.warning='One-minute bar timestamp denotes bar start; 13:48 bar is excluded as incomplete at 13:48 cutoff. Historical vendor evidence is not original broker execution proof.';
  }catch(e){report.reason=String(e.message).slice(0,240)}
  return report;
 }
