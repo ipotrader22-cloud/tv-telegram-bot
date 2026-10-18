@@ -5,6 +5,7 @@ const {Client}=require('pg');
 const {initialize}=require('./init-shadow.cjs');
 const {loadSnapshot}=require('./import-source.cjs');
 const {auditAll}=require('./replay-all.cjs');
+const {auditValuation}=require('./valuation-integrity.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const {saveSummary}=require('./compare-history.cjs');
@@ -34,15 +35,15 @@ let historyStats={checks:0,changed_checks:0};
 const server=http.createServer((req,res)=>{
  if(req.url!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
- res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
+ res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
 });
-const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaPresent){comparison=await compareStored({url});console.log('Shadow stored comparison:',JSON.stringify({status:comparison.status,asOf:comparison.asOf,realized:comparison.realized?.status,frozen:comparison.frozen?.status,unverifiedByDate:comparison.frozen?.unverifiedByDate||[],formulaErrors:comparison.frozen?.errors||[]}));if(process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON){
+const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaPresent){comparison=await compareStored({url});console.log('Shadow stored comparison:',JSON.stringify({status:comparison.status,asOf:comparison.asOf,realized:comparison.realized?.status,frozen:comparison.frozen?.status,unverifiedByDate:comparison.frozen?.unverifiedByDate||[],formulaErrors:comparison.frozen?.errors||[],valuationStatus:comparison.valuation?.status,valuationErrors:comparison.valuation?.errors||[],entryIntegrityStatus:comparison.entryIntegrity?.status}));if(process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON){
   try{
     const live=await getLiveSnapshot({credentials:process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON});
     const {Client:PgClient}=require('pg');const conn=new PgClient({connectionString:url});await conn.connect();
     let imported;try{await conn.query('BEGIN READ ONLY');const q=await conn.query('SELECT payload FROM vixale_v2.source_snapshots ORDER BY received_at DESC LIMIT 1');await conn.query('COMMIT');if(!q.rows.length)throw Error('Historical import unavailable');imported=q.rows[0].payload}finally{await conn.end()}
     const parity=compareImported(live,imported);
-    liveStatus={...parity,status:parity.parityStatus==='DRIFT'?'DRIFT':'PARTIAL',reason:parity.parityStatus==='DRIFT'?'SOURCE_DIFFERENCE':'FULL_PARITY_NOT_CERTIFIED'};
+    liveStatus={...parity,status:parity.parityStatus==='BLOCKED_VALUATION'?'BLOCKED':parity.parityStatus==='DRIFT'?'DRIFT':'PARTIAL',reason:parity.parityStatus==='DRIFT'?'SOURCE_DIFFERENCE':'FULL_PARITY_NOT_CERTIFIED'};
     await saveSummary(url,liveStatus);
     historyStats=await comparisonStats(url);
     console.log('Shadow LIVE Sheet comparison:',JSON.stringify({status:liveStatus.status,sourceDate:liveStatus.sourceDate,updated:liveStatus.updated,closedChanged:liveStatus.closedChanged,closedRemoved:liveStatus.closedRemoved,activeChanged:liveStatus.activeChanged,frozenChanged:liveStatus.frozenChanged}));
@@ -58,6 +59,8 @@ const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaP
  if(process.env.VIXALE_V2_SOURCE_IMPORT_JSON){
    const snapshot=JSON.parse(process.env.VIXALE_V2_SOURCE_IMPORT_JSON);
    const audit=auditAll(snapshot);
+   const valuation=auditValuation(snapshot.active||[]);
+   if(valuation.status!=='PASS')throw Error('Shadow import rejected: incomplete or invalid market quote valuation');
    if(audit.status!=='PASS')throw Error('Imported historical realized accounting failed replay');
    const imported=await loadSnapshot({url,payload:snapshot});
    console.log('Shadow historical import verified:',JSON.stringify({...imported,replayedDates:audit.dates}));
