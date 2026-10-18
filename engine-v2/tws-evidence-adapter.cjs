@@ -2,7 +2,7 @@
 // VIXALE Engine 2.0: strictly read-only IBKR TWS quote evidence adapter.
 // Input is a JSON object from the LOCAL read-only TWS bridge, not a broker order.
 // Never substitutes delayed/frozen quotes for contemporaneous live trade prints.
-const {validateQuote}=require('./market-data-adapter.cjs');
+const {validateQuote,localET}=require('./market-data-adapter.cjs');
 const {createHash}=require('node:crypto');
 const isIso=s=>typeof s==='string'&&Number.isFinite(Date.parse(s))&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(s);
 const symbolOk=s=>typeof s==='string'&&/^[A-Z][A-Z0-9.-]{0,14}$/.test(s);
@@ -16,7 +16,7 @@ function normalizeTwsTrades({batch,date,at,tickers,maxAgeMs=90000}={}){
   if(!symbolOk(t?.ticker)||seen.has(t.ticker)){errors.push('TWS_DUPLICATE_OR_INVALID_SYMBOL');continue}
   seen.add(t.ticker);
   const quote={ticker:t.ticker,price:t.price,sourceId:t.tradeId,
-   provider:'IBKR_TWS',timestamp:t.timestamp,session:t.session,verified:t.marketDataType===1&&t.sourceType==='LAST_TRADE',
+   provider:'IBKR_TWS',timestamp:t.timestamp,session: isIso(t.timestamp) && localET(t.timestamp).date===date && localET(t.timestamp).minute>=570 && localET(t.timestamp).minute<960 ? 'REGULAR':'UNKNOWN',verified:t.marketDataType===1&&t.sourceType==='LAST_TRADE',
    exchangeVolume:t.lastSize};
   const gate=validateQuote({ticker:t.ticker,quote,at,date,maxAgeMs});
   if(gate.status!=='PASS')errors.push(t.ticker+':'+gate.reason);
