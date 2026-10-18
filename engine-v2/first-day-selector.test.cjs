@@ -24,7 +24,7 @@ test('no more than two fully authorized new model entries in one morning',()=>{
  assert.equal(x.positions.length,2);
 });
 test('70-to-79 point new entry needs compelling entry proof',()=>{
- const factors75={...factors,market:0,sector:0,leadership:0,catalyst:5};
+ const factors75={...factors,market:5,sector:10,leadership:10,catalyst:5,base:10};
  const r75={...record,factors:factors75,score:75,entryEligible:true,entryEvidenceId:'entry'};
  const out=firstDayPortfolio({...args,researchBatch:{...rb,items:[r75]}});
  assert.equal(out.status,'VALIDATED_SHADOW_ONLY');assert.equal(out.positions.length,0);
