@@ -18,7 +18,7 @@ test('complete simulated provider chain reaches shadow ledger with normalized mo
  const factors={...CAPS};
  const factorsEvidence=Object.fromEntries(Object.keys(CAPS).map(k=>[k,{sourceId:'factor-'+k,explanation:'Verified source-backed factor'}]));
  const researchBatch={date,runAt,session:{date,isTradingDay:true,providerVerified:true},universe:['NVDA'],benchmarks:[{sourceId:'SPY-ohlcv',timestamp:stamp}],items:[
-  {ticker:'NVDA',date,complete:true,timestamp:stamp,score:100,factors,factorsEvidence,completedDailyBars:250,lastCompletedSessionDate:'2026-10-16',ohlcvSourceId:'ohlcv',newsEvidenceId:'news',marketEvidenceId:'market',sectorEvidenceId:'sector',volumeRvol:1.1,exchangeVolumeVerified:true,ma20:190,ma50:180,ma200:150}
+  {ticker:'NVDA',entryEligible:true,entryEvidenceId:'approved-setup',date,complete:true,timestamp:stamp,score:100,factors,factorsEvidence,completedDailyBars:250,lastCompletedSessionDate:'2026-10-16',ohlcvSourceId:'ohlcv',newsEvidenceId:'news',marketEvidenceId:'market',sectorEvidenceId:'sector',volumeRvol:1.1,exchangeVolumeVerified:true,ma20:190,ma50:180,ma200:150}
  ]};
  let committed=0;
  const output=await runFirstSession({date,runAt,url:'postgres://local/vixale_engine_v2_shadow_20261016',
