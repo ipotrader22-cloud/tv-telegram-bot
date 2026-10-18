@@ -13576,9 +13576,33 @@ app.get('/trading-systems', (req, res) => {
   res.status(200).send(renderTradingSystemsHtml());
 });
 
+// Issue #331: Swing portfolio authorization uses the existing dashboard session.
+const SWING_RETURN_PATH = '/trading-systems/swing-trading';
+function safeSwingLoginReturn(value) {
+  return value === SWING_RETURN_PATH ? SWING_RETURN_PATH : '/dashboard';
+}
+async function requireSwingPortfolioAccess(req, res, next) {
+  setPrivateNoStoreHeaders(res);
+  res.set('Vary', 'Cookie');
+  try {
+    const authorization = await getDashboardAuthorization(req);
+    if (authorization.authorized) return next();
+    if (req.path === '/api/swing-leaders') {
+      return res.status(401).json({ ok: false, error: 'swing_unauthorized' });
+    }
+    return res.redirect(302, '/login?next=' + encodeURIComponent(SWING_RETURN_PATH));
+  } catch (error) {
+    console.error('Swing access authorization error:', error);
+    if (req.path === '/api/swing-leaders') {
+      return res.status(503).json({ ok: false, error: 'swing_authorization_unavailable' });
+    }
+    return res.status(503).send('Authorization temporarily unavailable.');
+  }
+}
+
 const swingLeadersHandlers = createSwingLeadersHandlers({ getSheetsClient });
-app.get('/swing-leaders', swingLeadersHandlers.page);
-app.get('/api/swing-leaders', swingLeadersHandlers.api);
+app.get('/swing-leaders', requireSwingPortfolioAccess, swingLeadersHandlers.page);
+app.get('/api/swing-leaders', requireSwingPortfolioAccess, swingLeadersHandlers.api);
 
 app.get('/risk-management', (req, res) => {
   res.status(200).send(renderRiskManagementHtml());
@@ -13587,8 +13611,12 @@ app.get('/risk-management', (req, res) => {
 app.get('/login', async (req, res) => {
   setPrivateNoStoreHeaders(res);
   const authorization = await getDashboardAuthorization(req);
-  if (authorization.authorized) return res.redirect('/dashboard');
-  res.status(200).send(renderLoginHtml());
+  if (authorization.authorized) return res.redirect(safeSwingLoginReturn(req.query.next));
+  const loginHtml = renderLoginHtml();
+  const next = safeSwingLoginReturn(req.query.next);
+  res.status(200).send(next === SWING_RETURN_PATH
+    ? loginHtml.replace('<form method="POST" action="/dashboard-login">', '<form method="POST" action="/dashboard-login"><input type="hidden" name="next" value="/trading-systems/swing-trading" />')
+    : loginHtml);
 });
 
 
@@ -14108,7 +14136,7 @@ app.post('/dashboard-login', async (req, res) => {
       sameSite: 'strict',
       maxAge: DASHBOARD_SESSION_HOURS * 60 * 60 * 1000,
     });
-    return res.redirect('/dashboard');
+    return res.redirect(safeSwingLoginReturn(req.body.next));
   }
 
   try {
@@ -14121,7 +14149,7 @@ app.post('/dashboard-login', async (req, res) => {
     const sessionExpiresAt = Math.min(codeExpiresAt, Date.now() + DASHBOARD_SESSION_HOURS * 60 * 60 * 1000);
     setDashboardSessionCookie(res, 'viewer', viewerCode.id, sessionExpiresAt);
     void touchDashboardViewerCodeLogin(viewerCode);
-    return res.redirect('/dashboard');
+    return res.redirect(safeSwingLoginReturn(req.body.next));
   } catch (error) {
     console.error('Dashboard viewer login error:', error);
     return res.status(503).send(renderLoginHtml('Viewer-code login is temporarily unavailable. Please try again.'));
