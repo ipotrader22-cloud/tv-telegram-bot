@@ -14,6 +14,8 @@ on:
       - "tests/test_vixale_edge_pending_eod_cleanup.js"
       - "tests/test_vixale_edge_pending_lifecycle.js"
       - "tests/test_webhook_fast_ack.js"
+      - "tests/test_issue331_swing_auth.js"
+      - "tests/test_swing_leaders_app_integration.js"
       - ".github/workflows/app-webhook-regression.yml"
 
 permissions:
@@ -37,6 +39,12 @@ jobs:
 
       - name: Syntax check app
         run: node --check app.js
+
+      - name: Run Issue 331 Swing authorization regression
+        run: node tests/test_issue331_swing_auth.js
+
+      - name: Run Swing application integration regression
+        run: node tests/test_swing_leaders_app_integration.js
 
       - name: Run broker callback regression
         run: node tests/test_broker_eod_callback_idempotency.js
