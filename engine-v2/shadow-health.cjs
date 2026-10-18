@@ -60,10 +60,14 @@ const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaP
    const snapshot=JSON.parse(process.env.VIXALE_V2_SOURCE_IMPORT_JSON);
    const audit=auditAll(snapshot);
    const valuation=auditValuation(snapshot.active||[]);
-   if(valuation.status!=='PASS')throw Error('Shadow import rejected: incomplete or invalid market quote valuation');
-   if(audit.status!=='PASS')throw Error('Imported historical realized accounting failed replay');
-   const imported=await loadSnapshot({url,payload:snapshot});
-   console.log('Shadow historical import verified:',JSON.stringify({...imported,replayedDates:audit.dates}));
+   if(valuation.status!=='PASS'){
+     console.error('Shadow import BLOCKED: invalid market quotes; preserving prior snapshot:',JSON.stringify({errors:valuation.errors}));
+   }else if(audit.status!=='PASS'){
+     console.error('Shadow import BLOCKED: realized accounting replay failed; preserving prior snapshot');
+   }else{
+     const imported=await loadSnapshot({url,payload:snapshot});
+     console.log('Shadow historical import verified:',JSON.stringify({...imported,replayedDates:audit.dates}));
+   }
  }
  await refresh();
  server.listen(port,'0.0.0.0');
