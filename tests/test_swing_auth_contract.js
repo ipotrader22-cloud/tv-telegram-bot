@@ -1,0 +1,27 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const canonical = fs.readFileSync(path.join(__dirname, "..", "website_swing_canonical_refinement.js"), "utf8");
+const access = fs.readFileSync(path.join(__dirname, "..", "website_public_ia_refinement.js"), "utf8");
+const ru = fs.readFileSync(path.join(__dirname, "..", "website_russian_localization.js"), "utf8");
+
+assert.match(source, /async function requireSwingPortfolioAccess\(req, res, next\)/);
+assert.match(source, /await getDashboardAuthorization\(req\)/);
+assert.match(source, /if \(authorization\.authorized\) return next\(\)/);
+assert.match(source, /setPrivateNoStoreHeaders\(res\)/);
+assert.match(source, /res\.set\('Vary', 'Cookie'\)/);
+assert.match(source, /status\(401\)\.json\(\{ ok: false, error: 'swing_unauthorized' \}\)/);
+assert.match(source, /app\.get\('\/swing-leaders', requireSwingPortfolioAccess, swingLeadersHandlers\.page\)/);
+assert.match(source, /app\.get\('\/api\/swing-leaders', requireSwingPortfolioAccess, swingLeadersHandlers\.api\)/);
+assert.match(canonical, /CANONICAL_SWING_PATH = "\/trading-systems\/swing-trading"/);
+assert.match(canonical, /rewriteCanonicalRequest\(req\)/);
+assert.match(source, /return res\.redirect\(302, '\/login\?next=' \+ encodeURIComponent\(SWING_RETURN_PATH\)\)/);
+assert.match(source, /return value === SWING_RETURN_PATH \? SWING_RETURN_PATH : '\/dashboard'/);
+assert.match(source, /safeSwingLoginReturn\(req\.body\.next\)/);
+assert.match(source, /app\.get\('\/logout'/);
+assert.doesNotMatch(access, /already public and does not require login/);
+assert.doesNotMatch(canonical, /You do not need viewer login/);
+assert.ok(ru.includes('swing'), 'Russian localization stays installed');
+console.log('Swing server-side auth source contract assertions passed (EN/RU).');
