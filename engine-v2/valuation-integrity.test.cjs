@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {auditValuation,auditImmutableEntries}=require('./valuation-integrity.cjs');
+const a={ticker:'AMD',entryDate:'2026-09-21',shares:16,entryPrice:607.84,price:600,costBasis:9725.44};
+test('missing quote blocks zero-dollar portfolio calculation',()=>{const x=auditValuation([{...a,price:null}]);assert.equal(x.status,'BLOCKED');assert.equal(x.marketValue,null);assert.equal(x.unrealized,null)});
+test('zero quote blocks rather than treats position as worthless',()=>assert.equal(auditValuation([{...a,price:0}]).status,'BLOCKED'));
+test('invalid negative quote blocks',()=>assert.equal(auditValuation([{...a,price:-1}]).status,'BLOCKED'));
+test('valid market quote computes mark-to-market',()=>{const x=auditValuation([a]);assert.equal(x.status,'PASS');assert.equal(x.marketValue,9600);assert.ok(Math.abs(x.unrealized+125.44)<1e-8)});
+test('immutable entry price and quantity changes flagged, never deleted',()=>{const x=auditImmutableEntries([a],[{...a,entryPrice:607.05,shares:17}]);assert.equal(x.changes.length,1);assert.equal(x.changes[0].changes.length,2);assert.equal(x.deleted,0)});
+test('identical immutable entry fields pass',()=>assert.equal(auditImmutableEntries([a],[{...a,price:640}]).status,'PASS'));
