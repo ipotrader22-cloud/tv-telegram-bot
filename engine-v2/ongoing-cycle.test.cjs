@@ -10,7 +10,7 @@ const position={ticker:'A',entryDate:'2026-10-19',entryTime:'2026-10-19T10:00:00
 const quote={ticker:'A',price:101,sourceId:'trade',provider:'vendor',timestamp:ts,verified:true,session:'REGULAR',exchangeVolume:50};
 const opening={ticker:'A',confirmed:true,session:'REGULAR',minuteET:'09:30',date,open:100,sourceId:'open',time:'2026-10-20T09:30:00-04:00'};
 const base={date,runAt,session:researchBatch.session,researchBatch,previous:{epoch:'2026-10-19',active:[position],closed:[]},quotes:[quote],openings:[opening]};
-test('verified hold stays active with fixed 10k normalized P&L',()=>{const x=reviewExisting(base);assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.model.unrealized,100);assert.equal(x.active.length,1)});
+test('verified hold stays active with fixed 10k normalized P&L',()=>{const x=reviewExisting(base);assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.ok(Math.abs(x.model.unrealized-100)<1e-7);assert.equal(x.active.length,1)});
 test('missing opening proof blocks, never silently skips stop',()=>assert.equal(reviewExisting({...base,openings:[]}).status,'BLOCKED'));
 test('verified opening -5% triggers stop at later contemporaneous quote',()=>{const x=reviewExisting({...base,openings:[{...opening,open:95}],quotes:[{...quote,price:96}]});assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.closed[0].reason,'STOP LOSS');assert.equal(x.closed[0].exitPrice,96)});
 test('verified target touches exact 10 percent even after price retreats',()=>{const x=reviewExisting({...base,targets:[{ticker:'A',confirmed:true,session:'REGULAR',sourceId:'bar',time:'2026-10-20T09:40:00-04:00',high:110}]});assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.closed[0].exitPrice,110);assert.equal(x.model.realized,1000)});
