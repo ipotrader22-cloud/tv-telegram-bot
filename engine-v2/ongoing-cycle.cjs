@@ -34,7 +34,7 @@ function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openin
    try{
     if(high.confirmed!==true||high.session!=='REGULAR'||!high.sourceId||!high.time||Date.parse(high.time)>Date.parse(runAt))throw Error('Unproven intraday target');
     if(targetTouch({...base,entryTime:old.entryTime||old.entryDate+'T10:00:00-04:00'},high))
-     close={reason:'TARGET',exitPrice:old.entryPrice*1.10,time:high.time,sourceId:high.sourceId};
+     close={reason:'TARGET',exitPrice:Math.round(old.entryPrice*1.10*1e8)/1e8,time:high.time,sourceId:high.sourceId};
    }catch{errors.push('INVALID_TARGET_EVIDENCE:'+id);continue}
   }
   if(!close&&factorScore<70)close={reason:'DROPPED FROM ACTIVE PORTFOLIO',exitPrice:checked.price,time:quote.timestamp,sourceId:quote.sourceId};
