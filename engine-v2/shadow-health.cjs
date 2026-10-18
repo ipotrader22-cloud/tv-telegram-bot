@@ -6,6 +6,8 @@ const {initialize}=require('./init-shadow.cjs');
 const {loadSnapshot}=require('./import-source.cjs');
 const {auditAll}=require('./replay-all.cjs');
 const {auditValuation}=require('./valuation-integrity.cjs');
+const {EPOCH}=require('./clean-slate-portfolio.cjs');
+const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const {saveSummary}=require('./compare-history.cjs');
@@ -35,7 +37,7 @@ let historyStats={checks:0,changed_checks:0};
 const server=http.createServer((req,res)=>{
  if(req.url!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
- res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
+ res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',cleanSlate:{epoch:EPOCH,mode:'SHADOW_ONLY',autonomousPublisherEnabled:false,sessionCalendarReady:sessionEvidence(EPOCH).isTradingDay,marketDataProviderReady:false,researchProviderReady:false,readyForProduction:false},valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
 });
 const refresh=async()=>{try{last=await inspect();if(last.connected&&last.schemaPresent){comparison=await compareStored({url});console.log('Shadow stored comparison:',JSON.stringify({status:comparison.status,asOf:comparison.asOf,realized:comparison.realized?.status,frozen:comparison.frozen?.status,unverifiedByDate:comparison.frozen?.unverifiedByDate||[],formulaErrors:comparison.frozen?.errors||[],valuationStatus:comparison.valuation?.status,valuationErrors:comparison.valuation?.errors||[],entryIntegrityStatus:comparison.entryIntegrity?.status,historicalCertificationStatus:comparison.historical?.status,historicalCertifiedMarks:comparison.historical?.certified||0}));if(process.env.VIXALE_V2_GOOGLE_SERVICE_ACCOUNT_JSON){
   try{
