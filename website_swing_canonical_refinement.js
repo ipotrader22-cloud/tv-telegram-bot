@@ -59,7 +59,7 @@ function ensureSwingPortfolioAnchor(html) {
 
 function insertSwingAccess(html) {
   if (typeof html !== "string" || html.includes(ACCESS_MARKER)) return html;
-  const copy = "Use this public Swing Leaders research/model portfolio to review active positions, potential candidates, closed trades, and model equity history. Quotes may be delayed; this is not broker execution.";
+  const copy = "Use this authenticated Swing Leaders research/model portfolio to review active positions, potential candidates, closed trades, and model equity history. Quotes may be delayed; this is not broker execution.";
   const copyIndex = html.indexOf(copy);
   if (copyIndex < 0) return html;
   const paragraphEnd = html.indexOf("</p>", copyIndex);
@@ -67,10 +67,10 @@ function insertSwingAccess(html) {
   const access = `<div class="vx-swing-access"><div class="vx-swing-primer-grid">
     <section class="vx-swing-primer-card"><span>How it differs</span><strong>Multi-session research/model portfolio</strong><p>Swing positions may remain active across sessions. This page is model-portfolio research, not Day Trading broker/execution evidence and not the owner-entered Options journal.</p></section>
     <section class="vx-swing-primer-card"><span>What you will see</span><strong>Portfolio status and model evidence</strong><p>Review Active Portfolio, potential candidates, closed trades, model P&amp;L, and the dedicated Swing equity history.</p></section>
-    <section class="vx-swing-primer-card"><span>Available publicly now</span><strong>The Swing portfolio is already public</strong><p>You do not need viewer login to inspect the Swing model portfolio. Delayed-quote and model-portfolio disclosures remain visible with the evidence.</p></section>
-    <section class="vx-swing-primer-card"><span>What viewer access adds</span><strong>No extra Swing portfolio unlock is required</strong><p>Viewer access is used for other protected Vixale areas; it is not a prerequisite for the Swing Active Portfolio on this page.</p></section>
+    <section class="vx-swing-primer-card"><span>Access requirement</span><strong>Login required for Swing portfolio</strong><p>Sign in with your approved viewer code or owner password to inspect the Swing portfolio. Quotes may be delayed.</p></section>
+    <section class="vx-swing-primer-card"><span>What viewer access adds</span><strong>Authenticated read-only portfolio</strong><p>Approved viewer access includes the Swing Active Portfolio and research results. Access does not grant trading or edit permissions.</p></section>
     <section class="vx-swing-primer-card"><span>Evidence / results</span><strong>Swing Trading only</strong><p>The evidence below is the Swing research/model portfolio and equity history. It is not brokerage-account performance.</p></section>
-  </div><a class="vx-swing-access-primary" href="${PORTFOLIO_HREF}">View Swing Portfolio</a><span class="vx-swing-access-note">One clear next step: review the public Active Portfolio below.</span></div>`;
+  </div><a class="vx-swing-access-primary" href="${PORTFOLIO_HREF}">View Swing Portfolio</a><span class="vx-swing-access-note">One clear next step: review the authenticated Active Portfolio below.</span></div>`;
   const insertAt = paragraphEnd + 4;
   return html.slice(0, insertAt) + access + html.slice(insertAt);
 }
@@ -100,7 +100,7 @@ function refineCanonicalSwingHtml(html) {
   );
   out = out.replace(
     "A research/model portfolio focused on actively monitored swing positions and potential future candidates from Vixale Trading Lab.",
-    "Use this public Swing Leaders research/model portfolio to review active positions, potential candidates, closed trades, and model equity history. Quotes may be delayed; this is not broker execution."
+    "Use this authenticated Swing Leaders research/model portfolio to review active positions, potential candidates, closed trades, and model equity history. Quotes may be delayed; this is not broker execution."
   );
   out = ensureSwingPortfolioAnchor(out);
   out = insertSwingAccess(out);

@@ -1,3 +1,11 @@
+## Issue #331 — Swing Trading authenticated access (PR pending, 2026-10-18)
+
+The Swing research/model portfolio is private to an existing authenticated Dashboard owner or valid viewer-code session. Express routes `/swing-leaders` and `/api/swing-leaders` call the existing `getDashboardAuthorization` before their Google Sheets-backed handlers. Canonical `/trading-systems/swing-trading` is internally rewritten by `website_swing_canonical_refinement.js`; the legacy page route redirects to canonical. GET/HEAD render/data responses set private no-store and Vary: Cookie. Anonymous page requests redirect to existing branded `/login?next=%2Ftrading-systems%2Fswing-trading`; anonymous JSON requests return HTTP 401 without data. Auth failures do not fall back to public data.
+
+Login accepts only the exact Swing canonical path as post-login return, including after successful owner or approved viewer-code login; other values fall back to Dashboard, preventing open redirects. Logout clears the owner admin cookie as well as the signed Dashboard session and legacy cookie. Public Swing explanatory copy must not claim anonymous access. No Trading Lab calculations, feed schemas, VECO trading signals, Pine, Sheets writers, bridge, or IB/TWS execution are changed.
+
+Source branch and PR are not deployment proof. After approved merge/deploy, verify EN/RU anonymous and authenticated browser flows, API denial, logout, and exact Render deployment before updating the website Current-State manifest. Rollback: revert the Issue #331 site/auth commits, preserving all trading and Sheet data.
+
 # VECO Developer Handbook
 
 ## Swing Closed Trades dollar column — 2026-10-12
