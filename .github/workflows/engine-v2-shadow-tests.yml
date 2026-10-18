@@ -36,3 +36,16 @@ jobs:
         run: npm install --prefix engine-v2 --no-save --no-package-lock pg@8
       - name: Run all shadow and real PostgreSQL integration tests
         run: node --test engine-v2/*.test.cjs
+
+      - name: Probe historical PLTR one-minute evidence (research only)
+        if: always()
+        continue-on-error: true
+        run: node engine-v2/pltr-oct12-minute-probe.cjs
+      - name: Preserve historical minute probe artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pltr-oct12-minute-evidence
+          path: engine-v2/out/pltr-oct12-minute-probe.json
+          retention-days: 30
+          if-no-files-found: warn
