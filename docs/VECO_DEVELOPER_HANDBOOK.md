@@ -3382,3 +3382,12 @@ Completed daily review: all thirteen then-active/candidate scores were reassesse
 Validation boundary: the migrated 9:30 task has not yet completed its first timed October13 run. No executable server-side analyst/outbox worker was added; orchestration remains cloud scheduled research tasks, native guarded commits, provider idempotency and independent read-only Actions checks. Do not describe this as a guaranteed scheduler or completely deterministic autonomous scoring engine. No app.js/package.json/runtime/credentials changes in this documentation checkpoint. Rollback: revert these docs only; production metadata/task controls are separate and must not be silently removed by a documentation revert.
 
 
+
+
+### Issue #331 — Swing Trading login gate (proposed PR; 2026-10-18)
+
+The Swing model portfolio HTML at `/trading-systems/swing-trading` (internally rewritten to `/swing-leaders`) and the backing `/api/swing-leaders` JSON require the existing dashboard authorization. Owner sessions and active approved viewer-code sessions are accepted through `getDashboardAuthorization`. Unauthorized page requests redirect to the existing `/login` with an allowlisted Swing return destination; unauthorized API requests receive HTTP 401 JSON without portfolio data. The login POST redirects successfully authenticated users to Swing only when the permitted return destination is supplied; otherwise its existing `/dashboard` default remains. Logout invalidates the same session. Protected responses carry private no-store headers and `Vary: Cookie`. No new credential or access-code storage is introduced.
+
+The existing canonical/legacy page mapping stays intact, including Russian-host localization. Public copy that previously stated the portfolio needed no login is superseded. This proposal changes only website access/presentation; Swing Trading Lab calculation, Google Sheets feed/writers, trading strategy logic, signal execution, Pine, TWS/IBKR and bridge are untouched. No merge or production activation is established by this text.
+
+Rollback: revert Issue #331 PR changes and redeploy the previous verified website revision; no data migration is involved.
