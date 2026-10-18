@@ -1,0 +1,14 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {certifyMark,certifyHistory,reviewEntryMutations}=require('./historical-certification.cjs');
+const lot={ticker:'AMD',entryDate:'2026-10-07',entryPrice:100,shares:10};
+const mark={date:'2026-10-07',cutoffTimestamp:'2026-10-07T10:00:00-04:00',activeCount:1,unrealized:20};
+const event={lotId:'AMD|2026-10-07',type:'ENTRY',timestamp:'2026-10-07T09:59:30-04:00',sourceId:'entry-proof'};
+const quote={lotId:'AMD|2026-10-07',timestamp:'2026-10-07T10:00:00-04:00',price:102,sourceId:'minute-evidence'};
+const opts={mark,lots:[lot],events:[event],quotes:[quote],sourceId:'frozen-mark'};
+test('contemporaneous quote and entry can validate exact cutoff',()=>{const x=certifyMark(opts);assert.equal(x.status,'PASS');assert.equal(x.unrealized,20)});
+test('missing quote cannot silently become a zero-value loss',()=>{const x=certifyMark({...opts,quotes:[]});assert.equal(x.status,'PARTIAL');assert.equal(x.marketValue,null)});
+test('quote after cutoff not accepted',()=>{const x=certifyMark({...opts,quotes:[{...quote,timestamp:'2026-10-07T10:00:08-04:00'}]});assert.equal(x.certified,false)});
+test('minute-only mark cutoff fails',()=>{const x=certifyMark({...opts,mark:{...mark,cutoffTimestamp:'2026-10-07T10:00-04:00'}});assert.equal(x.certified,false)});
+test('changed historical entry stays flagged, not deleted',()=>{const x=reviewEntryMutations([lot],[{...lot,entryPrice:105}]);assert.equal(x.changes.length,1);assert.deepEqual(x.excluded,[])});
+test('missing evidence can never certify history',()=>{const x=certifyHistory({marks:[mark],lots:[lot],sourceId:'frozen-mark'});assert.equal(x.status,'PARTIAL');assert.equal(x.certified,0)});
