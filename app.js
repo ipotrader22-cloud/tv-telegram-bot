@@ -9453,7 +9453,7 @@ function renderRiskManagementHtml() {
 // LOGIN HTML
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function renderLoginHtml(errorMessage = '') {
+function renderLoginHtml(errorMessage = '', nextPath = '') {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9601,6 +9601,7 @@ function renderLoginHtml(errorMessage = '') {
     <h1>Dashboard access</h1>
     <p>Enter your personal viewer code or the owner password. Viewer codes open the read-only dashboard only.</p>
     <form method="POST" action="/dashboard-login">
+      ${nextPath === "/trading-systems/swing-trading" ? '<input type="hidden" name="next" value="/trading-systems/swing-trading" />' : ""}
       <label for="password">Password or access code</label>
       <input id="password" name="password" type="password" autocomplete="one-time-code" autofocus />
       <button type="submit">Open Dashboard</button>
@@ -13576,9 +13577,30 @@ app.get('/trading-systems', (req, res) => {
   res.status(200).send(renderTradingSystemsHtml());
 });
 
+// Issue #331: authorize before loading or rendering Swing portfolio data.
+function safeSwingReturnPath(value) {
+  return value === '/trading-systems/swing-trading' ? value : '';
+}
+
+async function requireSwingAuthorization(req, res, next) {
+  setPrivateNoStoreHeaders(res);
+  res.vary('Cookie');
+  try {
+    const authorization = await getDashboardAuthorization(req);
+    if (authorization.authorized) return next();
+    if (req.path === '/api/swing-leaders') {
+      return res.status(401).json({ ok: false, error: 'swing_unauthorized' });
+    }
+    return res.redirect(302, '/login?next=%2Ftrading-systems%2Fswing-trading');
+  } catch (error) {
+    console.error('Swing authorization failure:', error);
+    return res.status(503).send('Authentication temporarily unavailable.');
+  }
+}
+
 const swingLeadersHandlers = createSwingLeadersHandlers({ getSheetsClient });
-app.get('/swing-leaders', swingLeadersHandlers.page);
-app.get('/api/swing-leaders', swingLeadersHandlers.api);
+app.get('/swing-leaders', requireSwingAuthorization, swingLeadersHandlers.page);
+app.get('/api/swing-leaders', requireSwingAuthorization, swingLeadersHandlers.api);
 
 app.get('/risk-management', (req, res) => {
   res.status(200).send(renderRiskManagementHtml());
@@ -13587,8 +13609,9 @@ app.get('/risk-management', (req, res) => {
 app.get('/login', async (req, res) => {
   setPrivateNoStoreHeaders(res);
   const authorization = await getDashboardAuthorization(req);
-  if (authorization.authorized) return res.redirect('/dashboard');
-  res.status(200).send(renderLoginHtml());
+  const nextPath = safeSwingReturnPath(req.query.next);
+  if (authorization.authorized) return res.redirect(nextPath || '/dashboard');
+  res.status(200).send(renderLoginHtml('', nextPath));
 });
 
 
@@ -14097,6 +14120,7 @@ app.post('/dashboard-login', async (req, res) => {
   }
 
   const password = String(req.body.password || '').trim();
+  const nextPath = safeSwingReturnPath(req.body.next);
   const ownerKey = String(OWNER_DASHBOARD_KEY || '').trim();
 
   if (safeSecretEquals(password, ownerKey)) {
@@ -14108,23 +14132,23 @@ app.post('/dashboard-login', async (req, res) => {
       sameSite: 'strict',
       maxAge: DASHBOARD_SESSION_HOURS * 60 * 60 * 1000,
     });
-    return res.redirect('/dashboard');
+    return res.redirect(nextPath || '/dashboard');
   }
 
   try {
     const viewerCode = await findDashboardAccessCodeByCode(password);
     if (!isDashboardAccessCodeActive(viewerCode)) {
-      return res.status(401).send(renderLoginHtml('Incorrect, disabled, or expired access code.'));
+      return res.status(401).send(renderLoginHtml('Incorrect, disabled, or expired access code.', nextPath));
     }
 
     const codeExpiresAt = Date.parse(viewerCode.expires_at);
     const sessionExpiresAt = Math.min(codeExpiresAt, Date.now() + DASHBOARD_SESSION_HOURS * 60 * 60 * 1000);
     setDashboardSessionCookie(res, 'viewer', viewerCode.id, sessionExpiresAt);
     void touchDashboardViewerCodeLogin(viewerCode);
-    return res.redirect('/dashboard');
+    return res.redirect(nextPath || '/dashboard');
   } catch (error) {
     console.error('Dashboard viewer login error:', error);
-    return res.status(503).send(renderLoginHtml('Viewer-code login is temporarily unavailable. Please try again.'));
+    return res.status(503).send(renderLoginHtml('Viewer-code login is temporarily unavailable. Please try again.', nextPath));
   }
 });
 
