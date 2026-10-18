@@ -5,12 +5,14 @@ const {Client}=require('pg');
 const {auditAll}=require('./replay-all.cjs');
 const {auditSnapshots}=require('./snapshot-audit.cjs');
 const {auditValuation,auditImmutableEntries}=require('./valuation-integrity.cjs');
+const {certifyHistory}=require('./historical-certification.cjs');
 function inspectPayload(p){
  const realized=auditAll(p);
  const frozen=auditSnapshots({closed:p.closed,active:p.active,marks:p.equity,asOf:p.asOf});
  const valuation=auditValuation(p.active||[]);
+ const historical=Array.isArray(p.historicalEvidence?.marks)?certifyHistory(p.historicalEvidence):{status:'PARTIAL',certified:0,total:0,reports:[],gate:'NO_TIMESTAMPED_HISTORICAL_EVIDENCE'};
  const entryIntegrity=Array.isArray(p.previousActive)?auditImmutableEntries(p.previousActive,p.active||[]):{status:'NOT_VERIFIED',changes:[],deleted:0};
- return {asOf:p.asOf,realized:{status:realized.status,dates:realized.dates,failed:realized.failed},frozen:{status:frozen.status,errors:frozen.errors,unverified:frozen.unverified.length,unverifiedByDate:frozen.unverified.map(x=>({date:x.date,gate:x.gate})).sort((a,b)=>a.date.localeCompare(b.date)||a.gate.localeCompare(b.gate))},valuation:{status:valuation.status,errors:valuation.errors,marketValue:valuation.marketValue,unrealized:valuation.unrealized},entryIntegrity,activeCount:p.active.length,source:'IMPORTED_SNAPSHOT_NOT_LIVE'};
+ return {asOf:p.asOf,realized:{status:realized.status,dates:realized.dates,failed:realized.failed},frozen:{status:frozen.status,errors:frozen.errors,unverified:frozen.unverified.length,unverifiedByDate:frozen.unverified.map(x=>({date:x.date,gate:x.gate})).sort((a,b)=>a.date.localeCompare(b.date)||a.gate.localeCompare(b.gate))},valuation:{status:valuation.status,errors:valuation.errors,marketValue:valuation.marketValue,unrealized:valuation.unrealized},entryIntegrity,historical,activeCount:p.active.length,source:'IMPORTED_SNAPSHOT_NOT_LIVE'};
 }
 async function compareStored({url}){
  const client=new Client({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:5000});
@@ -21,7 +23,7 @@ async function compareStored({url}){
   await client.query('COMMIT');
   if(!r.rowCount)return {status:'MISSING_IMPORT'};
   const a=inspectPayload(r.rows[0].payload);
-  return {...a,checksum:r.rows[0].checksum,storedAt:r.rows[0].received_at,status:a.valuation.status!=='PASS'||a.entryIntegrity.status==='REVIEW_REQUIRED'?'BLOCKED':a.realized.status==='PASS'&&a.frozen.status==='PASS'?'PASS':a.realized.status==='PASS'&&a.frozen.status==='PARTIAL'?'PARTIAL':'BLOCKED'};
+  return {...a,checksum:r.rows[0].checksum,storedAt:r.rows[0].received_at,status:a.valuation.status!=='PASS'||a.entryIntegrity.status==='REVIEW_REQUIRED'?'BLOCKED':a.realized.status!=='PASS'||a.frozen.status==='FAIL'?'BLOCKED':a.historical.status==='PASS'&&a.frozen.status==='PASS'?'PASS':'PARTIAL'};
  }finally{await client.end()}
 }
 module.exports={inspectPayload,compareStored};
