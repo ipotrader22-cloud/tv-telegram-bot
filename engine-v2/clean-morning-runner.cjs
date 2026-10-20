@@ -4,9 +4,12 @@
 const {firstDayPortfolio}=require('./first-day-selector.cjs');
 const {commitShadowRun}=require('./clean-ledger.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
+const {validateMorningTrigger}=require('./nyse-morning-clock.cjs');
 async function runFirstSession({date=EPOCH,runAt,sessionProvider,researchProvider,quoteProvider,url,commit=commitShadowRun}={}){
  const fail=(reason,details=[])=>({status:'BLOCKED',reason,details,published:false});
  if(date!==EPOCH)return fail('NOT_FIRST_SESSION');
+ const clock=validateMorningTrigger({date,runAt});
+ if(clock.status!=='PASS')return fail('NYSE_1000_TRIGGER_INVALID',[clock.reason]);
  if(!sessionProvider||!researchProvider||!quoteProvider)return fail('MISSING_VERIFIED_PROVIDER');
  if(typeof sessionProvider.getSession!=='function'||typeof researchProvider.getBatch!=='function'||typeof quoteProvider.getQuotes!=='function')return fail('INVALID_PROVIDER_CONTRACT');
  // Fetch under an explicit timestamp; no data is synthesized on outages.
