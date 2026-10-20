@@ -8,7 +8,7 @@ function validateMorningTrigger({date,runAt}={}){
  if(!s.isTradingDay)return bad('NYSE_CLOSED');
  const et=localET(runAt);
  if(et.date!==date)return bad('SESSION_DATE_MISMATCH');
- if(et.minute<600||et.minute>605||(et.minute===605&&new Date(runAt).getUTCSeconds()>0))return bad('OUTSIDE_1000_ET_WINDOW');
+ if(et.minute<600||et.minute>605||(et.minute===605&&(new Date(runAt).getUTCSeconds()>0||new Date(runAt).getUTCMilliseconds()>0)))return bad('OUTSIDE_1000_ET_WINDOW');
  return {status:'PASS',date,sourceId:s.sourceId};
 }
 module.exports={validateMorningTrigger};
