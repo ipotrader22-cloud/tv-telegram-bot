@@ -7,6 +7,8 @@ function bridgeQuoteProvider({loadAuthenticatedPayload}={}){
   if(!tickers.length)return [];
   const data=await loadAuthenticatedPayload({date,runAt,tickers});
   if(data?.authenticated!==true)throw Error('Authenticated Render evidence missing');
+  const receipt=Date.parse(data.receivedAt||'');
+  if(!Number.isFinite(receipt)||receipt>Date.parse(runAt)||Date.parse(runAt)-receipt>90000)throw Error('Render quote receipt missing or stale');
   const checked=fromExistingBridge({payload:data.payload,date,at:runAt,tickers});
   if(checked.status!=='PASS')throw Error('Quote evidence blocked: '+checked.reason);
   return checked.quotes;
