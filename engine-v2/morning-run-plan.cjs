@@ -3,12 +3,15 @@
 const {createHash}=require('node:crypto');
 const {EPOCH,buildDailySnapshot}=require('./clean-slate-portfolio.cjs');
 const {score,key}=require('./core.cjs');
+const {validateMorningTrigger}=require('./nyse-morning-clock.cjs');
 const iso=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(x)&&Number.isFinite(Date.parse(x));
 function planMorningRun({date,runAt,session,positions=[],closed=[],research=[],quotes=[],lastApproved=null,previousRun=null}={}){
  const blocked=(reason,details=[])=>({status:'BLOCKED',reason,details,epoch:EPOCH,date:date||null,publishable:false,previousApproved: lastApproved?.runId||null});
  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||date<EPOCH)return blocked('INVALID_SESSION_DATE');
  if(session?.date!==date||session?.isTradingDay!==true||session?.providerVerified!==true)return blocked('NYSE_SESSION_NOT_VERIFIED');
  if(!iso(runAt)||new Date(runAt).toLocaleDateString('en-CA',{timeZone:'America/New_York'})!==date)return blocked('RUN_TIMESTAMP_DATE_MISMATCH');
+ const clock=validateMorningTrigger({date,runAt});
+ if(clock.status!=='PASS')return blocked('NYSE_1000_TRIGGER_INVALID',[clock.reason]);
  const runId='engine2|'+EPOCH+'|'+date+'|morning';
  if(previousRun?.runId===runId)return {status:'ALREADY_PLANNED',runId,publishable:false,previousApproved:lastApproved?.runId||null};
  const failures=[],rmap=new Map(research.map(x=>[x.ticker,x])),qmap=new Map(quotes.map(x=>[x.ticker,x]));
