@@ -3,6 +3,7 @@
 // Providers are external verified sources; missing one blocks, no invented inputs.
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
+const {validateMorningTrigger}=require('./nyse-morning-clock.cjs');
 const {firstDayPortfolio}=require('./first-day-selector.cjs');
 const {reviewExisting}=require('./ongoing-cycle.cjs');
 const {commitShadowRun,readLastCleanState}=require('./clean-ledger.cjs');
@@ -15,6 +16,8 @@ async function runCleanCycle({
  if(!researchProvider?.getBatch||!quoteProvider?.getQuotes)return fail('INPUT_PROVIDER_NOT_CONFIGURED');
  let session;try{session=sessionEvidence(date)}catch(e){return fail('NYSE_CALENDAR_INVALID',e.message)}
  if(!session.isTradingDay)return {status:'SKIPPED_CLOSED_MARKET',date,published:false};
+ const clock=validateMorningTrigger({date,runAt});
+ if(clock.status!=='PASS')return fail('NYSE_1000_TRIGGER_INVALID',clock.reason);
  let previous;
  try{previous=await getPrior({url})}catch(e){return fail('PRIOR_LEDGER_UNAVAILABLE',e.message)}
  if(date===EPOCH&&previous)return fail('EPOCH_ALREADY_INITIALIZED');
