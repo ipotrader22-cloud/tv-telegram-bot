@@ -33,6 +33,17 @@ function verifyPublication({manifest,sheet,api,html}={}){
  if(sheet.snapshotDate!==p.date||api.snapshotDate!==p.date||html.snapshotDate!==p.date)return fail('STALE_SNAPSHOT_DATE');
  if(sheet.activeCount!==p.model.activeCount||api.activeCount!==p.model.activeCount||html.activeCount!==p.model.activeCount)return fail('MEMBERSHIP_MISMATCH');
  if(!api.snapshotId||api.snapshotId!==html.snapshotId)return fail('HTML_API_FINGERPRINT_MISMATCH');
+ // A matching count can conceal different tickers. Verify full identity and dates.
+ const expected=p.active.map(x=>x.ticker).sort();
+ if(new Set(expected).size!==expected.length)return fail('DUPLICATE_MODEL_MEMBERSHIP');
+ for(const surface of [sheet,api,html]){
+  if(!Array.isArray(surface.tickers)||surface.tickers.length!==expected.length||
+    new Set(surface.tickers).size!==surface.tickers.length||
+    JSON.stringify([...surface.tickers].sort())!==JSON.stringify(expected))return fail('TICKER_MEMBERSHIP_MISMATCH');
+  if(!Array.isArray(surface.reviewDates)||surface.reviewDates.length!==expected.length||
+    surface.reviewDates.some(d=>d!==p.date))return fail('STALE_OR_MISSING_REVIEW_DATES');
+ }
+ if(sheet.snapshotId!==api.snapshotId||api.snapshotId!==manifest.fingerprint)return fail('UNPROVEN_MANIFEST_FINGERPRINT');
  if(!api.noStore||!html.noStore||api.stale||html.stale)return fail('CACHE_OR_STALE_RESPONSE');
  if(api.reviewDates?.some(d=>d!==p.date)||html.reviewDates?.some(d=>d!==p.date))return fail('STALE_REVIEW_DATE');
  if(!sheet.protectedFormulasVerified)return fail('PROTECTED_FORMULAS_NOT_PROVEN');
