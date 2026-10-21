@@ -172,7 +172,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         data = signal()
         await self.open_position(data)
         with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
-             patch("bridge.smio_eod_policy.eod_due", return_value=True):
+             patch("bridge.smio_eod_policy.eod_due", return_value=True), \
+             patch("bridge.smio_demo_contract.time.time", return_value=datetime(2026,10,22,15,55,tzinfo=ZoneInfo('America/New_York')).timestamp()):
             await self.engine.eod_failsafe_pass(datetime(2026,10,22,15,55,tzinfo=ZoneInfo('America/New_York')))
             self.assertEqual(self.core.ib.position, 0)
             self.assertEqual(len(self.core.ib.cancels), 1)
