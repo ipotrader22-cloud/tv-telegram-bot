@@ -154,6 +154,50 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.core.outbox), 1)
         self.core.outbox.clear()  # fake Render acknowledged OPEN publication
 
+    async def test_scheduler_eod_full_broker_fixture_to_flat_callback(self):
+        """Scheduler -> validated CLOSE -> exact target cancel -> filled flat -> callback."""
+        data = signal()
+        await self.open_position(data)
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=True):
+            await self.engine.eod_failsafe_pass()
+            self.assertEqual(self.core.ib.position, 0)
+            self.assertEqual(len(self.core.ib.cancels), 1)
+            self.assertEqual(len([x for x in self.core.ib.mutations if x.startswith("SMIOC_")]), 1)
+            await self.engine.reconcile()
+            callback = next(iter(self.core.outbox.values()))
+            self.assertEqual(callback["event"], "EOD_CLOSE")
+            self.assertTrue(callback["broker_confirmed_flat"])
+            self.assertEqual(callback["position_after_close"], 0)
+            await self.engine.eod_failsafe_pass()
+            self.assertEqual(len([x for x in self.core.ib.mutations if x.startswith("SMIOC_")]), 1)
+
+    async def test_scheduler_disabled_or_outside_rth_mutates_nothing(self):
+        data = signal()
+        await self.open_position(data)
+        before = list(self.core.ib.mutations)
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": ""}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=False):
+            await self.engine.eod_failsafe_pass()
+        self.assertEqual(self.core.ib.mutations, before)
+        self.core.rth = False
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=True):
+            await self.engine.eod_failsafe_pass()
+        self.assertEqual(self.core.ib.mutations, before)
+        self.assertEqual(self.core.ib.cancels, [])
+
+    async def test_scheduler_unproven_history_blocks_without_cancel(self):
+        data = signal()
+        await self.open_position(data)
+        self.core.history_covered = False
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=True):
+            await self.engine.eod_failsafe_pass()
+        self.assertEqual(self.core.ib.cancels, [])
+        self.assertEqual(self.core.ib.position, 10)
+        self.assertFalse(any(x.startswith("SMIOC_") for x in self.core.ib.mutations))
+
     async def test_buy_sell_and_rsi_only_close(self):
         for side in ("LONG", "SHORT"):
             with self.subTest(side=side):
