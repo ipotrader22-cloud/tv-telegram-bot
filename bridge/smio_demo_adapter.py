@@ -374,34 +374,61 @@ class DemoLifecycle:
         self.save(state)
 
     async def eod_failsafe_pass(self):
-        """Opt-in SMIO demo EOD. Reuse strict CLOSE handling, never bypass ownership."""
-        from datetime import datetime as _datetime
+        """SMIO-only demo exit five minutes ahead of confirmed IB stock session end."""
+        from datetime import datetime as _datetime, time as _time
         from zoneinfo import ZoneInfo
         try:
-            from .smio_eod_policy import eod_due, eod_close_payload
+            from .smio_eod_policy import eod_due, eod_close_payload, session_close_from_ib
         except ImportError:
-            from smio_eod_policy import eod_due, eod_close_payload
+            from smio_eod_policy import eod_due, eod_close_payload, session_close_from_ib
 
-        if not eod_due(_datetime.now(ZoneInfo("America/New_York")),
-                       os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "")):
+        enabled = os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "").strip().lower()
+        if enabled not in ("1", "true", "yes", "on"):
             return
-        # A wall-clock window alone never proves the stock market is open.
+        now = _datetime.now(ZoneInfo("America/New_York"))
+        # Cheap, conservative scan boundary. Session close is always sourced from IB.
+        if now.weekday() >= 5 or not (_time(12, 50) <= now.time() < _time(16, 0)):
+            return
         if not self.core.is_us_stock_rth_now():
             return
-        # Read-only journal snapshot: handle() reacquires both existing locks,
-        # reloads state and validates each synthetic EOD CLOSE before IB activity.
         state = self.load()
         for row in list(state["setups"].values()):
             if row.get("state") != "OPEN" or row.get("close_signal") or row.get("close"):
                 continue
             payload = row.get("payload")
-            if not isinstance(payload, dict) or not row.get("filled_qty"):
+            if not isinstance(payload, dict) or payload.get("sec_type") != "STK" or not row.get("filled_qty"):
                 continue
-            close = eod_close_payload(payload, _datetime.now(ZoneInfo("America/New_York")))
-            result = await self.handle(close)
-            if result.get("status") not in ("smio_demo_accepted", "smio_duplicate"):
-                print("[SMIO DEMO EOD BLOCKED]", payload.get("symbol", ""),
-                      result.get("status", ""), result.get("reason", ""))
+            symbol = payload.get("symbol", "")
+            try:
+                # No cached or hard-coded holiday/early-close assumptions:
+                # each authorized close requires one authoritative IB contract session.
+                async with self.core.ib_lock:
+                    await self.environment()
+                    contract = await self.core.qualify_contract(payload)
+                    response = await self.core.bounded_ib_refresh_request(
+                        "reqContractDetailsAsync", contract
+                    )
+                details = list(response.get("values") or [])
+                if not response.get("ok") or len(details) != 1:
+                    raise ValueError("IB session details unavailable or ambiguous")
+                session_tz = self.core.ib_session_timezone(
+                    getattr(details[0], "timeZoneId", "")
+                )
+                close_time = session_close_from_ib(
+                    details[0], now, session_tz, self.core.parse_ib_session_stamp
+                )
+                if close_time is None:
+                    raise ValueError("IB stock session schedule missing or ambiguous")
+                if not eod_due(now, enabled, close_time):
+                    continue
+                close = eod_close_payload(payload, now, close_time)
+                result = await self.handle(close)
+                if result.get("status") not in ("smio_demo_accepted", "smio_duplicate"):
+                    print("[SMIO DEMO EOD BLOCKED]", symbol,
+                          result.get("status", ""), result.get("reason", ""))
+            except Exception as exc:
+                print("[SMIO DEMO EOD BLOCKED]", symbol, type(exc).__name__,
+                      str(exc))
 
     async def reconcile(self):
         async with self.routing_lock, self.core.ib_lock:
