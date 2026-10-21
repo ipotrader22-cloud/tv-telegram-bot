@@ -373,6 +373,36 @@ class DemoLifecycle:
         row[key] = delivery
         self.save(state)
 
+    async def eod_failsafe_pass(self):
+        """Opt-in SMIO demo EOD. Reuse strict CLOSE handling, never bypass ownership."""
+        from datetime import datetime as _datetime
+        from zoneinfo import ZoneInfo
+        try:
+            from .smio_eod_policy import eod_due, eod_close_payload
+        except ImportError:
+            from smio_eod_policy import eod_due, eod_close_payload
+
+        if not eod_due(_datetime.now(ZoneInfo("America/New_York")),
+                       os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "")):
+            return
+        # A wall-clock window alone never proves the stock market is open.
+        if not self.core.is_us_stock_rth_now():
+            return
+        # Read-only journal snapshot: handle() reacquires both existing locks,
+        # reloads state and validates each synthetic EOD CLOSE before IB activity.
+        state = self.load()
+        for row in list(state["setups"].values()):
+            if row.get("state") != "OPEN" or row.get("close_signal") or row.get("close"):
+                continue
+            payload = row.get("payload")
+            if not isinstance(payload, dict) or not row.get("filled_qty"):
+                continue
+            close = eod_close_payload(payload, _datetime.now(ZoneInfo("America/New_York")))
+            result = await self.handle(close)
+            if result.get("status") not in ("smio_demo_accepted", "smio_duplicate"):
+                print("[SMIO DEMO EOD BLOCKED]", payload.get("symbol", ""),
+                      result.get("status", ""), result.get("reason", ""))
+
     async def reconcile(self):
         async with self.routing_lock, self.core.ib_lock:
             if not any(row["state"] != "CLOSED" for row in self.load()["setups"].values()):
@@ -556,6 +586,7 @@ def install_smio_demo_adapter(core):
             if lifecycle.config_path.exists():
                 try:
                     await lifecycle.reconcile()
+                    await lifecycle.eod_failsafe_pass()
                 except Exception as error:
                     print("[SMIO DEMO RECONCILIATION BLOCKED]", str(error))
             await asyncio.sleep(2)
