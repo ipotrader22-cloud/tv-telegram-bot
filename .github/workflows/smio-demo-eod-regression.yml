@@ -1,0 +1,29 @@
+name: SMIO Demo EOD Offline Regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "bridge/smio_demo_adapter.py"
+      - "bridge/smio_eod_policy.py"
+      - "bridge/smio_demo_contract.py"
+      - "tests/test_smio_demo_lifecycle.py"
+      - "tests/test_smio_eod_policy.py"
+      - ".github/workflows/smio-demo-eod-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smio-eod-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile SMIO modules and tests
+        run: python -m py_compile bridge/smio_demo_adapter.py bridge/smio_eod_policy.py bridge/smio_demo_contract.py tests/test_smio_demo_lifecycle.py tests/test_smio_eod_policy.py
+      - name: Run EOD policy and broker-fixture lifecycle tests
+        run: python -m unittest -v tests.test_smio_eod_policy tests.test_smio_demo_lifecycle tests.test_smio_rsi_gate
