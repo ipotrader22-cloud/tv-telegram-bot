@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace as N
 import unittest
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from bridge.smio_demo_adapter import DemoLifecycle, digest, send_callback
@@ -108,6 +109,18 @@ class Core:
     async def ensure_ib_connected(self): pass
     async def get_position_size(self, symbol): return self.ib.position
     async def qualify_contract(self, data): return N(symbol=data["symbol"])
+    async def bounded_ib_refresh_request(self, method, contract):
+        return {"ok": True, "values": [N(
+            timeZoneId="America/New_York",
+            liquidHours="20261022:0930-20261022:1600"
+        )]}
+    def ib_session_timezone(self, name): return ZoneInfo("America/New_York")
+    def parse_ib_session_stamp(self, value, default_day, zone):
+        try:
+            date, clock = value.split(":")
+            return datetime.strptime(date + clock, "%Y%m%d%H%M").replace(tzinfo=zone)
+        except Exception:
+            return None
     def validate_pretrade_risk(self, *args): pass
     def validate_entry_timing(self, *args): pass
     def is_us_stock_rth_now(self): return self.rth
@@ -160,7 +173,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         await self.open_position(data)
         with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
              patch("bridge.smio_eod_policy.eod_due", return_value=True):
-            await self.engine.eod_failsafe_pass()
+            await self.engine.eod_failsafe_pass(datetime(2026,10,22,15,55,tzinfo=ZoneInfo('America/New_York')))
             self.assertEqual(self.core.ib.position, 0)
             self.assertEqual(len(self.core.ib.cancels), 1)
             self.assertEqual(len([x for x in self.core.ib.mutations if x.startswith("SMIOC_")]), 1)
