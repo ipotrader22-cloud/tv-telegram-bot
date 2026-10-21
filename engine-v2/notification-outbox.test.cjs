@@ -10,3 +10,9 @@ test('verified readback retains staging identity',()=>{
  assert.equal(result.recipient,'fixture');
  assert.equal(result.deliveryEnabled,false);
 });
+
+test('absent fingerprint cannot stage delivery',()=>{
+ const manifest={payload:{runId:'engine2|2026-10-19|2026-10-21|morning'}};
+ const verification={status:'VERIFIED',runId:manifest.payload.runId};
+ assert.equal(notificationIntent({manifest,verification,recipient:'fixture'}).status,'BLOCKED');
+});
