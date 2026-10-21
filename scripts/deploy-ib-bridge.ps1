@@ -7,6 +7,7 @@ param(
     [string]$SmiRuntimeSafetySourcePath = "",
     [string]$SmioDemoAdapterSourcePath = "",
     [string]$SmioDemoContractSourcePath = "",
+    [string]$SmioEodPolicySourcePath = "",
     [string]$QuoteReconnectAdapterSourcePath = "",
     [string]$SmioGateSourcePath = "",
     [string]$TargetPath = "C:\ib_bridge\ib_bridge.py",
@@ -27,6 +28,9 @@ if ([string]::IsNullOrWhiteSpace($SmioDemoAdapterSourcePath)) {
 }
 if ([string]::IsNullOrWhiteSpace($SmioDemoContractSourcePath)) {
     $SmioDemoContractSourcePath = Join-Path $scriptRoot "..\bridge\smio_demo_contract.py"
+}
+if ([string]::IsNullOrWhiteSpace($SmioEodPolicySourcePath)) {
+    $SmioEodPolicySourcePath = Join-Path $scriptRoot "..\bridge\smio_eod_policy.py"
 }
 if ([string]::IsNullOrWhiteSpace($QuoteReconnectAdapterSourcePath)) {
     $QuoteReconnectAdapterSourcePath = Join-Path $scriptRoot "..\bridge\quote_reconnect_adapter.py"
@@ -72,10 +76,11 @@ $smiAdapterSource = (Resolve-Path -LiteralPath $SmiAdapterSourcePath).Path
 $smiRuntimeSafetySource = (Resolve-Path -LiteralPath $SmiRuntimeSafetySourcePath).Path
 $smioDemoAdapterSource = (Resolve-Path -LiteralPath $SmioDemoAdapterSourcePath).Path
 $smioDemoContractSource = (Resolve-Path -LiteralPath $SmioDemoContractSourcePath).Path
+$smioEodPolicySource = (Resolve-Path -LiteralPath $SmioEodPolicySourcePath).Path
 $quoteReconnectAdapterSource = (Resolve-Path -LiteralPath $QuoteReconnectAdapterSourcePath).Path
 $smioGateSource = (Resolve-Path -LiteralPath $SmioGateSourcePath).Path
 
-foreach ($requiredSource in @($source, $coreSource, $renderCallbackCompatSource, $smiAdapterSource, $smiRuntimeSafetySource, $smioDemoAdapterSource, $smioDemoContractSource, $quoteReconnectAdapterSource, $smioGateSource)) {
+foreach ($requiredSource in @($source, $coreSource, $renderCallbackCompatSource, $smiAdapterSource, $smiRuntimeSafetySource, $smioDemoAdapterSource, $smioDemoContractSource, $quoteReconnectAdapterSource, $smioGateSource, $smioEodPolicySource)) {
     if (-not (Test-Path -LiteralPath $requiredSource -PathType Leaf)) {
         throw "Bridge source does not exist: $requiredSource"
     }
@@ -90,6 +95,7 @@ $smiAdapterTargetPath = Join-Path $targetDirectory "smi_forward_adapter.py"
 $smiRuntimeSafetyTargetPath = Join-Path $targetDirectory "smi_runtime_safety.py"
 $smioDemoAdapterTargetPath = Join-Path $targetDirectory "smio_demo_adapter.py"
 $smioDemoContractTargetPath = Join-Path $targetDirectory "smio_demo_contract.py"
+$smioEodPolicyTargetPath = Join-Path $targetDirectory "smio_eod_policy.py"
 $quoteReconnectAdapterTargetPath = Join-Path $targetDirectory "quote_reconnect_adapter.py"
 $smioGateTargetPath = Join-Path $targetDirectory "smio_rsi_gate.py"
 
@@ -137,6 +143,7 @@ Invoke-Compile $python $smiRuntimeSafetySource
 Invoke-Compile $python $source
 Invoke-Compile $python $smioDemoAdapterSource
 Invoke-Compile $python $smioDemoContractSource
+Invoke-Compile $python $smioEodPolicySource
 Invoke-Compile $python $quoteReconnectAdapterSource
 Invoke-Compile $python $smioGateSource
 
@@ -149,6 +156,7 @@ $files = @(
     @{ Source = $smiRuntimeSafetySource; Target = $smiRuntimeSafetyTargetPath },
     @{ Source = $smioDemoAdapterSource; Target = $smioDemoAdapterTargetPath },
     @{ Source = $smioDemoContractSource; Target = $smioDemoContractTargetPath },
+    @{ Source = $smioEodPolicySource; Target = $smioEodPolicyTargetPath },
     @{ Source = $quoteReconnectAdapterSource; Target = $quoteReconnectAdapterTargetPath },
     @{ Source = $smioGateSource; Target = $smioGateTargetPath }
 )
@@ -170,6 +178,7 @@ try {
     Copy-Item -LiteralPath $smiRuntimeSafetySource -Destination $smiRuntimeSafetyTargetPath -Force
     Copy-Item -LiteralPath $smioDemoAdapterSource -Destination $smioDemoAdapterTargetPath -Force
     Copy-Item -LiteralPath $smioDemoContractSource -Destination $smioDemoContractTargetPath -Force
+    Copy-Item -LiteralPath $smioEodPolicySource -Destination $smioEodPolicyTargetPath -Force
     Copy-Item -LiteralPath $quoteReconnectAdapterSource -Destination $quoteReconnectAdapterTargetPath -Force
     Copy-Item -LiteralPath $smioGateSource -Destination $smioGateTargetPath -Force
     Copy-Item -LiteralPath $source -Destination $TargetPath -Force
@@ -181,6 +190,7 @@ try {
     Invoke-Compile $python $TargetPath
     Invoke-Compile $python $smioDemoAdapterTargetPath
     Invoke-Compile $python $smioDemoContractTargetPath
+    Invoke-Compile $python $smioEodPolicyTargetPath
     Invoke-Compile $python $quoteReconnectAdapterTargetPath
     Invoke-Compile $python $smioGateTargetPath
 
@@ -224,6 +234,7 @@ try {
     Write-Output "Deployed: $smiRuntimeSafetyTargetPath"
     Write-Output "Deployed: $smioDemoAdapterTargetPath"
     Write-Output "Deployed: $smioDemoContractTargetPath"
+    Write-Output "Deployed: $smioEodPolicyTargetPath"
     Write-Output "Deployed: $quoteReconnectAdapterTargetPath"
     Write-Output "Deployed: $smioGateTargetPath"
 } catch {
