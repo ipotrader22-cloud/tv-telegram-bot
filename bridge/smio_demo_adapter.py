@@ -373,7 +373,7 @@ class DemoLifecycle:
         row[key] = delivery
         self.save(state)
 
-    async def eod_failsafe_pass(self):
+    async def eod_failsafe_pass(self, now_value=None):
         """SMIO-only demo exit five minutes ahead of confirmed IB stock session end."""
         from datetime import datetime as _datetime, time as _time
         from zoneinfo import ZoneInfo
@@ -385,7 +385,10 @@ class DemoLifecycle:
         enabled = os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "").strip().lower()
         if enabled not in ("1", "true", "yes", "on"):
             return
-        now = _datetime.now(ZoneInfo("America/New_York"))
+        now = now_value or _datetime.now(ZoneInfo("America/New_York"))
+        if now.tzinfo is None:
+            return
+        now = now.astimezone(ZoneInfo("America/New_York"))
         # Cheap, conservative scan boundary. Session close is always sourced from IB.
         if now.weekday() >= 5 or not (_time(12, 50) <= now.time() < _time(16, 0)):
             return
