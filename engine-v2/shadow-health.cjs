@@ -9,6 +9,7 @@ const {auditValuation}=require('./valuation-integrity.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {pollRenderQuoteStatus}=require('./render-quote-observer.cjs');
+const {checkMinuteFeed}=require('./live-quote-probe.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const {saveSummary}=require('./compare-history.cjs');
@@ -36,7 +37,21 @@ let comparison={status:'PENDING'};
 let liveStatus={status:'NOT_CONFIGURED'};
 let historyStats={checks:0,changed_checks:0};
 let renderQuotes={status:'NOT_CONFIGURED',tradeEvidenceVerified:false};
+let lastProbe={status:'NOT_CHECKED',tradeEvidenceVerified:false,modelEntryEligible:false};
+let probeTime=0,probeFlight=null;
+function marketProbe(){
+ if(Date.now()-probeTime<60000)return Promise.resolve(lastProbe);
+ if(probeFlight)return probeFlight;
+ probeFlight=checkMinuteFeed().then(result=>{lastProbe=result;probeTime=Date.now();return result})
+  .finally(()=>{probeFlight=null});
+ return probeFlight;
+}
 const server=http.createServer((req,res)=>{
+ if(req.method==='GET'&&req.url==='/v2/market-data/probe'){
+  marketProbe().then(result=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({mode:'READ_ONLY',provider:'YAHOO_CHART',...result}))})
+   .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'MARKET_PROBE_FAILED',tradeEvidenceVerified:false,modelEntryEligible:false}))});
+  return;
+ }
  if(req.url!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
  res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',cleanSlate:{epoch:EPOCH,mode:'SHADOW_ONLY',autonomousPublisherEnabled:false,sessionCalendarReady:sessionEvidence(EPOCH).isTradingDay,marketDataProviderReady:false,researchProviderReady:false,readyForProduction:false,renderQuoteObservationStatus:renderQuotes.status,renderQuoteObservationCount:renderQuotes.symbols?.length||0,renderQuoteTradeEvidenceVerified:false},valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
