@@ -59,7 +59,13 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
    }
    for(const [id] of priorOpen)if(!currentOpen.has(id)&&!currentClosed.has(id))throw Error('Open lot vanished without close '+id);
   }
-  const manifest={research:check.evidence,quotes:inputs.quotes.map(q=>({ticker:q.ticker,sourceId:q.sourceId,timestamp:q.timestamp}))};
+  const activeTickers=new Set(inputs.positions.map(x=>x.ticker));
+  const publicCandidates=inputs.researchBatch.items.filter(x=>!activeTickers.has(x.ticker)).map(x=>({
+   ticker:x.ticker,score:x.score,review_date:inputs.date,
+   brief_reason:typeof x.publicNote==='string'&&x.publicNote.length<=260?x.publicNote:'Full nine-factor review completed '+inputs.date
+  }));
+  const manifest={research:check.evidence,publicCandidates,
+   quotes:inputs.quotes.map(q=>({ticker:q.ticker,sourceId:q.sourceId,timestamp:q.timestamp}))};
   const hash=createHash('sha256').update(JSON.stringify({plan:check.plan,events:check.events,manifest,active:inputs.positions,closed:inputs.closed})).digest('hex');
   const prev=await db.query('SELECT payload_hash FROM vixale_v2.clean_runs WHERE epoch=$1 AND session_date=$2',[EPOCH,inputs.date]);
   if(prev.rowCount){await db.query('COMMIT');return {status:prev.rows[0].payload_hash===hash?'IDEMPOTENT_REPLAY':'CONFLICTING_DATE_RUN',runId:check.plan.runId,published:false}}
@@ -81,9 +87,9 @@ async function readLastCleanState({url,clientFactory=opts=>new Client(opts)}){
   if((await db.query('SELECT current_database() AS db')).rows[0].db!==name)throw Error('Database identity mismatch');
   const exists=await db.query("SELECT to_regclass('vixale_v2.clean_daily_state') AS table_name");
   if(!exists.rows[0].table_name){await db.query('COMMIT');return null}
-  const q=await db.query('SELECT session_date::text AS date,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 ORDER BY session_date DESC LIMIT 1',[EPOCH]);
+  const q=await db.query('SELECT d.session_date::text AS date,d.active,d.closed,r.evidence_manifest FROM vixale_v2.clean_daily_state d JOIN vixale_v2.clean_runs r ON d.run_id=r.run_id WHERE d.epoch=$1 ORDER BY d.session_date DESC LIMIT 1',[EPOCH]);
   await db.query('COMMIT');
-  return q.rowCount?{epoch:EPOCH,date:q.rows[0].date,active:q.rows[0].active,closed:q.rows[0].closed}:null;
+  return q.rowCount?{epoch:EPOCH,date:q.rows[0].date,active:q.rows[0].active,closed:q.rows[0].closed,candidates:q.rows[0].evidence_manifest?.publicCandidates||[]}:null;
  }catch(e){try{await db.query('ROLLBACK')}catch{}throw e}finally{await db.end()}
 }
 module.exports={ddl,dbName,validateMorningCommit,commitShadowRun,readLastCleanState};
