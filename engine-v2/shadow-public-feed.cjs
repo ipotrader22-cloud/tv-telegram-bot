@@ -10,7 +10,7 @@ function makeReadOnlyFeed(latest){
  if(!latest){
   return withSnapshotId({version:2,status:'INCEPTION_ONLY_NOT_REVIEWED',epoch:EPOCH,
    snapshot_date:null,starting_model_equity:100000,current_model_equity:null,
-   active_portfolio:[],closed_trades:[],candidates:[],candidate_count:0,active_count:0,
+   active_portfolio:[],closed_trades:[],candidates:[],candidate_count:0,equity_history:[{date:EPOCH,equity:100000,realized:0,unrealized:0}],active_count:0,
    authoritative:false,published:false,notices:['No independently verified Engine 2 review has been committed.']});
  }
  if(latest.epoch!==EPOCH||!latest.date||!Array.isArray(latest.active)||!Array.isArray(latest.closed))
@@ -30,11 +30,13 @@ function makeReadOnlyFeed(latest){
  const unrealized=latest.active.reduce((s,x)=>s+10000*(x.currentPrice/x.entryPrice-1),0);
  if(active.length>10||!Number.isFinite(realized)||!Number.isFinite(unrealized))throw Error('INVALID_NORMALIZED_MODEL_STATE');
  const equity=100000+realized+unrealized;
+ const equityHistory=[{date:EPOCH,equity:100000,realized:0,unrealized:0},
+  ...(latest.history||[]).filter(x=>x.date>=EPOCH)];
  const candidates=(latest.candidates||[]).filter(x=>x&&/^[A-Z][A-Z0-9.-]{0,14}$/.test(x.ticker)&&!active.some(p=>p.ticker===x.ticker))
   .map(x=>({ticker:x.ticker,score:x.score,review_date:x.review_date,brief_reason:x.brief_reason}));
  return withSnapshotId({version:2,status:'SHADOW_REVIEW_COMMITTED_NOT_PUBLISHED',epoch:EPOCH,snapshot_date:latest.date,
   starting_model_equity:100000,current_model_equity:equity,realized_model_pnl:realized,
-  unrealized_model_pnl:unrealized,active_portfolio:active,closed_trades:closes,candidates,candidate_count:candidates.length,active_count:active.length,
+  unrealized_model_pnl:unrealized,active_portfolio:active,closed_trades:closes,candidates,candidate_count:candidates.length,equity_history:equityHistory,active_count:active.length,
   authoritative:false,published:false,notices:['Research model only, not brokerage executions. Shadow publication disabled.']});
 }
 async function readShadowPublicFeed({url,read=readLastCleanState}={}){
