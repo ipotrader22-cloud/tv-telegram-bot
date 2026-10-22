@@ -1,3 +1,26 @@
+## Oct 22, 2026 — Header-only Google Sheet grid blocks broker-confirmed entries
+
+Observed in `Webhook Inbox` for EQT and RTX: `ENTRY_FILL` was in `RETRY`
+with `Range ('Open Positions'!A2:L2) exceeds grid limits. Max rows: 1`.
+After EOD removes the last open row, `deleteDimension` may leave the
+`Open Positions` tab with only its header row. The strict row writer
+selected row 2 but did not extend the physical grid before
+`spreadsheets.values.update`. This is a **publication/storage** failure,
+not evidence that TWS failed to fill a trade.
+
+The strict writer now reads the destination sheet's actual
+`gridProperties.rowCount` and uses `appendDimension` to extend the grid
+only when the next row exceeds capacity, **before** writing the row.
+Do not change strategy execution, re-submit orders, or fabricate ledger
+events to compensate for publication failures.
+
+Regression: `node tests/test_sheet_grid_capacity.js` verifies header-only
+grid growth and no unnecessary resize with spare capacity. As always,
+`node --check app.js` remains mandatory. Incident and reconciliation
+procedure: GitHub Issue #341. The Oct 22 EQT/RTX historical events were
+not retroactively reconstructed by this fix; stale queued callbacks
+require separate execution/close evidence review before any replay.
+
 ## Issue #337 / ADR-024 — Session-aware Day Trading return (2026-10-22)
 
 Connected Chrome reproduced the owner's same-host flow on EN and RU: an

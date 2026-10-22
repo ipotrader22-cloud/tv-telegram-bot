@@ -111,9 +111,16 @@ function webhookSheets() {
     async get() {
       return {
         data: {
-          sheets: [{ properties: { title: 'Webhook Inbox', sheetId: 1 } }],
+          sheets: [{ properties: { title: 'Webhook Inbox', sheetId: 1, gridProperties: { rowCount: Math.max(rows.length, 1) } } }],
         },
       };
+    },
+    async batchUpdate({ requestBody }) {
+      const growth = requestBody.requests?.[0]?.appendDimension;
+      assert.strictEqual(growth?.sheetId, 1);
+      assert.strictEqual(growth?.dimension, 'ROWS');
+      assert.ok(growth.length >= 1);
+      return { data: {} };
     },
     values: {
       async get({ range }) {
