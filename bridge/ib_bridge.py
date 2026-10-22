@@ -12,7 +12,6 @@ import sys
 try:  # package import in repository/tests
     from . import ib_bridge_core as _core
     from .quote_reconnect_adapter import install_quote_reconnect_adapter
-    from .engine_v2_quote_evidence import install_engine2_tws_evidence
     from .render_callback_compat import install_render_callback_compat
     from .smi_forward_adapter import install_smi_forward_adapter
     from .smi_runtime_safety import install_smi_runtime_safety
@@ -21,7 +20,6 @@ try:  # package import in repository/tests
 except ImportError:  # standalone C:\\ib_bridge deployment
     import ib_bridge_core as _core
     from quote_reconnect_adapter import install_quote_reconnect_adapter
-    from engine_v2_quote_evidence import install_engine2_tws_evidence
     from render_callback_compat import install_render_callback_compat
     from smi_forward_adapter import install_smi_forward_adapter
     from smi_runtime_safety import install_smi_runtime_safety
@@ -32,7 +30,6 @@ install_smi_forward_adapter(_core)
 install_smi_runtime_safety(_core)
 install_render_callback_compat(_core)
 install_quote_reconnect_adapter(_core)
-install_engine2_tws_evidence(_core)
 install_smio_rsi_gate(_core)
 install_smio_demo_adapter(_core)
 
