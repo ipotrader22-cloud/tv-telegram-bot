@@ -25,7 +25,7 @@ The static Log In link is not evidence of cookie loss.
 ## Implementation and validation
 
 Feature branch: `fix/337-day-trading-session-navigation`.
-Source/test status only until the merge/deployment evidence below is updated.
+Implementation is merged and deployed; exact evidence follows below.
 
 The exact Day Trading GET/HEAD path checks existing owner/viewer authorization
 using originalUrl despite website preload rewrites. Valid sessions redirect to
@@ -53,10 +53,39 @@ Swing data to be public; this task preserves Issue #331 protection.
 
 ## Merge/deployment evidence
 
-Fix PR: pending.
-Merged fix SHA: pending.
-Render deploy for fix: pending; no claim of live fix yet.
-Post-deploy connected-browser verification: pending.
+Fix PR: #338, squash-merged after required App Webhook Regression run
+`39779537559` completed **success**. Branch commit:
+`bbbb08aaefd55c928dd6074d33849ebe747393b3`; its Git tree
+`2216f06819d4059ec473f9fa709fdf05cc8f712f` exactly matched the locally tested tree.
+The connected GitHub app published the reviewed blobs after shell push lacked
+credentials; no direct main push or force push was used.
+
+Merged fix SHA: `6dea2b38ef1753a4b370dc37c4e668e2f42fe9dc`.
+Normal Auto-Deploy `dep-dbd06f5g1s2s738i1c6g` reported **live** at
+`2026-10-22T12:36:54.944833Z` with that exact SHA. Application startup log:
+`Server running on port 10000` at `2026-10-22T12:36:53.180358285Z`.
+No error-level app logs were returned for the initial post-live inspection.
+
+Post-deploy connected Chrome **PASS**: existing valid sessions on EN and RU
+return from Home through the normal Day Trading link directly to the private
+Dashboard, without clicking Log In or re-entering credentials. Desktop and
+mobile layouts were checked (automated fixture: 1440/390px; connected mobile
+content widths: EN 417px with existing site zoom, RU 375px). Mobile back -> Home,
+forward -> Dashboard and hard reload preserve the private view on both hosts.
+A RU tab caught a transient 502 during the disk-backed service restart; a
+reload after Live restored its valid session. No infrastructure setting changed.
+
+Anonymous production HTTP checks on both hosts **PASS**: canonical Day page
+200 with private no-store and Vary: Cookie; Dashboard 302 to /login with the same
+cache protections; Swing API 401 with private no-store and Vary: Cookie.
+Owner/viewer credential-login, logout and expiry were fully exercised in the
+isolated HTTP/Chromium fixtures. Fresh production viewer-code login, production
+logout and deliberate production expiry were not performed; live checks reused
+existing approved browser sessions and do not claim those additional cases.
+
+This documentation follow-up records the verified runtime SHA. A documentation-
+only merge may advance GitHub main beyond that SHA without changing runtime
+code; `[skip render]` avoids an unnecessary second service restart.
 
 ## Boundaries and rollback
 
