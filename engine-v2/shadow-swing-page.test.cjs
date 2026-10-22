@@ -14,6 +14,6 @@ test('private notes and HTML injection never leak into shadow page',()=>{
   active_count:1,active_portfolio:[{ticker:'AMD',entry_date:'2026-10-22',entry_price:100,current_model_reference_price:102,
   score:80,last_full_review_date:'2026-10-22',privateFactorNotes:'secret <script>'}]};
  const html=renderShadowSwing(f);
- assert.match(html,/AMD/);assert.match(html,/\+\\\$200.00/);assert.ok(!html.includes('privateFactorNotes'));
+ assert.match(html,/AMD/);assert.ok(html.includes('+$200.00'));assert.ok(!html.includes('privateFactorNotes'));
 });
 test('old epoch or invalid feed fails closed',()=>assert.throws(()=>renderShadowSwing({...empty,epoch:'2026-08-21'})));
