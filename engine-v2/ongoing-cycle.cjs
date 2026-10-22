@@ -2,10 +2,10 @@
 // Deterministic prospective daily transitions after the first clean-slate day.
 // Read-only/pure; close events carry evidence. No Sheet/broker/web publishing.
 const {openingStop,targetTouch,score,pnl,snapshot}=require('./core.cjs');
-const {validateQuote}=require('./market-data-adapter.cjs');
+const {validateModelReference}=require('./market-data-adapter.cjs');
 const {validateResearchBatch}=require('./research-attestation.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
-function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openings=[],targets=[]}={}){
+function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openings=[],targets=[],allowIndicativeFallback=false}={}){
  const bad=(reason,details=[])=>({status:'BLOCKED',reason,details,publishable:false});
  if(date<=EPOCH||previous?.epoch!==EPOCH||!Array.isArray(previous?.active)||!Array.isArray(previous?.closed))return bad('INVALID_PREVIOUS_EPOCH');
  const vetted=validateResearchBatch(researchBatch||{});
@@ -20,8 +20,8 @@ function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openin
  for(const old of previous.active){
   const id=old.ticker+'|'+old.entryDate;
   if(seenClosed.has(id)){errors.push('PREVIOUS_OVERLAP:'+id);continue}
-  const research=byResearch.get(old.ticker),quote=byQuotes.get(old.ticker),checked=validateQuote({ticker:old.ticker,quote,at:runAt,date});
-  if(!research||checked.status!=='PASS'){errors.push('MISSING_HOLDING_EVIDENCE:'+id);continue}
+  const research=byResearch.get(old.ticker),quote=byQuotes.get(old.ticker),checked=validateModelReference({ticker:old.ticker,quote,at:runAt,date,allowIndicativeFallback});
+  if(!research||!['VERIFIED_LIVE_TRADE','INDICATIVE_REFERENCE_VALIDATED'].includes(checked.status)){errors.push('MISSING_HOLDING_EVIDENCE:'+id);continue}
   const base={...old,entryPrice:old.entryPrice,heldAtOpen:old.entryDate<date};
   const opening=byOpen.get(old.ticker),high=byTarget.get(old.ticker);
   if(base.heldAtOpen&&(!opening||opening.confirmed!==true||opening.session!=='REGULAR'||opening.minuteET!=='09:30'||opening.date!==date||!opening.sourceId)){errors.push('OPENING_STOP_EVIDENCE_MISSING:'+id);continue}
@@ -53,9 +53,9 @@ function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openin
  const held=new Set([...active,...closed].map(x=>x.ticker));
  const eligible=researchBatch.items.filter(x=>x.score>=70&&x.entryEligible===true&&Boolean(x.entryEvidenceId)&&(x.score>=80||Boolean(x.compellingEntryEvidenceId))&&!held.has(x.ticker)).sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker));
  for(const candidate of eligible.slice(0,10-active.length)){
-  const quote=byQuotes.get(candidate.ticker),check=validateQuote({ticker:candidate.ticker,quote,at:runAt,date});
-  if(check.status!=='PASS')return bad('ENTRY_QUOTE_NOT_VERIFIED',[candidate.ticker+':'+check.reason]);
-  active.push({ticker:candidate.ticker,entryDate:date,entryTime:quote.timestamp,entryPrice:check.price,currentPrice:check.price,shares:Math.floor(10000/check.price),entryScore:candidate.score,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date});
+  const quote=byQuotes.get(candidate.ticker),check=validateModelReference({ticker:candidate.ticker,quote,at:runAt,date,allowIndicativeFallback});
+  if(!['VERIFIED_LIVE_TRADE','INDICATIVE_REFERENCE_VALIDATED'].includes(check.status))return bad('ENTRY_QUOTE_NOT_VERIFIED',[candidate.ticker+':'+check.reason]);
+  active.push({ticker:candidate.ticker,entryDate:date,entryTime:quote.timestamp,entryPrice:check.price,currentPrice:check.price,shares:Math.floor(10000/check.price),entryScore:candidate.score,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date,modelEntryPriceKind:check.quoteKind||'LAST_TRADE',modelEntryIndicative:check.indicative===true});
   events.push({eventId:[candidate.ticker,date,'OPEN',date].join('|'),ticker:candidate.ticker,entryDate:date,type:'OPEN',timestamp:quote.timestamp,sourceId:quote.sourceId});
  }
  let model;try{model=snapshot({researchComplete:true,reviewDate:date,active,closed})}catch(e){return bad('SNAPSHOT_INVALID',[e.message])}
