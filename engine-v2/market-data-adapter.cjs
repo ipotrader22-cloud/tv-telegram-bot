@@ -25,4 +25,17 @@ async function fetchVerifiedQuote({provider,ticker,at,date}){
  const checked=validateQuote({ticker,quote,at,date});
  return checked.status==='PASS'?{...checked,session:'REGULAR',verified:true}:checked;
 }
-module.exports={validateQuote,fetchVerifiedQuote,localET};
+// Owner-authorized Yahoo/GOOGLEFINANCE indicative marks are distinct from
+// verified TWS LAST trades, and can only be used within their declared mode.
+function validateModelReference({ticker,quote,at,date,allowIndicativeFallback=false,maxAgeMs=300000}={}){
+ if(quote?.indicative===true){
+  if(!allowIndicativeFallback)return {status:'BLOCKED',reason:'INDICATIVE_REFERENCE_NOT_AUTHORIZED'};
+  if(quote.provider!=='YAHOO_CHART'||quote.priceKind!=='MINUTE_BAR_CLOSE'||quote.modelFill!==false||
+     quote.delayed!==true||quote.verified!==true||quote.indicative!==true)return {status:'BLOCKED',reason:'INVALID_FALLBACK_PROVENANCE'};
+  const check=validateQuote({ticker,quote,at,date,maxAgeMs});
+  return check.status==='PASS'?{...check,status:'INDICATIVE_REFERENCE_VALIDATED',modelFill:false,indicative:true,quoteKind:quote.priceKind}:check;
+ }
+ const checked=validateQuote({ticker,quote,at,date,maxAgeMs});
+ return checked.status==='PASS'?{...checked,status:'VERIFIED_LIVE_TRADE',modelFill:false,indicative:false}:checked;
+}
+module.exports={validateQuote,validateModelReference,fetchVerifiedQuote,localET};
