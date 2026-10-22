@@ -31,6 +31,7 @@ function normalizeDailyEvidence({artifact,universe,reviewDate}={}){
   }
   const raw={ticker,date:reviewDate,lastCompletedSessionDate:m.lastCompleteDate,completedDailyBars:m.dailyBars,
    ma20:m.sma20,ma50:m.sma50,ma200:m.sma200,volumeRvol:m.lastCompleteRelativeVolume,
+   lastCompletedClose:m.lastCompleteClose,upDownVolume20:m.upDownVolume20,range5Pct:m.range5Pct,
    range20Pct:m.range20Pct,high20:m.high20,high60:m.high60,return20Pct:m.return20Pct,return60Pct:m.return60Pct,
    quoteTime:m.quoteTime,quotePrice:m.price,
    sourceUrl:r.source,sourceHash:createHash('sha256').update(JSON.stringify(r)).digest('hex')};
