@@ -56,7 +56,7 @@ function renderShadowSwing(feed){
  '<p class="section-sub">'+(committed?'Verified Engine 2.0 model review for '+esc(current)+'.':'Clean-slate inception. No independently verified morning ranking has been published.')+'</p></section>'+
  '<section class="section" id="active-portfolio"><div class="section-heading"><h2>Active Portfolio</h2></div>'+
  '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Prices are indicative where noted.</p>'+
- table(['Ticker','Score','Entry','Current','Return','P&L, $','Reviewed'],active,'No independently verified new positions.')+'</section>'+
+ table(['Ticker','Score','Entry','Current','Quantity','TP','SL','Return','P&L, $','Research Note'],active,'No independently verified new positions.')+'</section>'+
  '<section class="section" id="potential-candidates"><h2>Candidates</h2>'+
  '<p class="section-sub">Candidate rankings appear only after complete, dated nine-factor research.</p>'+
  table(['Ticker','Score','Reason','Reviewed'],'','No verified candidate review available.')+'</section>'+
