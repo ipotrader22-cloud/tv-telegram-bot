@@ -30,6 +30,8 @@ function renderShadowSwing(feed){
   '<td>'+esc(p.exit_date)+'</td><td>'+money(p.entry_price)+'</td><td>'+money(p.exit_price)+'</td>'+
   '<td class="'+(p.normalized_model_pnl>=0?'gain':'loss')+'">'+signed(p.normalized_model_pnl)+'</td>'+
   '<td>'+esc(p.reason)+'</td></tr>').join('');
+ const candidates=(feed.candidates||[]).map(p=>'<tr><td><strong>'+esc(p.ticker)+'</strong></td>'+
+  '<td>'+esc(p.score)+' / 100</td><td>'+esc(p.brief_reason)+'</td><td>'+esc(p.review_date)+'</td></tr>').join('');
  const modelPnl=committed?Number(feed.realized_model_pnl)+Number(feed.unrealized_model_pnl):NaN;
  const fingerprint=feed.snapshot_id||createHash('sha256').update(JSON.stringify(feed)).digest('hex');
  const table=(headers,rows,empty)=>'<div class="table-wrap"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+
@@ -59,7 +61,7 @@ function renderShadowSwing(feed){
  table(['Ticker','Score','Entry','Current','Quantity','TP','SL','Return','P&L, $','Research Note'],active,'No independently verified new positions.')+'</section>'+
  '<section class="section" id="potential-candidates"><h2>Candidates</h2>'+
  '<p class="section-sub">Candidate rankings appear only after complete, dated nine-factor research.</p>'+
- table(['Ticker','Score','Reason','Reviewed'],'','No verified candidate review available.')+'</section>'+
+ table(['Ticker','Score','Why We’re Watching','Reviewed'],candidates,'No verified candidate review available.')+'</section>'+
  '<section class="section" id="closed-trades"><h2>Closed Trades</h2>'+
  table(['Ticker','Entry Date','Exit Date','Entry','Exit','Model P&L','Reason'],closed,'No new-epoch closed trades.')+'</section>'+
  '<section class="section equity-chart-card" id="equity-history"><div class="section-heading"><h2>Equity History</h2><span>'+esc(current||'Inception')+'</span></div>'+
