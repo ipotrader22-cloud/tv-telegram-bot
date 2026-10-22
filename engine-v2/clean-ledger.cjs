@@ -87,9 +87,16 @@ async function readLastCleanState({url,clientFactory=opts=>new Client(opts)}){
   if((await db.query('SELECT current_database() AS db')).rows[0].db!==name)throw Error('Database identity mismatch');
   const exists=await db.query("SELECT to_regclass('vixale_v2.clean_daily_state') AS table_name");
   if(!exists.rows[0].table_name){await db.query('COMMIT');return null}
-  const q=await db.query('SELECT d.session_date::text AS date,d.active,d.closed,r.evidence_manifest FROM vixale_v2.clean_daily_state d JOIN vixale_v2.clean_runs r ON d.run_id=r.run_id WHERE d.epoch=$1 ORDER BY d.session_date DESC LIMIT 1',[EPOCH]);
+  const q=await db.query('SELECT d.session_date::text AS date,d.active,d.closed,r.evidence_manifest,r.model FROM vixale_v2.clean_daily_state d JOIN vixale_v2.clean_runs r ON d.run_id=r.run_id WHERE d.epoch=$1 ORDER BY d.session_date ASC',[EPOCH]);
   await db.query('COMMIT');
-  return q.rowCount?{epoch:EPOCH,date:q.rows[0].date,active:q.rows[0].active,closed:q.rows[0].closed,candidates:q.rows[0].evidence_manifest?.publicCandidates||[]}:null;
+  if(!q.rowCount)return null;
+  const last=q.rows.at(-1);
+  const history=q.rows.map(r=>({date:r.date,equity:Number(r.model?.equity),
+   realized:Number(r.model?.realized),unrealized:Number(r.model?.unrealized)}));
+  if(history.some(x=>!Number.isFinite(x.equity)||!Number.isFinite(x.realized)||!Number.isFinite(x.unrealized)))
+    throw Error('UNCERTIFIED_EQUITY_HISTORY');
+  return {epoch:EPOCH,date:last.date,active:last.active,closed:last.closed,
+    candidates:last.evidence_manifest?.publicCandidates||[],history};
  }catch(e){try{await db.query('ROLLBACK')}catch{}throw e}finally{await db.end()}
 }
 module.exports={ddl,dbName,validateMorningCommit,commitShadowRun,readLastCleanState};
