@@ -23,7 +23,9 @@ vm.runInNewContext(source.slice(start, end) + '\nthis.writer = writeSheetRowStri
   }};
   const result = await sandbox.writer(sheets, 'Open Positions', 'A', 'L', ['CAT'], 'A:V');
   assert.equal(result, 2);
-  assert.deepEqual(calls[0][1], {sheetId:123,dimension:'ROWS',length:1});
+  assert.equal(calls[0][1].sheetId, 123);
+  assert.equal(calls[0][1].dimension, 'ROWS');
+  assert.equal(calls[0][1].length, 1);
   assert.equal(calls[1][1], "'Open Positions'!A2:L2");
 
   calls.length = 0;
