@@ -9,7 +9,7 @@ const {reviewExisting}=require('./ongoing-cycle.cjs');
 const {commitShadowRun,readLastCleanState}=require('./clean-ledger.cjs');
 async function runCleanCycle({
  date,runAt,url,researchProvider,quoteProvider,openProvider,targetProvider,
- getPrior=readLastCleanState,commit=commitShadowRun
+ getPrior=readLastCleanState,commit=commitShadowRun,allowIndicativeFallback=false
 }={}){
  const fail=(reason,detail)=>({status:'BLOCKED',reason,detail,published:false});
  if(!date||date<EPOCH||!Number.isFinite(Date.parse(runAt||'')))return fail('INVALID_DATE_OR_TIMESTAMP');
@@ -37,8 +37,8 @@ async function runCleanCycle({
   }
  }catch(e){return fail('SOURCE_READ_FAILED',e.message)}
  const proposal= !previous
-  ?firstDayPortfolio({date,runAt,session,researchBatch,quotes})
-  :reviewExisting({date,runAt,session,researchBatch,previous,quotes,openings,targets});
+  ?firstDayPortfolio({date,runAt,session,researchBatch,quotes,allowIndicativeFallback})
+  :reviewExisting({date,runAt,session,researchBatch,previous,quotes,openings,targets,allowIndicativeFallback});
  if(proposal.status!=='VALIDATED_SHADOW_ONLY')return fail('MODEL_EVIDENCE_BLOCKED',proposal);
  const active=proposal.positions||proposal.active,closed=proposal.closed||[];
  const research=active.map(a=>({ticker:a.ticker,reviewDate:date,
