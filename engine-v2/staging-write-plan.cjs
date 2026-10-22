@@ -54,7 +54,7 @@ function buildStagingWrites(input={}){
    form('=IFERROR(J'+portRow+'/($P$6+$P$5),0)'),
    form('=IF(C'+portRow+'="","",XLOOKUP(C'+portRow+',\'Open Positions\'!$C$4:$C$194,\'Open Positions\'!$F$4:$F$194,""))'),
    form('=IF(C'+portRow+'="","",XLOOKUP(C'+portRow+',\'Open Positions\'!$C$4:$C$194,\'Open Positions\'!$G$4:$G$194,""))'),
-   form('=F'+portRow+'*G'+portRow+'),
+   form('=F'+portRow+'*G'+portRow),
    form('=IFERROR(GOOGLEFINANCE(B'+portRow+'&":"&C'+portRow+',"price"),"")'),
    form('=IF(I'+portRow+'="","",G'+portRow+'*I'+portRow+')'),
    form('=IF(J'+portRow+'="","",J'+portRow+'-H'+portRow+')'),
