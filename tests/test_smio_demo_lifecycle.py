@@ -167,6 +167,46 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.core.outbox), 1)
         self.core.outbox.clear()  # fake Render acknowledged OPEN publication
 
+    async def test_session_diagnostic_rejects_non_stock_and_invalid_symbol(self):
+        self.assertEqual((await self.engine.session_diagnostic("ES 202610"))["error"],
+                         "invalid_stock_symbol")
+        async def wrong_type(data):
+            return N(symbol=data["symbol"], secType="FOP")
+        with patch.object(self.core, "qualify_contract", side_effect=wrong_type):
+            result = await self.engine.session_diagnostic("APA")
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.core.ib.mutations, [])
+
+    async def test_session_diagnostic_reads_ib_without_mutations(self):
+        now = datetime.now(ZoneInfo("America/New_York"))
+        day = now.strftime("%Y%m%d")
+        async def stock(data):
+            return N(symbol=data["symbol"], secType="STK")
+        async def details(method, contract):
+            return {"ok": True, "values": [N(
+                contract=N(secType="STK"), timeZoneId="America/New_York",
+                liquidHours=f"{day}:0930-{day}:1600"
+            )]}
+        with patch.object(self.core, "qualify_contract", side_effect=stock), \
+             patch.object(self.core, "bounded_ib_refresh_request", side_effect=details):
+            result = await self.engine.session_diagnostic("APA")
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["session_verified"], result)
+        self.assertIn("15:55:00", result["smio_eod_start_et"])
+        self.assertEqual(self.core.ib.mutations, [])
+        self.assertEqual(self.core.ib.cancels, [])
+
+    async def test_session_diagnostic_missing_details_fails_closed(self):
+        async def stock(data):
+            return N(symbol=data["symbol"], secType="STK")
+        async def none(method, contract):
+            return {"ok": False, "values": []}
+        with patch.object(self.core, "qualify_contract", side_effect=stock), \
+             patch.object(self.core, "bounded_ib_refresh_request", side_effect=none):
+            result = await self.engine.session_diagnostic("APA")
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.core.ib.mutations, [])
+
     async def test_scheduler_eod_full_broker_fixture_to_flat_callback(self):
         """Scheduler -> validated CLOSE -> exact target cancel -> filled flat -> callback."""
         data = signal()
