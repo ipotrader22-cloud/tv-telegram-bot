@@ -44,7 +44,7 @@ function renderShadowSwing(feed){
   '<td>'+esc(p.score)+' / 100</td><td>'+esc(p.brief_reason)+'</td><td>'+esc(p.review_date)+'</td></tr>').join('');
  const history=Array.isArray(feed.equity_history)?feed.equity_history:[];
  const dated=history.filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x.date)&&Number.isFinite(x.equity)).slice(-120);
- let chartMarkup='<div class="chart" role="img" aria-label="Equity History pending first complete reviewed session">$100,000 inception — verified history starts with the first complete review.</div>';
+ let chartMarkup='<div class="chart" role="img" aria-label="Equity History pending first complete reviewed session">$100,000.00 inception — verified history starts with the first complete review.</div>';
  if(dated.length>=2){
   const vals=dated.map(x=>x.equity-100000),lo=Math.min(0,...vals),hi=Math.max(0,...vals);
   const span=Math.max(100,hi-lo),x=i=>50+(i/(dated.length-1))*590,y=v=>174-((v-lo)/span)*130;
