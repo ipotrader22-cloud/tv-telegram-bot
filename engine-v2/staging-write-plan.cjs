@@ -42,8 +42,23 @@ function buildStagingWrites(input={}){
  validateInput(input);
  const {manifest,positions,closed,equityRowIndex,timeEt}=input;
  const p=manifest.payload,byTicker=new Map(positions.map(x=>[x.ticker,x]));
- const openTop=[],openSide=[],portTop=[],portStatus=[],feedActive=[];
+ const openTop=[],openSide=[],openMath=[],portTop=[],portMath=[],portStatus=[],feedActive=[];
  for(let i=0;i<10;i++){
+  const opRow=4+i,portRow=8+i;
+  openMath.push([
+   form('=IFERROR(GOOGLEFINANCE(B'+opRow+'&":"&C'+opRow+',"price"),"")'),
+   form('=IF(I'+opRow+'="","",I'+opRow+'*G'+opRow+')'),
+   form('=IF(J'+opRow+'="","",J'+opRow+'-H'+opRow+')'),
+   form('=IFERROR((I'+opRow+'-F'+opRow+')/F'+opRow+',"")')]);
+  portMath.push([
+   form('=IFERROR(J'+portRow+'/($P$6+$P$5),0)'),
+   form('=IF(C'+portRow+'="","",XLOOKUP(C'+portRow+',\'Open Positions\'!$C$4:$C$194,\'Open Positions\'!$F$4:$F$194,""))'),
+   form('=IF(C'+portRow+'="","",XLOOKUP(C'+portRow+',\'Open Positions\'!$C$4:$C$194,\'Open Positions\'!$G$4:$G$194,""))'),
+   form('=F'+portRow+'*G'+portRow+'),
+   form('=IFERROR(GOOGLEFINANCE(B'+portRow+'&":"&C'+portRow+',"price"),"")'),
+   form('=IF(I'+portRow+'="","",G'+portRow+'*I'+portRow+')'),
+   form('=IF(J'+portRow+'="","",J'+portRow+'-H'+portRow+')'),
+   form('=IFERROR((I'+portRow+'-F'+portRow+')/F'+portRow+',"")')]);
   const a=p.active[i],lot=a&&byTicker.get(a.ticker);
   if(!lot){
    openTop.push(Array.from({length:8},blank));
@@ -69,8 +84,10 @@ function buildStagingWrites(input={}){
  }
  const requests=[
   rect(ids.open,3,0,openTop),
+  rect(ids.open,3,8,openMath),
   rect(ids.open,3,12,openSide),
   rect(ids.portfolio,7,0,portTop),
+  rect(ids.portfolio,7,4,portMath),
   rect(ids.portfolio,7,12,portStatus),
   rect(ids.feed,13,0,feedActive)
  ];
