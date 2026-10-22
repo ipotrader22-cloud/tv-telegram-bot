@@ -7,6 +7,16 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 const money=n=>Number.isFinite(n)?'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
 const signed=n=>Number.isFinite(n)?(n<0?'-':n>0?'+':'')+money(Math.abs(n)):'—';
 const percent=n=>Number.isFinite(n)?(n>0?'+':'')+(100*n).toFixed(2)+'%':'—';
+function equityFirst(html){
+ const start=html.indexOf('<section class="section equity-chart-card" id="equity-history">');
+ if(start<0)throw Error('EQUITY_SECTION_MISSING');
+ const stop=html.indexOf('</section>',start);
+ if(stop<0)throw Error('EQUITY_SECTION_UNCLOSED');
+ const end=stop+10,chart=html.slice(start,end),without=html.slice(0,start)+html.slice(end);
+ const pos=without.indexOf('<div class="metrics">');
+ if(pos<0)throw Error('METRIC_GRID_MISSING');
+ return without.slice(0,pos)+chart+without.slice(pos);
+}
 function renderShadowSwing(feed){
  if(!feed||feed.version!==2||feed.epoch!=='2026-10-19'||!Array.isArray(feed.active_portfolio)||
     !Array.isArray(feed.closed_trades)||feed.active_portfolio.length>10)throw Error('INVALID_ENGINE2_FEED');
@@ -46,7 +56,7 @@ function renderShadowSwing(feed){
  const fingerprint=feed.snapshot_id||createHash('sha256').update(JSON.stringify(feed)).digest('hex');
  const table=(headers,rows,empty)=>'<div class="table-wrap"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+
   (rows||'<tr><td class="empty" colspan="'+headers.length+'">'+esc(empty)+'</td></tr>')+'</tbody></table></div>';
- return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+ const fullHtml='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
  '<title>VIXALE Swing Leaders — Engine 2.0 Shadow Preview</title>'+
  '<style>:root{color-scheme:light;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;background:#f4f7f6;color:#172923}header{background:#102c26;color:#f8fcfa;padding:18px max(24px,calc((100vw - 1110px)/2))}header b{letter-spacing:.13em;font-size:19px}header small{display:block;color:#c8dcd3;font-size:12px;margin-top:6px}main{max-width:1110px;margin:0 auto;padding:28px 20px 70px}.intro{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:15px;margin-bottom:22px}.eyebrow{color:#3f7560;text-transform:uppercase;letter-spacing:.13em;font-size:11px;font-weight:800}.intro h1{margin:4px 0 9px;font-size:34px}.intro p{margin:0;color:#547268;max-width:710px;line-height:1.5}.notice{background:#fff7e6;border:1px solid #f1d9a8;border-radius:9px;padding:13px 16px;font-weight:600;font-size:13px;margin-bottom:24px}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.metric,.section{background:white;border:1px solid #e0e9e4;border-radius:12px;box-shadow:0 4px 22px #152f2310}.metric{padding:17px}.metric small{display:block;color:#6a8579;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.08em}.metric strong{display:block;margin-top:8px;font-size:23px}.section{padding:22px;margin:15px 0}.section-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}.section h2{font-size:20px;margin:0 0 15px}.section-sub{color:#668276;font-size:13px;margin:-5px 0 16px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:650px}th{text-align:left;color:#708c81;font-size:11px;text-transform:uppercase;letter-spacing:.045em;background:#f7faf9}td,th{padding:12px 10px;border-bottom:1px solid #ecf0ee}td{font-size:13px}.gain{color:#087c50;font-weight:700}.loss{color:#bb4e45;font-weight:700}.empty{text-align:center;color:#688477;padding:26px 12px}.chart{background:#f8fbf9;border:1px solid #e5eee8;border-radius:8px;min-height:190px;display:flex;align-items:center;justify-content:center;color:#688477;text-align:center;padding:20px}footer{color:#728980;font-size:12px;line-height:1.65;margin-top:30px}@media(max-width:720px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.intro h1{font-size:27px}.metric strong{font-size:19px}.section{padding:15px}}</style></head><body>'+
  '<header><b>VIXALE.</b><small>Three Systems / Swing Trading</small></header><main>'+
@@ -78,5 +88,6 @@ function renderShadowSwing(feed){
  chartMarkup+'</section>'+
  '<footer>Research/model portfolio only. Prices are reference marks, not broker fills. Published VIXALE model performance is separate from this development preview.<br>'+
  'Preview snapshot SHA-256: <code id="model-snapshot-id">'+esc(fingerprint)+'</code></footer></main></body></html>';
+ return equityFirst(fullHtml);
 }
 module.exports={renderShadowSwing};
