@@ -8,7 +8,7 @@ const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {score}=require('./core.cjs');
 function firstDayPortfolio({date,runAt,session,researchBatch,quotes,priorActive=[],priorClosed=[]}={}){
  const blocked=(reason,details=[])=>({status:'BLOCKED',reason,details,publishable:false});
- if(date!==EPOCH)return blocked('NOT_FIRST_SESSION');
+ if(typeof date!=='string'||date<EPOCH)return blocked('BEFORE_CLEAN_EPOCH');
  if(priorActive.length||priorClosed.length)return blocked('LEGACY_POSITIONS_NOT_ALLOWED');
  const evidence=validateResearchBatch(researchBatch||{});
  if(evidence.status!=='PASS')return blocked('UNVERIFIED_FULL_UNIVERSE',evidence.errors);
