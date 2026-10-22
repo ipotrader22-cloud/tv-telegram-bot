@@ -15,6 +15,7 @@ on:
       - "tests/test_vixale_edge_pending_eod_cleanup.js"
       - "tests/test_vixale_edge_pending_lifecycle.js"
       - "tests/test_webhook_fast_ack.js"
+      - "tests/test_sheet_grid_capacity.js"
       - "tests/test_issue331_swing_auth.js"
       - "tests/test_issue337_session_navigation.js"
       - "tests/test_swing_leaders_app_integration.js"
@@ -72,6 +73,9 @@ jobs:
 
       - name: Run option payload regression
         run: node tests/test_option_proof_payload.js
+
+      - name: Run strict Google Sheets grid-capacity regression
+        run: node tests/test_sheet_grid_capacity.js
 
       - name: Run webhook fast-ACK regression
         run: node tests/test_webhook_fast_ack.js
