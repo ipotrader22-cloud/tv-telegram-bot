@@ -20,8 +20,7 @@ async function runCleanCycle({
  if(clock.status!=='PASS')return fail('NYSE_1000_TRIGGER_INVALID',clock.reason);
  let previous;
  try{previous=await getPrior({url})}catch(e){return fail('PRIOR_LEDGER_UNAVAILABLE',e.message)}
- if(date===EPOCH&&previous)return fail('EPOCH_ALREADY_INITIALIZED');
- if(date!==EPOCH&&(!previous||previous.date>=date))return fail('NO_VALID_PRIOR_SESSION');
+ if(previous&&previous.date>=date)return fail('ALREADY_REVIEWED_OR_OUT_OF_ORDER');
  let researchBatch,quotes,openings=[],targets=[];
  try{
   researchBatch=await researchProvider.getBatch({date,runAt,session,previous});
@@ -37,7 +36,7 @@ async function runCleanCycle({
    if(!Array.isArray(openings)||!Array.isArray(targets))return fail('OPENING_OR_TARGET_EVIDENCE_MISSING');
   }
  }catch(e){return fail('SOURCE_READ_FAILED',e.message)}
- const proposal= date===EPOCH
+ const proposal= !previous
   ?firstDayPortfolio({date,runAt,session,researchBatch,quotes})
   :reviewExisting({date,runAt,session,researchBatch,previous,quotes,openings,targets});
  if(proposal.status!=='VALIDATED_SHADOW_ONLY')return fail('MODEL_EVIDENCE_BLOCKED',proposal);
