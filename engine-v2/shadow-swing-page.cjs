@@ -43,10 +43,10 @@ function renderShadowSwing(feed){
  '<div>Epoch <strong>October 19, 2026</strong></div></div>'+
  '<div class="notice" id="engine2-state" data-engine2-status="'+esc(feed.status)+'">'+esc(status)+
  ' · No broker orders or live website publication. '+(current?'Latest certified review: '+esc(current):'No certified review date available.')+'</div>'+
- '<div class="metrics"><div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+'</strong></div>+'
- '<div class="metric"><small>Candidates</small><strong>'+esc((feed.candidates||[]).length)+'</strong></div>+'
- '<div class="metric"><small>Cash</small><strong>'+(committed?((10-feed.active_count)*10).toFixed(1)+'%':'100.0%')+'</strong></div>+'
- '<div class="metric"><small>Model Allocation</small><strong>$10K / position</strong></div></div>+'
+ '<div class="metrics"><div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+'</strong></div>'+
+ '<div class="metric"><small>Candidates</small><strong>'+esc((feed.candidates||[]).length)+'</strong></div>'+
+ '<div class="metric"><small>Cash</small><strong>'+(committed?((10-feed.active_count)*10).toFixed(1)+'%':'100.0%')+'</strong></div>'+
+ '<div class="metric"><small>Model Allocation</small><strong>$10K / position</strong></div></div>'+
  '<section class="section" id="how-swing-leaders-works"><h2>How Swing Leaders Works</h2>'+
  '<p class="section-sub"><strong>Active Portfolio:</strong> Open model positions monitored for targets, opening stops and daily research scores.</p>'+
  '<p class="section-sub"><strong>Candidates:</strong> Stocks being watched; they are not open positions and may never be added.</p>'+
