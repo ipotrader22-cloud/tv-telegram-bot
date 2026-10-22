@@ -40,10 +40,10 @@ function renderShadowSwing(feed){
  '<div>Epoch <strong>October 19, 2026</strong></div></div>'+
  '<div class="notice" id="engine2-state" data-engine2-status="'+esc(feed.status)+'">'+esc(status)+
  ' · No broker orders or live website publication. '+(current?'Latest certified review: '+esc(current):'No certified review date available.')+'</div>'+
- '<div class="metrics"><div class="metric"><small>Starting Model Capital</small><strong>'+money(100000)+'</strong></div>'+
- '<div class="metric"><small>Model Equity</small><strong>'+money(committed?feed.current_model_equity:NaN)+'</strong></div>'+
- '<div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+' / 10</strong></div>'+
- '<div class="metric"><small>Total Model P&amp;L</small><strong>'+signed(modelPnl)+'</strong></div></div>'+
+ '<div class="metrics"><div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+'</strong></div>+'
+ '<div class="metric"><small>Candidates</small><strong>'+esc((feed.candidates||[]).length)+'</strong></div>+'
+ '<div class="metric"><small>Cash</small><strong>'+(committed?((10-feed.active_count)*10).toFixed(1)+'%':'100.0%')+'</strong></div>+'
+ '<div class="metric"><small>Model Allocation</small><strong>$10K / position</strong></div></div>+'
  '<section class="section" id="active-portfolio"><div class="section-heading"><h2>Active Portfolio</h2></div>'+
  '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Prices are indicative where noted.</p>'+
  table(['Ticker','Score','Entry','Current','Return','P&L, $','Reviewed'],active,'No independently verified new positions.')+'</section>'+
