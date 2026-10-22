@@ -1,3 +1,46 @@
+## Issue #337 / ADR-024 — Session-aware Day Trading return (2026-10-22)
+
+Connected Chrome reproduced the owner's same-host flow on EN and RU: an
+existing authorized `/dashboard` session survived Home navigation, reload and
+history navigation, but the Day Trading link opened the separate public
+`/trading-systems/day-trading` product page. Clicking Log In immediately returned
+to `/dashboard` without credential entry. This establishes a route-selection
+failure for the reproduced flow, not cookie expiration or failed login.
+
+`app.js` now installs `restoreDayTradingDashboard` before its routes. The existing
+website preloads rewrite the product URL to `/trading-systems` before application
+middleware runs, so this check must use `req.originalUrl`. GET/HEAD of the exact
+Day Trading product path checks existing `getDashboardAuthorization`; an approved
+owner/viewer session receives a same-host 302 to the existing protected
+`/dashboard`. Anonymous/invalid/expired sessions keep the public overview; they
+never receive protected positions. Unexpected authorization errors return 503.
+The session-dependent Day response/redirect, Dashboard and logout use private
+no-store and Vary: Cookie. Dashboard data/API and Swing authorization remain
+server-side. Navigation neither issues nor extends a session.
+
+Cookie signatures, lifetime, HttpOnly/Secure/SameSite, viewer-code validation,
+logout clearance and host-only cookie scope remain unchanged. A separate login
+on `www.vixale.com` and `ru.vixale.com` is still required; this patch does not
+expand trust to all subdomains. The public header's static Log In label remains
+an existing action link, not a reliable indicator of session status.
+
+Regression: `tests/test_issue337_session_navigation.js` loads every production
+preload and the real Express routes with disposable owner/viewer credentials
+and mocked Sheets. HTTP tests cover EN/RU, public return, GET/HEAD/reload
+requests, cache headers, signed cookies, logout, expiry, revoked/expired viewer
+codes, forged sessions and failure behavior. `ISSUE337_BROWSER_QA=1` also runs
+Chromium at 1440px/390px with real login forms, links, back/forward, reload,
+logout/history return and expiry. Browser tests use an isolated loopback HTTPS
+fixture with EN/RU Host selection, never production credentials or trading writes.
+The App Webhook Regression workflow runs both modes.
+
+Deployment must follow the standing clean-PR workflow, verify the exact Render
+commit and repeat connected-browser EN/RU desktop/mobile navigation. Source/test
+completion is not deployment proof. Rollback: revert this task's code commit
+through a PR and the normal main auto-deploy; no data/credential migration.
+TradingView, Pine, signals, risk, strategies, Sheets schemas/writers, bridge,
+TWS/IBKR and order execution are unchanged.
+
 ## Issue #331 — Swing Trading authenticated access (PR pending, 2026-10-18)
 
 The Swing research/model portfolio is private to an existing authenticated Dashboard owner or valid viewer-code session. Express routes `/swing-leaders` and `/api/swing-leaders` call the existing `getDashboardAuthorization` before their Google Sheets-backed handlers. Canonical `/trading-systems/swing-trading` is internally rewritten by `website_swing_canonical_refinement.js`; the legacy page route redirects to canonical. GET/HEAD render/data responses set private no-store and Vary: Cookie. Anonymous page requests redirect to existing branded `/login?next=%2Ftrading-systems%2Fswing-trading`; anonymous JSON requests return HTTP 401 without data. Auth failures do not fall back to public data.

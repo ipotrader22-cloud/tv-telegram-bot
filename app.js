@@ -18,6 +18,10 @@ const app = express();
 
 app.set('trust proxy', 1);
 
+// Preloaded website modules rewrite the Day product URL before app routes run.
+// Use originalUrl so an existing session returns to its protected working view.
+app.use(restoreDayTradingDashboard);
+
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(express.text({ type: '*/*', limit: '2mb' }));
@@ -13582,6 +13586,22 @@ app.get('/trading-systems', (req, res) => {
   res.status(200).send(renderTradingSystemsHtml());
 });
 
+// Issue #337: restore the authenticated working view on Day Trading navigation.
+async function restoreDayTradingDashboard(req, res, next, authorize = getDashboardAuthorization) {
+  const requestedPath = String(req.originalUrl || req.url || '').split('?')[0];
+  if (!['GET', 'HEAD'].includes(req.method) || requestedPath !== '/trading-systems/day-trading') return next();
+  // Both the public response and the redirect vary by session. Never cache either.
+  setPrivateNoStoreHeaders(res);
+  res.vary('Cookie');
+  try {
+    if ((await authorize(req)).authorized) return res.redirect(302, '/dashboard');
+    return next();
+  } catch (error) {
+    console.error('Day Trading authorization unavailable.');
+    return res.status(503).send('Authentication temporarily unavailable.');
+  }
+}
+
 // Issue #331: authorize before loading or rendering Swing portfolio data.
 function safeSwingReturnPath(value) {
   return value === '/trading-systems/swing-trading' ? value : '';
@@ -14180,6 +14200,8 @@ app.get('/dashboard/live-pnl.json', async (req, res) => {
 });
 
 app.get('/dashboard', async (req, res) => {
+  setPrivateNoStoreHeaders(res);
+  res.vary('Cookie');
   try {
     if (!OWNER_DASHBOARD_KEY) {
       return res.status(500).send('ADMIN_DASHBOARD_KEY (owner password) is not configured.');
@@ -14225,6 +14247,8 @@ app.get('/dashboard', async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
+  setPrivateNoStoreHeaders(res);
+  res.vary('Cookie');
   clearDashboardSessionCookie(res);
   return res.redirect('/login');
 });
@@ -14286,6 +14310,7 @@ module.exports.__test = {
   createDashboardSession,
   readDashboardSession,
   getDashboardAuthorization,
+  restoreDayTradingDashboard,
   requireSwingAuthorization,
   safeSwingReturnPath,
   displayTradeId,
