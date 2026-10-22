@@ -10,6 +10,7 @@ const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {pollRenderQuoteStatus}=require('./render-quote-observer.cjs');
 const {checkMinuteFeed}=require('./live-quote-probe.cjs');
+const {readShadowPublicFeed}=require('./shadow-public-feed.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const {saveSummary}=require('./compare-history.cjs');
@@ -47,6 +48,11 @@ function marketProbe(){
  return probeFlight;
 }
 const server=http.createServer((req,res)=>{
+ if(req.method==='GET'&&req.url==='/v2/model/snapshot'){
+  readShadowPublicFeed({url}).then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
+   .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'SHADOW_LEDGER_READ_UNAVAILABLE',published:false}))});
+  return;
+ }
  if(req.method==='GET'&&req.url==='/v2/market-data/probe'){
   marketProbe().then(result=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({mode:'READ_ONLY',provider:'YAHOO_CHART',...result}))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'MARKET_PROBE_FAILED',tradeEvidenceVerified:false,modelEntryEligible:false}))});
