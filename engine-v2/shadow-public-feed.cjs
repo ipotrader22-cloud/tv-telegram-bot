@@ -3,13 +3,15 @@
 // No copying data from the legacy Source-of-Truth model, no private evidence,
 // and no claim a date was reviewed without a committed session.
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
+const {createHash}=require('node:crypto');
+function withSnapshotId(payload){return {...payload,snapshot_id:createHash('sha256').update(JSON.stringify(payload)).digest('hex')};}
 const {readLastCleanState}=require('./clean-ledger.cjs');
 function makeReadOnlyFeed(latest){
  if(!latest){
-  return {version:2,status:'INCEPTION_ONLY_NOT_REVIEWED',epoch:EPOCH,
+  return withSnapshotId({version:2,status:'INCEPTION_ONLY_NOT_REVIEWED',epoch:EPOCH,
    snapshot_date:null,starting_model_equity:100000,current_model_equity:null,
    active_portfolio:[],closed_trades:[],active_count:0,
-   authoritative:false,published:false,notices:['No independently verified Engine 2 review has been committed.']};
+   authoritative:false,published:false,notices:['No independently verified Engine 2 review has been committed.']});
  }
  if(latest.epoch!==EPOCH||!latest.date||!Array.isArray(latest.active)||!Array.isArray(latest.closed))
   throw Error('INVALID_CLEAN_EPOCH_STATE');
@@ -28,13 +30,13 @@ function makeReadOnlyFeed(latest){
  const unrealized=latest.active.reduce((s,x)=>s+10000*(x.currentPrice/x.entryPrice-1),0);
  if(active.length>10||!Number.isFinite(realized)||!Number.isFinite(unrealized))throw Error('INVALID_NORMALIZED_MODEL_STATE');
  const equity=100000+realized+unrealized;
- return {version:2,status:'SHADOW_REVIEW_COMMITTED_NOT_PUBLISHED',epoch:EPOCH,snapshot_date:latest.date,
+ return withSnapshotId({version:2,status:'SHADOW_REVIEW_COMMITTED_NOT_PUBLISHED',epoch:EPOCH,snapshot_date:latest.date,
   starting_model_equity:100000,current_model_equity:equity,realized_model_pnl:realized,
   unrealized_model_pnl:unrealized,active_portfolio:active,closed_trades:closes,active_count:active.length,
-  authoritative:false,published:false,notices:['Research model only, not brokerage executions. Shadow publication disabled.']};
+  authoritative:false,published:false,notices:['Research model only, not brokerage executions. Shadow publication disabled.']});
 }
 async function readShadowPublicFeed({url,read=readLastCleanState}={}){
  const latest=await read({url});
  return makeReadOnlyFeed(latest);
 }
-module.exports={makeReadOnlyFeed,readShadowPublicFeed};
+module.exports={makeReadOnlyFeed,readShadowPublicFeed,withSnapshotId};
