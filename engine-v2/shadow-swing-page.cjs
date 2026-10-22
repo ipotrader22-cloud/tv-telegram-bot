@@ -28,7 +28,7 @@ function renderShadowSwing(feed){
   '<td class="'+(p.normalized_model_pnl>=0?'gain':'loss')+'">'+signed(p.normalized_model_pnl)+'</td>'+
   '<td>'+esc(p.reason)+'</td></tr>').join('');
  const modelPnl=committed?Number(feed.realized_model_pnl)+Number(feed.unrealized_model_pnl):NaN;
- const fingerprint=createHash('sha256').update(JSON.stringify(feed)).digest('hex');
+ const fingerprint=feed.snapshot_id||createHash('sha256').update(JSON.stringify(feed)).digest('hex');
  const table=(headers,rows,empty)=>'<div class="table-wrap"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+
   (rows||'<tr><td class="empty" colspan="'+headers.length+'">'+esc(empty)+'</td></tr>')+'</tbody></table></div>';
  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
