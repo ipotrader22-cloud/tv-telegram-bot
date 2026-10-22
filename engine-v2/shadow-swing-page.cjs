@@ -32,6 +32,16 @@ function renderShadowSwing(feed){
   '<td>'+esc(p.reason)+'</td></tr>').join('');
  const candidates=(feed.candidates||[]).map(p=>'<tr><td><strong>'+esc(p.ticker)+'</strong></td>'+
   '<td>'+esc(p.score)+' / 100</td><td>'+esc(p.brief_reason)+'</td><td>'+esc(p.review_date)+'</td></tr>').join('');
+ const history=Array.isArray(feed.equity_history)?feed.equity_history:[];
+ const dated=history.filter(x=>/^\\d{4}-\\d{2}-\\d{2}$/.test(x.date)&&Number.isFinite(x.equity)).slice(-120);
+ let chartMarkup='<div class="chart" role="img" aria-label="Equity History pending first complete reviewed session">$100,000 inception — verified history starts with the first complete review.</div>';
+ if(dated.length>=2){
+  const vals=dated.map(x=>x.equity-100000),lo=Math.min(0,...vals),hi=Math.max(0,...vals);
+  const span=Math.max(100,hi-lo),x=i=>50+(i/(dated.length-1))*590,y=v=>174-((v-lo)/span)*130;
+  const points=vals.map((v,i)=>x(i).toFixed(2)+','+y(v).toFixed(2)).join(' ');
+  const dots=vals.map((v,i)=>'<circle cx="'+x(i).toFixed(2)+'" cy="'+y(v).toFixed(2)+'" r="2.5" fill="#237b58"><title>'+esc(dated[i].date)+' · '+esc(signed(v))+'</title></circle>').join('');
+  chartMarkup='<svg role="img" aria-label="Verified Engine 2 model equity history" class="equity-chart-svg" viewBox="0 0 680 215" width="100%" style="max-height:255px"><line x1="50" x2="650" y1="'+y(0).toFixed(2)+'" y2="'+y(0).toFixed(2)+'" stroke="#a4bfb3" stroke-dasharray="4 4"/><polyline fill="none" stroke="#237b58" stroke-width="3" points="'+points+'"/>'+dots+'<text x="50" y="208" fill="#647c70" font-size="11">'+esc(dated[0].date)+'</text><text x="650" y="208" text-anchor="end" fill="#647c70" font-size="11">'+esc(dated.at(-1).date)+'</text></svg>';
+ }
  const modelPnl=committed?Number(feed.realized_model_pnl)+Number(feed.unrealized_model_pnl):NaN;
  const fingerprint=feed.snapshot_id||createHash('sha256').update(JSON.stringify(feed)).digest('hex');
  const table=(headers,rows,empty)=>'<div class="table-wrap"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+
@@ -65,8 +75,7 @@ function renderShadowSwing(feed){
  '<section class="section" id="closed-trades"><h2>Closed Trades</h2>'+
  table(['Ticker','Entry Date','Exit Date','Entry','Exit','Model P&L','Reason'],closed,'No new-epoch closed trades.')+'</section>'+
  '<section class="section equity-chart-card" id="equity-history"><div class="section-heading"><h2>Equity History</h2><span>'+esc(current||'Inception')+'</span></div>'+
- '<div class="chart" role="img" aria-label="Model equity chart unavailable until independently verified dated history exists">'+
- (committed?'Equity history is pending independently verified date-by-date points.':'$100,000 inception — chart begins after the first verified review.')+'</div></section>'+
+ chartMarkup+'</section>'+
  '<footer>Research/model portfolio only. Prices are reference marks, not broker fills. Published VIXALE model performance is separate from this development preview.<br>'+
  'Preview snapshot SHA-256: <code id="model-snapshot-id">'+esc(fingerprint)+'</code></footer></main></body></html>';
 }
