@@ -16,4 +16,19 @@ async function sendViaResend({plan,lease,apiKey,fetchFn=fetch}={}){
   return response.json();
  }});
 }
-module.exports={sendViaResend};
+async function readResendDelivery({messageId,plan,apiKey,fetchFn=fetch}={}){
+ const bad=reason=>({status:'BLOCKED',reason});
+ if(!/^re_/.test(apiKey||'')||!/^[-a-zA-Z0-9]{1,100}$/.test(messageId||'')||!plan)return bad('DELIVERY_LOOKUP_NOT_CONFIGURED');
+ try{
+  const response=await fetchFn(ORIGIN+'/'+encodeURIComponent(messageId),{redirect:'error',headers:{Authorization:'Bearer '+apiKey},signal:AbortSignal.timeout(10000)});
+  if(!response.ok)return bad('DELIVERY_LOOKUP_HTTP_'+response.status);
+  const x=await response.json();
+  if(x.id!==messageId||x.from!==plan.from||x.subject!==plan.subject||x.text!==plan.text||
+   !Array.isArray(x.to)||x.to.length!==1||x.to[0]!==plan.to||x.cc?.length||x.bcc?.length)return bad('DELIVERY_MESSAGE_IDENTITY_MISMATCH');
+  const event=x.last_event;
+  if(['delivered','opened','clicked'].includes(event))return {status:'DELIVERED',messageId,event};
+  if(['bounced','complained','failed','suppressed'].includes(event))return {status:event.toUpperCase(),messageId,event};
+  return {status:'ACCEPTED_NOT_DELIVERED',messageId,event};
+ }catch{return bad('DELIVERY_LOOKUP_FAILED')}
+}
+module.exports={sendViaResend,readResendDelivery};

@@ -73,15 +73,19 @@ function buildStagingWrites(input={}){
   openTop.push([str(lot.entryDate),str(lot.exchange),str(lot.ticker),num(lot.entryScore||lot.currentScore),
     str('Active Portfolio'),num(lot.entryPrice),num(shares),num(shares*lot.entryPrice)]);
   openSide.push([num(0.1),str(lot.fullReviewDate),str('KEEP — validated model review'),str(a.note),
-    str(lot.quoteSourceId||'INDICATIVE_MODEL_REFERENCE'),blank()]);
+    str(lot.quoteSourceId||'INDICATIVE_MODEL_REFERENCE'),num(lot.currentPrice)]);
   portTop.push([num(i+1),str(lot.exchange),str(lot.ticker),num(lot.currentScore)]);
   portStatus.push([str('Active Portfolio')]);
   feedActive.push([str(lot.ticker),str(lot.exchange),num(lot.currentScore),str(lot.entryDate),
     form("=TEXT('Open Positions'!F"+(n+1)+',"$0.00")'),
-    form("=TEXT('Open Positions'!I"+(n+1)+',"$0.00")'),
-    form("=TEXT('Open Positions'!L"+(n+1)+',"0.00%")'),
+    form("=TEXT('Open Positions'!R"+(n+1)+',"$0.00")'),
+    form("=TEXT(('Open Positions'!R"+(n+1)+"/'Open Positions'!F"+(n+1)+'-1),"0.00%")'),
     str(lot.fullReviewDate),str(a.note)]);
  }
+ const candidates=p.candidates||[];
+ if(candidates.length>5)throw Error('PUBLIC_CANDIDATE_CAPACITY_EXCEEDED');
+ const candidateRows=Array.from({length:5},(_,i)=>candidates[i]?
+  [str(candidates[i].ticker),num(candidates[i].score),str(candidates[i].brief_reason),str(candidates[i].review_date)]:Array.from({length:4},blank));
  const requests=[
   rect(ids.open,3,0,openTop),
   rect(ids.open,3,8,openMath),
@@ -89,7 +93,9 @@ function buildStagingWrites(input={}){
   rect(ids.portfolio,7,0,portTop),
   rect(ids.portfolio,7,4,portMath),
   rect(ids.portfolio,7,12,portStatus),
-  rect(ids.feed,13,0,feedActive)
+  rect(ids.feed,13,0,feedActive),
+  rect(ids.feed,25,0,candidateRows),
+  rect(ids.open,2,17,[[str('Review Reference Price ($)')]])
  ];
  if(closed.length){
   const rows=closed.map((c,i)=>{
@@ -99,14 +105,14 @@ function buildStagingWrites(input={}){
     form('=F'+sheetRow+'*G'+sheetRow),num(c.exitPrice),
     form('=I'+sheetRow+'*G'+sheetRow),form('=J'+sheetRow+'-H'+sheetRow),
     form('=IFERROR((I'+sheetRow+'-F'+sheetRow+')/F'+sheetRow+',0)'),
-    num(c.lastScore||0),str(c.reason||'MODEL EXIT'),str(p.runId),str(c.note||'Model close, not broker execution.'),
+    num(c.lastScore||0),str(c.reason||'MODEL EXIT'),str(c.ticker+'|'+c.entryDate),str(c.note||'Model close, not broker execution.'),
     str(c.includePublic),str(c.effectiveDate)];
   });
   requests.push(rect(ids.closed,3,0,rows));
  }
  const updates=[
   [ids.feed,1,1,str(p.date)],[ids.feed,2,1,str(timeEt)],[ids.feed,3,1,str('Verified Engine 2 model review; research/model portfolio only')],
-  [ids.feed,4,1,num(positions.length)],[ids.feed,5,1,num(0)],
+  [ids.feed,4,1,num(positions.length)],[ids.feed,5,1,num(candidates.length)],
   [ids.feed,7,1,str('TWS verified LAST where available; Yahoo indicative 1m fallback')],
   [ids.feed,10,0,str('engine2_snapshot_id')],[ids.feed,10,1,str(manifest.fingerprint)],
   [ids.portfolio,2,1,str(p.date)]

@@ -50,7 +50,8 @@ function compileFullResearch({artifact,date,runAt,universe,session,assessments,n
   }
   const sourceHash=createHash('sha256').update(JSON.stringify({raw,assessment:a,newsReviewId:newsReview.sourceId})).digest('hex');
   items.push({
-   ticker:raw.ticker,date,timestamp:a.reviewTime,complete:true,score:total,factors:f,factorsEvidence:facts,
+   ticker:raw.ticker,exchange:artifact.data.find(x=>x.metrics?.symbol===raw.ticker)?.exchange,date,timestamp:a.reviewTime,complete:true,score:total,factors:f,factorsEvidence:facts,
+   publicNote:typeof a.publicNote==='string'?a.publicNote.slice(0,260):'Nine-factor review completed '+date,
    completedDailyBars:raw.completedDailyBars,lastCompletedSessionDate:raw.lastCompletedSessionDate,
    ohlcvSourceId:raw.sourceHash,newsEvidenceId:newsReview.sourceId,
    marketEvidenceId:facts.market.sourceId,sectorEvidenceId:facts.sector.sourceId,

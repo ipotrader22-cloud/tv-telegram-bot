@@ -20,7 +20,7 @@ function firstDayPortfolio({date,runAt,session,researchBatch,quotes,priorActive=
   const q=byTicker.get(candidate.ticker),checked=validateModelReference({ticker:candidate.ticker,quote:q,at:runAt,date,allowIndicativeFallback});
   if(!['VERIFIED_LIVE_TRADE','INDICATIVE_REFERENCE_VALIDATED'].includes(checked.status)){failures.push(candidate.ticker+':'+checked.reason);continue}
   const price=checked.price;
-  positions.push({ticker:candidate.ticker,entryDate:date,entryTime:q.timestamp,entryPrice:price,entryScore:candidate.score,currentPrice:price,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date,
+  positions.push({ticker:candidate.ticker,exchange:candidate.exchange,publicNote:candidate.publicNote,entryDate:date,entryTime:q.timestamp,lastTargetCheckedAt:q.timestamp,entryPrice:price,entryScore:candidate.score,currentPrice:price,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date,
    shares:Math.floor(10000/price),reviewEvidenceId:candidate.ohlcvSourceId,quoteSourceId:checked.sourceId,modelEntryPriceKind:checked.quoteKind||'LAST_TRADE',modelEntryIndicative:checked.indicative===true});
  }
  if(failures.length)return blocked('ELIGIBLE_POSITION_QUOTE_FAILURE',failures);

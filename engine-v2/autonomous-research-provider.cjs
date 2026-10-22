@@ -27,7 +27,7 @@ function createAutonomousResearchProvider({artifactProvider,newsProvider,univers
   const result=compileFullResearch({artifact,date,runAt,universe:candidates,session,
     assessments:scores.assessments,newsReview:news});
   if(result.status!=='PASS')throw Error('FULL_RESEARCH_ATTESTATION_BLOCKED:'+result.reason);
-  return {...result.batch,scoringPolicyVersion:scores.policyVersion};
+  return {...result.batch,scoringPolicyVersion:scores.policyVersion,sourceEvidence:{artifact,news}};
  }};
 }
 module.exports={createAutonomousResearchProvider};

@@ -19,11 +19,12 @@ function makeReadOnlyFeed(latest){
   ticker:x.ticker,entry_date:x.entryDate,entry_price:x.entryPrice,
   current_model_reference_price:x.currentPrice,score:x.currentScore,
   last_full_review_date:x.fullReviewDate,reference_price_kind:x.modelEntryPriceKind||'UNKNOWN',
+  note:x.publicNote||('Reviewed '+x.fullReviewDate),
   indicative_entry:x.modelEntryIndicative===true
  }));
  const closes=latest.closed.filter(x=>x.includePublic==='YES'&&x.effectiveDate<=latest.date).map(x=>({
   ticker:x.ticker,entry_date:x.entryDate,exit_date:x.exitDate,
-  entry_price:x.entryPrice,exit_price:x.exitPrice,reason:x.reason,
+  entry_price:x.entryPrice,exit_price:x.exitPrice,reason:x.reason,last_score:x.lastScore,
   normalized_model_pnl:10000*(x.exitPrice/x.entryPrice-1)
  }));
  const realized=closes.reduce((s,x)=>s+x.normalized_model_pnl,0);

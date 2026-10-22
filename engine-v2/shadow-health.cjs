@@ -23,6 +23,9 @@ if(!url)throw Error('Internal shadow DB connection missing');
 const name=new URL(url).pathname.slice(1);
 if(!/^vixale_engine_v2_shadow_\d{8}$/.test(name))throw Error('Unexpected database');
 const port=Number(process.env.PORT||10000);
+const {createStagingWorker}=require('./staging-worker.cjs');
+const stagingWorker=createStagingWorker({url});
+const readPreview=async()=>await stagingWorker.store.publishedFeed()||await readShadowPublicFeed({url});
 async function inspect(){
  const client=new Client({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:5000});
  await client.connect();
@@ -49,8 +52,9 @@ function marketProbe(){
  return probeFlight;
 }
 const server=http.createServer((req,res)=>{
- if(req.method==='GET'&&req.url==='/v2/swing-trading'){
-  readShadowPublicFeed({url}).then(snapshot=>{
+ const path=new URL(req.url,'http://localhost').pathname;
+ if(req.method==='GET'&&path==='/v2/swing-trading'){
+  readPreview().then(snapshot=>{
    const html=renderShadowSwing(snapshot);
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff'});
    res.end(html);
@@ -61,19 +65,19 @@ const server=http.createServer((req,res)=>{
   return;
  }
 
- if(req.method==='GET'&&req.url==='/v2/model/snapshot'){
-  readShadowPublicFeed({url}).then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
+ if(req.method==='GET'&&path==='/v2/model/snapshot'){
+  readPreview().then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'SHADOW_LEDGER_READ_UNAVAILABLE',published:false}))});
   return;
  }
- if(req.method==='GET'&&req.url==='/v2/market-data/probe'){
+ if(req.method==='GET'&&path==='/v2/market-data/probe'){
   marketProbe().then(result=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({mode:'READ_ONLY',provider:'YAHOO_CHART',...result}))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'MARKET_PROBE_FAILED',tradeEvidenceVerified:false,modelEntryEligible:false}))});
   return;
  }
- if(req.url!=='/health'){res.writeHead(404);res.end();return}
+ if(path!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
- res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',cleanSlate:{epoch:EPOCH,mode:'SHADOW_ONLY',autonomousPublisherEnabled:false,sessionCalendarReady:sessionEvidence(EPOCH).isTradingDay,marketDataProviderReady:false,researchProviderReady:false,readyForProduction:false,renderQuoteObservationStatus:renderQuotes.status,renderQuoteObservationCount:renderQuotes.symbols?.length||0,renderQuoteTradeEvidenceVerified:false},valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
+ res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',stagingPipeline:stagingWorker.status(),cleanSlate:{epoch:EPOCH,mode:'SHADOW_ONLY',autonomousPublisherEnabled:false,sessionCalendarReady:sessionEvidence(EPOCH).isTradingDay,marketDataProviderReady:false,researchProviderReady:false,readyForProduction:false,renderQuoteObservationStatus:renderQuotes.status,renderQuoteObservationCount:renderQuotes.symbols?.length||0,renderQuoteTradeEvidenceVerified:false},valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
 });
 const refresh=async()=>{
  if(process.env.VIXALE_V2_RENDER_QUOTE_STATUS_URL){
@@ -112,6 +116,9 @@ const refresh=async()=>{
    }
  }
  await refresh();
- server.listen(port,'0.0.0.0');
+ server.listen(port,'0.0.0.0',()=>{
+  void stagingWorker.tick();
+  setInterval(()=>{void stagingWorker.tick()},60000).unref();
+ });
 })().catch(e=>{console.error('Shadow observer startup failed:',e.message);process.exitCode=1});
 setInterval(refresh,60000).unref();

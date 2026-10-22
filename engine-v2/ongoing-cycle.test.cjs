@@ -14,3 +14,7 @@ test('verified hold stays active with fixed 10k normalized P&L',()=>{const x=rev
 test('missing opening proof blocks, never silently skips stop',()=>assert.equal(reviewExisting({...base,openings:[]}).status,'BLOCKED'));
 test('verified opening -5% triggers stop at later contemporaneous quote',()=>{const x=reviewExisting({...base,openings:[{...opening,open:95}],quotes:[{...quote,price:96}]});assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.closed[0].reason,'STOP LOSS');assert.equal(x.closed[0].exitPrice,96)});
 test('verified target touches exact 10 percent even after price retreats',()=>{const x=reviewExisting({...base,targets:[{ticker:'A',confirmed:true,session:'REGULAR',sourceId:'bar',time:'2026-10-20T09:40:00-04:00',high:110}]});assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.closed[0].exitPrice,110);assert.ok(Math.abs(x.model.realized-1000)<1e-7)});
+test('proven yesterday target precedes today opening stop; effective date preserves prior snapshots',()=>{
+ const x=reviewExisting({...base,openings:[{...opening,open:94}],targets:[{ticker:'A',confirmed:true,completeCoverage:true,session:'REGULAR',sourceId:'yesterday-bar',time:'2026-10-19T15:00:00-04:00',high:111}]});
+ assert.equal(x.closed[0].reason,'TARGET');assert.equal(x.closed[0].exitDate,'2026-10-19');assert.equal(x.closed[0].effectiveDate,date);
+});

@@ -1,6 +1,7 @@
 'use strict';
 const {Client}=require('pg');
 const {createHash}=require('node:crypto');
+const {stableStringify}=require('./stable-json.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {validateResearchBatch}=require('./research-attestation.cjs');
 const {planMorningRun}=require('./morning-run-plan.cjs');
@@ -54,7 +55,7 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
    const currentOpen=new Map(inputs.positions.map(x=>[x.ticker+'|'+x.entryDate,x]));
    const currentClosed=new Map(inputs.closed.map(x=>[x.ticker+'|'+x.entryDate,x]));
    for(const [id,prior] of priorClosed){
-    if(!currentClosed.has(id)||JSON.stringify(currentClosed.get(id))!==JSON.stringify(prior))throw Error('Immutable closed lot changed '+id);
+    if(!currentClosed.has(id)||stableStringify(currentClosed.get(id))!==stableStringify(prior))throw Error('Immutable closed lot changed '+id);
     if(currentOpen.has(id))throw Error('Closed trade reopened '+id);
    }
    for(const [id] of priorOpen)if(!currentOpen.has(id)&&!currentClosed.has(id))throw Error('Open lot vanished without close '+id);
@@ -65,8 +66,10 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
    brief_reason:typeof x.publicNote==='string'&&x.publicNote.length<=260?x.publicNote:'Full nine-factor review completed '+inputs.date
   }));
   const manifest={research:check.evidence,publicCandidates,
+   // Retain the actual dated research and quote evidence, not only PASS flags.
+   inputs,
    quotes:inputs.quotes.map(q=>({ticker:q.ticker,sourceId:q.sourceId,timestamp:q.timestamp}))};
-  const hash=createHash('sha256').update(JSON.stringify({plan:check.plan,events:check.events,manifest,active:inputs.positions,closed:inputs.closed})).digest('hex');
+  const hash=createHash('sha256').update(stableStringify({plan:check.plan,events:check.events,manifest,active:inputs.positions,closed:inputs.closed})).digest('hex');
   const prev=await db.query('SELECT payload_hash FROM vixale_v2.clean_runs WHERE epoch=$1 AND session_date=$2',[EPOCH,inputs.date]);
   if(prev.rowCount){await db.query('COMMIT');return {status:prev.rows[0].payload_hash===hash?'IDEMPOTENT_REPLAY':'CONFLICTING_DATE_RUN',runId:check.plan.runId,published:false}}
   await db.query('INSERT INTO vixale_v2.clean_runs(run_id,epoch,session_date,payload_hash,model,evidence_manifest) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)',
@@ -99,4 +102,17 @@ async function readLastCleanState({url,clientFactory=opts=>new Client(opts)}){
     candidates:last.evidence_manifest?.publicCandidates||[],history};
  }catch(e){try{await db.query('ROLLBACK')}catch{}throw e}finally{await db.end()}
 }
-module.exports={ddl,dbName,validateMorningCommit,commitShadowRun,readLastCleanState};
+async function readCleanRun({url,date,clientFactory=opts=>new Client(opts)}){
+ const name=dbName(url),db=clientFactory({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:10000});
+ await db.connect();
+ try{
+  await db.query('BEGIN READ ONLY');
+  if((await db.query('SELECT current_database() AS db')).rows[0].db!==name)throw Error('Database identity mismatch');
+  const exists=await db.query("SELECT to_regclass('vixale_v2.clean_runs') AS table_name");
+  if(!exists.rows[0].table_name){await db.query('COMMIT');return null}
+  const q=await db.query('SELECT run_id,payload_hash,model,evidence_manifest FROM vixale_v2.clean_runs WHERE epoch=$1 AND session_date=$2',[EPOCH,date]);
+  await db.query('COMMIT');
+  return q.rows[0]||null;
+ }finally{await db.end()}
+}
+module.exports={ddl,dbName,validateMorningCommit,commitShadowRun,readLastCleanState,readCleanRun};

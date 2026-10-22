@@ -3382,3 +3382,72 @@ Completed daily review: all thirteen then-active/candidate scores were reassesse
 Validation boundary: the migrated 9:30 task has not yet completed its first timed October13 run. No executable server-side analyst/outbox worker was added; orchestration remains cloud scheduled research tasks, native guarded commits, provider idempotency and independent read-only Actions checks. Do not describe this as a guaranteed scheduler or completely deterministic autonomous scoring engine. No app.js/package.json/runtime/credentials changes in this documentation checkpoint. Rollback: revert these docs only; production metadata/task controls are separate and must not be silently removed by a documentation revert.
 
 
+
+## 2026-10-22 — Engine 2 durable private staging pipeline (PR #329)
+
+Handbook update required: **YES**. Architecture: see
+`docs/ADR_ENGINE2_STAGING_PIPELINE.md` for the transaction, recovery, formula and
+activation contract. PR remains **DRAFT / UNMERGED**, with no production cutover.
+
+- `engine-v2/staging-pipeline.cjs`, `staging-pipeline-store.cjs` and
+  `staging-artifact.cjs` coordinate durable research/model commit → private native
+  Sheet batch/readback → exact uncached API/HTML → separately enabled staging
+  email with persisted message identity and confirmed delivery. Canonical hashes
+  survive PostgreSQL JSONB ordering. Full research source evidence is retained.
+- `staging-research-runtime.cjs` collects an explicitly configured independent
+  Yahoo universe and company news, preserving verified exchange labels. Uses the
+  existing versioned mechanical nine-factor policy; catalyst remains zero until
+  substantive event evidence is independently vetted. No legacy holdings seed
+  the universe. Late collection blocks instead of backdating.
+- `target-window-provider.cjs` verifies every regular-session minute since the
+  last certified watermark, including yesterday afternoon. Missing coverage or
+  a missed daily opening-stop review blocks. Prior-day targets precede today's
+  opening stop; actual exit date and effective review date are distinct.
+- `staging-sheets-publisher.cjs` checks all planned cells/formulas, normalized
+  equity, cash, extra lots and immutable closed rows. A lost batch response
+  recovers only the same native fence/date/content. The only workbook target is
+  `1Ii20kcegWWhQfz_RUrDe0OhfFG1y9TNjrEI1Xy6mqyA`.
+- Staging Open Positions R now stores **Review Reference Price ($)**. Public Feed
+  current/return formulas use R, preserving the fixed review snapshot for page
+  and email while Open Positions I:L and Portfolio retain Google Finance.
+  Public Feed B7/A33 and Equity C/E/F remain formulas; Closed Q/R are preserved.
+  Exact live staging B7/A33 formulas were read and matched to the guard constants.
+- `shadow-swing-page.cjs` matches the inspected authenticated page structure:
+  light header, Active Portfolio introduction beside equity chart, total P&L,
+  four KPI cards, four explanation cards and matching Active/Closed column order.
+  Existing production authentication, English/Russian flows and site unchanged.
+- `shadow-health.cjs` serves the Sheet-verified journal artifact (or existing
+  truthful inception/clean-ledger preview) with no-store. Query-string cache
+  busting is supported. Health exposes only configuration readiness/status,
+  never credentials, recipients or private research. Production readiness false.
+
+### Staging configuration and outstanding verification
+
+All settings belong only to `vixale-engine-v2-shadow-observer`:
+
+- `VIXALE_V2_STAGING_PIPELINE_ENABLED=YES`: explicit worker activation; off by default.
+- `VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON`: staging write identity; must already
+  have editor access to the private staging workbook.
+- `VIXALE_V2_RESEARCH_UNIVERSE`: independently selected comma-separated candidates.
+- `VIXALE_V2_RESEARCH_SECTORS_JSON`: candidate-to-SMH/XLK/XLE mappings.
+- `VIXALE_V2_STAGING_EMAIL_ENABLED=YES`: separate email activation; off by default.
+- `VIXALE_V2_STAGING_EMAIL_TO` and `VIXALE_V2_STAGING_EMAIL_ALLOWLIST`: same approved
+  staging recipient. No customer list or production recipients are inferred.
+- `VIXALE_V2_STAGING_RESEND_API_KEY`: staging send/read credential; never printed.
+
+The shadow service's existing root npm install includes googleapis and pg. Its
+current **free web plan can sleep**, so the in-process 60-second timer is not a
+production scheduling guarantee. Do not call autonomous daily publication live
+until an approved durable trigger/always-running service and a real morning
+provider-to-Sheet-to-page-to-confirmed-email test pass. Current staging workbook
+permission metadata shows **owner only**; service-account editor access has not
+been established. No real staging financial write or email was performed here.
+
+Validation adds real HTTP page/API tests with synthetic provider boundaries,
+ambiguous Sheet/send recovery, no duplicate sends, full visible-content mismatch,
+recipient/formula/hash failures, target coverage, and real PostgreSQL journal
+roundtrip/competing-lock/restart/idempotency checks. CI uses a separate disposable
+loopback database `vixale_engine_v2_shadow_20990101`; never run its cleanup against
+an existing shadow or production database. Exact check/deploy evidence is recorded
+in the PR after completion. Production app, Windows bridge/TWS and legacy live
+schedule were not modified. Roll back only the isolated shadow code/flags.

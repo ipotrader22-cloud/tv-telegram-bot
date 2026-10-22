@@ -1,6 +1,7 @@
 'use strict';
 // Safe, deterministic clean-slate daily run planner. No side effects or live publishing.
 const {createHash}=require('node:crypto');
+const {stableStringify}=require('./stable-json.cjs');
 const {EPOCH,buildDailySnapshot}=require('./clean-slate-portfolio.cjs');
 const {score,key}=require('./core.cjs');
 const {validateMorningTrigger}=require('./nyse-morning-clock.cjs');
@@ -27,7 +28,7 @@ function planMorningRun({date,runAt,session,positions=[],closed=[],research=[],q
   snapshot=buildDailySnapshot({date,positions,closed,researchComplete:true,quoteEvidenceComplete:true,marketSessionConfirmed:true});
  }catch(e){return blocked('MODEL_VALIDATION_FAILED',[e.message])}
  if(snapshot.status!=='VALIDATED_NOT_PUBLISHED')return blocked(snapshot.reason||'SNAPSHOT_NOT_VALIDATED');
- const checksum=createHash('sha256').update(JSON.stringify({runId,positions,closed,snapshot})).digest('hex');
+ const checksum=createHash('sha256').update(stableStringify({runId,positions,closed,snapshot})).digest('hex');
  return {status:'VALIDATED_SHADOW_ONLY',runId,checksum,epoch:EPOCH,date,model:snapshot,publishable:false,requiresCutoverApproval:true};
 }
 module.exports={planMorningRun};

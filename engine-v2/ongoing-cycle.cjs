@@ -2,7 +2,7 @@
 // Deterministic prospective daily transitions after the first clean-slate day.
 // Read-only/pure; close events carry evidence. No Sheet/broker/web publishing.
 const {openingStop,targetTouch,score,pnl,snapshot}=require('./core.cjs');
-const {validateModelReference}=require('./market-data-adapter.cjs');
+const {validateModelReference,localET}=require('./market-data-adapter.cjs');
 const {validateResearchBatch}=require('./research-attestation.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openings=[],targets=[],allowIndicativeFallback=false}={}){
@@ -26,26 +26,29 @@ function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openin
   const opening=byOpen.get(old.ticker),high=byTarget.get(old.ticker);
   if(base.heldAtOpen&&(!opening||opening.confirmed!==true||opening.session!=='REGULAR'||opening.minuteET!=='09:30'||opening.date!==date||!opening.sourceId)){errors.push('OPENING_STOP_EVIDENCE_MISSING:'+id);continue}
   const factorScore=score(research.factors);
-  let close=null;
-  if(base.heldAtOpen){
-   try{if(openingStop(base,opening))close={reason:'STOP LOSS',exitPrice:checked.price,time:quote.timestamp,sourceId:quote.sourceId}}catch{errors.push('INVALID_OPENING_EVIDENCE:'+id);continue}
-  }
-  if(!close&&high){
+  let targetClose=null;
+  if(high){
    try{
     if(high.confirmed!==true||high.session!=='REGULAR'||!high.sourceId||!high.time||Date.parse(high.time)>Date.parse(runAt))throw Error('Unproven intraday target');
     if(!old.entryTime)throw Error('Missing original entry timestamp');
     if(targetTouch({...base,entryTime:old.entryTime},high))
-     close={reason:'TARGET',exitPrice:Math.round(old.entryPrice*1.10*1e8)/1e8,time:high.time,sourceId:high.sourceId};
+     targetClose={reason:'TARGET',exitPrice:Math.round(old.entryPrice*1.10*1e8)/1e8,time:high.time,sourceId:high.sourceId};
    }catch{errors.push('INVALID_TARGET_EVIDENCE:'+id);continue}
   }
+  // A proven prior-session target occurred before today's opening stop.
+  let close=targetClose&&high.completeCoverage===true&&localET(high.time).date<date?targetClose:null;
+  if(!close&&base.heldAtOpen){
+   try{if(openingStop(base,opening))close={reason:'STOP LOSS',exitPrice:checked.price,time:quote.timestamp,sourceId:quote.sourceId}}catch{errors.push('INVALID_OPENING_EVIDENCE:'+id);continue}
+  }
+  if(!close)close=targetClose;
   if(!close&&factorScore<70)close={reason:'DROPPED FROM ACTIVE PORTFOLIO',exitPrice:checked.price,time:quote.timestamp,sourceId:quote.sourceId};
   if(close){
    const ret=close.exitPrice/old.entryPrice-1;
-   const record={ticker:old.ticker,entryDate:old.entryDate,exitDate:date,entryPrice:old.entryPrice,exitPrice:close.exitPrice,returnPct:ret,includePublic:'YES',effectiveDate:date,reason:close.reason,exitTime:close.time,lastScore:factorScore};
+   const record={ticker:old.ticker,exchange:old.exchange,entryDate:old.entryDate,exitDate:localET(close.time).date,entryPrice:old.entryPrice,exitPrice:close.exitPrice,returnPct:ret,includePublic:'YES',effectiveDate:date,reason:close.reason,exitTime:close.time,lastScore:factorScore};
    closed.push(record);seenClosed.add(id);
    events.push({eventId:[old.ticker,old.entryDate,'CLOSE',date].join('|'),ticker:old.ticker,entryDate:old.entryDate,type:'CLOSE',timestamp:close.time,sourceId:close.sourceId,reason:close.reason,modelPnl:pnl(old.entryPrice,close.exitPrice)});
   }else{
-   active.push({...old,currentScore:factorScore,factors:research.factors,currentPrice:checked.price,fullReviewDate:date,lastReviewEvidenceId:research.ohlcvSourceId});
+   active.push({...old,lastTargetCheckedAt:high?.checkedThrough||old.lastTargetCheckedAt,publicNote:research.publicNote,quoteSourceId:quote.sourceId,currentScore:factorScore,factors:research.factors,currentPrice:checked.price,fullReviewDate:date,lastReviewEvidenceId:research.ohlcvSourceId});
    events.push({eventId:[old.ticker,old.entryDate,'KEEP',date].join('|'),ticker:old.ticker,entryDate:old.entryDate,type:'KEEP',timestamp:quote.timestamp,sourceId:quote.sourceId});
   }
  }
@@ -55,7 +58,7 @@ function reviewExisting({date,runAt,session,researchBatch,previous,quotes,openin
  for(const candidate of eligible.slice(0,10-active.length)){
   const quote=byQuotes.get(candidate.ticker),check=validateModelReference({ticker:candidate.ticker,quote,at:runAt,date,allowIndicativeFallback});
   if(!['VERIFIED_LIVE_TRADE','INDICATIVE_REFERENCE_VALIDATED'].includes(check.status))return bad('ENTRY_QUOTE_NOT_VERIFIED',[candidate.ticker+':'+check.reason]);
-  active.push({ticker:candidate.ticker,entryDate:date,entryTime:quote.timestamp,entryPrice:check.price,currentPrice:check.price,shares:Math.floor(10000/check.price),entryScore:candidate.score,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date,modelEntryPriceKind:check.quoteKind||'LAST_TRADE',modelEntryIndicative:check.indicative===true});
+  active.push({ticker:candidate.ticker,exchange:candidate.exchange,publicNote:candidate.publicNote,quoteSourceId:quote.sourceId,entryDate:date,entryTime:quote.timestamp,lastTargetCheckedAt:quote.timestamp,entryPrice:check.price,currentPrice:check.price,shares:Math.floor(10000/check.price),entryScore:candidate.score,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date,modelEntryPriceKind:check.quoteKind||'LAST_TRADE',modelEntryIndicative:check.indicative===true});
   events.push({eventId:[candidate.ticker,date,'OPEN',date].join('|'),ticker:candidate.ticker,entryDate:date,type:'OPEN',timestamp:quote.timestamp,sourceId:quote.sourceId});
  }
  let model;try{model=snapshot({researchComplete:true,reviewDate:date,active,closed})}catch(e){return bad('SNAPSHOT_INVALID',[e.message])}
