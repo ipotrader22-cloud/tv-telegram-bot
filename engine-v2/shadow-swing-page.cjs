@@ -19,9 +19,12 @@ function renderShadowSwing(feed){
    '<td data-label="Score">'+esc(p.score)+'</td>'+
    '<td data-label="Entry">'+money(entry)+'</td>'+
    '<td data-label="Current">'+money(quote)+'</td>'+
+   '<td data-label="Quantity">'+(entry>0?Math.floor(10000/entry):'—')+'</td>'+
+   '<td data-label="TP">'+money(entry*1.10)+'</td>'+
+   '<td data-label="SL">'+money(entry*.95)+'</td>'+
    '<td data-label="Return" class="'+(pnl>=0?'gain':'loss')+'">'+percent(quote/entry-1)+'</td>'+
    '<td data-label="P&L, $">'+signed(pnl)+'</td>'+
-   '<td data-label="Reviewed">'+esc(p.last_full_review_date||'Unverified')+'</td></tr>';
+   '<td data-label="Research Note">'+esc(p.note||('Reviewed '+(p.last_full_review_date||'Unverified')))+'</td></tr>';
  }).join('');
  const closed=feed.closed_trades.map(p=>'<tr><td>'+esc(p.ticker)+'</td><td>'+esc(p.entry_date)+'</td>'+
   '<td>'+esc(p.exit_date)+'</td><td>'+money(p.entry_price)+'</td><td>'+money(p.exit_price)+'</td>'+
