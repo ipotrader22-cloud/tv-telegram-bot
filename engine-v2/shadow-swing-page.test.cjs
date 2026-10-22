@@ -17,3 +17,17 @@ test('private notes and HTML injection never leak into shadow page',()=>{
  assert.match(html,/AMD/);assert.ok(html.includes('+$200.00'));assert.ok(!html.includes('privateFactorNotes'));
 });
 test('old epoch or invalid feed fails closed',()=>assert.throws(()=>renderShadowSwing({...empty,epoch:'2026-08-21'})));
+
+test('verified equity series draws SVG and certified research candidates',()=>{
+ const sample={...empty,status:'SHADOW_REVIEW_COMMITTED_NOT_PUBLISHED',
+  snapshot_date:'2026-10-22',current_model_equity:100500,realized_model_pnl:500,
+  unrealized_model_pnl:0,candidate_count:1,
+  candidates:[{ticker:'MU',score:82,brief_reason:'Documented sector leadership',review_date:'2026-10-22'}],
+  equity_history:[{date:'2026-10-19',equity:100000},
+                  {date:'2026-10-22',equity:100500}]};
+ const html=renderShadowSwing(sample);
+ assert.ok(html.includes('<polyline'));
+ assert.ok(html.includes('Documented sector leadership'));
+ assert.ok(html.includes('How Swing Leaders Works'));
+ assert.ok(html.includes('Market Update'));
+});
