@@ -40,7 +40,12 @@ function acquireRequests({state,newLeaseValue,now=Date.now()}={}){
 }
 function guardedBatch({state,ownedLease,newLeaseValue,newRevision,financialRequests=[]}={}){
  if(state?.status!=='PASS'||state.lease!==ownedLease||!ownedLease||!newLeaseValue||
-    !newRevision||!Array.isArray(financialRequests)||!financialRequests.length)throw Error('GUARDED_COMMIT_PRECONDITION');
+    !newRevision||newRevision===state.fence||!Array.isArray(financialRequests)||!financialRequests.length)throw Error('GUARDED_COMMIT_PRECONDITION');
+ let prior,next;try{prior=JSON.parse(ownedLease);next=JSON.parse(newLeaseValue)}catch{throw Error('INVALID_LEASE_JSON')}
+ if(!prior.owner||prior.owner!==next.owner||prior.nonce===next.nonce||
+    !Number.isFinite(Date.parse(prior.expiresAt))||!Number.isFinite(Date.parse(next.expiresAt))||
+    Date.parse(prior.expiresAt)-Date.now()<10000||Date.parse(next.expiresAt)-Date.now()<10000)
+    throw Error('LEASE_EXPIRED_OR_NOT_RENEWED');
  if(financialRequests.some(x=>Object.keys(x).length!==1||x.deleteDeveloperMetadata||x.createDeveloperMetadata))
   throw Error('FINANCIAL_REQUESTS_MUST_NOT_OVERRIDE_LOCK');
  // The duplicate explicit IDs make a wrong expected fence/lease abort
