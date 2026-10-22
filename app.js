@@ -2333,6 +2333,32 @@ async function writeSheetRowStrict(
     scanRange
   );
 
+  // Removing the final data row can shrink a Google Sheet to its header only.
+  // values.update cannot address A2 when gridProperties.rowCount is 1.
+  // Grow the grid before writing; never treat a failed publication as a fill.
+  const sheetMetadata = await sheets.spreadsheets.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+  });
+  const sheet = (sheetMetadata.data.sheets || [])
+    .find(item => item.properties?.title === sheetName);
+  if (!sheet) throw new Error(`Sheet missing: ${sheetName}`);
+  const existingRowCount = Number(sheet.properties.gridProperties?.rowCount || 0);
+  if (existingRowCount < rowNumber) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      requestBody: {
+        requests: [{
+          appendDimension: {
+            sheetId: sheet.properties.sheetId,
+            dimension: 'ROWS',
+            length: rowNumber - existingRowCount,
+          },
+        }],
+      },
+    });
+  }
+
   await sheets.spreadsheets.values.update({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${quotedSheetName(sheetName)}!${startColumn}${rowNumber}:${endColumn}${rowNumber}`,
