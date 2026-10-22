@@ -44,6 +44,13 @@ function renderShadowSwing(feed){
  '<div class="metric"><small>Candidates</small><strong>'+esc((feed.candidates||[]).length)+'</strong></div>+'
  '<div class="metric"><small>Cash</small><strong>'+(committed?((10-feed.active_count)*10).toFixed(1)+'%':'100.0%')+'</strong></div>+'
  '<div class="metric"><small>Model Allocation</small><strong>$10K / position</strong></div></div>+'
+ '<section class="section" id="how-swing-leaders-works"><h2>How Swing Leaders Works</h2>'+
+ '<p class="section-sub"><strong>Active Portfolio:</strong> Open model positions monitored for targets, opening stops and daily research scores.</p>'+
+ '<p class="section-sub"><strong>Candidates:</strong> Stocks being watched; they are not open positions and may never be added.</p>'+
+ '<p class="section-sub"><strong>Closed Trades:</strong> Completed model positions after a documented target, stop or score exit.</p>'+
+ '<p class="section-sub"><strong>Position size and exits:</strong> Fixed $10,000 per position · +10% target · 9:30 ET opening -5% stop · score dropout below 70.</p></section>'+
+ '<section class="section" id="market-update"><h2>Market Update</h2>'+
+ '<p class="section-sub">'+(committed?'Verified Engine 2.0 model review for '+esc(current)+'.':'Clean-slate inception. No independently verified morning ranking has been published.')+'</p></section>'+
  '<section class="section" id="active-portfolio"><div class="section-heading"><h2>Active Portfolio</h2></div>'+
  '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Prices are indicative where noted.</p>'+
  table(['Ticker','Score','Entry','Current','Return','P&L, $','Reviewed'],active,'No independently verified new positions.')+'</section>'+
