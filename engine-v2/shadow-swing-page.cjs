@@ -45,9 +45,9 @@ function renderShadowSwing(feed){
  '<div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+' / 10</strong></div>'+
  '<div class="metric"><small>Total Model P&amp;L</small><strong>'+signed(modelPnl)+'</strong></div></div>'+
  '<section class="section" id="active-portfolio"><div class="section-heading"><h2>Active Portfolio</h2></div>'+
- '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Prices are indicative where noted.</p>+'
+ '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Prices are indicative where noted.</p>'+
  table(['Ticker','Score','Entry','Current','Return','P&L, $','Reviewed'],active,'No independently verified new positions.')+'</section>'+
- '<section class="section" id="potential-candidates"><h2>Candidates</h2>+'
+ '<section class="section" id="potential-candidates"><h2>Candidates</h2>'+
  '<p class="section-sub">Candidate rankings appear only after complete, dated nine-factor research.</p>'+
  table(['Ticker','Score','Reason','Reviewed'],'','No verified candidate review available.')+'</section>'+
  '<section class="section" id="closed-trades"><h2>Closed Trades</h2>'+
