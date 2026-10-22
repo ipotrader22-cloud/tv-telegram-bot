@@ -11,6 +11,7 @@ const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {pollRenderQuoteStatus}=require('./render-quote-observer.cjs');
 const {checkMinuteFeed}=require('./live-quote-probe.cjs');
 const {readShadowPublicFeed}=require('./shadow-public-feed.cjs');
+const {renderShadowSwing}=require('./shadow-swing-page.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const {saveSummary}=require('./compare-history.cjs');
@@ -48,6 +49,18 @@ function marketProbe(){
  return probeFlight;
 }
 const server=http.createServer((req,res)=>{
+ if(req.method==='GET'&&req.url==='/v2/swing-trading'){
+  readShadowPublicFeed({url}).then(snapshot=>{
+   const html=renderShadowSwing(snapshot);
+   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff'});
+   res.end(html);
+  }).catch(()=>{
+   res.writeHead(503,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex'});
+   res.end('Engine 2 shadow preview unavailable: ledger proof missing.');
+  });
+  return;
+ }
+
  if(req.method==='GET'&&req.url==='/v2/model/snapshot'){
   readShadowPublicFeed({url}).then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'SHADOW_LEDGER_READ_UNAVAILABLE',published:false}))});
