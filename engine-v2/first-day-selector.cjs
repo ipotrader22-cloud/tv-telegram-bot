@@ -2,11 +2,11 @@
 // Read-only selection for FIRST clean-slate portfolio day; subsequent reviews
 // require an event-driven exit/rebalance engine and cannot replay this initializer.
 const {validateResearchBatch}=require('./research-attestation.cjs');
-const {validateQuote}=require('./market-data-adapter.cjs');
+const {validateModelReference}=require('./market-data-adapter.cjs');
 const {planMorningRun}=require('./morning-run-plan.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {score}=require('./core.cjs');
-function firstDayPortfolio({date,runAt,session,researchBatch,quotes,priorActive=[],priorClosed=[]}={}){
+function firstDayPortfolio({date,runAt,session,researchBatch,quotes,priorActive=[],priorClosed=[],allowIndicativeFallback=false}={}){
  const blocked=(reason,details=[])=>({status:'BLOCKED',reason,details,publishable:false});
  if(typeof date!=='string'||date<EPOCH)return blocked('BEFORE_CLEAN_EPOCH');
  if(priorActive.length||priorClosed.length)return blocked('LEGACY_POSITIONS_NOT_ALLOWED');
@@ -17,11 +17,11 @@ function firstDayPortfolio({date,runAt,session,researchBatch,quotes,priorActive=
  const byTicker=new Map((quotes||[]).map(q=>[q.ticker,q]));
  const positions=[],failures=[];
  for(const candidate of eligible){
-  const q=byTicker.get(candidate.ticker),checked=validateQuote({ticker:candidate.ticker,quote:q,at:runAt,date});
-  if(checked.status!=='PASS'){failures.push(candidate.ticker+':'+checked.reason);continue}
+  const q=byTicker.get(candidate.ticker),checked=validateModelReference({ticker:candidate.ticker,quote:q,at:runAt,date,allowIndicativeFallback});
+  if(!['VERIFIED_LIVE_TRADE','INDICATIVE_REFERENCE_VALIDATED'].includes(checked.status)){failures.push(candidate.ticker+':'+checked.reason);continue}
   const price=checked.price;
   positions.push({ticker:candidate.ticker,entryDate:date,entryTime:q.timestamp,entryPrice:price,entryScore:candidate.score,currentPrice:price,currentScore:candidate.score,factors:candidate.factors,fullReviewDate:date,
-   shares:Math.floor(10000/price),reviewEvidenceId:candidate.ohlcvSourceId,quoteSourceId:checked.sourceId});
+   shares:Math.floor(10000/price),reviewEvidenceId:candidate.ohlcvSourceId,quoteSourceId:checked.sourceId,modelEntryPriceKind:checked.quoteKind||'LAST_TRADE',modelEntryIndicative:checked.indicative===true});
  }
  if(failures.length)return blocked('ELIGIBLE_POSITION_QUOTE_FAILURE',failures);
  const research=positions.map(p=>({ticker:p.ticker,reviewDate:date,timestamp:researchBatch.items.find(x=>x.ticker===p.ticker).timestamp,complete:true,factors:p.factors}));
