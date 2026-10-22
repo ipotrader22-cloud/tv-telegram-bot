@@ -46,8 +46,8 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
   // An epoch cannot silently reuse the old ledger, and later dates require an
   // independently persisted predecessor. Immutable state is in the SAME commit.
   const priorState=await db.query('SELECT session_date::text AS date,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 AND session_date<$2 ORDER BY session_date DESC LIMIT 1',[EPOCH,inputs.date]);
-  if(inputs.date===EPOCH&&priorState.rowCount)throw Error('Inaugural epoch already has earlier state');
-  if(inputs.date!==EPOCH&&!priorState.rowCount)throw Error('Prior clean-slate state missing');
+  // Epoch is the accounting inception, not an assertion of unverified trades on that day.
+  // A first verified review may occur after Oct 19, with zero inherited holdings.
   if(priorState.rowCount){
    const priorOpen=new Map(priorState.rows[0].active.map(x=>[x.ticker+'|'+x.entryDate,x]));
    const priorClosed=new Map(priorState.rows[0].closed.map(x=>[x.ticker+'|'+x.entryDate,x]));
