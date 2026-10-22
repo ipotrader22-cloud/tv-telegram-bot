@@ -1,0 +1,24 @@
+// Regression: SMIO bar timestamps are not unique trade IDs.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+const start = source.indexOf('function normalizeTradeId(tradeId) {');
+const end = source.indexOf('\nfunction makeTradeId(', start);
+assert.ok(start >= 0 && end > start, 'normalizer must be present');
+const context = {normalizeSymbol: v => String(v).trim().toUpperCase()};
+vm.createContext(context);
+vm.runInContext(source.slice(start,end), context);
+const normalize = context.normalizeTradeId;
+const stamp = '1792675800000';
+const be = 'SMIO_RSI_RESEARCH:PINE01:139:41:20:3:true:true:8:21:200:ATR:0.7:Auto:true:NYSE:BE:30:SHORT:' + stamp;
+const cat = 'SMIO_RSI_RESEARCH:PINE01:187:28:18:4:true:true:8:21:200:ATR:2.7:Auto:true:NYSE:CAT:45:SHORT:' + stamp;
+const biib = 'SMIO_RSI_RESEARCH:PINE01:90:42:32:3:true:true:8:21:200:ATR:2.0:Auto:true:NASDAQ:BIIB:45:LONG:' + stamp;
+assert.equal(normalize(be), be.toUpperCase());
+assert.equal(normalize(cat), cat.toUpperCase());
+assert.equal(normalize(biib), biib.toUpperCase());
+assert.equal(new Set([be,cat,biib].map(normalize)).size, 3);
+assert.equal(normalize('NKE_LONG'), 'NKE_LONG');
+assert.equal(normalize('VIXALE_EDGE:APA:45:LONG:1792675800000'),'VIXALE_EDGE:APA:45:LONG:1792675800000');
+console.log('SMIO full trade identity normalization: PASS');

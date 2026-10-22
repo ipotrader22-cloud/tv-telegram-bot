@@ -249,6 +249,7 @@ function normalizeTradeId(tradeId) {
   const raw = String(tradeId || '').trim().toUpperCase();
   if (!raw) return '';
   if (raw.startsWith('VIXALE_EDGE:')) return raw;
+  if (raw.startsWith('SMIO_RSI_RESEARCH:')) return raw;
 
   const match = raw.match(/^(.*)_(LONG|SHORT)$/);
   if (!match) {
