@@ -67,7 +67,7 @@ function renderShadowSwing(feed){
  ' · No broker orders or live website publication. '+(current?'Latest certified review: '+esc(current):'No certified review date available.')+'</div>'+
  '<div class="metrics"><div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+'</strong></div>'+
  '<div class="metric"><small>Candidates</small><strong>'+esc((feed.candidates||[]).length)+'</strong></div>'+
- '<div class="metric"><small>Cash</small><strong>'+(committed?((10-feed.active_count)*10).toFixed(1)+'%':'100.0%')+'</strong></div>'+
+ '<div class="metric"><small>Cash</small><strong>'+(committed&&Number(feed.current_model_equity)>0?((100000+Number(feed.realized_model_pnl)-10000*feed.active_count)/Number(feed.current_model_equity)*100).toFixed(1)+'%':'100.0%')+'</strong></div>'+
  '<div class="metric"><small>Model Allocation</small><strong>$10K / position</strong></div></div>'+
  '<section class="section" id="how-swing-leaders-works"><h2>How Swing Leaders Works</h2>'+
  '<p class="section-sub"><strong>Active Portfolio:</strong> Open model positions monitored for targets, opening stops and daily research scores.</p>'+
