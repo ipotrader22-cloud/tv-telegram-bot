@@ -9,7 +9,7 @@ assert.ok(start >= 0 && end > start, 'strict writer must be present');
 
 const sandbox = {
   GOOGLE_SHEET_ID: 'fixture-sheet',
-  readSheet: async () => [['trade_id']],
+  nextStrictSheetRow: async () => 2,
   quotedSheetName: name => "'" + name + "'",
 };
 vm.runInNewContext(source.slice(start, end) + '\nthis.writer = writeSheetRowStrict;', sandbox);
