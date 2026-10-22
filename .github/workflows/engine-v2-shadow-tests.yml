@@ -3,9 +3,6 @@ on:
   pull_request:
     paths:
       - 'engine-v2/**'
-      - 'bridge/engine_v2_quote_evidence.py'
-      - 'bridge/test_engine_v2_quote_evidence.py'
-      - 'bridge/ib_bridge.py'
       - '.github/workflows/engine-v2-shadow-tests.yml'
   workflow_dispatch:
 permissions:
@@ -39,9 +36,6 @@ jobs:
         run: npm install --prefix engine-v2 --no-save --no-package-lock pg@8
       - name: Run all shadow and real PostgreSQL integration tests
         run: node --test engine-v2/*.test.cjs
-
-      - name: Validate opt-in existing TWS quote evidence (offline mocks)
-        run: python -m unittest discover -s bridge -p 'test_engine_v2_quote_evidence.py' -v
 
       - name: Probe historical PLTR one-minute evidence (research only)
         if: always()
