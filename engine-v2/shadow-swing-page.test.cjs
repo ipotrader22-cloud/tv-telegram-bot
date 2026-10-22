@@ -4,7 +4,7 @@ const {renderShadowSwing}=require('./shadow-swing-page.cjs');
 const empty={version:2,epoch:'2026-10-19',status:'INCEPTION_ONLY_NOT_REVIEWED',snapshot_date:null,active_portfolio:[],closed_trades:[],active_count:0};
 test('matches current Swing page section hierarchy without inventing holdings',()=>{
  const html=renderShadowSwing(empty);
- for(const x of ['Swing Leaders','Active Portfolio','Potential Candidates','Closed Trades','Equity History'])assert.ok(html.includes(x));
+ for(const x of ['Swing Leaders','Active Portfolio','Candidates','Closed Trades','Equity History'])assert.ok(html.includes(x));
  assert.match(html,/INCEPTION ONLY/);assert.match(html,/\$100,000.00/);
  assert.ok(!html.includes('Reviewed 2026-10-22'));
 });
