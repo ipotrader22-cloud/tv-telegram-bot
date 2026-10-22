@@ -373,6 +373,55 @@ class DemoLifecycle:
         row[key] = delivery
         self.save(state)
 
+    async def session_diagnostic(self, symbol):
+        """Read-only, SMIO demo-account-attested IB STK session inquiry."""
+        from datetime import datetime as _datetime
+        from zoneinfo import ZoneInfo
+        import re
+        try:
+            from .smio_eod_policy import session_close_from_ib
+        except ImportError:
+            from smio_eod_policy import session_close_from_ib
+
+        symbol = str(symbol or "").strip().upper()
+        if not re.fullmatch(r"[A-Z]{1,5}", symbol):
+            return {"ok": False, "error": "invalid_stock_symbol"}
+        try:
+            async with self.core.ib_lock:
+                await self.environment()  # match exact attested simulated account
+                contract = await self.core.qualify_contract(
+                    {"symbol": symbol, "sec_type": "STK"}
+                )
+                if getattr(contract, "secType", "") != "STK":
+                    raise ValueError("contract is not STK")
+                response = await self.core.bounded_ib_refresh_request(
+                    "reqContractDetailsAsync", contract
+                )
+            details = list(response.get("values") or [])
+            if not response.get("ok") or len(details) != 1:
+                raise ValueError("IB stock session details unavailable or ambiguous")
+            item = details[0]
+            if getattr(getattr(item, "contract", None), "secType", "") != "STK":
+                raise ValueError("IB contract details not STK")
+            now = _datetime.now(ZoneInfo("America/New_York"))
+            tz = self.core.ib_session_timezone(getattr(item, "timeZoneId", ""))
+            close = session_close_from_ib(item, now, tz,
+                                         self.core.parse_ib_session_stamp)
+            from datetime import timedelta as _timedelta
+            return {
+                "ok": True, "symbol": symbol, "sec_type": "STK",
+                "time_zone_id": str(getattr(item, "timeZoneId", "") or ""),
+                "liquid_hours": str(getattr(item, "liquidHours", "") or ""),
+                "session_verified": close is not None,
+                "session_close_et": close.isoformat() if close else None,
+                "smio_eod_start_et": (close - _timedelta(minutes=5)).isoformat() if close else None,
+                "query_date_et": now.date().isoformat(),
+            }
+        except Exception as exc:
+            # No credentials, account numbers or endpoint tokens in the response.
+            return {"ok": False, "symbol": symbol,
+                    "error": "SMIO demo STK session verification unavailable"}
+
     async def eod_failsafe_pass(self, now_value=None):
         """SMIO-only demo exit five minutes ahead of confirmed IB stock session end."""
         from datetime import datetime as _datetime, time as _time
@@ -636,6 +685,10 @@ def install_smio_demo_adapter(core):
     core.forward_to_render = forward
     core.app.on_event("startup")(startup)
     core.app.get("/ib/smio-demo-status")(demo_status)
+    async def demo_session(symbol: str = "APA"):
+        return await lifecycle.session_diagnostic(symbol)
+
+    core.app.get("/ib/smio-demo-session")(demo_session)
     core._smio_demo_lifecycle = lifecycle
     core._smio_demo_adapter_installed = True
     return core
