@@ -1,5 +1,10 @@
 name: Engine 2 Shadow Tests
 on:
+  push:
+    branches: ['engine-v2-shadow-foundation-20261016']
+    paths:
+      - 'engine-v2/**'
+      - '.github/workflows/engine-v2-shadow-tests.yml'
   pull_request:
     paths:
       - 'engine-v2/**'
