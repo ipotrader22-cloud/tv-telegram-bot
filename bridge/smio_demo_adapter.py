@@ -530,11 +530,56 @@ def install_smio_demo_adapter(core):
     original_handle, original_background = core.handle_ib_action, core.process_signal_background
     original_forward = core.forward_to_render
 
+    async def prior_day_entry_still_open(payload):
+        # The calendar date is not proof of closure. Validate exact broker
+        # ownership before allowing an overnight entry to be published.
+        async with lifecycle.routing_lock, core.ib_lock:
+            await lifecycle.environment()
+            await lifecycle.refreshed()
+            state = lifecycle.load()
+            row = state["setups"].get(payload.get("setup_id"))
+            if not row or row.get("state") != "OPEN" or row.get("close_signal") or row.get("close"):
+                return False
+            if row.get("entry_delivery_id") != payload.get("bridge_delivery_id"):
+                return False
+            if row.get("account") not in core.ib.managedAccounts():
+                return False
+            if row.get("entry", {}).get("ref") != payload.get("ib_order_ref"):
+                return False
+            if row.get("entry", {}).get("id") != payload.get("ib_order_id"):
+                return False
+            # An interrupted execution history is ambiguous even if a same-
+            # symbol position exists: do not treat the position alone as proof.
+            lifecycle.ownership_history(state, row)
+            qty, _ = lifecycle.total(lifecycle.executions(row, "entry"))
+            if qty <= 0 or abs(qty - float(row.get("filled_qty") or 0)) > 0.000001:
+                return False
+            if lifecycle.executions(row, "target") or lifecycle.executions(row, "close"):
+                return False
+            position = await core.get_position_size(payload["symbol"])
+            expected = qty if payload.get("side") == "LONG" else -qty
+            if abs(position - expected) > 0.000001:
+                return False
+            target = row.get("target")
+            if not target:
+                return False
+            owned_target = lifecycle.exact_trade(payload["symbol"], row["account"], target["ref"], target["id"])
+            if not owned_target or owned_target not in lifecycle.working(payload["symbol"]):
+                return False
+            if any(trade is not owned_target for trade in lifecycle.working(payload["symbol"])):
+                return False
+            return True
+
     async def forward(payload):
         if is_smio_rsi_payload(payload):
             if stale_smio_entry_callback(payload):
-                # Retain the durable outbox item for operator review.
-                return {"forwarded": False, "reason": "smio_prior_day_entry_quarantined"}
+                try:
+                    verified_open = await prior_day_entry_still_open(payload)
+                except Exception:
+                    verified_open = False
+                if not verified_open:
+                    return {"forwarded": False, "quarantine": True,
+                            "reason": "smio_prior_day_entry_ownership_unverified"}
             return await asyncio.to_thread(send_callback, core, payload)
         return await original_forward(payload)
 
