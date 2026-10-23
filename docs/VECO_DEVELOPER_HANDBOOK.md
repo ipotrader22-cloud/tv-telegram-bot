@@ -3515,3 +3515,56 @@ supported sector benchmarks and is not the final production selection universe.
 Production universe breadth and factor coverage still need review before cutover.
 The workbook and email publishers remain disabled pending real provider and
 delivery verification. The approved staging email recipient is already configured.
+
+## 2026-10-23 — Publication-first scope and independent cron provisioned
+
+Owner deferred morning email: publication success requires real research, durable
+portfolio commit and exact Sheet/API/HTML readback, not Resend credentials or
+delivery. Keep email disabled. EMAIL_DISABLED is a terminal journal state for
+pending-run selection and does not prevent the next session. Sixteen focused
+pipeline/cron tests passed with this existing behavior.
+
+Owner approved the Render cron charge (minimum $1/month plus usage). Created
+`vixale-engine2-staging-daily`, resource `crn-dbdknsl9fdbs73bfloi0`, in Oregon,
+on the isolated PR branch with auto-deploy off, starter plan, schedule
+`* 14,15 * * 1-5`, and the documented 240-second cron command. Email is explicitly
+NO; pipeline is explicitly NO pending credential wiring. This is not an active
+or verified morning publisher yet. No production service was modified.
+
+The new cron has the same bounded staging universe/sector configuration as the
+shadow observer. Owner must securely add VIXALE_V2_SHADOW_DATABASE_URL from the
+existing isolated observer (or shadow Postgres Internal connection URL) and
+VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON using the dedicated staging identity.
+The connected service-creation tool accepts literal values but cannot reference
+existing service secrets or environment groups. Never place these values in
+source, comments, logs or chat. After values are installed, verify the cron build
+and configuration before setting its pipeline flag YES. Keep the observer's
+writer disabled and use the shared shadow ledger for preview readback.
+
+Disable the cron pipeline or suspend its schedule to roll back activation; keep
+the existing journal. New-epoch end-to-end verification and production website
+cutover remain pending.
+
+## 2026-10-23 — Legacy scheduler retirement audit (read-only)
+
+Five enabled ChatGPT automations were inspected. No task was changed or disabled.
+- 09:51 Swing Opening Stop Check: retire at cutover after Engine 2 opening-stop evidence is verified.
+- 10:00 Swing Portfolio Review: legacy writer/email publisher; retire at verified cutover. Its two-new-entries/day cap conflicts with Engine 2.
+- 10:25 Swing Recovery & Email: legacy recovery writer/email publisher; retire after Engine 2 publication retry/restart verification. Its two-additions cap is also stale.
+- Intraday Target & Change Monitor: not yet fully replaced. Its hourly same-day target publication differs from Engine 2 morning reconciliation of the preceding interval. Implement equivalent Engine 2 intraday coverage or obtain an explicit timing-policy decision before retiring it.
+- VIXALE 2 Clean-Slate Build: retain during implementation; its mandatory email-delivery gate is stale under the owner's publication-first scope and needs prompt correction. Retire after stable handoff.
+
+Fetched origin/main confirms four scheduled GitHub workflow definitions.
+Swing Daily Research Inputs is a retirement candidate once independent Engine 2
+research is verified. Swing Morning Publication Verification should be retained
+and adapted to the new epoch/schema. Public Daily Market Skim and Production
+Locale Browser QA serve separate functions and should remain. This verifies
+repository schedule definitions, not GitHub's runtime enabled state or delivery.
+Render inventory contained only the newly provisioned Engine 2 cron; no older
+Render cron was identified. Windows Task Scheduler/TWS jobs were not inspected
+or changed and are outside this retirement scope.
+
+Do not treat the new cron's successful build as an end-to-end publication PASS.
+Its two isolated credentials remain unwired and its publisher remains disabled.
+Coordinate legacy-writer retirement with verified production cutover; do not
+leave competing writers publishing the same portfolio.

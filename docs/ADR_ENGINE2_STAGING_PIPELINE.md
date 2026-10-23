@@ -94,3 +94,11 @@ Validate the dedicated staging identity with a GET of the fixed workbook metadat
 at startup, independently of writer activation. Publish only sanitized status in
 health; never reveal provider exceptions or credentials. Configuration validity
 is distinct from market-data completeness and successful financial publication.
+
+## Publication-first activation scope
+
+The owner deferred morning email on 2026-10-23. Exact verified Sheet/API/HTML
+publication with EMAIL_DISABLED completes this phase; Resend is not a launch
+gate. A separate paid staging cron was approved and provisioned, with writer
+activation disabled until its dedicated credentials are installed. Production
+website cutover still requires a real verified morning portfolio cycle.
