@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace as N
 import unittest
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from bridge.smio_demo_adapter import DemoLifecycle, digest, send_callback
@@ -108,6 +109,18 @@ class Core:
     async def ensure_ib_connected(self): pass
     async def get_position_size(self, symbol): return self.ib.position
     async def qualify_contract(self, data): return N(symbol=data["symbol"])
+    async def bounded_ib_refresh_request(self, method, contract):
+        return {"ok": True, "values": [N(
+            timeZoneId="America/New_York",
+            liquidHours="20261022:0930-20261022:1600"
+        )]}
+    def ib_session_timezone(self, name): return ZoneInfo("America/New_York")
+    def parse_ib_session_stamp(self, value, default_day, zone):
+        try:
+            date, clock = value.split(":")
+            return datetime.strptime(date + clock, "%Y%m%d%H%M").replace(tzinfo=zone)
+        except Exception:
+            return None
     def validate_pretrade_risk(self, *args): pass
     def validate_entry_timing(self, *args): pass
     def is_us_stock_rth_now(self): return self.rth
@@ -153,6 +166,91 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             await self.engine.reconcile()  # exact target repair then fill publication
         self.assertEqual(len(self.core.outbox), 1)
         self.core.outbox.clear()  # fake Render acknowledged OPEN publication
+
+    async def test_session_diagnostic_rejects_non_stock_and_invalid_symbol(self):
+        self.assertEqual((await self.engine.session_diagnostic("ES 202610"))["error"],
+                         "invalid_stock_symbol")
+        async def wrong_type(data):
+            return N(symbol=data["symbol"], secType="FOP")
+        with patch.object(self.core, "qualify_contract", side_effect=wrong_type):
+            result = await self.engine.session_diagnostic("APA")
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.core.ib.mutations, [])
+
+    async def test_session_diagnostic_reads_ib_without_mutations(self):
+        now = datetime.now(ZoneInfo("America/New_York"))
+        day = now.strftime("%Y%m%d")
+        async def stock(data):
+            return N(symbol=data["symbol"], secType="STK")
+        async def details(method, contract):
+            return {"ok": True, "values": [N(
+                contract=N(secType="STK"), timeZoneId="America/New_York",
+                liquidHours=f"{day}:0930-{day}:1600"
+            )]}
+        with patch.object(self.core, "qualify_contract", side_effect=stock), \
+             patch.object(self.core, "bounded_ib_refresh_request", side_effect=details):
+            result = await self.engine.session_diagnostic("APA")
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(result["session_verified"], result)
+        self.assertIn("15:55:00", result["smio_eod_start_et"])
+        self.assertEqual(self.core.ib.mutations, [])
+        self.assertEqual(self.core.ib.cancels, [])
+
+    async def test_session_diagnostic_missing_details_fails_closed(self):
+        async def stock(data):
+            return N(symbol=data["symbol"], secType="STK")
+        async def none(method, contract):
+            return {"ok": False, "values": []}
+        with patch.object(self.core, "qualify_contract", side_effect=stock), \
+             patch.object(self.core, "bounded_ib_refresh_request", side_effect=none):
+            result = await self.engine.session_diagnostic("APA")
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.core.ib.mutations, [])
+
+    async def test_scheduler_eod_full_broker_fixture_to_flat_callback(self):
+        """Scheduler -> validated CLOSE -> exact target cancel -> filled flat -> callback."""
+        data = signal()
+        await self.open_position(data)
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=True), \
+             patch("bridge.smio_demo_contract.time.time", return_value=datetime(2026,10,22,15,55,tzinfo=ZoneInfo('America/New_York')).timestamp()):
+            await self.engine.eod_failsafe_pass(datetime(2026,10,22,15,55,tzinfo=ZoneInfo('America/New_York')))
+            self.assertEqual(self.core.ib.position, 0)
+            self.assertEqual(len(self.core.ib.cancels), 1)
+            self.assertEqual(len([x for x in self.core.ib.mutations if x.startswith("SMIOC_")]), 1)
+            await self.engine.reconcile()
+            callback = next(iter(self.core.outbox.values()))
+            self.assertEqual(callback["event"], "EOD_CLOSE")
+            self.assertTrue(callback["broker_confirmed_flat"])
+            self.assertEqual(callback["position_after_close"], 0)
+            await self.engine.eod_failsafe_pass()
+            self.assertEqual(len([x for x in self.core.ib.mutations if x.startswith("SMIOC_")]), 1)
+
+    async def test_scheduler_disabled_or_outside_rth_mutates_nothing(self):
+        data = signal()
+        await self.open_position(data)
+        before = list(self.core.ib.mutations)
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": ""}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=False):
+            await self.engine.eod_failsafe_pass()
+        self.assertEqual(self.core.ib.mutations, before)
+        self.core.rth = False
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=True):
+            await self.engine.eod_failsafe_pass()
+        self.assertEqual(self.core.ib.mutations, before)
+        self.assertEqual(self.core.ib.cancels, [])
+
+    async def test_scheduler_unproven_history_blocks_without_cancel(self):
+        data = signal()
+        await self.open_position(data)
+        self.core.history_covered = False
+        with patch.dict("os.environ", {"SMIO_DEMO_EOD_FAILSAFE_ENABLED": "true"}), \
+             patch("bridge.smio_eod_policy.eod_due", return_value=True):
+            await self.engine.eod_failsafe_pass()
+        self.assertEqual(self.core.ib.cancels, [])
+        self.assertEqual(self.core.ib.position, 10)
+        self.assertFalse(any(x.startswith("SMIOC_") for x in self.core.ib.mutations))
 
     async def test_buy_sell_and_rsi_only_close(self):
         for side in ("LONG", "SHORT"):
