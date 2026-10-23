@@ -1498,6 +1498,9 @@ def mark_managed_close_delivery_pending(
 
 
 def render_outbox_item_due(item: Dict[str, Any], now: Optional[datetime] = None) -> bool:
+    # Quarantine must survive restart without perpetual scheduler churn.
+    if item.get("quarantined") is True:
+        return False
     raw_value = str(item.get("next_attempt_at") or "").strip()
     if not raw_value:
         return True
