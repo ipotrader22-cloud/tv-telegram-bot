@@ -10,9 +10,17 @@ function completedBars(raw,{ticker,date,asOf}={}){
  const chart=raw?.chart?.result?.[0];
  if(!chart||chart.meta?.symbol!==ticker||!Array.isArray(chart.timestamp)||!chart.indicators?.quote?.[0])throw Error('INVALID_YAHOO_CHART');
  const q=chart.indicators.quote[0],ms=Date.parse(asOf);
- const bars=[];
+ // A malformed minute series must not be silently sorted into plausible evidence.
+ // In particular, duplicate minutes can hide conflicting prices/target highs.
+ if(![q.open,q.high,q.low,q.close,q.volume].every(a=>Array.isArray(a)&&a.length===chart.timestamp.length))
+  throw Error('YAHOO_MINUTE_OHLCV_LENGTH_MISMATCH');
+ const bars=[],seen=new Set();
+ let prior=-Infinity;
  for(let i=0;i<chart.timestamp.length;i++){
-  const start=chart.timestamp[i]*1000;
+  const second=chart.timestamp[i],start=second*1000;
+  if(!Number.isSafeInteger(second)||start%60000!==0||start<=prior||seen.has(start))
+   throw Error('YAHOO_MINUTE_TIMESTAMP_SEQUENCE_INVALID');
+  prior=start;seen.add(start);
   const values=[q.open?.[i],q.high?.[i],q.low?.[i],q.close?.[i],q.volume?.[i]];
   if(start+60000>ms)continue; // only completed bars, never partial.
   const et=localET(new Date(start).toISOString());
