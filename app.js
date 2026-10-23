@@ -2359,6 +2359,34 @@ async function writeSheetRowStrict(
     });
   }
 
+  // Deleting the last position can shrink the grid to the header alone.
+  // values.update cannot write to row 2 until the actual grid is expanded.
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+  });
+  const targetSheet = (metadata.data.sheets || []).find(
+    sheet => sheet.properties?.title === sheetName
+  );
+  if (!targetSheet) {
+    throw new Error(`Missing sheet for strict row write: ${sheetName}`);
+  }
+  const rowCount = targetSheet.properties.gridProperties?.rowCount || 0;
+  if (rowCount < rowNumber) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      requestBody: {
+        requests: [{
+          appendDimension: {
+            sheetId: targetSheet.properties.sheetId,
+            dimension: 'ROWS',
+            length: rowNumber - rowCount,
+          },
+        }],
+      },
+    });
+  }
+
   await sheets.spreadsheets.values.update({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${quotedSheetName(sheetName)}!${startColumn}${rowNumber}:${endColumn}${rowNumber}`,
