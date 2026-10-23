@@ -1,0 +1,23 @@
+name: SMIO Stale Entry Regression
+on:
+  pull_request:
+    paths:
+      - "bridge/smio_demo_adapter.py"
+      - "bridge/smio_stale_entry_guard.py"
+      - "bridge/ib_bridge_core.py"
+      - "tests/test_smio_stale_entry_guard.py"
+      - "tests/test_smio_outbox_quarantine.py"
+      - ".github/workflows/smio-stale-entry-regression.yml"
+  workflow_dispatch:
+jobs:
+  prevention:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax check
+        run: python -m py_compile bridge/smio_stale_entry_guard.py bridge/smio_demo_adapter.py bridge/ib_bridge_core.py tests/test_smio_stale_entry_guard.py tests/test_smio_outbox_quarantine.py
+      - name: Focused regressions
+        run: python -m unittest discover -s tests -p 'test_smio_*guard.py' -v && python -m unittest tests.test_smio_outbox_quarantine -v

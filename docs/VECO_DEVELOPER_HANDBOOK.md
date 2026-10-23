@@ -3456,3 +3456,24 @@ Completed daily review: all thirteen then-active/candidate scores were reassesse
 Validation boundary: the migrated 9:30 task has not yet completed its first timed October13 run. No executable server-side analyst/outbox worker was added; orchestration remains cloud scheduled research tasks, native guarded commits, provider idempotency and independent read-only Actions checks. Do not describe this as a guaranteed scheduler or completely deterministic autonomous scoring engine. No app.js/package.json/runtime/credentials changes in this documentation checkpoint. Rollback: revert these docs only; production metadata/task controls are separate and must not be silently removed by a documentation revert.
 
 
+
+
+### SMIO delayed ENTRY_FILL prevention (2026-10-23, PR #346)
+
+A bridge restart and unavailable ngrok tunnel delayed October 22 COP SMIO
+ENTRY_FILL publication until October 23 after broker-confirmed EOD closure.
+For future SMIO callbacks, the bridge's outbound publication guard checks the
+original New York signal date. Prior-day entries must prove exact journal,
+account, entry and target order identity, full entry quantity, no exit/target
+fills, exact broker position, working target and uninterrupted execution
+history; otherwise the durable outbox item is quarantined with a reason and
+excluded from both scheduled and forced delivery. A broker-proven overnight
+entry is still eligible to publish. Same-day entries and exit callbacks retain
+the existing handling. This is publication-only, not a trading algorithm or
+broker execution change. The historic COP exit is intentionally not recovered.
+
+The GitHub/Render merge does **not** install the bridge onto the Windows TWS
+machine. Local `C:\\ib_bridge` adapter/core/helper installation and bridge
+restart require a separate verified off-market-hours operator step, with
+backups, exact file comparison and a clean restart/status check. Do not
+assume protection is running locally before those checks.
