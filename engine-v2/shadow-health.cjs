@@ -25,6 +25,9 @@ if(!/^vixale_engine_v2_shadow_\d{8}$/.test(name))throw Error('Unexpected databas
 const port=Number(process.env.PORT||10000);
 const {createStagingWorker}=require('./staging-worker.cjs');
 const stagingWorker=createStagingWorker({url});
+let stagingAccess={workbook:'PENDING',writesPerformed:false};
+require('./staging-preflight.cjs').stagingPreflight().then(result=>{stagingAccess=result})
+ .catch(()=>{stagingAccess={workbook:'PREFLIGHT_FAILED',writesPerformed:false}});
 const readPreview=async()=>await stagingWorker.store.publishedFeed()||await readShadowPublicFeed({url});
 async function inspect(){
  const client=new Client({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:5000});
@@ -77,7 +80,7 @@ const server=http.createServer((req,res)=>{
  }
  if(path!=='/health'){res.writeHead(404);res.end();return}
  res.writeHead(last.connected?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});
- res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',stagingPipeline:stagingWorker.status(),cleanSlate:{epoch:EPOCH,mode:'SHADOW_ONLY',autonomousPublisherEnabled:false,sessionCalendarReady:sessionEvidence(EPOCH).isTradingDay,marketDataProviderReady:false,researchProviderReady:false,readyForProduction:false,renderQuoteObservationStatus:renderQuotes.status,renderQuoteObservationCount:renderQuotes.symbols?.length||0,renderQuoteTradeEvidenceVerified:false},valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
+ res.end(JSON.stringify({mode:'READ_ONLY',databaseConnected:last.connected,schemaInitialized:last.schemaPresent,comparisonStatus:comparison.status,sourceDate:comparison.asOf||null,sourceType:'IMPORTED_SNAPSHOT_NOT_LIVE',stagingAccess,stagingPipeline:stagingWorker.status(),cleanSlate:{epoch:EPOCH,mode:'SHADOW_ONLY',autonomousPublisherEnabled:false,sessionCalendarReady:sessionEvidence(EPOCH).isTradingDay,marketDataProviderReady:false,researchProviderReady:false,readyForProduction:false,renderQuoteObservationStatus:renderQuotes.status,renderQuoteObservationCount:renderQuotes.symbols?.length||0,renderQuoteTradeEvidenceVerified:false},valuationStatus:comparison.valuation?.status||'UNKNOWN',valuationErrors:comparison.valuation?.errors?.length||0,entryIntegrityStatus:comparison.entryIntegrity?.status||'UNKNOWN',historicalCertificationStatus:comparison.historical?.status||'UNKNOWN',historicalCertifiedMarks:comparison.historical?.certified||0,liveSheetStatus:liveStatus.status,liveSheetDate:liveStatus.sourceDate||null,historyChecks:historyStats.checks,historyChangedChecks:historyStats.changed_checks,historyLatestCheck:historyStats.latest_check||null}));
 });
 const refresh=async()=>{
  if(process.env.VIXALE_V2_RENDER_QUOTE_STATUS_URL){

@@ -87,3 +87,10 @@ fresh-decision window. Failures exit nonzero without leaking provider errors.
 The observer can keep serving the shared journal with its writer disabled.
 The cron resource and credentials are not provisioned by this code change; see the
 handbook for exact setup, delivery monitoring and remaining owner credential steps.
+
+## Read-only credential preflight
+
+Validate the dedicated staging identity with a GET of the fixed workbook metadata
+at startup, independently of writer activation. Publish only sanitized status in
+health; never reveal provider exceptions or credentials. Configuration validity
+is distinct from market-data completeness and successful financial publication.

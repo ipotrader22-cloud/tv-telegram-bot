@@ -3494,3 +3494,24 @@ No paid cron resource, live staging write, email or production cutover was creat
 
 Rollback: leave publisher/email disabled, remove the cron schedule if later
 provisioned, and redeploy the prior shadow revision. Preserve the durable journal.
+
+## 2026-10-23 — Dedicated staging identity and read-only access preflight
+
+Owner created vixale-engine2-staging@tv-trading-journal.iam.gserviceaccount.com
+and securely installed its credential on the shadow service. Drive permission
+readback confirms writer access only to the private staging workbook was added.
+The owner-triggered deployment reached LIVE at 876ba7d.
+
+`staging-preflight.cjs` performs GET-only workbook metadata validation at shadow
+startup even while the publisher is disabled. It rejects a different identity
+before constructing the client; health returns only sanitized access status,
+configuration validity and credential-presence booleans. It does not prove a
+financial write or actual market-provider coverage. No keys or error bodies are
+returned. No lease, portfolio cells or email are mutated by this check.
+
+Bounded integration-test universe: NVDA, AMD, AVGO, MU, AMAT (SMH); MSFT, AAPL,
+ORCL (XLK); XOM, CVX (XLE). This deliberately exercises all three currently
+supported sector benchmarks and is not the final production selection universe.
+Production universe breadth and factor coverage still need review before cutover.
+The workbook and email publishers remain disabled pending real provider and
+delivery verification. The approved staging email recipient is already configured.
