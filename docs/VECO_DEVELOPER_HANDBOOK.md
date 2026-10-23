@@ -3582,3 +3582,13 @@ Twenty-five focused cron/preflight/target/minute-provider tests passed. Real
 provider-to-workbook publication and subsequent preview parity remain pending
 the next supported session window (Monday October 26, 10:00 ET). No backdating
 or off-window bypass. Rollback: set only the cron pipeline flag NO and deploy.
+
+## 2026-10-23 — Owner-defined delayed-price staging scenario
+
+Handbook update required: YES. The owner requested formalizing the pre-open
+prior-session research / 10:00 decision / 09:40 model-price scenario for staging.
+See docs/ENGINE2_STAGING_DELAYED_0940_RUN.md for timing, provenance, model price
+semantics, accounting order and acceptance cases. This is a specification, not
+an implemented or verified new runtime. The current enabled cron still uses
+the old logic; its LIVE status does not certify this scenario. No production
+code, broker path, schedule or environment was changed by this documentation.

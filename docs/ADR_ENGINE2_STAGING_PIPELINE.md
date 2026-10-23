@@ -102,3 +102,12 @@ publication with EMAIL_DISABLED completes this phase; Resend is not a launch
 gate. A separate paid staging cron was approved and provisioned, with writer
 activation disabled until its dedicated credentials are installed. Production
 website cutover still requires a real verified morning portfolio cycle.
+
+## Delayed-price staging scenario — 2026-10-23
+
+Owner chose prior-session pre-open research followed by a 10:00 review using
+09:40 model prices for exits and entries. The scenario and acceptance criteria
+are specified in ENGINE2_STAGING_DELAYED_0940_RUN.md. Actual decision time must
+remain separate from historical model-price time. This supersedes the proposed
+fresh-price staging scenario only; runtime implementation is pending. A global
+increase in quote max-age alone does not implement this contract.
