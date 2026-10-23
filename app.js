@@ -2359,6 +2359,35 @@ async function writeSheetRowStrict(
     });
   }
 
+  // Google Sheets values.update cannot address a row beyond the physical grid.
+  // Open Positions can be header-only after the final EOD close, so grow only
+  // the required rows before writing; never create a synthetic trade.
+  if (sheetName === OPEN_POSITIONS_SHEET) {
+    const metadata = await sheets.spreadsheets.get({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+    });
+    const sheet = (metadata.data.sheets || []).find(
+      item => item.properties?.title === sheetName
+    );
+    if (!sheet) throw new Error('Open Positions sheet not found');
+    const rowCount = sheet.properties.gridProperties?.rowCount || 0;
+    if (rowCount < rowNumber) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: GOOGLE_SHEET_ID,
+        requestBody: {
+          requests: [{
+            appendDimension: {
+              sheetId: sheet.properties.sheetId,
+              dimension: 'ROWS',
+              length: rowNumber - rowCount,
+            },
+          }],
+        },
+      });
+    }
+  }
+
   await sheets.spreadsheets.values.update({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${quotedSheetName(sheetName)}!${startColumn}${rowNumber}:${endColumn}${rowNumber}`,
@@ -2391,6 +2420,26 @@ async function deleteSheetRow(sheets, sheetName, rowNumber) {
   if (sheetId === null) {
     console.log(`Sheet not found: ${sheetName}`);
     return;
+  }
+
+  // Preserve one writable data row after the last EOD close. Otherwise the
+  // following ENTRY_FILL fails at A2:L2 because the grid has only a header.
+  if (sheetName === OPEN_POSITIONS_SHEET) {
+    const metadata = await sheets.spreadsheets.get({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      fields: 'sheets(properties(sheetId,title,gridProperties(rowCount)))',
+    });
+    const sheet = (metadata.data.sheets || []).find(
+      item => item.properties?.title === sheetName
+    );
+    if (sheet?.properties?.gridProperties?.rowCount <= 2) {
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: GOOGLE_SHEET_ID,
+        range: `${quotedSheetName(sheetName)}!A${rowNumber}:L${rowNumber}`,
+      });
+      console.log(`Cleared final data row ${rowNumber} from ${sheetName}`);
+      return;
+    }
   }
 
   await sheets.spreadsheets.batchUpdate({
