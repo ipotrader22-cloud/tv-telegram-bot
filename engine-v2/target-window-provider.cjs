@@ -4,9 +4,18 @@
 const {completedBars}=require('./yahoo-minute-fallback.cjs');
 const {localET}=require('./market-data-adapter.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
-function verifyTargetWindow(raw,{position,runAt}){
- const from=position.lastTargetCheckedAt||position.entryTime,start=Date.parse(from),end=Math.floor(Date.parse(runAt)/60000)*60000;
- if(!Number.isFinite(start)||start< Date.parse(position.entryTime)||end<start||end-start>7*86400000)throw Error('TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY');
+function verifyTargetWindow(raw,{position,runAt}={}){
+ // Never certify an intraday target without the original lot identity and
+ // entry reference; missing dates previously allowed NaN comparisons through.
+ if(!position||!/^[A-Z][A-Z0-9.-]{0,14}$/.test(position.ticker||'')||
+    !Number.isFinite(position.entryPrice)||position.entryPrice<=0||
+    !Number.isFinite(Date.parse(position.entryTime||''))||
+    !Number.isFinite(Date.parse(runAt||'')))
+  throw Error('TARGET_POSITION_OR_TIME_EVIDENCE_MISSING');
+ const from=position.lastTargetCheckedAt||position.entryTime,start=Date.parse(from),entry=Date.parse(position.entryTime),
+  end=Math.floor(Date.parse(runAt)/60000)*60000;
+ if(!Number.isFinite(start)||start<entry||end<=entry||end<start||end-start>7*86400000)
+  throw Error('TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY');
  const dates=new Set();for(let t=Math.floor(start/60000)*60000;t<end;t+=86400000)dates.add(localET(new Date(t).toISOString()).date);
  dates.add(localET(new Date(end).toISOString()).date);
  const bars=[...dates].flatMap(date=>completedBars(raw,{ticker:position.ticker,date,asOf:runAt}));
