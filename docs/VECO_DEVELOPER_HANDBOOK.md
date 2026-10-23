@@ -1,3 +1,11 @@
+## Incident 2026-10-22 — header-only Open Positions grid blocks broker-confirmed ENTRY_FILL
+
+Observed after stock EOD: `Open Positions` grid had only one physical row (header). `writeSheetRowStrict` calculates the next data row as 2, but Google Sheets `values.update` to `'Open Positions'!A2:L2` fails with `exceeds grid limits. Max rows: 1`. The durable `Webhook Inbox` left broker-confirmed RTX and EQT `ENTRY_FILL` events in RETRY with that exact error; these trades were absent from `Trades`/Dashboard. A separate SMIO APA SETUP was published, but no corresponding ENTRY_FILL callback was observed in the inbox. The owner supplied TWS evidence of APA buy 2043 @ 49.49 15:30:31 ET and sell 2043 @ 49.42 15:55:22 ET. Do not infer the source of that missing callback without bridge journal/execution evidence.
+
+Minimal preventive guard: when writing an `Open Positions` row, check physical `gridProperties.rowCount` and `appendDimension` just enough rows before `values.update`. When deleting the last data row of that sheet, clear A:L instead of deleting its physical row, preserving row 2 for the next session. Other sheet deletion behavior and trade lifecycle/strategies/EOD remain unchanged. No historical entries or closes are synthesized.
+
+Runbook: [GitHub Issue #341](https://github.com/ipotrader22-cloud/tv-telegram-bot/issues/341). Broker executions are source of truth; compare exact execution/setup IDs and reject ambiguous reconstructions. Following the owner's explicit instruction, do **not** replay or backfill Oct 22 trades as part of this preventive patch. Historic RETRY events require an independently reviewed recovery/expiry policy, not blind reprocessing that could create stale OPEN records after broker-flat EOD.
+
 ## Oct 22, 2026 — Header-only Google Sheet grid blocks broker-confirmed entries
 
 Observed in `Webhook Inbox` for EQT and RTX: `ENTRY_FILL` was in `RETRY`
