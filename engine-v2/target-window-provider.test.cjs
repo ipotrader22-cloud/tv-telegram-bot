@@ -15,3 +15,20 @@ test('detect target yesterday afternoon, preserving first touch and complete wat
 });
 test('one missing minute invalidates the complete target scan',()=>{const r=raw();r.chart.result[0].indicators.quote[0].high[3]=null;assert.throws(()=>verifyTargetWindow(r,{position,runAt}),/COVERAGE_GAP/)});
 test('history outside seven-day retrieval cannot silently omit old target evidence',()=>assert.throws(()=>verifyTargetWindow(raw(),{position:{...position,lastTargetCheckedAt:'2026-10-10T14:00:00Z'},runAt}),/OUTSIDE/));
+
+test('missing original entry timestamp is blocked even with a target watermark',()=>{
+ assert.throws(()=>verifyTargetWindow(raw(),{position:{ticker:'TEST',entryPrice:100,lastTargetCheckedAt:position.lastTargetCheckedAt},runAt}),/TARGET_POSITION_OR_TIME_EVIDENCE_MISSING/);
+});
+test('invalid entry price cannot authorize target evidence',()=>{
+ for(const entryPrice of [undefined,0,-1,NaN,Infinity])
+  assert.throws(()=>verifyTargetWindow(raw(),{position:{...position,entryPrice},runAt}),/TARGET_POSITION_OR_TIME_EVIDENCE_MISSING/);
+});
+test('future entry timestamp cannot be used to scan earlier bars',()=>{
+ assert.throws(()=>verifyTargetWindow(raw(),{position:{...position,entryTime:'2026-10-22T14:01:00Z'},runAt}),/TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY/);
+});
+test('duplicate minute with conflicting high is rejected before target certification',()=>{
+ const x=raw(),c=x.chart.result[0],q=c.indicators.quote[0];
+ c.timestamp.push(c.timestamp.at(-1));
+ for(const k of ['open','high','low','close','volume'])q[k].push(q[k].at(-1));
+ assert.throws(()=>verifyTargetWindow(x,{position,runAt}),/YAHOO_MINUTE_TIMESTAMP_SEQUENCE_INVALID/);
+});
