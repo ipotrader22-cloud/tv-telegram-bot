@@ -21,6 +21,11 @@ except ImportError:
     from smio_rsi_gate import is_smio_rsi_payload
 
 
+try:
+    from .smio_stale_entry_guard import stale_smio_entry_callback
+except ImportError:
+    from smio_stale_entry_guard import stale_smio_entry_callback
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
@@ -527,6 +532,9 @@ def install_smio_demo_adapter(core):
 
     async def forward(payload):
         if is_smio_rsi_payload(payload):
+            if stale_smio_entry_callback(payload):
+                # Retain the durable outbox item for operator review.
+                return {"forwarded": False, "reason": "smio_prior_day_entry_quarantined"}
             return await asyncio.to_thread(send_callback, core, payload)
         return await original_forward(payload)
 
