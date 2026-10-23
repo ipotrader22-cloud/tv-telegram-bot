@@ -77,3 +77,13 @@ unmerged. Synthetic tests are not proof of provider delivery or production launc
 Rollback: disable the staging worker/email flags and redeploy the previous shadow
 commit. Keep immutable journal and clean-epoch records; do not reset trading data
 or modify the production workbook to roll back a staging code change.
+
+## 2026-10-23 scheduler boundary
+
+Use the standalone staging-cron.cjs entrypoint for a future separately provisioned
+cron. Both 14 and 15 UTC are scheduled; the command filters the actual 10:00–10:20
+ET retry window and NYSE sessions. The existing pipeline alone controls the stricter
+fresh-decision window. Failures exit nonzero without leaking provider errors.
+The observer can keep serving the shared journal with its writer disabled.
+The cron resource and credentials are not provisioned by this code change; see the
+handbook for exact setup, delivery monitoring and remaining owner credential steps.

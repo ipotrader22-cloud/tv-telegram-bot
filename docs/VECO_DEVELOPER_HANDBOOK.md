@@ -3451,3 +3451,46 @@ loopback database `vixale_engine_v2_shadow_20990101`; never run its cleanup agai
 an existing shadow or production database. Exact check/deploy evidence is recorded
 in the PR after completion. Production app, Windows bridge/TWS and legacy live
 schedule were not modified. Roll back only the isolated shadow code/flags.
+
+## 2026-10-23 — Independent staging cron command (PR #329)
+
+`engine-v2/staging-cron.cjs` runs one staging cycle and exits without starting a
+web server or importing the legacy portfolio. Shadow mode and the existing shadow
+database-name allowlist are required before constructing the worker. NYSE-closed
+days and the alternate UTC hour are skipped; an unmaintained calendar fails closed.
+Provider exceptions, credentials, recipients and private artifacts are never logged.
+Failed/bounced/complained/suppressed runs exit nonzero. API acceptance remains
+ACCEPTED_NOT_DELIVERED, requiring another scheduled check; it is never called delivery.
+
+Prepared Render cron settings (not provisioned):
+- Repository/branch: existing PR #329 branch, not main; auto-deploy disabled.
+- Region: Oregon, same workspace and private database as the shadow observer.
+- Build: `npm install --no-save --no-package-lock pg@8`.
+- Start: `timeout --signal=TERM 240s node engine-v2/staging-cron.cjs`.
+- UTC schedule: `* 14,15 * * 1-5`. Code permits only 10:00–10:20 ET on NYSE
+  sessions, handling DST; fresh model commits remain restricted to 10:00–10:05 ET.
+  Later invocations only finish/recheck durable work; missing first runs fail closed.
+- Configure the shadow database URL and dedicated staging credentials securely
+  on the cron service. No production credential copying or checked-in secret values.
+- Keep the observer publisher disabled when cron becomes the designated writer;
+  it continues serving the shared journal's verified snapshot. Existing database
+  advisory locks also protect accidental overlapping invocations.
+- A cron may need to wake the free preview server during HTTP readback. Retry
+  from the durable Sheet receipt; a timeout is not evidence of website parity.
+- Monitor nonzero exits and independently check journal delivery=DELIVERED after
+  the retry window. A successful process exit with ACCEPTED_NOT_DELIVERED is not
+  an end-to-end pass. No failure-alert destination is configured by this change.
+
+The owner approved a sole staging recipient, saved together with its matching
+allowlist on the shadow service; sending remains disabled. The recipient-setting
+deployment reached LIVE at commit 593c206. VIXALE's Resend domain is verified.
+Staging workbook permissions still show only its owner. Connected Drive tools can
+grant file access but cannot create a Google Cloud IAM service-account credential.
+The owner must provision a dedicated Sheets-enabled service account and securely
+install its JSON as VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON; only its non-secret
+client_email is needed to grant staging editor access. A dedicated Resend send/read
+credential must also be installed securely. Do not send credentials in chat.
+No paid cron resource, live staging write, email or production cutover was created.
+
+Rollback: leave publisher/email disabled, remove the cron schedule if later
+provisioned, and redeploy the prior shadow revision. Preserve the durable journal.
