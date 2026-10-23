@@ -1525,6 +1525,8 @@ async def attempt_render_outbox_delivery(
         item = load_render_outbox().get(clean_id)
         if not isinstance(item, dict):
             return {"delivered": True, "reason": "already_delivered_or_absent"}
+        if item.get("quarantined") is True:
+            return {"delivered": False, "reason": "quarantined", "quarantine_reason": item.get("quarantine_reason", "")}
         if not force and not render_outbox_item_due(item):
             return {
                 "delivered": False,
@@ -1544,6 +1546,14 @@ async def attempt_render_outbox_delivery(
 
         if not primary_delivered:
             primary_result = await forward_to_render(payload)
+            if primary_result.get("quarantine") is True:
+                persisted = update_render_outbox_item(
+                    clean_id,
+                    quarantined=True,
+                    quarantine_reason=str(primary_result.get("reason") or "review_required"),
+                    last_result=primary_result,
+                )
+                return {"delivered": False, "reason": "quarantined" if persisted else "quarantine_persistence_failed"}
             primary_delivered = render_delivery_succeeded(primary_result)
 
         reconcile_delivered = reconcile_payload is None
