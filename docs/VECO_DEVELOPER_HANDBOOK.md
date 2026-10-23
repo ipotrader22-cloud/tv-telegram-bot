@@ -3568,3 +3568,17 @@ Do not treat the new cron's successful build as an end-to-end publication PASS.
 Its two isolated credentials remain unwired and its publisher remains disabled.
 Coordinate legacy-writer retirement with verified production cutover; do not
 leave competing writers publishing the same portfolio.
+
+## 2026-10-23 — Owner-installed cron credentials and staging activation
+
+Owner confirmed both isolated credentials saved and deployed. Verified cron
+deploy dep-dbdusnbncjis73dj9jv0 LIVE at 5925435. Connector cannot inspect secret
+values; this is not yet credential-access or publication verification.
+Merged only VIXALE_V2_STAGING_PIPELINE_ENABLED=YES and
+VIXALE_V2_STAGING_EMAIL_ENABLED=NO into the cron environment, preserving all
+other values. Requested activation deploy dep-dbdutemc36kc738267bg at 5925435.
+The observer writer, production services, legacy schedules and TWS are unchanged.
+Twenty-five focused cron/preflight/target/minute-provider tests passed. Real
+provider-to-workbook publication and subsequent preview parity remain pending
+the next supported session window (Monday October 26, 10:00 ET). No backdating
+or off-window bypass. Rollback: set only the cron pipeline flag NO and deploy.
