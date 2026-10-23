@@ -1,3 +1,12 @@
+## 2026-10-22 — Sheets header-only grid publication failure (Issue #341)
+
+After the last Open Positions row was deleted, Sheets sometimes had grid rowCount=1 (header only). The strict writer selected A2:L2, but `spreadsheets.values.update` failed with `Range ('Open Positions'!A2:L2) exceeds grid limits. Max rows: 1`. Broker-confirmed EQT/RTX `ENTRY_FILL` messages remained RETRY in Webhook Inbox and were not published to Trades/Dashboard. This is distinct from PR #340's SMIO trade-ID collision; an APA SMIO SETUP without the expected fill callback needs separate broker evidence.
+
+The strict row writer now checks the target sheet grid rowCount and, only when needed, extends ROWS with `appendDimension` before calling the unchanged `values.update`. It does not reconstruct historical entries, create fills or broker orders, change EOD/strategy behavior, or alter publication deduplication. Regression: `tests/test_strict_sheet_header_only_append.js` tests the exact extracted writer with a header-only grid and checks that a second call does not grow the grid unnecessarily.
+
+Operator runbook: GitHub Issue #341. Check TWS actual STK positions/executions first, then Bridge and Render Webhook Inbox status/error/attempts, then Google Sheets Trades/Open Positions/Closed Trades and Dashboard/Telegram. Never manually fabricate a close from a SETUP. Record stuck retries separately; do not force replay after market close without broker-confirmed idempotent reconciliation.
+
+---
 ## Oct 22, 2026 — Header-only Google Sheet grid blocks broker-confirmed entries
 
 Observed in `Webhook Inbox` for EQT and RTX: `ENTRY_FILL` was in `RETRY`
