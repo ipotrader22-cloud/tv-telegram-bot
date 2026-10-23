@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {normalizeTwsTrades,verifyOpeningBar,verifyTargetBars}=require('./tws-evidence-adapter.cjs');
+const date='2026-10-19',at='2026-10-19T10:00:00-04:00',start='2026-10-19T09:59:40-04:00';
+const trade={ticker:'NVDA',price:200,timestamp:start,tradeId:'IB:1001',lastSize:5,session:'REGULAR',sourceType:'LAST_TRADE',marketDataType:1};
+const batch={provider:'IBKR_TWS',readOnly:true,connected:true,marketDataType:1,collectedAt:at,trades:[trade]};
+test('TWS real-time last print is accepted for a dated model quote',()=>assert.equal(normalizeTwsTrades({batch,date,at,tickers:['NVDA']}).status,'PASS'));
+test('IBKR delayed/frozen market data never passes live gate',()=>assert.equal(normalizeTwsTrades({batch:{...batch,marketDataType:3},date,at,tickers:['NVDA']}).status,'BLOCKED'));
+test('stale TWS last print blocks model entries',()=>assert.equal(normalizeTwsTrades({batch:{...batch,trades:[{...trade,timestamp:'2026-10-19T09:55:00-04:00'}]},date,at,tickers:['NVDA']}).status,'BLOCKED'));
+test('missing a ticker blocks entire batch rather than partial portfolio',()=>assert.equal(normalizeTwsTrades({batch,date,at,tickers:['NVDA','AMD']}).status,'BLOCKED'));
+test('verified 0930 one-minute TWS bar triggers inclusive five-percent opening stop',()=>{const x=verifyOpeningBar({bar:{provider:'IBKR_TWS',ticker:'NVDA',date,session:'REGULAR',marketDataType:1,barMinutes:1,start:'2026-10-19T09:30:00-04:00',open:95,volume:1200,sourceId:'ibbar'},ticker:'NVDA',date,entryPrice:100,heldAtOpen:true});assert.equal(x.status,'PASS');assert.equal(x.trigger,true)});
+test('pre-entry minute target is never accepted as post-entry evidence',()=>{const bars=[{provider:'IBKR_TWS',ticker:'NVDA',date,marketDataType:1,barMinutes:1,start:'2026-10-19T09:59:00-04:00',session:'REGULAR',sourceId:'bar1',high:111,volume:300}];assert.equal(verifyTargetBars({bars,ticker:'NVDA',entryPrice:100,entryTime:'2026-10-19T09:59:30-04:00',asOf:at,date}).status,'BLOCKED')});

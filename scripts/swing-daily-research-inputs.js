@@ -39,9 +39,16 @@ async function json(url) {
 async function main() {
   const date=nyDay(Date.now()/1000), trading=session(date);
   if(!trading.open) { console.log(JSON.stringify({gate:"RESEARCH_INPUTS",result:"SKIP",date})); return; }
-  const feed=await json("https://www.vixale.com/api/swing-leaders?research="+Date.now());
-  if(feed.stale) throw new Error("Public membership source is stale");
-  const symbols=[...new Set([...feed.active_portfolio.map(x=>x.ticker),...feed.interns.map(x=>x.ticker),"SPY","QQQ","SMH","XLK","XLE"])];
+  let feed=null, symbols, candidates=null;
+  if(process.env.VIXALE_V2_RESEARCH_UNIVERSE){
+    // Explicit V2 scope never inherits the legacy production portfolio.
+    const clean=require("../engine-v2/research-universe.cjs").parseV2Universe(process.env.VIXALE_V2_RESEARCH_UNIVERSE);
+    symbols=clean.symbols;candidates=clean.candidates;
+  }else{
+    feed=await json("https://www.vixale.com/api/swing-leaders?research="+Date.now());
+    if(feed.stale) throw new Error("Public membership source is stale");
+    symbols=[...new Set([...feed.active_portfolio.map(x=>x.ticker),...feed.interns.map(x=>x.ticker),"SPY","QQQ","SMH","XLK","XLE"])];
+  }
   if(symbols.some(x=>!/^[-A-Z0-9.]{1,15}$/.test(x))||symbols.length>50) throw new Error("Invalid research universe");
   const data=[];
   for(let i=0;i<symbols.length;i+=4) {
@@ -51,7 +58,7 @@ async function main() {
     }));
     for(const item of result) { if(item.status!=="fulfilled") throw item.reason; data.push(item.value); }
   }
-  const body=JSON.stringify({gate:"RESEARCH_INPUTS",result:"PASS",date,collectedAt:new Date().toISOString(),membershipSnapshotDate:feed.snapshot_date,data},null,2);
+  const body=JSON.stringify({gate:"RESEARCH_INPUTS",result:"PASS",date,collectedAt:new Date().toISOString(),membershipSnapshotDate:feed?.snapshot_date||null,mode:candidates?'CLEAN_EPOCH':'LEGACY',candidates,data},null,2);
   fs.writeFileSync("swing-research-inputs.json",body+"\n");
   console.log(JSON.stringify({gate:"RESEARCH_INPUTS",result:"PASS",date,sha256:crypto.createHash("sha256").update(body).digest("hex"),symbols,metrics:data.map(x=>x.metrics)}));
 }

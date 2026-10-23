@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test');const assert=require('node:assert/strict');
+const {createAlpacaIexAdapter}=require('./alpaca-iex-adapter.cjs');
+const at='2026-10-21T14:00:00Z';
+const trade={t:'2026-10-21T13:59:55Z',x:'V',p:200,s:100,i:123};
+const make=(t=trade,status=200)=>createAlpacaIexAdapter({key:'test',secret:'test',fetchFn:async(url,opts)=>{assert.equal(new URL(url).searchParams.get('feed'),'iex');assert.equal(opts.method,undefined);return {ok:status===200,status,json:async()=>({trades:{AAPL:t}})};}});
+test('valid timestamped IEX trade passes as development evidence',async()=>{const q=await make().getQuotes({date:'2026-10-21',runAt:at,tickers:['AAPL']});assert.equal(q[0].provider,'ALPACA_IEX');assert.equal(q[0].price,200)});
+test('rejects non-IEX exchange',async()=>assert.rejects(make({...trade,x:'Q'}).getQuotes({date:'2026-10-21',runAt:at,tickers:['AAPL']})));
+test('rejects stale trade',async()=>assert.rejects(make({...trade,t:'2026-10-21T13:40:00Z'}).getQuotes({date:'2026-10-21',runAt:at,tickers:['AAPL']})));
+test('rejects missing symbol',async()=>assert.rejects(make(null).getQuotes({date:'2026-10-21',runAt:at,tickers:['AAPL']})));
+test('rejects HTTP failure',async()=>assert.rejects(make(trade,429).getQuotes({date:'2026-10-21',runAt:at,tickers:['AAPL']})));
+test('rejects missing credentials',()=>assert.throws(()=>createAlpacaIexAdapter({key:'',secret:'',fetchFn:()=>{}})));

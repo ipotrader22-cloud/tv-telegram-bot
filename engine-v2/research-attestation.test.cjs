@@ -1,0 +1,13 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {validateResearchBatch}=require('./research-attestation.cjs');
+const {CAPS}=require('./core.cjs');
+const date='2026-10-19',runAt='2026-10-19T10:00:00-04:00',session={date,isTradingDay:true,providerVerified:true};
+const factors={...CAPS},factorsEvidence=Object.fromEntries(Object.keys(CAPS).map(k=>[k,{sourceId:'archive-'+k,explanation:'Date-backed factor review'}]));
+const record={ticker:'TEST',date,timestamp:'2026-10-19T09:59:00-04:00',score:100,factors,factorsEvidence,complete:true,completedDailyBars:250,lastCompletedSessionDate:'2026-10-16',ohlcvSourceId:'daily-ohlcv',newsEvidenceId:'news',marketEvidenceId:'market',sectorEvidenceId:'sector',volumeRvol:1.3,exchangeVolumeVerified:true,ma20:91,ma50:88,ma200:75};
+const args={date,runAt,session,universe:['TEST'],benchmarks:[{sourceId:'benchmark',timestamp:runAt}],items:[record]};
+test('complete nine-factor evidence and price structure validated',()=>assert.equal(validateResearchBatch(args).status,'PASS'));
+test('empty universe is not an authorized no-trade day',()=>assert.equal(validateResearchBatch({...args,universe:[],items:[]}).status,'BLOCKED'));
+test('missing one factor evidence blocks full daily review',()=>assert.equal(validateResearchBatch({...args,items:[{...record,factorsEvidence:{}}]}).status,'BLOCKED'));
+test('social discussion volume never substitutes for exchange volume',()=>assert.equal(validateResearchBatch({...args,items:[{...record,exchangeVolumeVerified:false}]}).status,'BLOCKED'));
+test('incomplete universe blocks empty/partial scan',()=>assert.equal(validateResearchBatch({...args,universe:['TEST','OTHER']}).status,'BLOCKED'));

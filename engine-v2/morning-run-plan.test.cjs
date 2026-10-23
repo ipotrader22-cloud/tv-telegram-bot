@@ -1,0 +1,17 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {planMorningRun}=require('./morning-run-plan.cjs');
+const date='2026-10-19',runAt='2026-10-19T10:00:00-04:00';
+const session={date,isTradingDay:true,providerVerified:true};
+const factors={market:10,sector:15,leadership:15,catalyst:10,base:15,compression:10,volume:15,ma:5,resistance:5};
+const lot={ticker:'A',entryDate:date,entryPrice:100,currentPrice:101,currentScore:100,factors,fullReviewDate:date};
+const quote={ticker:'A',sourceId:'trusted-source-record',timestamp:'2026-10-19T09:59:00-04:00',price:101};
+const research={ticker:'A',reviewDate:date,timestamp:'2026-10-19T09:58:00-04:00',complete:true,factors};
+const base={date,runAt,session,positions:[lot],quotes:[quote],research:[research]};
+test('new epoch daily run validates without publishing',()=>{const x=planMorningRun(base);assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.model.equity,100100);assert.equal(x.publishable,false)});
+test('duplicate session run is idempotent',()=>{const x=planMorningRun(base);assert.equal(planMorningRun({...base,previousRun:{runId:x.runId}}).status,'ALREADY_PLANNED')});
+test('missing quote blocks morning run',()=>assert.equal(planMorningRun({...base,quotes:[]}).status,'BLOCKED'));
+test('stale price blocks morning run',()=>assert.equal(planMorningRun({...base,quotes:[{...quote,timestamp:'2026-10-19T09:53:00-04:00'}]}).reason,'INCOMPLETE_DAILY_EVIDENCE'));
+test('missing research blocks morning run',()=>assert.equal(planMorningRun({...base,research:[]}).status,'BLOCKED'));
+test('wrong session date blocks morning run',()=>assert.equal(planMorningRun({...base,session:{...session,date:'2026-10-20'}}).reason,'NYSE_SESSION_NOT_VERIFIED'));
+test('legacy positions cannot transfer into clean slate',()=>assert.equal(planMorningRun({...base,positions:[{...lot,entryDate:'2026-10-08'}]}).status,'BLOCKED'));

@@ -1,0 +1,43 @@
+'use strict';
+const {createPipelineStore}=require('./staging-pipeline-store.cjs');
+const {runStagingPipeline}=require('./staging-pipeline.cjs');
+const {createSheetsClient,readMeta}=require('./staging-sheets-publisher.cjs');
+const {createResearchRuntime}=require('./staging-research-runtime.cjs');
+function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=fetch}={}){
+ const store=createPipelineStore({url});
+ const enabled=env.VIXALE_V2_STAGING_PIPELINE_ENABLED==='YES';
+ const emailEnabled=env.VIXALE_V2_STAGING_EMAIL_ENABLED==='YES';
+ let flight=null,last={status:enabled?'PENDING':'DISABLED'},api,prepareProviders;
+ const missing=[];
+ if(!env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON)missing.push('STAGING_SERVICE_ACCOUNT');
+ if(!env.VIXALE_V2_RESEARCH_UNIVERSE)missing.push('INDEPENDENT_RESEARCH_UNIVERSE');
+ if(!env.VIXALE_V2_RESEARCH_SECTORS_JSON)missing.push('RESEARCH_SECTOR_MAP');
+ if(emailEnabled&&(!env.VIXALE_V2_STAGING_EMAIL_TO||env.VIXALE_V2_STAGING_EMAIL_TO!==env.VIXALE_V2_STAGING_EMAIL_ALLOWLIST))missing.push('STAGING_EMAIL_RECIPIENT');
+ if(emailEnabled&&!env.VIXALE_V2_STAGING_RESEND_API_KEY)missing.push('STAGING_RESEND_CREDENTIAL');
+ if(enabled&&!missing.length)try{
+  api=createSheetsClient(env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON);
+  prepareProviders=createResearchRuntime({universeCsv:env.VIXALE_V2_RESEARCH_UNIVERSE,sectorByTicker:JSON.parse(env.VIXALE_V2_RESEARCH_SECTORS_JSON),clock,fetchFn:fetcher});
+ }catch{missing.push('INVALID_STAGING_CONFIGURATION')}
+ return {
+  store,
+  status:()=>({enabled,emailEnabled,missing:[...missing],status:last.status,reason:last.reason||null,lastCheckedAt:last.checkedAt||null,readyForProduction:false}),
+  tick(){
+   if(!enabled)return Promise.resolve(last);
+   if(flight)return flight;
+   if(missing.length){last={status:'BLOCKED',reason:'STAGING_CONFIGURATION_INCOMPLETE'};return Promise.resolve(last)}
+   flight=(async()=>{
+    // Verify workbook identity/access before collecting or committing decisions.
+    const metadata=await readMeta(api);
+    if(metadata.status!=='PASS')return {status:'BLOCKED',reason:'STAGING_WORKBOOK_METADATA_UNVERIFIED'};
+    return runStagingPipeline({store,url,api,clock,prepareProviders,fetcher,enabled:true,emailEnabled,
+     recipient:env.VIXALE_V2_STAGING_EMAIL_TO,allowedRecipient:env.VIXALE_V2_STAGING_EMAIL_ALLOWLIST,apiKey:env.VIXALE_V2_STAGING_RESEND_API_KEY});
+   })().catch(()=>({status:'BLOCKED',reason:'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE'})).then(result=>{
+    // Never publish provider exceptions, private inputs, recipients or credentials.
+    last={status:result.status,reason:result.status==='BLOCKED'?'STAGING_VERIFICATION_INCOMPLETE':null,checkedAt:clock().toISOString()};
+    return last;
+   }).finally(()=>{flight=null});
+   return flight;
+  }
+ };
+}
+module.exports={createStagingWorker};

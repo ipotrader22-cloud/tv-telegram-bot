@@ -3456,3 +3456,189 @@ Completed daily review: all thirteen then-active/candidate scores were reassesse
 Validation boundary: the migrated 9:30 task has not yet completed its first timed October13 run. No executable server-side analyst/outbox worker was added; orchestration remains cloud scheduled research tasks, native guarded commits, provider idempotency and independent read-only Actions checks. Do not describe this as a guaranteed scheduler or completely deterministic autonomous scoring engine. No app.js/package.json/runtime/credentials changes in this documentation checkpoint. Rollback: revert these docs only; production metadata/task controls are separate and must not be silently removed by a documentation revert.
 
 
+
+## 2026-10-22 — Engine 2 durable private staging pipeline (PR #329)
+
+Handbook update required: **YES**. Architecture: see
+`docs/ADR_ENGINE2_STAGING_PIPELINE.md` for the transaction, recovery, formula and
+activation contract. PR remains **DRAFT / UNMERGED**, with no production cutover.
+
+- `engine-v2/staging-pipeline.cjs`, `staging-pipeline-store.cjs` and
+  `staging-artifact.cjs` coordinate durable research/model commit → private native
+  Sheet batch/readback → exact uncached API/HTML → separately enabled staging
+  email with persisted message identity and confirmed delivery. Canonical hashes
+  survive PostgreSQL JSONB ordering. Full research source evidence is retained.
+- `staging-research-runtime.cjs` collects an explicitly configured independent
+  Yahoo universe and company news, preserving verified exchange labels. Uses the
+  existing versioned mechanical nine-factor policy; catalyst remains zero until
+  substantive event evidence is independently vetted. No legacy holdings seed
+  the universe. Late collection blocks instead of backdating.
+- `target-window-provider.cjs` verifies every regular-session minute since the
+  last certified watermark, including yesterday afternoon. Missing coverage or
+  a missed daily opening-stop review blocks. Prior-day targets precede today's
+  opening stop; actual exit date and effective review date are distinct.
+- `staging-sheets-publisher.cjs` checks all planned cells/formulas, normalized
+  equity, cash, extra lots and immutable closed rows. A lost batch response
+  recovers only the same native fence/date/content. The only workbook target is
+  `1Ii20kcegWWhQfz_RUrDe0OhfFG1y9TNjrEI1Xy6mqyA`.
+- Staging Open Positions R now stores **Review Reference Price ($)**. Public Feed
+  current/return formulas use R, preserving the fixed review snapshot for page
+  and email while Open Positions I:L and Portfolio retain Google Finance.
+  Public Feed B7/A33 and Equity C/E/F remain formulas; Closed Q/R are preserved.
+  Exact live staging B7/A33 formulas were read and matched to the guard constants.
+- `shadow-swing-page.cjs` matches the inspected authenticated page structure:
+  light header, Active Portfolio introduction beside equity chart, total P&L,
+  four KPI cards, four explanation cards and matching Active/Closed column order.
+  Existing production authentication, English/Russian flows and site unchanged.
+- `shadow-health.cjs` serves the Sheet-verified journal artifact (or existing
+  truthful inception/clean-ledger preview) with no-store. Query-string cache
+  busting is supported. Health exposes only configuration readiness/status,
+  never credentials, recipients or private research. Production readiness false.
+
+### Staging configuration and outstanding verification
+
+All settings belong only to `vixale-engine-v2-shadow-observer`:
+
+- `VIXALE_V2_STAGING_PIPELINE_ENABLED=YES`: explicit worker activation; off by default.
+- `VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON`: staging write identity; must already
+  have editor access to the private staging workbook.
+- `VIXALE_V2_RESEARCH_UNIVERSE`: independently selected comma-separated candidates.
+- `VIXALE_V2_RESEARCH_SECTORS_JSON`: candidate-to-SMH/XLK/XLE mappings.
+- `VIXALE_V2_STAGING_EMAIL_ENABLED=YES`: separate email activation; off by default.
+- `VIXALE_V2_STAGING_EMAIL_TO` and `VIXALE_V2_STAGING_EMAIL_ALLOWLIST`: same approved
+  staging recipient. No customer list or production recipients are inferred.
+- `VIXALE_V2_STAGING_RESEND_API_KEY`: staging send/read credential; never printed.
+
+The shadow service's existing root npm install includes googleapis and pg. Its
+current **free web plan can sleep**, so the in-process 60-second timer is not a
+production scheduling guarantee. Do not call autonomous daily publication live
+until an approved durable trigger/always-running service and a real morning
+provider-to-Sheet-to-page-to-confirmed-email test pass. Current staging workbook
+permission metadata shows **owner only**; service-account editor access has not
+been established. No real staging financial write or email was performed here.
+
+Validation adds real HTTP page/API tests with synthetic provider boundaries,
+ambiguous Sheet/send recovery, no duplicate sends, full visible-content mismatch,
+recipient/formula/hash failures, target coverage, and real PostgreSQL journal
+roundtrip/competing-lock/restart/idempotency checks. CI uses a separate disposable
+loopback database `vixale_engine_v2_shadow_20990101`; never run its cleanup against
+an existing shadow or production database. Exact check/deploy evidence is recorded
+in the PR after completion. Production app, Windows bridge/TWS and legacy live
+schedule were not modified. Roll back only the isolated shadow code/flags.
+
+## 2026-10-23 — Independent staging cron command (PR #329)
+
+`engine-v2/staging-cron.cjs` runs one staging cycle and exits without starting a
+web server or importing the legacy portfolio. Shadow mode and the existing shadow
+database-name allowlist are required before constructing the worker. NYSE-closed
+days and the alternate UTC hour are skipped; an unmaintained calendar fails closed.
+Provider exceptions, credentials, recipients and private artifacts are never logged.
+Failed/bounced/complained/suppressed runs exit nonzero. API acceptance remains
+ACCEPTED_NOT_DELIVERED, requiring another scheduled check; it is never called delivery.
+
+Prepared Render cron settings (not provisioned):
+- Repository/branch: existing PR #329 branch, not main; auto-deploy disabled.
+- Region: Oregon, same workspace and private database as the shadow observer.
+- Build: `npm install --no-save --no-package-lock pg@8`.
+- Start: `timeout --signal=TERM 240s node engine-v2/staging-cron.cjs`.
+- UTC schedule: `* 14,15 * * 1-5`. Code permits only 10:00–10:20 ET on NYSE
+  sessions, handling DST; fresh model commits remain restricted to 10:00–10:05 ET.
+  Later invocations only finish/recheck durable work; missing first runs fail closed.
+- Configure the shadow database URL and dedicated staging credentials securely
+  on the cron service. No production credential copying or checked-in secret values.
+- Keep the observer publisher disabled when cron becomes the designated writer;
+  it continues serving the shared journal's verified snapshot. Existing database
+  advisory locks also protect accidental overlapping invocations.
+- A cron may need to wake the free preview server during HTTP readback. Retry
+  from the durable Sheet receipt; a timeout is not evidence of website parity.
+- Monitor nonzero exits and independently check journal delivery=DELIVERED after
+  the retry window. A successful process exit with ACCEPTED_NOT_DELIVERED is not
+  an end-to-end pass. No failure-alert destination is configured by this change.
+
+The owner approved a sole staging recipient, saved together with its matching
+allowlist on the shadow service; sending remains disabled. The recipient-setting
+deployment reached LIVE at commit 593c206. VIXALE's Resend domain is verified.
+Staging workbook permissions still show only its owner. Connected Drive tools can
+grant file access but cannot create a Google Cloud IAM service-account credential.
+The owner must provision a dedicated Sheets-enabled service account and securely
+install its JSON as VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON; only its non-secret
+client_email is needed to grant staging editor access. A dedicated Resend send/read
+credential must also be installed securely. Do not send credentials in chat.
+No paid cron resource, live staging write, email or production cutover was created.
+
+Rollback: leave publisher/email disabled, remove the cron schedule if later
+provisioned, and redeploy the prior shadow revision. Preserve the durable journal.
+
+## 2026-10-23 — Dedicated staging identity and read-only access preflight
+
+Owner created vixale-engine2-staging@tv-trading-journal.iam.gserviceaccount.com
+and securely installed its credential on the shadow service. Drive permission
+readback confirms writer access only to the private staging workbook was added.
+The owner-triggered deployment reached LIVE at 876ba7d.
+
+`staging-preflight.cjs` performs GET-only workbook metadata validation at shadow
+startup even while the publisher is disabled. It rejects a different identity
+before constructing the client; health returns only sanitized access status,
+configuration validity and credential-presence booleans. It does not prove a
+financial write or actual market-provider coverage. No keys or error bodies are
+returned. No lease, portfolio cells or email are mutated by this check.
+
+Bounded integration-test universe: NVDA, AMD, AVGO, MU, AMAT (SMH); MSFT, AAPL,
+ORCL (XLK); XOM, CVX (XLE). This deliberately exercises all three currently
+supported sector benchmarks and is not the final production selection universe.
+Production universe breadth and factor coverage still need review before cutover.
+The workbook and email publishers remain disabled pending real provider and
+delivery verification. The approved staging email recipient is already configured.
+
+## 2026-10-23 — Publication-first scope and independent cron provisioned
+
+Owner deferred morning email: publication success requires real research, durable
+portfolio commit and exact Sheet/API/HTML readback, not Resend credentials or
+delivery. Keep email disabled. EMAIL_DISABLED is a terminal journal state for
+pending-run selection and does not prevent the next session. Sixteen focused
+pipeline/cron tests passed with this existing behavior.
+
+Owner approved the Render cron charge (minimum $1/month plus usage). Created
+`vixale-engine2-staging-daily`, resource `crn-dbdknsl9fdbs73bfloi0`, in Oregon,
+on the isolated PR branch with auto-deploy off, starter plan, schedule
+`* 14,15 * * 1-5`, and the documented 240-second cron command. Email is explicitly
+NO; pipeline is explicitly NO pending credential wiring. This is not an active
+or verified morning publisher yet. No production service was modified.
+
+The new cron has the same bounded staging universe/sector configuration as the
+shadow observer. Owner must securely add VIXALE_V2_SHADOW_DATABASE_URL from the
+existing isolated observer (or shadow Postgres Internal connection URL) and
+VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON using the dedicated staging identity.
+The connected service-creation tool accepts literal values but cannot reference
+existing service secrets or environment groups. Never place these values in
+source, comments, logs or chat. After values are installed, verify the cron build
+and configuration before setting its pipeline flag YES. Keep the observer's
+writer disabled and use the shared shadow ledger for preview readback.
+
+Disable the cron pipeline or suspend its schedule to roll back activation; keep
+the existing journal. New-epoch end-to-end verification and production website
+cutover remain pending.
+
+## 2026-10-23 — Legacy scheduler retirement audit (read-only)
+
+Five enabled ChatGPT automations were inspected. No task was changed or disabled.
+- 09:51 Swing Opening Stop Check: retire at cutover after Engine 2 opening-stop evidence is verified.
+- 10:00 Swing Portfolio Review: legacy writer/email publisher; retire at verified cutover. Its two-new-entries/day cap conflicts with Engine 2.
+- 10:25 Swing Recovery & Email: legacy recovery writer/email publisher; retire after Engine 2 publication retry/restart verification. Its two-additions cap is also stale.
+- Intraday Target & Change Monitor: not yet fully replaced. Its hourly same-day target publication differs from Engine 2 morning reconciliation of the preceding interval. Implement equivalent Engine 2 intraday coverage or obtain an explicit timing-policy decision before retiring it.
+- VIXALE 2 Clean-Slate Build: retain during implementation; its mandatory email-delivery gate is stale under the owner's publication-first scope and needs prompt correction. Retire after stable handoff.
+
+Fetched origin/main confirms four scheduled GitHub workflow definitions.
+Swing Daily Research Inputs is a retirement candidate once independent Engine 2
+research is verified. Swing Morning Publication Verification should be retained
+and adapted to the new epoch/schema. Public Daily Market Skim and Production
+Locale Browser QA serve separate functions and should remain. This verifies
+repository schedule definitions, not GitHub's runtime enabled state or delivery.
+Render inventory contained only the newly provisioned Engine 2 cron; no older
+Render cron was identified. Windows Task Scheduler/TWS jobs were not inspected
+or changed and are outside this retirement scope.
+
+Do not treat the new cron's successful build as an end-to-end publication PASS.
+Its two isolated credentials remain unwired and its publisher remains disabled.
+Coordinate legacy-writer retirement with verified production cutover; do not
+leave competing writers publishing the same portfolio.

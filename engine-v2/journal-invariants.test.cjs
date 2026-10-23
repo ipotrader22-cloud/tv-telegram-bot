@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {reduce}=require('./journal.cjs');
+const open={eventId:'open-1',type:'OPEN',ticker:'PLTR',entryDate:'2026-10-16',entryPrice:100,entryTime:'2026-10-16T10:00:00-04:00'};
+const close={eventId:'close-1',type:'CLOSE',ticker:'PLTR',entryDate:'2026-10-16',exitPrice:110,exitTime:'2026-10-16T14:00:00-04:00',reason:'TARGET',effectiveDate:'2026-10-16',includePublic:'YES'};
+test('replay identical event is safe, modified payload rejected',()=>{let a=reduce(undefined,open);assert.equal(reduce(a.state,open).applied,false);assert.throws(()=>reduce(a.state,{...open,entryPrice:999}),/reused/)});
+test('close once and reject changed-id duplicate',()=>{let a=reduce(undefined,open);let b=reduce(a.state,close);assert.equal(b.state.closed.length,1);assert.equal(reduce(b.state,close).applied,false);assert.throws(()=>reduce(b.state,{...close,eventId:'new'}),/not open/)});
+test('reject missing public inclusion and malformed time',()=>{let a=reduce(undefined,open);assert.throws(()=>reduce(a.state,{...close,includePublic:undefined}),/public control/);assert.throws(()=>reduce(a.state,{...close,exitTime:'2026-10-16'}),/exit evidence/)});
+test('reject early exit and not mutate state',()=>{let a=reduce(undefined,open);assert.throws(()=>reduce(a.state,{...close,exitTime:'2026-10-16T09:00:00-04:00'}),/before entry/);assert.equal(a.state.positions.length,1);assert.equal(a.state.closed.length,0)});
+test('reject repeated ticker/date already in closed history',()=>{let a=reduce(undefined,open);let b=reduce(a.state,close);assert.throws(()=>reduce(b.state,{...open,eventId:'reopen'}),/previously closed/)});

@@ -1,0 +1,11 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {preparePublicationManifest,verifyPublication}=require('./publication-contract.cjs');
+const date='2026-10-19',run={status:'SHADOW_COMMITTED',runId:'engine2|2026-10-19|2026-10-19|morning',published:false},model={date,epoch:date,status:'VALIDATED_NOT_PUBLISHED',active:1,realized:0,unrealized:100,total:100,equity:100100};
+const active=[{ticker:'A',entryDate:date,entryPrice:100,fullReviewDate:date,currentScore:80}];
+const notes=[{ticker:'A',reviewDate:date,reviewTimeET:'10:00 ET',briefNote:'Oct 19 — verified research and ranking 80'}];
+const args={run,model,active,notes,closed:[],sourceEvidenceId:'daily-run'};
+test('publication plan contains integrity fingerprint but never allows direct writing',()=>{const m=preparePublicationManifest(args);assert.equal(m.status,'PUBLICATION_PLAN_ONLY');assert.equal(m.publishable,false);assert.equal(m.fingerprint.length,64)});
+test('stale notes block output',()=>assert.equal(preparePublicationManifest({...args,notes:[{...notes[0],reviewDate:'2026-10-16'}]}).status,'BLOCKED'));
+test('no readback cannot mark posting complete',()=>assert.equal(verifyPublication({manifest:preparePublicationManifest(args)}).status,'BLOCKED'));
+test('HTML and JSON snapshot IDs must agree',()=>{const manifest=preparePublicationManifest(args);const sheet={snapshotDate:date,activeCount:1,protectedFormulasVerified:true};const api={snapshotDate:date,activeCount:1,snapshotId:'abc',reviewDates:[date],noStore:true};const html={...api,snapshotId:'xyz'};assert.equal(verifyPublication({manifest,sheet,api,html}).reason,'HTML_API_FINGERPRINT_MISMATCH')});

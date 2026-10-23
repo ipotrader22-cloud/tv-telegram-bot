@@ -1,0 +1,63 @@
+name: Engine 2 Shadow Tests
+on:
+  push:
+    branches: ['engine-v2-shadow-foundation-20261016']
+    paths:
+      - 'engine-v2/**'
+      - '.github/workflows/engine-v2-shadow-tests.yml'
+  pull_request:
+    paths:
+      - 'engine-v2/**'
+      - '.github/workflows/engine-v2-shadow-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shadow-rules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: vixale_v2_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vixale_v2_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      VIXALE_V2_PIPELINE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vixale_engine_v2_shadow_20990101
+      VIXALE_V2_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vixale_v2_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install isolated PostgreSQL test driver
+        run: npm install --prefix engine-v2 --no-save --no-package-lock pg@8
+      - name: Create separate disposable pipeline database
+        run: |
+          node - <<'JS'
+          const {Client}=require('./engine-v2/node_modules/pg');
+          (async()=>{const c=new Client({connectionString:process.env.VIXALE_V2_TEST_DATABASE_URL});await c.connect();try{await c.query('CREATE DATABASE vixale_engine_v2_shadow_20990101')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1});
+          JS
+      - name: Run all shadow and real PostgreSQL integration tests
+        run: node --test engine-v2/*.test.cjs
+
+      - name: Probe historical PLTR one-minute evidence (research only)
+        if: always()
+        continue-on-error: true
+        run: node engine-v2/pltr-oct12-minute-probe.cjs
+      - name: Preserve historical minute probe artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pltr-oct12-minute-evidence
+          path: engine-v2/out/pltr-oct12-minute-probe.json
+          retention-days: 30
+          if-no-files-found: warn

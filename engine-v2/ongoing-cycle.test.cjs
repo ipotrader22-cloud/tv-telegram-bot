@@ -1,0 +1,20 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {reviewExisting}=require('./ongoing-cycle.cjs');
+const {CAPS}=require('./core.cjs');
+const date='2026-10-20',runAt='2026-10-20T10:00:00-04:00',ts='2026-10-20T09:59:30-04:00';
+const f={...CAPS},ef=Object.fromEntries(Object.keys(f).map(k=>[k,{sourceId:k,explanation:'Complete factor evidence'}]));
+const r={ticker:'A',date,complete:true,timestamp:ts,score:100,factors:f,factorsEvidence:ef,completedDailyBars:250,lastCompletedSessionDate:'2026-10-19',ohlcvSourceId:'ohlcv',newsEvidenceId:'news',marketEvidenceId:'market',sectorEvidenceId:'sector',volumeRvol:1,exchangeVolumeVerified:true,ma20:90,ma50:85,ma200:75};
+const researchBatch={date,runAt,session:{date,isTradingDay:true,providerVerified:true},universe:['A'],benchmarks:[{sourceId:'SPY',timestamp:ts}],items:[r]};
+const position={ticker:'A',entryDate:'2026-10-19',entryTime:'2026-10-19T10:00:00-04:00',entryPrice:100,currentPrice:100,entryScore:100,currentScore:100,factors:f,fullReviewDate:'2026-10-19'};
+const quote={ticker:'A',price:101,sourceId:'trade',provider:'vendor',timestamp:ts,verified:true,session:'REGULAR',exchangeVolume:50};
+const opening={ticker:'A',confirmed:true,session:'REGULAR',minuteET:'09:30',date,open:100,sourceId:'open',time:'2026-10-20T09:30:00-04:00'};
+const base={date,runAt,session:researchBatch.session,researchBatch,previous:{epoch:'2026-10-19',active:[position],closed:[]},quotes:[quote],openings:[opening]};
+test('verified hold stays active with fixed 10k normalized P&L',()=>{const x=reviewExisting(base);assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.ok(Math.abs(x.model.unrealized-100)<1e-7);assert.equal(x.active.length,1)});
+test('missing opening proof blocks, never silently skips stop',()=>assert.equal(reviewExisting({...base,openings:[]}).status,'BLOCKED'));
+test('verified opening -5% triggers stop at later contemporaneous quote',()=>{const x=reviewExisting({...base,openings:[{...opening,open:95}],quotes:[{...quote,price:96}]});assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.closed[0].reason,'STOP LOSS');assert.equal(x.closed[0].exitPrice,96)});
+test('verified target touches exact 10 percent even after price retreats',()=>{const x=reviewExisting({...base,targets:[{ticker:'A',confirmed:true,session:'REGULAR',sourceId:'bar',time:'2026-10-20T09:40:00-04:00',high:110}]});assert.equal(x.status,'VALIDATED_SHADOW_ONLY');assert.equal(x.closed[0].exitPrice,110);assert.ok(Math.abs(x.model.realized-1000)<1e-7)});
+test('proven yesterday target precedes today opening stop; effective date preserves prior snapshots',()=>{
+ const x=reviewExisting({...base,openings:[{...opening,open:94}],targets:[{ticker:'A',confirmed:true,completeCoverage:true,session:'REGULAR',sourceId:'yesterday-bar',time:'2026-10-19T15:00:00-04:00',high:111}]});
+ assert.equal(x.closed[0].reason,'TARGET');assert.equal(x.closed[0].exitDate,'2026-10-19');assert.equal(x.closed[0].effectiveDate,date);
+});

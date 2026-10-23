@@ -1,0 +1,134 @@
+{
+  "source": "Google Drive canonical Open Positions worksheet; revisions 150,159,194,226,241,248",
+  "certification": "UNVERIFIED_EXECUTION_AND_PRICE_TIMING",
+  "records": [
+    {
+      "lotId": "AMD|2026-09-21",
+      "ticker": "AMD",
+      "entryDate": "2026-09-21",
+      "originalEntryPrice": 607.84,
+      "originalShares": 16,
+      "revisedEntryPrice": 607.05,
+      "revisedShares": 16,
+      "originalRevision": "150",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "MU|2026-09-23",
+      "ticker": "MU",
+      "entryDate": "2026-09-23",
+      "originalEntryPrice": 1073.8,
+      "originalShares": 9,
+      "revisedEntryPrice": 1090.27,
+      "revisedShares": 9,
+      "originalRevision": "159",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "GLW|2026-09-29",
+      "ticker": "GLW",
+      "entryDate": "2026-09-29",
+      "originalEntryPrice": 159.22,
+      "originalShares": 63,
+      "revisedEntryPrice": 158.79,
+      "revisedShares": 63,
+      "originalRevision": "194",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "NVDA|2026-09-28",
+      "ticker": "NVDA",
+      "entryDate": "2026-09-28",
+      "originalEntryPrice": 229.07,
+      "originalShares": 43,
+      "revisedEntryPrice": 231.95,
+      "revisedShares": 43,
+      "originalRevision": "194",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "DELL|2026-09-29",
+      "ticker": "DELL",
+      "entryDate": "2026-09-29",
+      "originalEntryPrice": 543.43,
+      "originalShares": 18,
+      "revisedEntryPrice": 548.2,
+      "revisedShares": 18,
+      "originalRevision": "194",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "LITE|2026-10-05",
+      "ticker": "LITE",
+      "entryDate": "2026-10-05",
+      "originalEntryPrice": 1091.67,
+      "originalShares": 9,
+      "revisedEntryPrice": 1086.18,
+      "revisedShares": 9,
+      "originalRevision": "226",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "TSM|2026-10-05",
+      "ticker": "TSM",
+      "entryDate": "2026-10-05",
+      "originalEntryPrice": 485.8,
+      "originalShares": 20,
+      "revisedEntryPrice": 478.02,
+      "revisedShares": 20,
+      "originalRevision": "226",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "MRVL|2026-10-07",
+      "ticker": "MRVL",
+      "entryDate": "2026-10-07",
+      "originalEntryPrice": 290.76,
+      "originalShares": 34,
+      "revisedEntryPrice": 283.73,
+      "revisedShares": 35,
+      "originalRevision": "241",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    },
+    {
+      "lotId": "TER|2026-10-07",
+      "ticker": "TER",
+      "entryDate": "2026-10-07",
+      "originalEntryPrice": 439.45,
+      "originalShares": 22,
+      "revisedEntryPrice": 411.75,
+      "revisedShares": 24,
+      "originalRevision": "241",
+      "revisedRevision": "248",
+      "status": "ENTRY_REWRITTEN_EXECUTION_UNVERIFIED"
+    }
+  ],
+  "marks": [
+    {
+      "date": "2026-10-07",
+      "snapshotTimeET": "10:00 ET",
+      "sourceRevision": "241",
+      "originalUnrealized": -100000,
+      "revisedUnrealized": -731.9077381868364,
+      "revisedRevision": "278",
+      "certified": false
+    },
+    {
+      "date": "2026-10-08",
+      "snapshotTimeET": "10:04 ET",
+      "sourceRevision": "248",
+      "originalUnrealized": -100000,
+      "revisedUnrealized": -1324.0554015996718,
+      "revisedRevision": "278",
+      "certified": false
+    }
+  ]
+}
