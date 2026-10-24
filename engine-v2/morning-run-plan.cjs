@@ -4,9 +4,10 @@ const {createHash}=require('node:crypto');
 const {stableStringify}=require('./stable-json.cjs');
 const {EPOCH,buildDailySnapshot}=require('./clean-slate-portfolio.cjs');
 const {score,key}=require('./core.cjs');
+const {POLICY,validFixedQuote}=require('./delayed-model-policy.cjs');
 const {validateMorningTrigger}=require('./nyse-morning-clock.cjs');
 const iso=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(x)&&Number.isFinite(Date.parse(x));
-function planMorningRun({date,runAt,session,positions=[],closed=[],research=[],quotes=[],lastApproved=null,previousRun=null}={}){
+function planMorningRun({date,runAt,session,positions=[],closed=[],research=[],quotes=[],lastApproved=null,previousRun=null,pricePolicy}={}){
  const blocked=(reason,details=[])=>({status:'BLOCKED',reason,details,epoch:EPOCH,date:date||null,publishable:false,previousApproved: lastApproved?.runId||null});
  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||date<EPOCH)return blocked('INVALID_SESSION_DATE');
  if(session?.date!==date||session?.isTradingDay!==true||session?.providerVerified!==true)return blocked('NYSE_SESSION_NOT_VERIFIED');
@@ -21,7 +22,7 @@ function planMorningRun({date,runAt,session,positions=[],closed=[],research=[],q
   if(lot.entryDate<EPOCH)failures.push('LEGACY_LOT:'+k);
   const proof=rmap.get(lot.ticker),quote=qmap.get(lot.ticker);
   if(!proof||proof.complete!==true||proof.reviewDate!==date||!iso(proof.timestamp)||Date.parse(proof.timestamp)>Date.parse(runAt)||score(proof.factors)!==lot.currentScore)failures.push('RESEARCH_NOT_PROVEN:'+k);
-  if(!quote||quote.sourceId==null||!iso(quote.timestamp)||Date.parse(quote.timestamp)>Date.parse(runAt)||Date.parse(runAt)-Date.parse(quote.timestamp)>300000||!Number.isFinite(quote.price)||quote.price<=0||quote.price!==lot.currentPrice)failures.push('QUOTE_NOT_FRESH:'+k);
+  if(!quote||quote.sourceId==null||!iso(quote.timestamp)||Date.parse(quote.timestamp)>Date.parse(runAt)||(pricePolicy===POLICY?!validFixedQuote(quote,{date,runAt}):Date.parse(runAt)-Date.parse(quote.timestamp)>300000)||!Number.isFinite(quote.price)||quote.price<=0||quote.price!==lot.currentPrice)failures.push('QUOTE_NOT_FRESH:'+k);
  }
  if(failures.length)return blocked('INCOMPLETE_DAILY_EVIDENCE',failures);
  let snapshot;try{

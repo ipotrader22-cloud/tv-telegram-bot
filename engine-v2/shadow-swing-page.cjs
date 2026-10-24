@@ -11,6 +11,7 @@ function renderShadowSwing(feed){
  if(!feed||feed.version!==2||feed.epoch!=='2026-10-19'||!Array.isArray(feed.active_portfolio)||
     !Array.isArray(feed.closed_trades)||feed.active_portfolio.length>10)throw Error('INVALID_ENGINE2_FEED');
  const current=feed.snapshot_date,committed=feed.status==='SHADOW_REVIEW_COMMITTED_NOT_PUBLISHED';
+ const policyNotice=feed.price_policy==='DELAYED_0940_MODEL_V1'?'<p class="model-timing">Model portfolio · Model prices as of 09:40 ET · Research session '+esc(feed.research_session_date)+'. Not broker fills.<br>Модельный портфель · Модельные цены на 09:40 ET · Не брокерские исполнения.</p>':'';
  const status=committed?'SHADOW REVIEW — NOT PUBLISHED':'INCEPTION ONLY — REVIEW NOT COMPLETE';
  const active=feed.active_portfolio.map(p=>{
   const entry=Number(p.entry_price),quote=Number(p.current_model_reference_price);
@@ -53,7 +54,7 @@ function renderShadowSwing(feed){
  '<nav class="system-tabs" aria-label="Trading systems"><span>Day Trading</span><span aria-current="page">Swing Trading</span><span>Options</span></nav>'+
  '<div class="hero">'+
  '<div class="intro"><div><div class="eyebrow">SWING TRADING</div><h1>Active Portfolio</h1>'+
- '<p class="intro-copy">Active Portfolio based on Vixale\'s proprietary ranking system.<br>Positions are reviewed daily using nine research factors.<br>Updated every morning around 10:00 am after independent verification.</p><div class="hero-actions"><a href="#active-portfolio">View Active Portfolio</a><a href="#closed-trades">View Swing Results</a></div><div class="snapshot-pill">'+esc(current||'Awaiting first review')+' · '+esc(feed.snapshot_time_et||'Inception')+' · Engine 2.0 staging</div></div></div>'+
+ policyNotice+'<p class="intro-copy">Active Portfolio based on Vixale\'s proprietary ranking system.<br>Positions are reviewed daily using nine research factors.<br>Updated every morning around 10:00 am after independent verification.</p><div class="hero-actions"><a href="#active-portfolio">View Active Portfolio</a><a href="#closed-trades">View Swing Results</a></div><div class="snapshot-pill">'+esc(current||'Awaiting first review')+' · '+esc(feed.snapshot_time_et||'Inception')+' · Engine 2.0 staging</div></div></div>'+
  '<section class="section equity-chart-card" id="equity-history"><div class="eyebrow">EQUITY HISTORY</div><div class="section-heading"><h2>Portfolio P&amp;L</h2><div class="pnl-total"><small>Total P&amp;L</small><strong>'+signed(modelPnl)+'</strong></div></div>'+chartMarkup+'</section></div>'+
  '<div class="notice" id="engine2-state" data-engine2-status="'+esc(feed.status)+'">'+esc(status)+
  ' · No broker orders or live website publication. '+(current?'Latest certified review: '+esc(current):'No certified review date available.')+'</div>'+

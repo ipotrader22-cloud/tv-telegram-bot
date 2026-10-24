@@ -17,6 +17,16 @@ const ddl=[
 function dbName(url){if(!url)throw Error('Database URL missing');const n=new URL(url).pathname.slice(1);if(!/^vixale_engine_v2_shadow_\d{8}$/.test(n))throw Error('Refusing non-shadow database');return n}
 function validateMorningCommit(input){
  const evidence=validateResearchBatch(input.researchBatch||{});
+ if(input.pricePolicy===require('./delayed-model-policy.cjs').POLICY){
+  try{
+   const p=input.sourceEvidence?.prepared;
+   const {hash,etTime}=require('./delayed-model-policy.cjs');
+   const {fingerprint,...payload}=p;
+   if(fingerprint!==hash(payload)||input.preparedHash!==fingerprint||input.priceAsOf!==etTime(input.date,580)||input.researchBatch.date!==p.date||stableStringify(input.researchBatch)!==stableStringify(p.batch))throw Error();
+   const expected=require('./delayed-model-cycle.cjs').proposeDelayed({date:input.date,runAt:input.runAt,prepared:p,previous:input.sourceEvidence.previous,quotes:input.sourceEvidence.quotes});
+   if(stableStringify(expected)!==stableStringify(input))throw Error();
+  }catch{return {status:'BLOCKED',reason:'DELAYED_POLICY_EVIDENCE_MISSING'}}
+ }
  if(evidence.status!=='PASS')return {status:'BLOCKED',reason:'RESEARCH_NOT_CERTIFIED',details:evidence.errors};
  if(input.date!==input.researchBatch.date)return {status:'BLOCKED',reason:'RESEARCH_DATE_MISMATCH'};
  if(!Array.isArray(input.events))return {status:'BLOCKED',reason:'EVENTS_MISSING'};
@@ -47,6 +57,11 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
   // An epoch cannot silently reuse the old ledger, and later dates require an
   // independently persisted predecessor. Immutable state is in the SAME commit.
   const priorState=await db.query('SELECT session_date::text AS date,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 AND session_date<$2 ORDER BY session_date DESC LIMIT 1',[EPOCH,inputs.date]);
+  if(inputs.pricePolicy===require('./delayed-model-policy.cjs').POLICY){
+   const prior=priorState.rows[0];
+   const identity=prior?{epoch:EPOCH,date:prior.date,active:prior.active,closed:prior.closed}:null;
+   if(require('./delayed-model-policy.cjs').hash(identity)!==inputs.sourceEvidence.prepared.priorHash)throw Error('PREOPEN_PRIOR_STATE_CHANGED');
+  }
   // Epoch is the accounting inception, not an assertion of unverified trades on that day.
   // A first verified review may occur after Oct 19, with zero inherited holdings.
   if(priorState.rowCount){

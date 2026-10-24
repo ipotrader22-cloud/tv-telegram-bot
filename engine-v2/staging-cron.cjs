@@ -14,12 +14,13 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
   if(!session.isTradingDay)return done('SKIPPED','NYSE_CLOSED',0);
   // Both UTC hours are scheduled; only the actual 10am ET hour proceeds.
   // New decisions remain bounded to 10:00–10:05 by the pipeline itself.
-  if(et.minute<600||et.minute>620)return done('SKIPPED','OUTSIDE_STAGING_RETRY_WINDOW',0);
+  const preopen=env.VIXALE_V2_STAGING_PRICE_POLICY==='DELAYED_0940_MODEL_V1'&&et.minute<570;
+  if(!preopen&&(et.minute<600||et.minute>620))return done('SKIPPED','OUTSIDE_STAGING_RETRY_WINDOW',0);
   const worker=(createWorker||require('./staging-worker.cjs').createStagingWorker)({env,url,clock});
   const config=worker.status();
   if(!config.enabled||config.missing.length)return done('BLOCKED','STAGING_CONFIGURATION_INCOMPLETE',1);
-  const result=await worker.tick();
-  const success=['DELIVERED','ACCEPTED_NOT_DELIVERED','STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED','BUSY'];
+  const result=preopen?await worker.prepare():await worker.tick();
+  const success=['PREOPEN_PREPARED','DELIVERED','ACCEPTED_NOT_DELIVERED','STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED','BUSY'];
   const failure=['BLOCKED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED'];
   const status=[...success,...failure].includes(result.status)?result.status:'BLOCKED';
   return done(status,success.includes(status)?null:'STAGING_RUN_REQUIRES_ATTENTION',success.includes(status)?0:1);

@@ -3592,3 +3592,14 @@ semantics, accounting order and acceptance cases. This is a specification, not
 an implemented or verified new runtime. The current enabled cron still uses
 the old logic; its LIVE status does not certify this scenario. No production
 code, broker path, schedule or environment was changed by this documentation.
+
+## 2026-10-23 — Delayed 09:40 staging implementation
+
+Handbook update required: YES. PR #329 adds an explicitly selected delayed model
+policy, immutable pre-open preparations in the isolated database, prior-session
+stop/target queues, fixed completed-bar cutoff, exits-before-entries accounting,
+and distinct decision/source timestamps. See ENGINE2_STAGING_DELAYED_0940_RUN.md
+for exact policy, UTC schedule, deployment gates and rollback. No broker path or
+production code changes. The old five-minute freshness rule remains unchanged
+for other modes. Real provider/authentication/publication acceptance is pending;
+new schedule must include pre-open invocations. Email stays NO.

@@ -27,7 +27,7 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
     if(!record){
      if(validateMorningTrigger({date:targetDate,runAt:clock().toISOString()}).status!=='PASS')return blocked('OUTSIDE_MORNING_DECISION_WINDOW');
      if(typeof prepareProviders!=='function')return blocked('RESEARCH_PROVIDERS_MISSING');
-     const providers=await prepareProviders({date:targetDate});
+     const providers=await prepareProviders({date:targetDate,journal});
      const runAt=clock().toISOString();
      // Collection can consume the window: never backdate its completion.
      if(validateMorningTrigger({date:targetDate,runAt}).status!=='PASS')return blocked('RESEARCH_COMPLETED_AFTER_DECISION_WINDOW');

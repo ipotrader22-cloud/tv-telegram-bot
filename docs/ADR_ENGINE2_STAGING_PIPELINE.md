@@ -111,3 +111,12 @@ are specified in ENGINE2_STAGING_DELAYED_0940_RUN.md. Actual decision time must
 remain separate from historical model-price time. This supersedes the proposed
 fresh-price staging scenario only; runtime implementation is pending. A global
 increase in quote max-age alone does not implement this contract.
+
+## Delayed policy implementation
+
+DELAYED_0940_MODEL_V1 is explicitly gated on the staging worker. Preparations are
+immutable and tied to the prior ledger identity. Morning commits recompute the
+proposal and compare its full input and stored prior state before commit. A fixed
+09:40 bar-end replaces latest-quote selection only in this mode. Queue decisions
+use completed prior-session evidence; current-session triggers wait until the
+next preparation. Existing legacy/production semantics are not modified.

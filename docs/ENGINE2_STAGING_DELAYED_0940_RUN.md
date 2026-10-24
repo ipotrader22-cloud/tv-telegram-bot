@@ -1,6 +1,6 @@
 # Engine 2 staging: 10:00 review using 09:40 model prices
 
-Status: owner-approved scenario, 2026-10-23; implementation and real-run acceptance pending.
+Status: staging implementation added 2026-10-23; live provider acceptance pending.
 Scope: PR #329, private staging workbook and shadow page only. No broker orders,
 production cutover, production workbook writes or email. This document supersedes
 the proposed current-price 10:00 staging scenario, not production trading rules.
@@ -97,7 +97,7 @@ actual fills, real-time quotes, guaranteed target/stop fills or live production.
 - Real staging provider/authentication/write/readback passes; fixtures alone
   do not certify deployment. Email remains disabled.
 
-## Current readiness
+## Earlier baseline (superseded by implementation below)
 
 The deployed cron still uses the older same-morning collection and five-minute
 quote freshness logic. This document does not implement the scenario. The new
@@ -105,3 +105,37 @@ scenario must not be called ready for Monday solely because credentials are
 installed or the old cron deployment is live. Implement and test the pre-open
 artifact, exact-cutoff pricing, accounting and display changes before activation.
 Rollback preserves all journal history and disables only the staging publisher.
+
+## Implemented staging path
+
+Select VIXALE_V2_STAGING_PRICE_POLICY=DELAYED_0940_MODEL_V1 on the staging cron.
+Pre-open invocations on the session date persist one immutable preparation in
+vixale_v2.preopen_preparations, serialized by the existing pipeline lock. This
+version accepts midnight through 09:29 ET, after the prior session is complete.
+The morning stage requires that artifact and refuses changed prior ledger state.
+The existing fresh-price path remains unchanged when this explicit flag is absent.
+
+Use the existing cron with UTC schedule `0-20 12-15 * * 1-5`. This covers pre-open
+preparation and 10:00-10:20 retries at both DST offsets, with fewer invocations
+than the former 120-per-weekday schedule. Closed sessions are skipped. No extra
+cron service or account secrets are needed. The Render connector cannot modify
+an existing cron schedule; the Dashboard Schedule field must be updated.
+
+Queued triggers include completed-session intraday low <= 95% of entry and high
+>= 110% of entry, scanned since the prior watermark. If both occur in one bar,
+record that ambiguity and label STOP LOSS; both use the identical next-review
+09:40 model price. Current-session 09:30-09:40 triggers do not alter the frozen
+queue; they are included in the next preparation scan. This is staging's queued
+review policy, not the legacy opening-only stop or immediate target execution.
+Ratings below 70 queue exit; new-entry thresholds retain the sourced assessor.
+Cash after realized exits must support each fixed $10,000 model allocation.
+
+The feed exposes decision_at, reference_as_of, price_time_et, research_session_date
+and price_policy. Visible EN/RU notices and Sheet notes disclose delayed model
+prices. Publication verification time remains recorded in the pipeline journal;
+the decision timestamp is not falsely labelled the actual publication timestamp.
+
+Before declaring success, verify a pre-open PREOPEN_PREPARED log and a subsequent
+STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED result, exact Sheet/API/HTML parity,
+and restart recovery. Unit/integration fixtures are not a real source-backed run.
+Rollback: set staging pipeline NO and deploy, retaining all immutable evidence.

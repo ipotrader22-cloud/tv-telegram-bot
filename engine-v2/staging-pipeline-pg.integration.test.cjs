@@ -13,6 +13,16 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   await db.query('DROP SCHEMA IF EXISTS vixale_v2 CASCADE');
   const store=createPipelineStore({url}),competitor=createPipelineStore({url});
   await store.withLock(async()=>assert.equal((await competitor.withLock(()=>{throw Error('Second writer entered')})).status,'BUSY'));
+  const {POLICY,hash}=require('./delayed-model-policy.cjs');
+  const prep={policy:POLICY,date,preparedAt:date+'T12:00:00Z',items:[{ticker:'AMD',score:90}]};prep.fingerprint=hash(prep);
+  await store.withLock(j=>j.savePrepared(prep));
+  await competitor.withLock(async j=>{
+   assert.deepEqual(await j.getPrepared(date),prep);
+   await j.savePrepared(prep);
+   const changed={...prep,preparedAt:date+'T12:01:00Z'};delete changed.fingerprint;changed.fingerprint=hash(changed);
+   await assert.rejects(j.savePrepared(changed),/IMMUTABLE_CONFLICT/);
+   assert.deepEqual(await j.getPrepared(date),prep);
+  });
   const h=await harness(t,{store,ledger:{}});h.args.url=url;
   const first=await h.run();assert.equal(first.status,'ACCEPTED_NOT_DELIVERED',JSON.stringify(first));
   const record=await readCleanRun({url,date});assert.equal(record.evidence_manifest.inputs.researchBatch.sourceEvidence.artifact.mode,'CLEAN_EPOCH');
