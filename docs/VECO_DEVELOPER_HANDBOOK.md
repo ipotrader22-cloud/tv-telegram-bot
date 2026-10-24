@@ -3603,3 +3603,8 @@ for exact policy, UTC schedule, deployment gates and rollback. No broker path or
 production code changes. The old five-minute freshness rule remains unchanged
 for other modes. Real provider/authentication/publication acceptance is pending;
 new schedule must include pre-open invocations. Email stays NO.
+
+Delayed-policy ledger commits also compare the exact persisted pre-open artifact
+inside the transaction; a caller cannot replace it with a newly hashed artifact.
+The PostgreSQL integration test exercises missing-artifact rejection, JSONB
+roundtrip, next-session delayed commit and idempotent replay.

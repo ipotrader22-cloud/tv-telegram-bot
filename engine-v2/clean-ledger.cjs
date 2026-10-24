@@ -58,6 +58,8 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
   // independently persisted predecessor. Immutable state is in the SAME commit.
   const priorState=await db.query('SELECT session_date::text AS date,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 AND session_date<$2 ORDER BY session_date DESC LIMIT 1',[EPOCH,inputs.date]);
   if(inputs.pricePolicy===require('./delayed-model-policy.cjs').POLICY){
+   const frozen=await db.query('SELECT artifact FROM vixale_v2.preopen_preparations WHERE session_date=$1',[inputs.date]);
+   if(frozen.rowCount!==1||stableStringify(frozen.rows[0].artifact)!==stableStringify(inputs.sourceEvidence.prepared))throw Error('PREOPEN_DURABLE_ARTIFACT_MISMATCH');
    const prior=priorState.rows[0];
    const identity=prior?{epoch:EPOCH,date:prior.date,active:prior.active,closed:prior.closed}:null;
    if(require('./delayed-model-policy.cjs').hash(identity)!==inputs.sourceEvidence.prepared.priorHash)throw Error('PREOPEN_PRIOR_STATE_CHANGED');
