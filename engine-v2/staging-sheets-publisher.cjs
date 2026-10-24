@@ -46,15 +46,28 @@ async function resolveEquity(api,date){return nextEquityRow(await ranges(api,["'
 function col(n){let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s}
 function planRange(req){const r=req.updateCells.range;return "'"+TITLES[r.sheetId]+"'!"+col(r.startColumnIndex)+(r.startRowIndex+1)+':'+col(r.endColumnIndex-1)+r.endRowIndex}
 const cellValue=x=>x?.userEnteredValue?.formulaValue??x?.userEnteredValue?.stringValue??x?.userEnteredValue?.numberValue??'';
-async function verifySheetPlan({api,plan,manifest,positions,closed,slot}){
- protectedFormulas(await readFormulas(api));
- const read=await ranges(api,plan.requests.map(planRange));
+// FORMULA renders formulas verbatim but can format numbers as locale-specific text.
+// UNFORMATTED_VALUE returns numbers without currency/percentage formatting, but
+// evaluates formulas. Verify each cell against the correct independent readback.
+function assertPlannedCells(plan,formulaRead,unformattedRead){
+ if(formulaRead.length!==plan.requests.length||unformattedRead.length!==plan.requests.length)throw Error('STAGING_READ_INCOMPLETE');
  for(let i=0;i<plan.requests.length;i++){
   const expected=plan.requests[i].updateCells.rows;
   for(let r=0;r<expected.length;r++)for(let c=0;c<expected[r].values.length;c++){
-   if((read[i].values?.[r]?.[c]??'')!==cellValue(expected[r].values[c]))throw Error('STAGING_CELL_MISMATCH:'+planRange(plan.requests[i]));
+   const cell=expected[r].values[c],entered=cell?.userEnteredValue;
+   const value=cellValue(cell),isNumber=Object.hasOwn(entered||{},'numberValue');
+   const observed=(isNumber?unformattedRead:formulaRead)[i].values?.[r]?.[c]??'';
+   const match=isNumber?typeof observed==='number'&&Number.isFinite(observed)&&Math.abs(observed-value)<1e-9:observed===value;
+   if(!match)throw Error('STAGING_CELL_MISMATCH:'+planRange(plan.requests[i]));
   }
  }
+}
+async function verifySheetPlan({api,plan,manifest,positions,closed,slot}){
+ protectedFormulas(await readFormulas(api));
+ const requested=plan.requests.map(planRange);
+ const formulaRead=await ranges(api,requested,'FORMULA');
+ const unformattedRead=await ranges(api,requested,'UNFORMATTED_VALUE');
+ assertPlannedCells(plan,formulaRead,unformattedRead);
  const tail=await ranges(api,["'Open Positions'!C14:C194","'Closed Trades'!C"+(4+closed.length)+':C994'], 'UNFORMATTED_VALUE');
  if(tail.some(x=>(x.values||[]).some(r=>r.some(Boolean))))throw Error('UNEXPECTED_STAGING_LOTS');
  const n=slot.rowIndex+1;
@@ -112,4 +125,4 @@ async function writePrivateStaging({api,manifest,positions,closed,timeEt,enabled
   if(mine)try{const state=await readMeta(api);if(state.lease===mine)await api.spreadsheets.batchUpdate({spreadsheetId:STAGING_ID,requestBody:{requests:releaseRequests({state,ownedLease:mine})}})}catch{}
  }
 }
-module.exports={STAGING_ID,FORMULAS,CASH,CLOSED,createSheetsClient,readMeta,readFormulas,nextEquityRow,resolveEquity,verifySheetPlan,writePrivateStaging,planRange,cellValue};
+module.exports={STAGING_ID,FORMULAS,CASH,CLOSED,createSheetsClient,readMeta,readFormulas,nextEquityRow,resolveEquity,verifySheetPlan,writePrivateStaging,planRange,cellValue,assertPlannedCells};
