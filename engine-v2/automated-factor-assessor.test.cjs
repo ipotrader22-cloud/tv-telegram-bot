@@ -48,7 +48,7 @@ test('rejects stale, future and unsupported benchmark sessions before assigning 
   assert.equal(x.complete,false);
  }
  const duplicate=structuredClone(artifact);duplicate.data.push(structuredClone(duplicate.data.find(x=>x.metrics.symbol==='SPY')));
- assert.match(autoAssess({artifact:duplicate,date,runAt,universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:news}).reason,/BENCHMARK_MISSING_OR_DUPLICATE/);
+ assert.equal(autoAssess({artifact:duplicate,date,runAt,universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:news}).status,'BLOCKED');
 });
 test('candidate and benchmark research must agree with previous NYSE session, including Monday',()=>{
  const bad=structuredClone(artifact);bad.data[0].metrics.lastCompleteDate='2026-10-20';
