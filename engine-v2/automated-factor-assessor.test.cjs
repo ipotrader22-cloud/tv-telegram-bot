@@ -32,3 +32,30 @@ test('mere news headline count never fabricates catalyst points',()=>{
  newsReview:{...news,articlesCount:10000}});
  assert.equal(x.assessments[0].factors.catalyst.points,0);
 });
+
+test('rejects stale, future and unsupported benchmark sessions before assigning any points',()=>{
+ for(const mutation of [
+  row=>{row.metrics.lastCompleteDate='2026-10-20'},
+  row=>{row.metrics.lastCompleteDate='2026-10-22'},
+  row=>{row.metrics.quoteDate='2026-10-21'},
+  row=>{row.metrics.return20Pct=null},
+  row=>{row.metrics.dailyBars=100},
+  row=>{row.source='https://example.invalid/spy'}
+ ]){
+  const bad=structuredClone(artifact);mutation(bad.data.find(x=>x.metrics.symbol==='SPY'));
+  const x=autoAssess({artifact:bad,date,runAt,universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:news});
+  assert.equal(x.status,'BLOCKED');assert.match(x.reason,/BENCHMARK_SESSION_OR_SOURCE_UNVERIFIED/);
+  assert.equal(x.complete,false);
+ }
+ const duplicate=structuredClone(artifact);duplicate.data.push(structuredClone(duplicate.data.find(x=>x.metrics.symbol==='SPY')));
+ assert.match(autoAssess({artifact:duplicate,date,runAt,universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:news}).reason,/BENCHMARK_MISSING_OR_DUPLICATE/);
+});
+test('candidate and benchmark research must agree with previous NYSE session, including Monday',()=>{
+ const bad=structuredClone(artifact);bad.data[0].metrics.lastCompleteDate='2026-10-20';
+ assert.equal(autoAssess({artifact:bad,date,runAt,universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:news}).reason,'CANDIDATE_COMPLETED_SESSION_MISMATCH');
+ const monday='2026-10-26',a=structuredClone(artifact);
+ a.date=monday;
+ for(const row of a.data){row.metrics.quoteDate=monday;row.metrics.lastCompleteDate='2026-10-23'}
+ const x=autoAssess({artifact:a,date:monday,runAt:'2026-10-26T10:00:00-04:00',universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:{...news,date:monday}});
+ assert.equal(x.status,'DETERMINISTIC_NINE_FACTOR_ASSESSMENTS');
+});
