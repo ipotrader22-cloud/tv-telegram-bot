@@ -1,5 +1,18 @@
 # VECO Developer Handbook
 
+## Engine 2.0 dated benchmark integrity — 2026-10-25
+
+The isolated PR #329 mechanical nine-factor assessor now requires every
+candidate and every SPY/QQQ/SMH/XLK/XLE benchmark to belong to the exact
+previous completed NYSE trading session, not merely any date before the review.
+Benchmark records additionally require the current research date, at least
+200 completed daily bars, an approved Yahoo chart source, and finite positive
+closing/50-day-average evidence plus finite 20/60-day returns. Missing,
+duplicated, stale or wrong-session benchmark evidence blocks the entire score
+before any model decision. Weekend and holiday gaps use the maintained NYSE
+calendar. This is a fail-closed research-evidence gate, not a scoring-weight
+change. No production, workbook, bridge, schedule or email changes.
+
 ## Swing Closed Trades dollar column — 2026-10-12
 
 `lib/swing-leaders-core.js` renders P&L ($) between Return and Entry Date.
