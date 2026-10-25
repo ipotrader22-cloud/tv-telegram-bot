@@ -41,3 +41,17 @@ test('cron blocks missing configuration and leaves pending delivery distinct',as
  const y=await invoke('2026-10-23T14:10:00Z',{createWorker:()=>({status:()=>({enabled:true,missing:[]}),tick:async()=>({status:'ACCEPTED_NOT_DELIVERED'})})});
  assert.equal(y.result.status,'ACCEPTED_NOT_DELIVERED');
 });
+
+test('cron reports exact allowlisted missing capabilities without leaking provider values',async()=>{
+ const x=await invoke('2026-10-23T14:00:00Z',{createWorker:()=>({
+  status:()=>({enabled:true,missing:['STAGING_SERVICE_ACCOUNT','RESEARCH_SECTOR_MAP','sensitive-api-key-value']}),
+  tick:()=>{throw Error('must not reach provider')}
+ })});
+ assert.equal(x.result.status,'BLOCKED');
+ assert.deepEqual(x.result.missingCapabilities,['STAGING_SERVICE_ACCOUNT','RESEARCH_SECTOR_MAP']);
+ assert.ok(!JSON.stringify(x.result).includes('sensitive-api-key-value'));
+ const disabled=await invoke('2026-10-23T14:00:00Z',{createWorker:()=>({
+  status:()=>({enabled:false,missing:[]}),tick:()=>{throw Error('must not run')}
+ })});
+ assert.deepEqual(disabled.result.missingCapabilities,['STAGING_PIPELINE_ENABLED']);
+});
