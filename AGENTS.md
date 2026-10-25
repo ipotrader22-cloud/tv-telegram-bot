@@ -68,6 +68,41 @@ For a normal requested change, Codex should complete the following workflow in o
 
 Codex may commit, push the feature branch, create the Pull Request, and—when eligible under the standing authorization—merge/deploy as part of the same task.
 
+## Autonomy and Completion
+
+**Owner instruction dated 2026-10-25:** carry requested Engineering work through
+to a completed, verified result within the authorized scope.
+
+- Continue through investigation, implementation, appropriate checks, fixing
+  relevant failures, and preparing the reviewable deliverable. A plan, code
+  change, or opened PR is not automatically completion; verify the requested
+  acceptance criteria and follow the authorized workflow to its endpoint.
+- Do not pause for routine confirmation or ask "Shall I continue?" before
+  necessary next steps already covered by the request. Make reasonable choices
+  for minor ambiguities and briefly record consequential assumptions.
+- Give concise progress updates while continuing work. An update is not an
+  approval request, and an intermediate milestone is not a stopping point.
+- Investigate errors and try appropriate alternatives before declaring a
+  blocker. Use bounded retries for transient failures; do not loop indefinitely
+  or bypass a permission denial, required check, or safety gate.
+- Ask only when essential information cannot be obtained, a consequential
+  decision cannot reasonably be inferred, an action exceeds authorization, or a
+  required approval blocks progress. Do not request permission again for an
+  action already authorized by the task and applicable workflow.
+- If blocked, complete independent in-scope work first, then report the exact
+  blocker and the smallest action needed from the owner. Prepare all authorized
+  prerequisites before requesting a final decision.
+- Preserve existing work and stay within the requested scope. Do not expand
+  the task into unrelated improvements.
+- Report what was completed, how it was checked, and any remaining limitations.
+  Never claim completion, deployment, or continued background work without
+  evidence.
+
+The Standing Owner Authorization below remains the authority for merge/deploy
+eligibility and exceptions. This section does not expand that authorization or
+override an explicit read-only, PR-only, staging-only, or no-deploy boundary, or
+a separate trading-system activation/paper/shadow gate.
+
 ## Standing Owner Authorization — Merge and Deploy
 
 **Owner instruction dated 2026-10-06:** for normal Engineering tasks that the owner has explicitly asked Codex to implement, successful completion of the requested change carries standing authorization to merge the task PR to `main` and allow the normal production deployment **without asking for a second “merge and deploy” confirmation**.

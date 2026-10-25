@@ -2196,6 +2196,30 @@ It does **not** authorize:
 
 A task-specific owner instruction overrides the standing default. Direct pushes to `main` remain prohibited for normal work; production changes continue to use the PR path. Render Deploy Hooks remain off-limits unless explicitly authorized for a specific task. GitHub/OS permission dialogs may still require **Allow once**.
 
+#### Autonomy and completion — owner instruction 2026-10-25
+
+The repository-root `AGENTS.md` section **Autonomy and Completion** governs
+routine Engineering execution. Continue through investigation, implementation,
+appropriate checks, relevant fixes, and the requested acceptance criteria
+without pausing for routine confirmation. A plan, code change, or opened PR is
+an intermediate milestone unless the owner chose it as the endpoint. Progress
+updates do not require a reply; minor ambiguities use reasonable assumptions.
+
+Investigate recoverable errors with bounded retries and appropriate alternatives.
+Ask only for essential unavailable information, a consequential decision that
+cannot reasonably be inferred, authorization beyond the task, or a required
+approval. Complete independent in-scope work and prepare authorized prerequisites
+before reporting an exact blocker and the smallest owner action needed. Preserve
+existing work, avoid unrelated improvements, and report completion, verification,
+and remaining limitations accurately; never imply unverified deployment or
+continued background work.
+
+This clarification preserves all eligibility conditions and exceptions in
+§14.2. It does not expand merge/deploy permission, override task-specific stopping
+points, or bypass frozen trading-system promotion, paper/shadow, or activation
+gates. Rollback is a normal PR reverting this documentation change; runtime,
+configuration, trading behavior, and data are unaffected.
+
 ### 14.3 Local bridge deployment
 
 1. Back up current `ib_bridge.py`.
