@@ -13,6 +13,12 @@ before any model decision. Weekend and holiday gaps use the maintained NYSE
 calendar. This is a fail-closed research-evidence gate, not a scoring-weight
 change. No production, workbook, bridge, schedule or email changes.
 
+The isolated staging cron now includes an allowlisted `missingCapabilities` array
+when configuration blocks a run. It reveals capability names only, never secret
+values or provider errors. Use this to diagnose failed pre-open/10:00 staging
+runs; a Render deployment reaching Live is not evidence of successful research
+or publication.
+
 ## Swing Closed Trades dollar column — 2026-10-12
 
 `lib/swing-leaders-core.js` renders P&L ($) between Return and Entry Date.
