@@ -18,7 +18,16 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
   if(!preopen&&(et.minute<600||et.minute>620))return done('SKIPPED','OUTSIDE_STAGING_RETRY_WINDOW',0);
   const worker=(createWorker||require('./staging-worker.cjs').createStagingWorker)({env,url,clock});
   const config=worker.status();
-  if(!config.enabled||config.missing.length)return done('BLOCKED','STAGING_CONFIGURATION_INCOMPLETE',1);
+  // Emit only fixed capability names, never environment values or provider
+  // exceptions. This makes unattended staging failures diagnosable.
+  const allowed=new Set(['STAGING_SERVICE_ACCOUNT','INDEPENDENT_RESEARCH_UNIVERSE',
+   'RESEARCH_SECTOR_MAP','STAGING_EMAIL_RECIPIENT','STAGING_RESEND_CREDENTIAL',
+   'INVALID_STAGING_CONFIGURATION']);
+  const missing=Array.isArray(config.missing)?config.missing.filter(x=>allowed.has(x)):[];
+  if(!config.enabled||config.missing?.length)return {
+   ...done('BLOCKED','STAGING_CONFIGURATION_INCOMPLETE',1),
+   missingCapabilities:!config.enabled?['STAGING_PIPELINE_ENABLED']:missing.length?missing:['UNCLASSIFIED_CONFIGURATION']
+  };
   const result=preopen?await worker.prepare():await worker.tick();
   const success=['PREOPEN_PREPARED','DELIVERED','ACCEPTED_NOT_DELIVERED','STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED','BUSY'];
   const failure=['BLOCKED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED'];
