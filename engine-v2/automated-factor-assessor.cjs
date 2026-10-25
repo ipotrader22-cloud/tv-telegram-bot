@@ -6,12 +6,32 @@
 const {normalizeDailyEvidence}=require('./daily-research-bridge.cjs');
 const {CAPS,score}=require('./core.cjs');
 const {createHash}=require('node:crypto');
+const {previousSession}=require('../scripts/swing-market-calendar');
 const BENCHMARKS=['SPY','QQQ','SMH','XLK','XLE'];
 const good=x=>typeof x==='number'&&Number.isFinite(x);
 function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={}){
  const bad=(reason,errors=[])=>({status:'BLOCKED',reason,errors,complete:false});
  const evidence=normalizeDailyEvidence({artifact,universe,reviewDate:date});
  if(evidence.status!=='METRICS_READY_SCORING_PENDING')return bad('OHLCV_NOT_READY',evidence.errors);
+ // Scores must use the exact previous completed NYSE session for every
+ // candidate AND benchmark. A stale benchmark otherwise silently awards points
+ // against mismatched market/sector data, even when stock evidence is current.
+ let completedSession;
+ try{completedSession=previousSession(date)}catch{return bad('NYSE_RESEARCH_SESSION_UNVERIFIED')}
+ if(evidence.items.some(x=>x.lastCompletedSessionDate!==completedSession))
+  return bad('CANDIDATE_COMPLETED_SESSION_MISMATCH');
+ const requiredBenchmarks=BENCHMARKS;
+ for(const ticker of requiredBenchmarks){
+  const matches=artifact.data.filter(x=>x?.metrics?.symbol===ticker);
+  if(matches.length!==1)return bad('BENCHMARK_MISSING_OR_DUPLICATE:'+ticker);
+  const row=matches[0],m=row.metrics;
+  if(m.quoteDate!==date||m.lastCompleteDate!==completedSession||
+     !Number.isInteger(m.dailyBars)||m.dailyBars<200||
+     !/^https:\/\/query[12]\.finance\.yahoo\.com\/v8\/finance\/chart\//.test(row.source||'')||
+     [m.lastCompleteClose,m.sma50,m.return20Pct,m.return60Pct].some(x=>!good(x))||
+     m.lastCompleteClose<=0||m.sma50<=0)
+    return bad('BENCHMARK_SESSION_OR_SOURCE_UNVERIFIED:'+ticker);
+ }
  if(!newsReview||newsReview.status!=='COVERAGE_COMPLETE_SCORING_PENDING'||
     !newsReview.complete||newsReview.date!==date||!newsReview.sourceId||
     newsReview.tickers?.length!==universe.length||universe.some(t=>!newsReview.tickers.includes(t)))
