@@ -3,6 +3,7 @@ const {createPipelineStore}=require('./staging-pipeline-store.cjs');
 const {runStagingPipeline}=require('./staging-pipeline.cjs');
 const {createSheetsClient,readMeta}=require('./staging-sheets-publisher.cjs');
 const {createResearchRuntime}=require('./staging-research-runtime.cjs');
+const SAFE_BLOCK_REASONS=new Set(['STAGING_CONFIGURATION_INCOMPLETE','STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING','STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE']);
 function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=fetch}={}){
  const store=createPipelineStore({url});
  const delayed=env.VIXALE_V2_STAGING_PRICE_POLICY==='DELAYED_0940_MODEL_V1';
@@ -47,7 +48,7 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
      recipient:env.VIXALE_V2_STAGING_EMAIL_TO,allowedRecipient:env.VIXALE_V2_STAGING_EMAIL_ALLOWLIST,apiKey:env.VIXALE_V2_STAGING_RESEND_API_KEY});
    })().catch(()=>({status:'BLOCKED',reason:'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE'})).then(result=>{
     // Never publish provider exceptions, private inputs, recipients or credentials.
-    last={status:result.status,reason:result.status==='BLOCKED'?'STAGING_VERIFICATION_INCOMPLETE':null,checkedAt:clock().toISOString()};
+    last={status:result.status,reason:result.status==='BLOCKED'?(SAFE_BLOCK_REASONS.has(result.reason)?result.reason:'STAGING_VERIFICATION_INCOMPLETE'):null,checkedAt:clock().toISOString()};
     return last;
    }).finally(()=>{flight=null});
    return flight;
