@@ -1,5 +1,20 @@
 # VECO Developer Handbook
 
+## Engine 2.0 safe cron phase diagnostics — 2026-10-26
+
+The isolated staging cron now classifies missing/malformed shadow database URLs
+as `SHADOW_DATABASE_REQUIRED`, and unexpected failures as one of the fixed
+stages `NYSE_SESSION_UNAVAILABLE`, `STAGING_WORKER_INITIALIZATION_FAILED`,
+`STAGING_WORKER_CONFIGURATION_FAILED`, `PREOPEN_PREPARATION_FAILED`, or
+`MORNING_REVIEW_FAILED`. It never emits provider exception messages, URL
+contents or environment values. These diagnostics distinguish failures that
+previously all appeared as `STAGING_RUN_FAILED`; they do not relax evidence
+requirements or claim a successful source-backed review. Tests cover malformed
+URLs, preopen errors and secret-safe reporting. Shadow deployment must be
+verified separately; production/main, the legacy workbook, trading bridge and
+customer delivery remain unchanged.
+
+
 ## Engine 2.0 dated benchmark integrity — 2026-10-25
 
 The isolated PR #329 mechanical nine-factor assessor now requires every
