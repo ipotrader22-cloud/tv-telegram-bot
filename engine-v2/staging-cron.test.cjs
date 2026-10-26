@@ -33,7 +33,7 @@ test('cron reports failed delivery and sanitizes exceptions',async()=>{
   assert.equal(x.result.exitCode,1);assert.ok(!JSON.stringify(x.result).includes('secret'));assert.ok(!JSON.stringify(x.result).includes('private'));
  }
  const x=await invoke('2026-10-23T14:00:00Z',{createWorker:()=>{throw Error('re_secret')}});
- assert.equal(x.result.reason,'STAGING_RUN_FAILED');assert.ok(!JSON.stringify(x.result).includes('re_secret'));
+ assert.equal(x.result.reason,'STAGING_WORKER_INITIALIZATION_FAILED');assert.ok(!JSON.stringify(x.result).includes('re_secret'));
 });
 test('cron blocks missing configuration and leaves pending delivery distinct',async()=>{
  const x=await invoke('2026-10-23T14:00:00Z',{createWorker:()=>({status:()=>({enabled:false,missing:[]}),tick:()=>{throw Error('must not run')}})});
@@ -54,4 +54,25 @@ test('cron reports exact allowlisted missing capabilities without leaking provid
   status:()=>({enabled:false,missing:[]}),tick:()=>{throw Error('must not run')}
  })});
  assert.deepEqual(disabled.result.missingCapabilities,['STAGING_PIPELINE_ENABLED']);
+});
+
+test('cron distinguishes malformed shadow URL without echoing credentials',async()=>{
+ const x=await invoke('2026-10-23T14:00:00Z',{env:{...env,VIXALE_V2_SHADOW_DATABASE_URL:'not-a-url-secret'}});
+ assert.equal(x.result.reason,'SHADOW_DATABASE_REQUIRED');assert.equal(x.calls,0);
+ assert.ok(!JSON.stringify(x.result).includes('secret'));
+});
+test('cron identifies preopen provider failure without leaking error contents',async()=>{
+ const x=await invoke('2026-10-23T12:10:00Z',{
+  env:{...env,VIXALE_V2_STAGING_PRICE_POLICY:'DELAYED_0940_MODEL_V1'},
+  createWorker:()=>({status:()=>({enabled:true,missing:[]}),prepare:async()=>{throw Error('private-provider-secret')}})
+ });
+ assert.equal(x.result.reason,'PREOPEN_PREPARATION_FAILED');assert.equal(x.result.exitCode,1);
+ assert.ok(!JSON.stringify(x.result).includes('secret'));
+});
+test('cron identifies worker configuration failure without exposing error details',async()=>{
+ const x=await invoke('2026-10-23T14:00:00Z',{
+  createWorker:()=>({status:()=>{throw Error('credential-secret')}})
+ });
+ assert.equal(x.result.reason,'STAGING_WORKER_CONFIGURATION_FAILED');
+ assert.ok(!JSON.stringify(x.result).includes('secret'));
 });
