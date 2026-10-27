@@ -4,9 +4,9 @@ Updated October 26, 2026, after the owner said: "I give you the approval to do w
 
 ## Installed repair and scheduled continuation
 
-Windows source `158aa4cf4e50129afa7d31a3188d284e780e8394` is installed and health verified. PR #349 remains draft pending paper acceptance. Private backups and deployment details are in `smio-windows-rollout.md`. All 51 SMIO alerts and effective/autostart SMIO EOD remain off at this checkpoint.
+Windows source `158aa4cf4e50129afa7d31a3188d284e780e8394` is installed and health verified. PR #349 remains draft pending paper acceptance. At October 27 18:04 ET, a controlled flat-account restart enabled effective/autostart SMIO EOD. Core configuration remained unchanged and independent broker queries confirmed flat positions and the same two unrelated ES BAG orders. Backup and health proof: `smio-eod-enable-record.json`. All 51 SMIO alerts remain paused; NOW's exact saved condition/contract/15-minute interval was reverified without saving edits. Do not repeat this restart if the runtime remains healthy and EOD enabled.
 
-Active Codex heartbeat: `smio-paper-acceptance`, in this chat every ten minutes during weekday hours 09:00–16:50 local time. Its prompt limits routine work to 09:20–16:20 America/New_York, with necessary reconciliation allowed afterward. First intended preflight: October 27 at 09:20 ET, subject to fresh broker-confirmed session and runtime availability. Keep the machine on, Codex running, TWS/bridge connected and authenticated TradingView available. The heartbeat does not replace the bridge EOD scheduler.
+Active Codex heartbeat: `smio-paper-acceptance`, in this chat every ten minutes during weekday hours 09:00–16:50 local time. Its prompt limits routine work to 09:20–16:20 America/New_York, with necessary reconciliation allowed afterward. Next intended preflight: October 28 at 09:20 ET, subject to fresh broker-confirmed session and runtime availability. October 27 never reached alert activation or paper execution. Keep the machine on, Codex running, TWS/bridge connected and authenticated TradingView available. The heartbeat does not replace the bridge EOD scheduler.
 
 ## Selected existing profile
 
@@ -22,7 +22,7 @@ The only NOW journal row was CLOSED. Independent read-only broker evidence at 23
 ## Preflight and activation
 
 1. Read current repo rules/handbook. Compare installed hashes with the deployment record. Verify exact demo account, connected healthy bridge, advancing maintenance, clean NOW reservation/position/all-client order checks, receipt health and broker liquidHours for the current date.
-2. Verify a safe shared-bridge maintenance slot and fresh process ancestry. Privately back up current startup/state. Stop only the verified bridge/reloader tree, change the single autostart EOD injection from 0 to 1, and restart hidden through the existing entrypoint with EOD 1 and unrelated configuration intact. Do not rerun the old deployment script with obsolete PIDs/hashes.
+2. The EOD-enabling restart is COMPLETE. If EOD remains enabled and runtime healthy, proceed directly to alert preflight; unrelated open positions do not themselves prevent resuming NOW. Only if another restart is necessary, verify a safe shared-bridge maintenance slot and fresh process ancestry, back up startup/state privately, stop only that verified tree, and restart hidden with unrelated configuration intact. Never rerun old scripts with obsolete PIDs/hashes.
 3. Verify installed hashes, effective child environment, exact account and maintenance/session diagnostics after restart. If a gate fails, keep the alert paused and diagnose it. No speculative broker order or stale replay.
 4. Resume only the exact NOW alert after inspecting its stored profile. Keep the other 50 SMIO alerts paused and unrelated alerts untouched. Save screenshot proof and timestamped redacted preflight evidence.
 
