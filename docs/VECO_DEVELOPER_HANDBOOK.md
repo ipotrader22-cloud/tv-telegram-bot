@@ -3566,6 +3566,28 @@ must accompany an authorized Windows rollout. Render LIVE does not update or
 verify Windows. Roll back code only after stopping it; do not restore stale
 journals over new fills. No live deployment was performed in this investigation.
 
+### SMIO controlled Windows installation — October 26, 22:04 ET
+
+The owner explicitly approved the prepared rollout and next-session supervised
+NKE 60-minute demo test. Candidate source `158aa4cf4e50129afa7d31a3188d284e780e8394`
+is now installed locally (five reviewed core/adapter/helper files). Baseline and
+installed hashes were verified; the core overlay preserves the local customization.
+Private backups are in `C:\ib_bridge\backups\smio-repair-20261026-220427`.
+Only the bridge/reloader was restarted, hidden with retained stdout/stderr logs.
+TWS/ngrok/foreign orders were untouched. Actual worker environment and autostart
+now have SMIO EOD `0` for the authorized test hold. All 51 filtered SMIO demo
+alerts are stopped; other alerts were outside the selection.
+
+Post-install: connected/exact demo account, ready true, maintenance task running,
+all phase timestamps advancing and durable ingress present. At 22:06:39 ET,
+NKE/OXY were flat; external SBUX +100 and five external orders remained; no SMIO
+open order. No manual journal/outbox rewrite, historical replay or broker order
+was performed. See [SMIO_WINDOWS_ROLLOUT_2026-10-26.md](SMIO_WINDOWS_ROLLOUT_2026-10-26.md).
+This supersedes the predeployment status above. PR #349 remains draft/unmerged;
+Render/main unchanged. Broker-confirmed paper acceptance still requires the owner
+present and a fresh legitimate signal under the approved plan. Do not enable
+all profiles or silently restore the old autostart EOD flag.
+
 ## Issue #341 — Read-only SMIO publication audit (2026-10-24)
 
 The offline `bridge/smio_publication_audit.py` inspects a durable local Render outbox and optional SMIO demo journal without connecting to IB, Render or Google Sheets and without editing any state. Run from the repository root with `python bridge/smio_publication_audit.py --outbox C:\\ib_bridge\\vixale_render_outbox.json --journal C:\\ib_bridge\\smio_demo_journal.json`. The output distinguishes quarantined deliveries, HTTP 503 retries, malformed entries and unverified journal ownership. The mere presence of a journal setup is **not** evidence that the broker currently holds a position; a missing journal setup after clean slate is **not** evidence of a missing broker fill. Do not automatically replay, synthesize OPEN/CLOSE or clear quarantine. Run `python -m unittest tests.test_smio_publication_audit` for deterministic offline checks. This diagnostic changes no strategy logic, broker action, EOD timing, Render callback processing, or Sheets rows.

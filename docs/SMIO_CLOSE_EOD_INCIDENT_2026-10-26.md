@@ -1,8 +1,12 @@
 # SMIO CLOSE/EOD incident — 2026-10-26
 
-Status: engineering candidate; incident NOT resolved. No local runtime deployment,
-restart, order, cancellation, scheduler activation, journal repair or stale replay
-was performed in this investigation. Paper execution acceptance remains pending.
+Status: repair candidate installed under explicit owner approval at approximately
+22:04 ET; incident NOT acceptance-complete. All SMIO alerts and EOD activation
+remain off pending the supervised paper run. No order, cancellation, manual journal
+repair or stale replay was performed. See the
+[Windows rollout checkpoint](SMIO_WINDOWS_ROLLOUT_2026-10-26.md) for runtime
+verification and remaining acceptance. The chronology below describes the original
+predeployment investigation unless explicitly timestamped otherwise.
 
 ## Findings
 
@@ -245,5 +249,6 @@ a draft engineering candidate and the incident remains open.
 Rollback: stop the candidate before file restoration, restore the backed-up code
 and policy for the verified baseline, and reconcile current broker evidence before
 restarting. Do not roll back the journal/outbox over newly executed orders or
-reactivate stale intents. Preserve incident records and quarantine. No production
-change was made by this PR preparation, so no immediate rollback is needed.
+reactivate stale intents. Preserve incident records and quarantine. The owner
+subsequently approved controlled Windows candidate installation; its backup and
+verified source are recorded in the rollout checkpoint.
