@@ -71,4 +71,3 @@ class EodPolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
