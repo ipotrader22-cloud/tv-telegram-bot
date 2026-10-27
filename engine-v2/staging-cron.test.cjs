@@ -76,3 +76,28 @@ test('cron identifies worker configuration failure without exposing error detail
  assert.equal(x.result.reason,'STAGING_WORKER_CONFIGURATION_FAILED');
  assert.ok(!JSON.stringify(x.result).includes('secret'));
 });
+
+test('cron retains only allowlisted morning block reasons and never exposes provider details',async()=>{
+ const allowed=['STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING',
+  'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE','STAGING_VERIFICATION_INCOMPLETE'];
+ for(const reason of allowed){
+  const x=await invoke('2026-10-27T14:02:00Z',{createWorker:()=>({
+   status:()=>({enabled:true,missing:[]}),tick:async()=>({status:'BLOCKED',reason})
+  })});
+  assert.equal(x.result.status,'BLOCKED');assert.equal(x.result.reason,reason);
+  assert.equal(x.result.exitCode,1);assert.equal(x.result.productionCutover,false);
+ }
+ for(const reason of ['private-provider-secret','MODEL_CYCLE:private-provider-secret',undefined]){
+  const x=await invoke('2026-10-27T14:02:00Z',{createWorker:()=>({
+   status:()=>({enabled:true,missing:[]}),tick:async()=>({status:'BLOCKED',reason})
+  })});
+  assert.equal(x.result.reason,'STAGING_RUN_REQUIRES_ATTENTION');
+  assert.ok(!JSON.stringify(x.result).includes('private-provider-secret'));
+ }
+ const preopen=await invoke('2026-10-27T12:15:00Z',{
+  env:{...env,VIXALE_V2_STAGING_PRICE_POLICY:'DELAYED_0940_MODEL_V1'},
+  createWorker:()=>({status:()=>({enabled:true,missing:[]}),
+   prepare:async()=>({status:'BLOCKED',reason:'STAGING_CONFIGURATION_INCOMPLETE'})})
+ });
+ assert.equal(preopen.result.reason,'STAGING_CONFIGURATION_INCOMPLETE');
+});
