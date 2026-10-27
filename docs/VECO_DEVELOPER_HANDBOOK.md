@@ -1,5 +1,21 @@
 # VECO Developer Handbook
 
+## Engine 2 staging morning block-code propagation — 2026-10-27
+
+The isolated cron now preserves only a fixed set of safe worker block reasons:
+`STAGING_CONFIGURATION_INCOMPLETE`,
+`STAGING_WORKBOOK_METADATA_UNVERIFIED`,
+`PREOPEN_PREPARATION_MISSING`,
+`STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE`, and
+`STAGING_VERIFICATION_INCOMPLETE`. Unknown reasons, including dynamic
+`MODEL_CYCLE:` / `SHEET:` / `WEBSITE:` provider messages, remain masked as
+`STAGING_RUN_REQUIRES_ATTENTION`. This is an observability-only change:
+no evidence gate, trade, workbook, scheduler, secret, email or production
+behavior is altered. Tests cover exact safe propagation and malicious or
+unclassified reasons. Confirm GitHub CI and the exact isolated Render deploy
+before relying on new log diagnostics. Handbook update required: YES.
+
+
 ## Engine 2 pre-open completed-session research repair — 2026-10-27
 
 The pre-open collector reused `analyze()` from the legacy intraday research
