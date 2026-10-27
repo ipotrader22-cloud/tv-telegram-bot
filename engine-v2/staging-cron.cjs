@@ -38,7 +38,13 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
   const success=['PREOPEN_PREPARED','DELIVERED','ACCEPTED_NOT_DELIVERED','STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED','BUSY'];
   const failure=['BLOCKED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED'];
   const status=[...success,...failure].includes(result.status)?result.status:'BLOCKED';
-  return done(status,success.includes(status)?null:'STAGING_RUN_REQUIRES_ATTENTION',success.includes(status)?0:1);
+  // Preserve only fixed, public-safe failure categories; never forward provider text.
+  const safeReasons=new Set(['STAGING_CONFIGURATION_INCOMPLETE',
+   'STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING',
+   'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE','STAGING_VERIFICATION_INCOMPLETE']);
+  const reason=success.includes(status)?null:
+   status==='BLOCKED'&&safeReasons.has(result.reason)?result.reason:'STAGING_RUN_REQUIRES_ATTENTION';
+  return done(status,reason,success.includes(status)?0:1);
  }catch{
   // No raw exception text: provider failures may contain URLs, keys or account data.
   const reasons={SHADOW_IDENTITY:'SHADOW_DATABASE_REQUIRED',NYSE_SESSION:'NYSE_SESSION_UNAVAILABLE',
