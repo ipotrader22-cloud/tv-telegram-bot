@@ -3584,9 +3584,19 @@ NKE/OXY were flat; external SBUX +100 and five external orders remained; no SMIO
 open order. No manual journal/outbox rewrite, historical replay or broker order
 was performed. See [SMIO_WINDOWS_ROLLOUT_2026-10-26.md](SMIO_WINDOWS_ROLLOUT_2026-10-26.md).
 This supersedes the predeployment status above. PR #349 remains draft/unmerged;
-Render/main unchanged. Broker-confirmed paper acceptance still requires the owner
-present and a fresh legitimate signal under the approved plan. Do not enable
-all profiles or silently restore the old autostart EOD flag.
+Render/main unchanged. The owner's subsequent explicit approval to do whatever
+is necessary to finish authorizes autonomous paper validation without continued
+chat presence. The amended plan selects existing NOW 15-minute profile
+`SMIO_RSI_DEMO_NOW_15`; NKE's OWNERSHIP_LOST row still reserves its symbol and must
+not be cleared for a test. NOW's only journal row was CLOSED; independent broker
+evidence at 23:43:17 ET confirmed it flat with no all-client working order.
+Reverify before activation. Same-chat heartbeat `smio-paper-acceptance` is active;
+the first intended preflight is October 27 at 09:20 ET. Only that profile and the
+approved EOD flag may be activated after account/session/runtime gates pass.
+Preserve strategy settings/sizing and require fresh natural signals and actual
+execution/reconciliation evidence. No signal is inconclusive, not a reason to
+fabricate one. See the amended controlled paper acceptance plan. All alerts/EOD
+remain held off at this checkpoint; do not enable all profiles.
 
 ## Issue #341 — Read-only SMIO publication audit (2026-10-24)
 

@@ -43,10 +43,14 @@ The repair is installed, but the incident is **not acceptance-complete**. NKE's
 original first failure and the missed original failsafe still lack retrospective
 trace evidence. Broker-confirmed paper execution remains untested.
 
-All 51 SMIO demo alerts, including NKE, and the SMIO EOD flag remain off until the
-owner is present for the approved [paper run](SMIO_CONTROLLED_PAPER_ACCEPTANCE.md).
-Use the current profile and Strategy Properties sizing. A fresh legitimate signal
-is required; its absence is inconclusive, not permission to fabricate one.
+All 51 SMIO demo alerts and the SMIO EOD flag remain off at this checkpoint.
+The owner's subsequent approval to do whatever is necessary to finish supersedes
+the chat-presence requirement. The amended [paper run](SMIO_CONTROLLED_PAPER_ACCEPTANCE.md)
+uses the existing NOW 15-minute profile because NKE's historical OWNERSHIP_LOST
+reservation must remain intact. A same-chat heartbeat is active for next-session
+preflight and controlled single-profile activation. Preserve current Strategy
+Properties sizing and require a fresh legitimate signal; its absence is
+inconclusive, not permission to fabricate one.
 
 PR #349 remains draft/unmerged pending paper acceptance. Windows runs the explicitly
 approved candidate; Render/main were not changed. Later documentation-only commits

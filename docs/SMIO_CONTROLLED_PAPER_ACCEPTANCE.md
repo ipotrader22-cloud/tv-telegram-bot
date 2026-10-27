@@ -1,83 +1,45 @@
-# SMIO controlled Windows rollout and paper acceptance
+# SMIO authorized autonomous paper acceptance
 
-Status: prepared, not authorized/activated by this document. This plan is the
-concrete next step after PR #349 offline/CI validation, subject to Issue #335's
-supervised paper gate. Engineering preparation does not certify a research freeze.
+Updated October 26, 2026, after the owner said: "I give you the approval to do whatever is necessary to complete this fix." This supersedes the earlier owner-presence requirement and NKE selection. The owner need not remain in the chat. Broker evidence, the experimental contract, unchanged strategy settings/sizing and preservation of disputed history remain required.
 
-## Proposed existing profile
+## Installed repair and scheduled continuation
 
-- TWS Simulated Trading; exact account must match the private attested config.
-- Symbol NKE; timeframe 60 minutes; ATR target mode.
+Windows source `158aa4cf4e50129afa7d31a3188d284e780e8394` is installed and health verified. PR #349 remains draft pending paper acceptance. Private backups and deployment details are in `smio-windows-rollout.md`. All 51 SMIO alerts and effective/autostart SMIO EOD remain off at this checkpoint.
+
+Active Codex heartbeat: `smio-paper-acceptance`, in this chat every ten minutes during weekday hours 09:00–16:50 local time. Its prompt limits routine work to 09:20–16:20 America/New_York, with necessary reconciliation allowed afterward. First intended preflight: October 27 at 09:20 ET, subject to fresh broker-confirmed session and runtime availability. Keep the machine on, Codex running, TWS/bridge connected and authenticated TradingView available. The heartbeat does not replace the bridge EOD scheduler.
+
+## Selected existing profile
+
+- Exact private-config attested TWS Simulated Trading account.
+- Alert `SMIO_RSI_DEMO_NOW_15`: NOW, 15 minutes, ATR target mode.
 - Experimental contract `SMIO_RSI_PINE01_TV_EQUITY_EXACT_DEMO_20261013`.
-- Existing configuration `PINE01:118:23:15:2:true:true:8:21:200:ATR:2.9:Auto:true`.
-- Preserve current TradingView Strategy Properties sizing and exact positive
-  whole-share payload quantity. No synthetic order, invented signal, one-share
-  override, parameter change or historical event replay.
-- EOD due five minutes before the actual broker-verified session close. A regular
-  16:00 close yields 15:55; a verified 13:00 close yields 12:55. Unknown/holiday
-  schedules fail closed. Verify the actual next session at test time.
+- Configuration `PINE01:114:5:10:4:true:true:8:21:200:ATR:2.8:Auto:true`.
+- Existing UAM snapshot matches symbol/timeframe/config and records verified properties. Reverify actual inputs and Strategy Properties before use.
+- Preserve existing TradingView sizing and exact positive whole-share payload quantity. No synthetic order, invented signal, one-share override, parameter change or historical replay.
 
-This profile was read from the installed journal, not invented from a fixture.
-Its current UAM source/settings and account attestation must be reverified before
-use. The paper run needs a fresh legitimate strategy entry; if none occurs, the
-run is inconclusive. Do not fabricate an entry to finish a checklist.
+The only NOW journal row was CLOSED. Independent read-only broker evidence at 23:43:17 ET on October 26 showed the exact account matched, NOW flat and no NOW all-client working order. Recheck before activation. NKE is ineligible because its old OWNERSHIP_LOST row still reserves the symbol. Do not clear disputed history to make a test pass.
 
-## Supervised rollout
+## Preflight and activation
 
-1. Owner/Trading Lab records approval of this exact experimental-demo scope and
-   names the supervising operator/test session. Resolve draft #336 overlap.
-2. Operator isolates SMIO to this one test profile and pauses its alerts during
-   installation. Do not alter other strategies or cancel their orders. Choose a
-   maintenance slot where stopping the shared bridge is safe for other systems.
-3. Re-read broker positions, executions and all-client orders. Require NKE flat
-   with no NKE working orders; retain external SBUX/ES orders and history. If the
-   facts changed, stop and revise the plan rather than flattening unrelated holdings.
-4. Stop the exact bridge/reloader under operator control. Its auto-reload makes
-   in-place edits while running unsafe. Capture backups and hashes locally for
-   core, adapter, policy, config, lifecycle journal, receipt journal and outbox.
-   Backups containing account/config values must stay private on that machine.
-5. Compare the prepared manifest with current files. Deploy only the reviewed
-   core route insertion, adapter, ingress helper, policy and optional audit.
-   Preserve the existing entrypoint, autostart and unrelated local customizations.
-   Any unexpected hash difference requires a new diff, not a forced copy.
-6. Start with SMIO EOD activation held off in the effective child environment
-   until account/session/status checks pass and the operator begins the approved
-   test. This requires explicit authorization: the current autostart injects ON.
-   Do not infer the effective value from `.env` or a different shell.
-7. Verify installed hashes, exact entrypoint, connected demo account, journal and
-   outbox retention, receipt/status health and broker liquidHours. Do not migrate
-   or automatically replay historical intents/receipts. Existing ownership-lost
-   and disputed historical setups stay reserved/quarantined for review.
+1. Read current repo rules/handbook. Compare installed hashes with the deployment record. Verify exact demo account, connected healthy bridge, advancing maintenance, clean NOW reservation/position/all-client order checks, receipt health and broker liquidHours for the current date.
+2. Verify a safe shared-bridge maintenance slot and fresh process ancestry. Privately back up current startup/state. Stop only the verified bridge/reloader tree, change the single autostart EOD injection from 0 to 1, and restart hidden through the existing entrypoint with EOD 1 and unrelated configuration intact. Do not rerun the old deployment script with obsolete PIDs/hashes.
+3. Verify installed hashes, effective child environment, exact account and maintenance/session diagnostics after restart. If a gate fails, keep the alert paused and diagnose it. No speculative broker order or stale replay.
+4. Resume only the exact NOW alert after inspecting its stored profile. Keep the other 50 SMIO alerts paused and unrelated alerts untouched. Save screenshot proof and timestamped redacted preflight evidence.
 
-## Broker-confirmed paper acceptance
+EOD is five minutes before the broker-confirmed actual close, including half days. Unknown/holiday schedules fail closed. Do not force an out-of-session test.
 
-1. Operator enables only the approved profile and test failsafe for the agreed
-   session after the checks above. Retain trace capture for the running process.
-2. Capture a fresh natural entry's exact setup/event ID, HTTP receipt persistence,
-   handler start, broker entry/target IDs, execution IDs and confirmed quantity.
-3. Capture the legitimate CLOSE or broker five-minute EOD intent. Verify exact
-   target cancellation/terminal acknowledgement, post-cancel position and execution
-   ownership proof, one market-close order, and actual executions for all shares.
-4. Independently query all-client orders and broker positions. NKE must be flat
-   with no residual owned order and no new unintended foreign order. Existing
-   unrelated orders are compared with baseline, not canceled for a clean display.
-5. Verify journal exact executions/terminal reconciliation and the execution-first
-   Render callback/ledger. HTTP 200, submitted order or a dashboard label alone
-   cannot pass. An outbox delay must not halt residual execution recovery.
-6. Re-deliver only an exact already-completed test event under the supervised test
-   authorization and confirm no new order. Disconnection/restart and cancellation
-   races remain offline-proven until explicitly controlled paper cases are run;
-   do not interrupt a shared production bridge merely to induce a failure.
-7. Record pass/fail evidence and the owner decision on continued activation. If
-   the profile has no open position at EOD because a legitimate target/stop already
-   closed it, the EOD execution case is unproven and needs another natural case.
+## Acceptance evidence
 
-## Stop and rollback
+1. Wait for a fresh natural TradingView entry. Capture exact event/setup IDs, durable receipt, handler start, broker entry/target IDs and actual executions.
+2. Capture legitimate CLOSE handling and an EOD case with owned residual shares at the five-minute boundary. Verify terminal target cancellation, post-cancel ownership/quantity proof, one owned close order and executions covering remaining shares. Offline tests cover injected disconnect/cancel races; do not disrupt shared systems to force them.
+3. Independently confirm NOW flat and no residual owned order through all-client queries. Compare foreign orders with baseline without canceling them or misattributing their independent changes.
+4. Reconcile executions into the journal and execution-first Render callback/ledger. HTTP 200, submission or dashboard status alone cannot pass. Outbox delay must not suppress residual recovery.
+5. Verify duplicate suppression using receipt/order evidence. Do not replay an old entry as a shortcut. A deliberately injected duplicate requires a concrete completed-test-event check proving no new order can result.
 
-Stop the test on ambiguous ownership, account mismatch, missing execution coverage,
-unexpected order, session uncertainty or residual quantity. Preserve evidence and
-let the supervising operator decide recovery; do not submit an extra close.
-Stop the candidate before restoring backed-up code/policy. Keep all new journal,
-receipt and outbox evidence. Never restore old state over fills, force replay,
-clear historical quarantine or cancel foreign orders. Reverting the core route
-also reverts durable receipt semantics and must be reported.
+No entry is inconclusive. A target/legitimate close before EOD leaves EOD execution unproven; continue this limited profile in another permitted session after fresh preflight. Do not broaden profiles, alter parameters or fabricate evidence.
+
+## Failure handling and completion
+
+On ambiguous ownership, account/session mismatch, unexpected order or residual quantity, preserve evidence and prevent new entries while preserving necessary owned-position recovery. Pausing an alert suppresses CLOSE signals too: account for this before pausing an open test profile. Never submit a speculative extra close, cancel foreign orders, rewrite history or restore stale state over fills. Diagnose and repair engineering failures within scope, then revalidate.
+
+After all evidence passes, pause the test alert once flat, record acceptance, reconcile draft #336 overlap and complete eligible PR #349 merge and exact production verification under repository rules. Do not blindly merge overlapping PRs or enable all profiles. Disable this heartbeat after completion. Stay quiet for unchanged checks; report meaningful progress, failure, completion or essential owner action.

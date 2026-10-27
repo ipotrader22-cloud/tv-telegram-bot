@@ -2,7 +2,9 @@
 
 Status: repair candidate installed under explicit owner approval at approximately
 22:04 ET; incident NOT acceptance-complete. All SMIO alerts and EOD activation
-remain off pending the supervised paper run. No order, cancellation, manual journal
+remain off pending the authorized autonomous NOW paper run. Continued owner chat
+presence is no longer required following explicit expanded approval. No order,
+cancellation, manual journal
 repair or stale replay was performed. See the
 [Windows rollout checkpoint](SMIO_WINDOWS_ROLLOUT_2026-10-26.md) for runtime
 verification and remaining acceptance. The chronology below describes the original
