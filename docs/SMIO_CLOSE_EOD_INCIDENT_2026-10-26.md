@@ -103,7 +103,8 @@ Preserving that code in a draft is **not** approval to activate or merge it.
 |---|---|---|
 | Session expires during cancellation or refresh | Recheck configured RTH and broker liquidHours; final no-await clock guard before market submission | Deterministic cancellation-boundary regression |
 | Broker read stalls while holding lock | Bounded connection/refresh/session queries; invalidate failed execution coverage | Timeout fixture releases locks and blocks mutation |
-| Reconcile exception skips EOD | Independently record/run the two maintenance phases | Error fixture still invokes EOD; no guarantee under event-loop/process starvation |
+| Reconcile exception skips EOD | Independently record/run ingress, reconciliation and EOD; isolate each journal row | Error fixture still invokes EOD; bad historical row does not block subsequent positions |
+| HTTP acknowledgement precedes persistence | SMIO-only durable receipt before HTTP 200; atomic claim before background dispatch | Failed writes return 503; duplicates do not submit twice; interrupted/expired work is quarantined |
 | Foreign order hidden on another client | Refresh all-client open orders; fail closed on foreign working orders | All-client fixture; observed client-local diagnostic blind spot |
 | Foreign execution during cancellation/session query | Revalidate execution ownership and current position after awaited work | No residual market close on foreign-fill race |
 | OPEN callback backlog suppresses partial CLOSE recovery | Recover terminal/partial close before applying publication ordering barrier | 3 filled + exact 7-share remainder while OPEN remains queued |
@@ -113,17 +114,18 @@ Preserving that code in a draft is **not** approval to activate or merge it.
 | Flat symbol still has working orders | Withhold CLOSED publication | Account/order ambiguity remains blocked |
 
 No strategy parameters, Pine timing, entry/exit reasons, targets, stop calculations,
-foreign strategy code, Render application logic or historical quarantine rules
+foreign strategy behavior, Render application logic or historical quarantine rules
 were changed. The actual broker session remains the execution boundary, including
 half-days; ambiguous schedules fail closed.
 
-**Remaining engineering risk:** the shared `/tv` route returns HTTP 200 before
-`process_signal_background` durably records the signal. A process failure in that
-interval can lose work after Render marks delivery complete. This patch instruments
-the handler but does not implement a durable ingress queue. It must not be described
-as end-to-end delivery reliability. A follow-up must durably accept exact SMIO
-event/body identity before acknowledgement, distinguish receipt from execution,
-and quarantine expired/conflicting events rather than automatically replay them.
+**Durable ingress follow-up implemented:** the candidate `/tv` route now calls a
+SMIO-only receipt hook before acknowledgement. Atomic receipt and claim writes
+close the identified loss window. Failed writes/corruption return HTTP 503;
+conflicting event bodies return 409. Fresh same-process work has bounded retries;
+unfinished prior-process and expired work are quarantined without replay. The
+installed runtime still has the old route until controlled deployment. See
+[the ingress ADR](ADR_SMIO_DURABLE_INGRESS.md). Durable acceptance is not execution
+confirmation; quarantined work still requires broker evidence and operator review.
 
 Unknown market submission remains a reserved `CLOSE_SUBMITTING` intent until exact
 broker evidence resolves it. An absent order is not permission to resubmit. Restart
@@ -149,7 +151,7 @@ All results below are **offline**, not live paper acceptance.
 | Target fills during cancellation | Full target wins; partial target closes only exact remaining quantity |
 | Partial close | 3 + 7 shares, no reversal, one replacement |
 | Already-flat broker | Exact target/close fills govern publication; foreign-flat ownership is not adopted |
-| Multiple SMIO positions | EOD scan continues to second row after first blocked row; full concurrent broker execution still requires paper proof |
+| Multiple SMIO positions | Two symbols on one fixture connection close once each; blocked EOD/reconciliation rows do not suppress others; paper proof remains required |
 | Foreign same-symbol holding/order | Foreign fill/reopen and all-client working orders block close; no foreign cancellation |
 | Existing queued CLOSE / duplicate | One close through maintenance/restart; no duplicate market order |
 | Missing executions | Unproven coverage / invalid response block action |
@@ -158,7 +160,7 @@ All results below are **offline**, not live paper acceptance.
 Commands run successfully with Python 3.12 on Windows:
 
 ```text
-python -B -m unittest discover -s tests -p 'test_smio*.py'              # 55 tests
+python -B -m unittest discover -s tests -p 'test_smio*.py'              # 73 tests
 python -B -m unittest tests.test_vixale_edge_bridge_isolation tests.test_smi_forward_bridge_isolation tests.test_bridge_quote_reconnect_adapter  # 115 tests
 node tests/test_smio_pine_identity_escape.js
 node tests/smio_dashboard_trade_id_regression.cjs
@@ -196,7 +198,8 @@ It reads only existing loopback GET endpoints `/ib/positions`, `/ib/open-orders`
 unless its stdout is explicitly redirected. Account numbers are redacted. Every
 setup includes account match, strategy, broker quantity, journal state, target/
 close visibility, signal and handler timestamps, action time, blocker and EOD
-health. Missing legacy timestamps/health remain null. Client-local order absence
+health. It also reads the optional sibling `smio_demo_inbox.json` and joins HTTP
+receipt time/state by exact event ID. Missing legacy timestamps/health remain null. Client-local order absence
 is explicitly not proof of no foreign orders. Independent TWS execution/all-client
 inspection is still required before any recovery decision.
 
@@ -219,7 +222,7 @@ that the required gates have been satisfied. This investigation does not toggle 
 Before promotion, the owner/Trading Lab must record the exact approved contract,
 single demo profile, symbols/size, schedule and authorized operator for a controlled
 paper run. Reconcile the overlap with #336; do not merge both overlapping adapter
-implementations blindly. Review the unresolved ingress durability issue and collect
+implementations blindly. Review the implemented ingress durability change and collect
 new handler/maintenance traces before calling the initiating causes established.
 
 For controlled Windows deployment: inventory and hash every installed file again;

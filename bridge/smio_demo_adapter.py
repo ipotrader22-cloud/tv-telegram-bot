@@ -17,9 +17,11 @@ from decimal import Decimal
 try:
     from .smio_demo_contract import CONTRACT, validate
     from .smio_rsi_gate import is_smio_rsi_payload
+    from .smio_ingress import DurableIngress, IngressConflict, IngressInvalid
 except ImportError:
     from smio_demo_contract import CONTRACT, validate
     from smio_rsi_gate import is_smio_rsi_payload
+    from smio_ingress import DurableIngress, IngressConflict, IngressInvalid
 
 
 try:
@@ -57,6 +59,36 @@ class DemoLifecycle:
         self.routing_lock = asyncio.Lock()
         self.refresh_timeout = 10
         self.health = {}
+        self.ingress = DurableIngress(self.journal_path.with_name("smio_demo_inbox.json"))
+
+    async def accept_signal(self, data):
+        if not is_smio_rsi_payload(data):
+            return None
+        try:
+            effective = {**data, "dry_run": data.get("dry_run") is True or self.core.DRY_RUN}
+            receipt, new = self.ingress.accept(effective)
+            return {"ok": True, "status": "smio_durably_received", "broker_execution": False,
+                    "receipt_state": receipt["state"], "duplicate": not new,
+                    "process": receipt["state"] in ("RECEIVED", "RETRY")}
+        except IngressConflict:
+            return {"ok": False, "status": "smio_ingress_conflict", "http_status": 409}
+        except IngressInvalid:
+            return {"ok": False, "status": "smio_ingress_invalid", "http_status": 400}
+        except Exception:
+            return {"ok": False, "status": "smio_ingress_unavailable", "http_status": 503}
+
+    async def process_receipt(self, event_id):
+        data = self.ingress.claim(event_id)
+        if data is None:
+            return
+        result = await self.handle(data)
+        owns = event_id in self.load()["events"]
+        self.ingress.finish(event_id, result, owns)
+        return result
+
+    async def process_inbox(self):
+        for event_id in self.ingress.pending():
+            await self.process_receipt(event_id)
 
     @staticmethod
     def timestamp():
@@ -524,7 +556,7 @@ class DemoLifecycle:
 
     async def eod_failsafe_pass(self, now_value=None):
         """SMIO-only demo exit five minutes ahead of confirmed IB stock session end."""
-        from datetime import datetime as _datetime, time as _time
+        from datetime import time as _time
         from zoneinfo import ZoneInfo
         try:
             from .smio_eod_policy import eod_due, eod_close_payload, session_close_from_ib
@@ -537,7 +569,7 @@ class DemoLifecycle:
         if enabled not in ("1", "true", "yes", "on"):
             self.health["eod_result"] = "disabled"
             return
-        now = now_value or _datetime.now(ZoneInfo("America/New_York"))
+        now = now_value or datetime.now(ZoneInfo("America/New_York"))
         if now.tzinfo is None:
             self.health["eod_result"] = "invalid_clock"
             return
@@ -592,7 +624,7 @@ class DemoLifecycle:
 
     async def maintenance_pass(self):
         """One failed reconciliation must not silently suppress the EOD evaluation."""
-        for name in ("reconcile", "eod_failsafe_pass"):
+        for name in ("process_inbox", "reconcile", "eod_failsafe_pass"):
             self.health[name + "_started_at"] = self.timestamp()
             try:
                 await getattr(self, name)()
@@ -615,146 +647,154 @@ class DemoLifecycle:
             await self.refreshed()
             state = self.load()
             for row in state["setups"].values():
-                if row["state"] == "CLOSED":
-                    continue
-                if row.get("account") != config["account"]:
-                    self.note(state, row, "reconcile_blocked", "journal account differs from verified demo account")
-                    continue
-                if row["state"] in ("OPEN", "TARGET_CANCEL_PENDING") and row.get("close_signal") and not row.get("close"):
-                    try:
-                        event = state["events"][row["close_signal"]["event_id"]]
-                        await self.close(state, row, row["close_signal"], event["hash"])
-                    except Exception as error:
-                        self.note(state, row, "close_recovery", str(error))
-                data = row["payload"]
-                qty, price = self.total(self.executions(row, "entry"))
-                target_fills = self.executions(row, "target")
-                close_fills = self.executions(row, "close")
-                self.save(state)  # retained exact executions survive restart
                 try:
-                    self.ownership_history(state, row)
-                except ValueError as error:
-                    row["recovery_blocker"] = str(error)
+                    await self.reconcile_row(state, row, config)
+                except Exception as error:
+                    self.note(state, row, "reconcile_row_failed", type(error).__name__)
+
+    async def reconcile_row(self, state, row, config):
+        """One ambiguous setup must not suppress the other owned positions."""
+        if row["state"] == "CLOSED":
+            return
+        if row.get("account") != config["account"]:
+            self.note(state, row, "reconcile_blocked", "journal account differs from verified demo account")
+            return
+        if row["state"] in ("OPEN", "TARGET_CANCEL_PENDING") and row.get("close_signal") and not row.get("close"):
+            try:
+                event = state["events"][row["close_signal"]["event_id"]]
+                await self.close(state, row, row["close_signal"], event["hash"])
+            except Exception as error:
+                self.note(state, row, "close_recovery", str(error))
+        data = row["payload"]
+        qty, price = self.total(self.executions(row, "entry"))
+        target_fills = self.executions(row, "target")
+        close_fills = self.executions(row, "close")
+        self.save(state)  # retained exact executions survive restart
+        try:
+            self.ownership_history(state, row)
+        except ValueError as error:
+            row["recovery_blocker"] = str(error)
+            self.save(state)
+            if str(error) == "foreign execution changed symbol ownership":
+                await self.stop_stale_target(state, row)
+            return
+        parent = self.exact_trade(data["symbol"], row["account"], row["entry"]["ref"], row["entry"]["id"])
+        terminal = parent and parent.orderStatus.status in ("Filled", "Cancelled", "ApiCancelled", "Inactive")
+        if qty and parent and not terminal:
+            row.setdefault("partial_seen_at", time.time())
+            self.save(state)
+            if time.time() - row["partial_seen_at"] >= max(getattr(self.core, "PARTIAL_FILL_GRACE_SECONDS", 2), 0):
+                await self.cancel_exact(parent)
+            return  # re-query executions/positions before adopting quantity
+        if not qty:
+            if terminal and abs(await self.core.get_position_size(data["symbol"])) <= 0.000001:
+                target = row.get("target")
+                child = self.exact_trade(data["symbol"], row["account"], target["ref"], target["id"]) if target else None
+                if target and child is None:
+                    return
+                if child and not await self.cancel_exact(child):
+                    return
+                # Observe cancellation/executions again before releasing.
+                await self.refreshed()
+                if not self.executions(row, "entry") and not self.executions(row, "target") and abs(await self.core.get_position_size(data["symbol"])) <= 0.000001:
+                    row["state"] = "CLOSED"
+                    row["result"] = "NO_ENTRY_EXECUTION"
                     self.save(state)
-                    if str(error) == "foreign execution changed symbol ownership":
-                        await self.stop_stale_target(state, row)
-                    continue
-                parent = self.exact_trade(data["symbol"], row["account"], row["entry"]["ref"], row["entry"]["id"])
-                terminal = parent and parent.orderStatus.status in ("Filled", "Cancelled", "ApiCancelled", "Inactive")
-                if qty and parent and not terminal:
-                    row.setdefault("partial_seen_at", time.time())
-                    self.save(state)
-                    if time.time() - row["partial_seen_at"] >= max(getattr(self.core, "PARTIAL_FILL_GRACE_SECONDS", 2), 0):
-                        await self.cancel_exact(parent)
-                    continue  # re-query executions/positions before adopting quantity
-                if not qty:
-                    if terminal and abs(await self.core.get_position_size(data["symbol"])) <= 0.000001:
-                        target = row.get("target")
-                        child = self.exact_trade(data["symbol"], row["account"], target["ref"], target["id"]) if target else None
-                        if target and child is None:
-                            continue
-                        if child and not await self.cancel_exact(child):
-                            continue
-                        # Observe cancellation/executions again before releasing.
-                        await self.refreshed()
-                        if not self.executions(row, "entry") and not self.executions(row, "target") and abs(await self.core.get_position_size(data["symbol"])) <= 0.000001:
-                            row["state"] = "CLOSED"
-                            row["result"] = "NO_ENTRY_EXECUTION"
-                            self.save(state)
-                    continue
-                if not terminal:
-                    continue
-                if qty > data["qty"] or int(qty) != qty:
-                    raise ValueError("entry fill quantity conflict")
-                if parent.orderStatus.status == "Filled" and qty != data["qty"]:
-                    raise ValueError("Filled parent lacks its complete execution evidence")
-                position = await self.core.get_position_size(data["symbol"])
-                if not row.get("filled_qty"):
-                    # Partial terminal parent: repair ONLY its exact target to
-                    # the broker-confirmed filled quantity before publishing.
-                    target = row.get("target")
-                    if target:
-                        child = self.exact_trade(data["symbol"], row["account"], target["ref"], target["id"])
-                        if child is None:
-                            continue
-                        if child.orderStatus.status in ("Cancelled", "ApiCancelled", "Inactive"):
-                            if len(row.get("retired_targets", [])) >= 2:
-                                row["recovery_blocker"] = "target replacement limit reached"
-                                self.save(state)
-                                continue
-                            target_qty, _ = self.total(target_fills)
-                            if target_qty or abs(position) != qty or self.working(data["symbol"]):
-                                continue
-                            replacement = self.core.LimitOrder(child.order.action, qty, data["target"],
-                                                               tif="GTC", outsideRth=False, account=row["account"])
-                            replacement.orderId = self.core.ib.client.getReqId()
-                            replacement.orderRef = "SMIOT_" + digest(data["setup_id"])[:20] + "_" + str(len(row.get("retired_targets", [])) + 1)
-                            row.setdefault("retired_targets", []).append(target)
-                            row["target"] = {"id": replacement.orderId, "ref": replacement.orderRef, "action": replacement.action}
-                            self.save(state)
-                            self.core.ib.placeOrder(child.contract, replacement)
-                            continue
-                        if child.order.totalQuantity != qty:
-                            if abs(position) != qty or child.orderStatus.status not in ("Submitted", "PreSubmitted"):
-                                continue
-                            child.order.totalQuantity = qty
-                            self.core.ib.placeOrder(child.contract, child.order)
-                            continue
-                    row["filled_qty"] = qty
-                    row["state"] = "OPEN"
-                    self.save(state)
-                entry = {**data, "source": "IB_BRIDGE", "event": "ENTRY_FILL", "trade_id": data["setup_id"],
-                         "entry": price, "price": price, "qty": qty, "entry_filled": True,
-                         "ib_entry_status": parent.orderStatus.status, "ib_entry_fill_price": price, "ib_entry_filled_qty": qty,
-                         "ib_status": "smio_demo_filled", "entry_exec_ids": sorted(row["entry"]["executions"]),
-                         "entry_execution_id": "IB_BRIDGE:" + ",".join(sorted(row["entry"]["executions"])),
-                         "ib_order_id": row["entry"]["id"], "ib_order_ref": row["entry"]["ref"]}
-                if row.get("target"):
-                    entry.update(ib_target_order_id=row["target"]["id"], ib_target_order_ref=row["target"]["ref"])
-                self.enqueue(state, row, entry, "entry")
-                close_order = row.get("close")
-                if close_order and position:
-                    close_trade = self.exact_trade(data["symbol"], row["account"], close_order["ref"], close_order["id"])
-                    closed_qty, _ = self.total(close_fills)
-                    target_qty, _ = self.total(target_fills)
-                    if close_trade and closed_qty < qty - target_qty:
-                        close_terminal = close_trade.orderStatus.status in ("Cancelled", "ApiCancelled", "Inactive")
-                        if not close_terminal and closed_qty and time.time() - row.get("close_submitted_at", time.time()) >= max(getattr(self.core, "PARTIAL_FILL_GRACE_SECONDS", 2), 0):
-                            await self.cancel_exact(close_trade)
-                            continue
-                        if close_terminal and len(row.get("retired_closes", [])) < 2:
-                            row.setdefault("retired_closes", []).append(row.pop("close"))
-                            row["state"] = "TARGET_CANCEL_PENDING"
-                            self.save(state)
-                            # Next iteration repeats ownership/position proofs.
-                            continue
-                all_exits = {**target_fills, **close_fills}
-                exit_qty, exit_price = self.total(all_exits)
-                if abs(position) <= 0.000001 and exit_qty == qty:
-                    # Publication ordering must not suspend partial-close recovery.
-                    if row["entry_delivery_id"] in self.core.load_render_outbox():
-                        continue
-                    if self.working(data["symbol"]):
-                        self.note(state, row, "publication_blocked", "working orders remain on flat symbol")
-                        continue
-                    reason = row.get("close_signal", {}).get("reason") if close_fills else "ATR_TARGET"
-                    exit_event = "TP" if not close_fills or reason == "RSI_PROFIT" else "EOD_CLOSE" if reason == "RTH_EOD" else "CLOSE_STOP"
-                    order = row["close"] if close_fills else row["target"]
-                    callback = {**data, "source": "IB_BRIDGE", "event": exit_event, "reason": reason, "trade_id": data["setup_id"],
-                                "qty": qty, "entry": price, "price": exit_price, "exit": exit_price,
-                                "broker_confirmed_flat": True, "position_after_close": 0,
-                                "close_filled": True, "ib_close_status": "Filled", "ib_status": "smio_demo_closed",
-                                "ib_order_id": order["id"], "ib_order_ref": order["ref"],
-                                "ib_close_fill_price": exit_price, "ib_close_filled_qty": qty,
-                                "close_exec_ids": sorted(all_exits),
-                                "exit_execution_id": "IB_BRIDGE:" + ",".join(sorted(all_exits)),
-                                "reconciliation_id": digest(sorted(all_exits)), "execution_components": all_exits}
-                    if row.get("target"):
-                        callback.update(ib_target_order_id=row["target"]["id"], ib_target_order_ref=row["target"]["ref"])
-                    self.enqueue(state, row, callback, "exit")
-                    if row["exit_delivery_id"] not in self.core.load_render_outbox():
-                        row["state"] = "CLOSED"
+            return
+        if not terminal:
+            return
+        if qty > data["qty"] or int(qty) != qty:
+            raise ValueError("entry fill quantity conflict")
+        if parent.orderStatus.status == "Filled" and qty != data["qty"]:
+            raise ValueError("Filled parent lacks its complete execution evidence")
+        position = await self.core.get_position_size(data["symbol"])
+        if not row.get("filled_qty"):
+            # Partial terminal parent: repair ONLY its exact target to
+            # the broker-confirmed filled quantity before publishing.
+            target = row.get("target")
+            if target:
+                child = self.exact_trade(data["symbol"], row["account"], target["ref"], target["id"])
+                if child is None:
+                    return
+                if child.orderStatus.status in ("Cancelled", "ApiCancelled", "Inactive"):
+                    if len(row.get("retired_targets", [])) >= 2:
+                        row["recovery_blocker"] = "target replacement limit reached"
                         self.save(state)
+                        return
+                    target_qty, _ = self.total(target_fills)
+                    if target_qty or abs(position) != qty or self.working(data["symbol"]):
+                        return
+                    replacement = self.core.LimitOrder(child.order.action, qty, data["target"],
+                                                       tif="GTC", outsideRth=False, account=row["account"])
+                    replacement.orderId = self.core.ib.client.getReqId()
+                    replacement.orderRef = "SMIOT_" + digest(data["setup_id"])[:20] + "_" + str(len(row.get("retired_targets", [])) + 1)
+                    row.setdefault("retired_targets", []).append(target)
+                    row["target"] = {"id": replacement.orderId, "ref": replacement.orderRef, "action": replacement.action}
+                    self.save(state)
+                    self.core.ib.placeOrder(child.contract, replacement)
+                    return
+                if child.order.totalQuantity != qty:
+                    if abs(position) != qty or child.orderStatus.status not in ("Submitted", "PreSubmitted"):
+                        return
+                    child.order.totalQuantity = qty
+                    self.core.ib.placeOrder(child.contract, child.order)
+                    return
+            row["filled_qty"] = qty
+            row["state"] = "OPEN"
+            self.save(state)
+        entry = {**data, "source": "IB_BRIDGE", "event": "ENTRY_FILL", "trade_id": data["setup_id"],
+                 "entry": price, "price": price, "qty": qty, "entry_filled": True,
+                 "ib_entry_status": parent.orderStatus.status, "ib_entry_fill_price": price, "ib_entry_filled_qty": qty,
+                 "ib_status": "smio_demo_filled", "entry_exec_ids": sorted(row["entry"]["executions"]),
+                 "entry_execution_id": "IB_BRIDGE:" + ",".join(sorted(row["entry"]["executions"])),
+                 "ib_order_id": row["entry"]["id"], "ib_order_ref": row["entry"]["ref"]}
+        if row.get("target"):
+            entry.update(ib_target_order_id=row["target"]["id"], ib_target_order_ref=row["target"]["ref"])
+        self.enqueue(state, row, entry, "entry")
+        close_order = row.get("close")
+        if close_order and position:
+            close_trade = self.exact_trade(data["symbol"], row["account"], close_order["ref"], close_order["id"])
+            closed_qty, _ = self.total(close_fills)
+            target_qty, _ = self.total(target_fills)
+            if close_trade and closed_qty < qty - target_qty:
+                close_terminal = close_trade.orderStatus.status in ("Cancelled", "ApiCancelled", "Inactive")
+                if not close_terminal and closed_qty and time.time() - row.get("close_submitted_at", time.time()) >= max(getattr(self.core, "PARTIAL_FILL_GRACE_SECONDS", 2), 0):
+                    await self.cancel_exact(close_trade)
+                    return
+                if close_terminal and len(row.get("retired_closes", [])) < 2:
+                    row.setdefault("retired_closes", []).append(row.pop("close"))
+                    row["state"] = "TARGET_CANCEL_PENDING"
+                    self.save(state)
+                    # Next iteration repeats ownership/position proofs.
+                    return
+        all_exits = {**target_fills, **close_fills}
+        exit_qty, exit_price = self.total(all_exits)
+        if abs(position) <= 0.000001 and exit_qty == qty:
+            # Publication ordering must not suspend partial-close recovery.
+            if row["entry_delivery_id"] in self.core.load_render_outbox():
+                return
+            if self.working(data["symbol"]):
+                self.note(state, row, "publication_blocked", "working orders remain on flat symbol")
+                return
+            reason = row.get("close_signal", {}).get("reason") if close_fills else "ATR_TARGET"
+            exit_event = "TP" if not close_fills or reason == "RSI_PROFIT" else "EOD_CLOSE" if reason == "RTH_EOD" else "CLOSE_STOP"
+            order = row["close"] if close_fills else row["target"]
+            callback = {**data, "source": "IB_BRIDGE", "event": exit_event, "reason": reason, "trade_id": data["setup_id"],
+                        "qty": qty, "entry": price, "price": exit_price, "exit": exit_price,
+                        "broker_confirmed_flat": True, "position_after_close": 0,
+                        "close_filled": True, "ib_close_status": "Filled", "ib_status": "smio_demo_closed",
+                        "ib_order_id": order["id"], "ib_order_ref": order["ref"],
+                        "ib_close_fill_price": exit_price, "ib_close_filled_qty": qty,
+                        "close_exec_ids": sorted(all_exits),
+                        "exit_execution_id": "IB_BRIDGE:" + ",".join(sorted(all_exits)),
+                        "reconciliation_id": digest(sorted(all_exits)), "execution_components": all_exits}
+            if row.get("target"):
+                callback.update(ib_target_order_id=row["target"]["id"], ib_target_order_ref=row["target"]["ref"])
+            self.enqueue(state, row, callback, "exit")
+            if row["exit_delivery_id"] not in self.core.load_render_outbox():
+                row["state"] = "CLOSED"
+                self.save(state)
+
 
 
 def install_smio_demo_adapter(core):
@@ -831,7 +871,12 @@ def install_smio_demo_adapter(core):
 
     async def background(data):
         if is_smio_rsi_payload(data):
-            result = await lifecycle.handle(data)
+            receipt = await lifecycle.accept_signal(data)
+            if not receipt.get("ok"):
+                return receipt
+            result = await lifecycle.process_receipt(data.get("event_id"))
+            if result is None:
+                return {"status": "smio_receipt_already_claimed", "broker_execution": False}
             print("[SMIO DEMO SIGNAL]", data.get("symbol", ""), data.get("event", ""), result.get("status"), result.get("reason", ""))
             if result.get("status") == "smio_demo_accepted":
                 await lifecycle.reconcile()
@@ -853,6 +898,7 @@ def install_smio_demo_adapter(core):
                       "eod_enabled": os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"),
                       "task_running": bool(getattr(core, "_smio_demo_task", None)) and not core._smio_demo_task.done()}}
         try:
+            result["ingress"] = lifecycle.ingress.summary()
             await lifecycle.environment()
             result["ready"] = not core.DRY_RUN and bool(callback_key(core))
         except Exception:
@@ -860,6 +906,7 @@ def install_smio_demo_adapter(core):
         return result
 
     core.handle_ib_action, core.process_signal_background = handle, background
+    core._smio_accept_signal = lifecycle.accept_signal
     core.forward_to_render = forward
     core.app.on_event("startup")(startup)
     core.app.get("/ib/smio-demo-status")(demo_status)

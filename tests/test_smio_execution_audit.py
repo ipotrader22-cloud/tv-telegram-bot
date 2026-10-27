@@ -24,3 +24,13 @@ class AuditTests(unittest.TestCase):
         result = audit({'setups':{'x':{'payload':{'symbol':'APA'}}}}, {}, {}, {}, {})
         self.assertIsNone(result['findings'][0]['broker_position_quantity'])
         self.assertIsNone(result['findings'][0]['account_match'])
+
+    def test_http_receipt_is_joined_by_exact_event_not_symbol(self):
+        journal = {'setups':{'x':{'payload':{'symbol':'APA','event_id':'exact'}}}}
+        inbox = {'receipts':{'exact':{'received_at':123,'state':'QUARANTINED'},
+                              'other':{'received_at':999,'state':'HANDLED'}}}
+        result = audit(journal, {}, {}, {}, {}, inbox=inbox)
+        row = result['findings'][0]
+        self.assertEqual(row['bridge_http_received_at'], 123)
+        self.assertEqual(row['durable_receipt_state'], 'QUARANTINED')
+        self.assertIsNone(row['bridge_handler_received_at'])

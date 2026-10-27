@@ -151,7 +151,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self): self.tmp.cleanup()
 
     def snapshot(self, data):
-        p = self.root / f"APA_45_{digest(data['configuration_id'])[:16]}.json"
+        p = self.root / f"{data['symbol']}_{data['timeframe']}_{digest(data['configuration_id'])[:16]}.json"
         p.write_text(json.dumps({k: data[k] for k in ("symbol", "timeframe", "configuration_id")} |
                                {"experimental_contract": CONTRACT, "properties_verified": True, "status": "PREPARED"}))
 

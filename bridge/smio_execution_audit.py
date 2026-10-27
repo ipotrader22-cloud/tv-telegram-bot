@@ -14,7 +14,7 @@ def read_object(path):
     return value
 
 
-def audit(journal, positions, orders, status, demo_status, configured_account=None):
+def audit(journal, positions, orders, status, demo_status, configured_account=None, inbox=None):
     """Use existing bridge response/journal fields; missing evidence stays unknown."""
     accounts = status.get('accounts')
     matched = (status.get('ok') is True and isinstance(accounts, list)
@@ -43,6 +43,7 @@ def audit(journal, positions, orders, status, demo_status, configured_account=No
         quantity = (sum(x['position'] for x in broker) if positions.get('ok') is True
                     and all(isinstance(x.get('position'), (float, int)) for x in broker) else None)
         close = row.get('close_signal') or p
+        receipt = (inbox or {}).get('receipts', {}).get(close.get('event_id'), {})
         findings.append({
             'setup_id': setup, 'symbol': symbol, 'strategy_identity': p.get('strategy_id'),
             'account_match': matched and row.get('account') == configured_account if matched is not None else None,
@@ -52,6 +53,9 @@ def audit(journal, positions, orders, status, demo_status, configured_account=No
             'signal_bar_start': close.get('signal_bar_time'),
             'render_forwarded_at': close.get('render_forwarded_at'),
             'bridge_handler_received_at': row.get('signal_receipts', {}).get(close.get('event_id')),
+            'bridge_http_received_at': receipt.get('received_at'),
+            'durable_receipt_state': receipt.get('state'),
+            'durable_receipt_result': receipt.get('result_status'),
             'last_attempted_broker_action_at': row.get('last_broker_action_at'),
             'close_submitted_at': row.get('close_submitted_at'),
             'blocking_reason': clean(row.get('recovery_blocker')),
@@ -61,6 +65,7 @@ def audit(journal, positions, orders, status, demo_status, configured_account=No
         })
     return {'read_only': True, 'captured_at': datetime.now(timezone.utc).isoformat(),
             'broker_connected': status.get('connected'), 'findings': findings,
+            'ingress_health': demo_status.get('ingress'),
             'limitations': ['Bridge /ib/open-orders is client-local; absence does not prove no foreign orders.',
                 'Broker execution history is not exposed by these endpoints; journal fills are not independent broker evidence.',
                 'Null timing/health fields were not recorded by the inspected version. No recovery or replay performed.']}
@@ -70,6 +75,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--journal', required=True, type=Path)
     parser.add_argument('--config', required=True, type=Path)
+    parser.add_argument('--inbox', type=Path, help='defaults to smio_demo_inbox.json beside the journal')
     parser.add_argument('--bridge-url', default='http://127.0.0.1:8000')
     args = parser.parse_args()
     url = urlparse(args.bridge_url)
@@ -84,7 +90,9 @@ def main():
         except Exception:
             responses.append({})
     try:
-        result = audit(read_object(args.journal), *responses, read_object(args.config).get('account'))
+        inbox_path = args.inbox or args.journal.with_name('smio_demo_inbox.json')
+        inbox = read_object(inbox_path) if inbox_path.exists() else {}
+        result = audit(read_object(args.journal), *responses, read_object(args.config).get('account'), inbox)
     except (OSError, ValueError):
         parser.exit(2, 'audit unavailable: journal/config could not be read\n')
     print(json.dumps(result, indent=2))

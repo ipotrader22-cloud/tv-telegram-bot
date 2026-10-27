@@ -1,6 +1,7 @@
 """Deterministic safety regressions; broker fixtures never connect to TWS."""
 import asyncio
 import copy
+import json
 import os
 import unittest
 from types import SimpleNamespace as N
@@ -314,6 +315,47 @@ class CloseReliabilityTests(unittest.IsolatedAsyncioTestCase):
             await self.engine.eod_failsafe_pass(self.now)
         self.assertEqual([c.args[0]['symbol'] for c in self.engine.handle.await_args_list], ['APA','NKE'])
         self.assertEqual(self.engine.health['eod_result'], 'blocked')
+
+    async def test_two_owned_positions_close_once_each_on_shared_connection(self):
+        first = signal()
+        await self.open_position(first)
+        positions = {'APA': 10, 'NKE': 0}
+        original_fill = self.core.ib.fill
+        def fill(trade, qty, price):
+            original_fill(trade, qty, price)
+            positions[trade.contract.symbol] += qty if trade.order.action == 'BUY' else -qty
+        self.core.ib.fill = fill
+        self.core.get_position_size = AsyncMock(side_effect=lambda symbol: positions[symbol])
+        second = json.loads(json.dumps(signal()).replace('APA', 'NKE'))
+        self.snapshot(second)
+        self.assertEqual((await self.engine.handle(second))['status'], 'smio_demo_accepted')
+        self.core.ib.fill(self.core.ib.history[2], 10, 100)
+        await self.engine.reconcile()
+        self.core.outbox.clear()
+        self.now = self.now.replace(hour=15, minute=55)
+        with patch.dict(os.environ, {'SMIO_DEMO_EOD_FAILSAFE_ENABLED':'1'}):
+            await self.engine.maintenance_pass()
+            await self.engine.maintenance_pass()
+        self.assertEqual(positions, {'APA':0, 'NKE':0})
+        self.assertEqual(sum(x.startswith('SMIOC_') for x in self.core.ib.mutations), 2)
+        self.assertEqual(len(self.core.outbox), 2)
+        self.assertTrue(all(p['broker_confirmed_flat'] for p in self.core.outbox.values()))
+
+    async def test_bad_historical_row_does_not_block_following_reconciliation(self):
+        data = signal()
+        await self.open_position(data)
+        state = self.engine.load()
+        state['setups'] = {'broken': {'state':'OPEN','account':'DEMO','payload':{}}, **state['setups']}
+        self.engine.save(state)
+        original = self.engine.reconcile_row
+        visited = []
+        async def observe(state, row, config):
+            visited.append(row)
+            return await original(state, row, config)
+        self.engine.reconcile_row = observe
+        await self.engine.reconcile()
+        self.assertEqual(len(visited), 2)
+        self.assertIn('first_failure', self.engine.load()['setups']['broken'])
 
 
 if __name__ == '__main__':

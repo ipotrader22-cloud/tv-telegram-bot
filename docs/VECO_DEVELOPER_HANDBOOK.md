@@ -3529,8 +3529,22 @@ Optional journal fields record handler receipt, first failure, last attempted
 broker action and bounded transition history. Existing `/ib/smio-demo-status`
 gains maintenance health, effective opt-in and task-running fields, including
 when account/connectivity attestation fails. Historical values are not invented.
-The shared `/tv` acknowledgement still precedes durable background processing;
-the candidate does not claim durable ingress or complete incident resolution.
+The follow-up candidate now durably records exact SMIO event/body identity before
+the shared `/tv` route acknowledges receipt. Storage failure/corruption returns
+503, conflicting identity returns 409, and invalid new input returns 400. Other
+strategy routes are unchanged. The single-writer `smio_demo_inbox.json` records
+receipt, claim and result. Same-process fresh work has at most three attempts
+within 90 seconds, separated by five seconds; prior-process/expired unfinished
+work is quarantined, never blindly replayed. A claimed event with unknown broker
+result is not resubmitted. See [ADR_SMIO_DURABLE_INGRESS.md](ADR_SMIO_DURABLE_INGRESS.md).
+The installed runtime retains its old behavior until controlled deployment;
+durable acceptance does not prove execution or complete incident resolution.
+
+Reconciliation isolates individual journal rows, so one historical ambiguous
+record cannot suppress the remaining positions. Offline fixtures close two owned
+symbols on the same connection once each. The demo status includes aggregate
+ingress states; the audit joins HTTP receipt time/state by exact event ID from
+the optional sibling receipt journal. Preserve this journal during rollback.
 
 `bridge/smio_execution_audit.py` reads the existing journal/config and four existing
 loopback status endpoints without importing the trading core, mutating orders,
