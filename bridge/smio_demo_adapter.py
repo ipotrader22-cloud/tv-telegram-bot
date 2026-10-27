@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import time
+import math
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 from decimal import Decimal
@@ -54,6 +55,60 @@ class DemoLifecycle:
         self.config_path = Path(config_path or root / "smio_demo_config.json")
         self.journal_path = Path(journal_path or root / "smio_demo_journal.json")
         self.routing_lock = asyncio.Lock()
+        self.refresh_timeout = 10
+        self.health = {}
+
+    @staticmethod
+    def timestamp():
+        return datetime.now(timezone.utc).isoformat()
+
+    def note(self, state, row, stage, reason=None):
+        """Bounded forensic history; never overwrite the first failure with a retry."""
+        at = self.timestamp()
+        row["last_evaluated_at"] = at
+        if reason:
+            row["recovery_blocker"] = reason
+            row.setdefault("first_failure", {"at": at, "stage": stage, "reason": reason})
+        event = {"at": at, "stage": stage, "state": row.get("state"), "reason": reason}
+        history = row.setdefault("lifecycle_history", [])
+        if not history or any(history[-1].get(k) != event[k] for k in ("stage", "state", "reason")):
+            history.append(event)
+            del history[:-32]
+        self.save(state)
+
+    async def read_broker(self, name, *args):
+        method = getattr(self.core.ib, name, None)
+        if not callable(method):
+            raise ValueError("SMIO broker evidence unavailable: " + name)
+        try:
+            value = await asyncio.wait_for(method(*args), timeout=self.refresh_timeout)
+        except Exception as exc:
+            raise ValueError("SMIO broker refresh failed: " + name + ":" + type(exc).__name__) from None
+        if not isinstance(value, list):
+            raise ValueError("SMIO broker response invalid: " + name)
+        return value
+
+    async def permitted_close_session(self, data):
+        """Intersect configured RTH with authoritative stock liquidHours."""
+        from zoneinfo import ZoneInfo
+        try:
+            from .smio_eod_policy import session_close_from_ib
+        except ImportError:
+            from smio_eod_policy import session_close_from_ib
+        if not self.core.is_us_stock_rth_now():
+            raise ValueError("market close queued for permitted RTH; target retained")
+        contract = await asyncio.wait_for(self.core.qualify_contract(data), self.refresh_timeout)
+        details = await self.read_broker("reqContractDetailsAsync", contract)
+        if getattr(contract, "secType", "") != "STK" or len(details) != 1:
+            raise ValueError("SMIO stock session unavailable or ambiguous")
+        if getattr(getattr(details[0], "contract", None), "secType", "") != "STK":
+            raise ValueError("SMIO stock session contract mismatch")
+        now = datetime.now(ZoneInfo("America/New_York"))
+        tz = self.core.ib_session_timezone(getattr(details[0], "timeZoneId", ""))
+        end = session_close_from_ib(details[0], now, tz, self.core.parse_ib_session_stamp)
+        if end is None or not end.replace(hour=9, minute=30, second=0, microsecond=0) <= now < end:
+            raise ValueError("SMIO broker RTH session not permitted")
+        return contract, end
 
     def load(self):
         if not self.journal_path.exists():
@@ -81,7 +136,7 @@ class DemoLifecycle:
             raise ValueError("demo session attestation missing")
         if not callback_key(self.core) or not self.core.RENDER_WEBHOOK_URL:
             raise ValueError("authenticated demo publication unavailable")
-        await self.core.ensure_ib_connected()
+        await asyncio.wait_for(self.core.ensure_ib_connected(), self.refresh_timeout)
         accounts = list(self.core.ib.managedAccounts())
         if accounts != [config.get("account")]:
             raise ValueError("connected session differs from verified demo account")
@@ -100,7 +155,8 @@ class DemoLifecycle:
             raise ValueError("UAM alert was not prepared for creation")
 
     def trades(self, symbol):
-        trades = list(self.core.ib.trades()) + getattr(self, "completed_trades", [])
+        # Live objects carry status callbacks; completed snapshots must not replace them.
+        trades = getattr(self, "completed_trades", []) + list(self.core.ib.trades())
         unique = {}
         for trade in trades:
             key = (trade.order.account, trade.order.orderRef, trade.order.orderId)
@@ -139,7 +195,7 @@ class DemoLifecycle:
             if e.side != action or fill.contract.symbol != row["payload"]["symbol"]:
                 raise ValueError("execution ownership conflict")
             value = {"qty": float(e.shares), "price": float(e.price)}
-            if not e.execId or value["qty"] <= 0 or value["price"] <= 0:
+            if not e.execId or any(not math.isfinite(v) or v <= 0 for v in value.values()):
                 raise ValueError("invalid execution evidence")
             if e.execId in known and known[e.execId] != value:
                 raise ValueError("conflicting execution evidence")
@@ -154,12 +210,12 @@ class DemoLifecycle:
 
     async def refreshed(self):
         # Read-only synchronization, on the existing connection/client identity.
-        await self.core.ib.reqPositionsAsync()
-        await self.core.ib.reqOpenOrdersAsync()
-        executions = await self.core.ib.reqExecutionsAsync()
+        self.execution_refresh = {"supported": True, "ok": False, "values": []}
+        await self.read_broker("reqPositionsAsync")
+        await self.read_broker("reqAllOpenOrdersAsync")
+        executions = await self.read_broker("reqExecutionsAsync")
         self.execution_refresh = {"supported": True, "ok": isinstance(executions, list), "values": executions or []}
-        completed = getattr(self.core.ib, "reqCompletedOrdersAsync", None)
-        self.completed_trades = await completed(False) if completed else []
+        self.completed_trades = await self.read_broker("reqCompletedOrdersAsync", False)
 
     def ownership_history(self, state, row):
         metadata = self.core.execution_history_coverage_metadata(row["coverage"], self.execution_refresh)
@@ -183,17 +239,26 @@ class DemoLifecycle:
 
     async def handle(self, data):
         attempted = False
+        received_at = self.timestamp()
         try:
             validate(data)
             async with self.routing_lock, self.core.ib_lock:
                 config = await self.environment()
+                if data.get("dry_run") is True or self.core.DRY_RUN:
+                    return {"status": "smio_dry_run", "broker_execution": False}
                 self.snapshot(config, data)
                 await self.refreshed()
                 state = self.load()
                 old = state["events"].get(data["event_id"])
+                existing = state["setups"].get(data["setup_id"])
+                if existing and existing.get("account") != config["account"]:
+                    raise ValueError("journal account differs from verified demo account")
                 # Render-only forwarding fields are not part of event-body identity.
                 body = {k: v for k, v in data.items() if not k.startswith("render_") and k != "dry_run"}
                 body_hash = digest(body)
+                if existing and (not old or old["hash"] == body_hash):
+                    existing.setdefault("signal_receipts", {}).setdefault(data["event_id"], received_at)
+                    self.note(state, existing, "signal_handler")
                 if old:
                     if old["hash"] != body_hash:
                         raise ValueError("event body conflict")
@@ -204,8 +269,6 @@ class DemoLifecycle:
                         return {"status": "smio_demo_accepted", "broker_execution": True}
                     return {"status": "smio_duplicate", "broker_execution": False}
                 symbol, setup = data["symbol"], data["setup_id"]
-                if data.get("dry_run") is True or self.core.DRY_RUN:
-                    return {"status": "smio_dry_run", "broker_execution": False}
                 if data["signal"] != "CLOSE":
                     if setup in state["setups"] or self.active(state, symbol) or self.core.load_managed_positions().get(symbol):
                         raise ValueError("symbol / setup already reserved")
@@ -230,11 +293,20 @@ class DemoLifecycle:
         except Exception as error:
             # A failed acknowledgement/save after submission is not proof that
             # no order exists. Persisted intent retains restart/retry ownership.
+            row = None
+            journal_loaded = False
             try:
-                row = self.load()["setups"].get(data.get("setup_id"))
+                # Mutating journal diagnostics also share the lifecycle lock.
+                async with self.routing_lock, self.core.ib_lock:
+                    latest = self.load()
+                    journal_loaded = True
+                    row = latest["setups"].get(data.get("setup_id"))
+                    if row:
+                        row.setdefault("signal_receipts", {}).setdefault(data.get("event_id", "unknown"), received_at)
+                        self.note(latest, row, "signal_failed", str(error))
             except Exception:
-                row = None
-            possible = bool(attempted and row and row.get("state") in ("ENTRY_SUBMITTING", "ENTRY_PENDING", "CLOSE_SUBMITTING", "CLOSE_PENDING"))
+                pass  # A failed diagnostic save must not erase known intent.
+            possible = bool(attempted and (not journal_loaded or row and row.get("state") in ("ENTRY_SUBMITTING", "ENTRY_PENDING", "CLOSE_SUBMITTING", "CLOSE_PENDING")))
             return {"status": "smio_demo_recovery_required" if possible else "smio_demo_blocked",
                     "reason": str(error), "broker_execution": None if possible else False}
 
@@ -302,6 +374,9 @@ class DemoLifecycle:
 
     async def close(self, state, row, data, body_hash):
         symbol, side = data["symbol"], data["side"]
+        config = await self.environment()
+        if self.core.DRY_RUN or row.get("account") != config["account"]:
+            raise ValueError("SMIO close account / dry-run gate")
         if row.get("close") or row["state"] not in ("OPEN", "TARGET_CANCEL_PENDING"):
             raise ValueError("entry / close state is unresolved")
         known_qty = row["filled_qty"]
@@ -329,9 +404,11 @@ class DemoLifecycle:
         self.save(state)
         # Demo close orders must respect RTH even when the shared legacy
         # bridge's optional market-close block is disabled.
-        if not self.core.is_us_stock_rth_now():
-            raise ValueError("market close queued for permitted RTH; target retained")
+        await self.permitted_close_session(data)
+        self.note(state, row, "close_session_permitted")
         if owned and owned.orderStatus.status not in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
+            row["last_broker_action_at"] = self.timestamp()
+            self.note(state, row, "target_cancel_intent")
             self.core.ib.cancelOrder(owned.order)
             for _ in range(40):
                 if owned.orderStatus.status in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
@@ -340,18 +417,26 @@ class DemoLifecycle:
             if owned.orderStatus.status not in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
                 raise ValueError("target cancellation unconfirmed")
         await self.refreshed()
+        # Complete every awaited session/account query before the final ownership
+        # and position proof; broker callbacks may arrive during those queries.
+        contract, session_end = await self.permitted_close_session(data)
+        config = await self.environment()
+        if row.get("account") != config["account"]:
+            raise ValueError("journal account differs from verified demo account")
+        position = await self.core.get_position_size(symbol)
+        self.ownership_history(state, row)
+        if self.working(symbol):
+            raise ValueError("working order remains after target cancellation")
         target_qty, _ = self.total(self.executions(row, "target"))
         remaining = known_qty - target_qty - closed_qty
         if remaining < 0 or int(remaining) != remaining:
             raise ValueError("remaining broker quantity is not exact whole shares")
-        position = await self.core.get_position_size(symbol)
         if remaining == 0 and abs(position) <= 0.000001:
             row["state"] = "TARGET_WON"
             self.save(state)
             return
         if abs(position) != remaining or (position > 0) != (side == "LONG"):
             raise ValueError("partial target / position synchronization unconfirmed")
-        contract = await self.core.qualify_contract(data)
         action = "SELL" if side == "LONG" else "BUY"
         order = self.core.MarketOrder(action, remaining, tif="DAY", account=row["account"])
         order.orderId = self.core.ib.client.getReqId()
@@ -359,9 +444,19 @@ class DemoLifecycle:
         row["close"] = {"id": order.orderId, "ref": order.orderRef, "action": action}
         row["state"] = "CLOSE_SUBMITTING"
         row["close_submitted_at"] = time.time()
+        row["last_broker_action_at"] = self.timestamp()
         self.save(state)
+        if datetime.now(timezone.utc) >= session_end or not self.core.is_us_stock_rth_now():
+            # No await or broker mutation occurred after reservation; safe to unreserve.
+            row.pop("close")
+            row.pop("close_submitted_at")
+            row["state"] = "TARGET_CANCEL_PENDING"
+            self.note(state, row, "close_deferred", "SMIO session ended before submission")
+            raise ValueError("SMIO session ended before submission")
         self.core.ib.placeOrder(contract, order)
         row["state"] = "CLOSE_PENDING"
+        row.pop("recovery_blocker", None)
+        self.note(state, row, "close_submitted")
         self.save(state)
 
     def enqueue(self, state, row, payload, role):
@@ -378,23 +473,159 @@ class DemoLifecycle:
         row[key] = delivery
         self.save(state)
 
+    async def session_diagnostic(self, symbol):
+        """Read-only, SMIO demo-account-attested IB STK session inquiry."""
+        from datetime import datetime as _datetime
+        from zoneinfo import ZoneInfo
+        import re
+        try:
+            from .smio_eod_policy import session_close_from_ib
+        except ImportError:
+            from smio_eod_policy import session_close_from_ib
+
+        symbol = str(symbol or "").strip().upper()
+        if not re.fullmatch(r"[A-Z]{1,5}", symbol):
+            return {"ok": False, "error": "invalid_stock_symbol"}
+        try:
+            async with self.core.ib_lock:
+                await self.environment()  # match exact attested simulated account
+                contract = await self.core.qualify_contract(
+                    {"symbol": symbol, "sec_type": "STK"}
+                )
+                if getattr(contract, "secType", "") != "STK":
+                    raise ValueError("contract is not STK")
+                response = await self.core.bounded_ib_refresh_request(
+                    "reqContractDetailsAsync", contract
+                )
+            details = list(response.get("values") or [])
+            if not response.get("ok") or len(details) != 1:
+                raise ValueError("IB stock session details unavailable or ambiguous")
+            item = details[0]
+            if getattr(getattr(item, "contract", None), "secType", "") != "STK":
+                raise ValueError("IB contract details not STK")
+            now = _datetime.now(ZoneInfo("America/New_York"))
+            tz = self.core.ib_session_timezone(getattr(item, "timeZoneId", ""))
+            close = session_close_from_ib(item, now, tz,
+                                         self.core.parse_ib_session_stamp)
+            from datetime import timedelta as _timedelta
+            return {
+                "ok": True, "symbol": symbol, "sec_type": "STK",
+                "time_zone_id": str(getattr(item, "timeZoneId", "") or ""),
+                "liquid_hours": str(getattr(item, "liquidHours", "") or ""),
+                "session_verified": close is not None,
+                "session_close_et": close.isoformat() if close else None,
+                "smio_eod_start_et": (close - _timedelta(minutes=5)).isoformat() if close else None,
+                "query_date_et": now.date().isoformat(),
+            }
+        except Exception as exc:
+            # No credentials, account numbers or endpoint tokens in the response.
+            return {"ok": False, "symbol": symbol,
+                    "error": "SMIO demo STK session verification unavailable"}
+
+    async def eod_failsafe_pass(self, now_value=None):
+        """SMIO-only demo exit five minutes ahead of confirmed IB stock session end."""
+        from datetime import datetime as _datetime, time as _time
+        from zoneinfo import ZoneInfo
+        try:
+            from .smio_eod_policy import eod_due, eod_close_payload, session_close_from_ib
+        except ImportError:
+            from smio_eod_policy import eod_due, eod_close_payload, session_close_from_ib
+
+        enabled = os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "").strip().lower()
+        self.health["eod_enabled"] = enabled in ("1", "true", "yes", "on")
+        self.health["eod_last_evaluated_at"] = self.timestamp()
+        if enabled not in ("1", "true", "yes", "on"):
+            self.health["eod_result"] = "disabled"
+            return
+        now = now_value or _datetime.now(ZoneInfo("America/New_York"))
+        if now.tzinfo is None:
+            self.health["eod_result"] = "invalid_clock"
+            return
+        now = now.astimezone(ZoneInfo("America/New_York"))
+        # Cheap, conservative scan boundary. Session close is always sourced from IB.
+        if now.weekday() >= 5 or not (_time(12, 50) <= now.time() < _time(16, 0)):
+            self.health["eod_result"] = "outside_scan_window"
+            return
+        if not self.core.is_us_stock_rth_now():
+            self.health["eod_result"] = "outside_configured_rth"
+            return
+        state = self.load()
+        self.health["eod_result"] = "evaluating"
+        for row in list(state["setups"].values()):
+            if row.get("state") != "OPEN" or row.get("close_signal") or row.get("close"):
+                continue
+            payload = row.get("payload")
+            if not isinstance(payload, dict) or payload.get("sec_type") != "STK" or not row.get("filled_qty"):
+                continue
+            symbol = payload.get("symbol", "")
+            try:
+                # No cached or hard-coded holiday/early-close assumptions:
+                # each authorized close requires one authoritative IB contract session.
+                async with self.routing_lock, self.core.ib_lock:
+                    await self.environment()
+                    contract = await asyncio.wait_for(self.core.qualify_contract(payload), self.refresh_timeout)
+                    details = await self.read_broker("reqContractDetailsAsync", contract)
+                if len(details) != 1:
+                    raise ValueError("IB session details unavailable or ambiguous")
+                session_tz = self.core.ib_session_timezone(
+                    getattr(details[0], "timeZoneId", "")
+                )
+                close_time = session_close_from_ib(
+                    details[0], now, session_tz, self.core.parse_ib_session_stamp
+                )
+                if close_time is None:
+                    raise ValueError("IB stock session schedule missing or ambiguous")
+                if not eod_due(now, enabled, close_time):
+                    continue
+                close = eod_close_payload(payload, now, close_time)
+                result = await self.handle(close)
+                if result.get("status") not in ("smio_demo_accepted", "smio_duplicate"):
+                    self.health["eod_result"] = "blocked"
+                    print("[SMIO DEMO EOD BLOCKED]", symbol,
+                          result.get("status", ""), result.get("reason", ""))
+            except Exception as exc:
+                self.health["eod_result"] = "blocked"
+                print("[SMIO DEMO EOD BLOCKED]", symbol, type(exc).__name__)
+        if self.health["eod_result"] == "evaluating":
+            self.health["eod_result"] = "evaluated"
+            self.health["eod_last_successful_evaluation_at"] = self.timestamp()
+
+    async def maintenance_pass(self):
+        """One failed reconciliation must not silently suppress the EOD evaluation."""
+        for name in ("reconcile", "eod_failsafe_pass"):
+            self.health[name + "_started_at"] = self.timestamp()
+            try:
+                await getattr(self, name)()
+                self.health[name + "_last_success_at"] = self.timestamp()
+                self.health.pop(name + "_error", None)
+            except Exception as error:
+                # Exception type only: broker/network exception text can carry identifiers.
+                self.health[name + "_error"] = type(error).__name__
+                print("[SMIO DEMO MAINTENANCE BLOCKED]", name, type(error).__name__)
+            finally:
+                self.health[name + "_finished_at"] = self.timestamp()
+
     async def reconcile(self):
         async with self.routing_lock, self.core.ib_lock:
+            if self.core.DRY_RUN:
+                return
             if not any(row["state"] != "CLOSED" for row in self.load()["setups"].values()):
                 return
-            await self.environment()
+            config = await self.environment()
             await self.refreshed()
             state = self.load()
             for row in state["setups"].values():
                 if row["state"] == "CLOSED":
+                    continue
+                if row.get("account") != config["account"]:
+                    self.note(state, row, "reconcile_blocked", "journal account differs from verified demo account")
                     continue
                 if row["state"] in ("OPEN", "TARGET_CANCEL_PENDING") and row.get("close_signal") and not row.get("close"):
                     try:
                         event = state["events"][row["close_signal"]["event_id"]]
                         await self.close(state, row, row["close_signal"], event["hash"])
                     except Exception as error:
-                        row["recovery_blocker"] = str(error)
-                        self.save(state)
+                        self.note(state, row, "close_recovery", str(error))
                 data = row["payload"]
                 qty, price = self.total(self.executions(row, "entry"))
                 target_fills = self.executions(row, "target")
@@ -481,9 +712,6 @@ class DemoLifecycle:
                 if row.get("target"):
                     entry.update(ib_target_order_id=row["target"]["id"], ib_target_order_ref=row["target"]["ref"])
                 self.enqueue(state, row, entry, "entry")
-                # Close cannot overtake its OPEN callback after Render downtime.
-                if row["entry_delivery_id"] in self.core.load_render_outbox():
-                    continue
                 close_order = row.get("close")
                 if close_order and position:
                     close_trade = self.exact_trade(data["symbol"], row["account"], close_order["ref"], close_order["id"])
@@ -503,6 +731,12 @@ class DemoLifecycle:
                 all_exits = {**target_fills, **close_fills}
                 exit_qty, exit_price = self.total(all_exits)
                 if abs(position) <= 0.000001 and exit_qty == qty:
+                    # Publication ordering must not suspend partial-close recovery.
+                    if row["entry_delivery_id"] in self.core.load_render_outbox():
+                        continue
+                    if self.working(data["symbol"]):
+                        self.note(state, row, "publication_blocked", "working orders remain on flat symbol")
+                        continue
                     reason = row.get("close_signal", {}).get("reason") if close_fills else "ATR_TARGET"
                     exit_event = "TP" if not close_fills or reason == "RSI_PROFIT" else "EOD_CLOSE" if reason == "RTH_EOD" else "CLOSE_STOP"
                     order = row["close"] if close_fills else row["target"]
@@ -607,27 +841,32 @@ def install_smio_demo_adapter(core):
     async def reconcile_loop():
         while True:
             if lifecycle.config_path.exists():
-                try:
-                    await lifecycle.reconcile()
-                except Exception as error:
-                    print("[SMIO DEMO RECONCILIATION BLOCKED]", str(error))
+                await lifecycle.maintenance_pass()
             await asyncio.sleep(2)
 
     async def startup():
         core._smio_demo_task = asyncio.create_task(reconcile_loop())
 
     async def demo_status():
+        result = {"experimental_contract": CONTRACT, "demo_only": True, "ready": False,
+                  "maintenance": {**lifecycle.health,
+                      "eod_enabled": os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"),
+                      "task_running": bool(getattr(core, "_smio_demo_task", None)) and not core._smio_demo_task.done()}}
         try:
             await lifecycle.environment()
-            return {"experimental_contract": CONTRACT, "demo_only": True,
-                    "ready": not core.DRY_RUN and bool(callback_key(core))}
+            result["ready"] = not core.DRY_RUN and bool(callback_key(core))
         except Exception:
-            return {"experimental_contract": CONTRACT, "demo_only": True, "ready": False}
+            pass
+        return result
 
     core.handle_ib_action, core.process_signal_background = handle, background
     core.forward_to_render = forward
     core.app.on_event("startup")(startup)
     core.app.get("/ib/smio-demo-status")(demo_status)
+    async def demo_session(symbol: str = "APA"):
+        return await lifecycle.session_diagnostic(symbol)
+
+    core.app.get("/ib/smio-demo-session")(demo_session)
     core._smio_demo_lifecycle = lifecycle
     core._smio_demo_adapter_installed = True
     return core

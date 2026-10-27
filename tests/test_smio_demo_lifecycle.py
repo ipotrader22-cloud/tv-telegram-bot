@@ -8,6 +8,7 @@ from types import SimpleNamespace as N
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from bridge.smio_demo_adapter import DemoLifecycle, digest, send_callback
 from bridge.smio_demo_contract import CONTRACT
@@ -58,11 +59,15 @@ class Broker:
     def trades(self): return self.history
     def fills(self): return self.executions
     def openTrades(self): return [t for t in self.history if t.orderStatus.status in ("Submitted", "PreSubmitted")]
-    async def reqPositionsAsync(self): pass
+    async def reqPositionsAsync(self): return []
     async def reqOpenOrdersAsync(self): pass
+    async def reqAllOpenOrdersAsync(self): return self.openTrades()
     async def reqExecutionsAsync(self): return self.executions
     async def reqCompletedOrdersAsync(self, api_only): return self.history
-    async def reqContractDetailsAsync(self, contract): return [N(minTick=0.01)]
+    async def reqContractDetailsAsync(self, contract):
+        day = "20261026"
+        return [N(minTick=0.01, contract=N(secType="STK"), timeZoneId="America/New_York",
+                  liquidHours=f"{day}:0930-{day}:1600")]
 
     def placeOrder(self, contract, order):
         self.mutations.append(order.orderRef)
@@ -107,7 +112,10 @@ class Core:
         self.rth = True
     async def ensure_ib_connected(self): pass
     async def get_position_size(self, symbol): return self.ib.position
-    async def qualify_contract(self, data): return N(symbol=data["symbol"])
+    async def qualify_contract(self, data): return N(symbol=data["symbol"], secType="STK")
+    def ib_session_timezone(self, value): return ZoneInfo(value)
+    def parse_ib_session_stamp(self, value, day, tz):
+        return datetime.strptime(value if ":" in value else day + ":" + value, "%Y%m%d:%H%M").replace(tzinfo=tz)
     def validate_pretrade_risk(self, *args): pass
     def validate_entry_timing(self, *args): pass
     def is_us_stock_rth_now(self): return self.rth
@@ -126,6 +134,12 @@ class Core:
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        # Signal age still uses real time; session authorization uses a fixed
+        # intraday clock so these offline fixtures never depend on the test hour.
+        self.now = datetime(2026, 10, 26, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+        self.clock = self.enterContext(patch("bridge.smio_demo_adapter.datetime", wraps=datetime))
+        self.clock.now.side_effect = lambda tz=None: self.now.astimezone(tz) if tz else self.now.replace(tzinfo=None)
+        self.enterContext(patch("time.time", side_effect=lambda: self.now.timestamp()))
         self.tmp = TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.core = Core()

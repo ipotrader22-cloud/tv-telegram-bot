@@ -3503,6 +3503,55 @@ backups, exact file comparison and a clean restart/status check. Do not
 assume protection is running locally before those checks.
 
 
+## SMIO CLOSE/EOD investigation and candidate safeguards (2026-10-26)
+
+Handbook update required: YES. Full chronology, evidence limits, regression matrix
+and controlled rollout procedure are in
+[SMIO_CLOSE_EOD_INCIDENT_2026-10-26.md](SMIO_CLOSE_EOD_INCIDENT_2026-10-26.md).
+This is an engineering candidate, not a production installation or incident closure.
+
+The running Windows bridge had `SMIO_DEMO_EOD_FAILSAFE_ENABLED=1`, injected by
+autostart despite its absence from `.env`. The 15:30 SBUX/OXY timestamps were bar
+starts; their 16:00 bar-close signals reached Render after RTH. NKE arrived at the
+bridge at 14:30:24 ET, so its initial failure remains unverified. The enabled
+failsafe's missed 15:55 evaluation also remains unverified. Later RTH blockers
+must not be substituted for missing first-error history.
+
+The candidate preserves installed, unmerged #335/#336 session/EOD additions and
+adds bounded broker reads, all-client order visibility, independent maintenance
+phase error handling, post-cancellation ownership/session/position checks and a
+final session guard before market submission. Partial-close recovery proceeds
+despite an OPEN callback backlog; publication ordering still waits for OPEN.
+Dry-run and exact account gates apply before duplicate recovery. Unknown broker
+acknowledgements retain their intent and cannot be blindly resubmitted.
+
+Optional journal fields record handler receipt, first failure, last attempted
+broker action and bounded transition history. Existing `/ib/smio-demo-status`
+gains maintenance health, effective opt-in and task-running fields, including
+when account/connectivity attestation fails. Historical values are not invented.
+The shared `/tv` acknowledgement still precedes durable background processing;
+the candidate does not claim durable ingress or complete incident resolution.
+
+`bridge/smio_execution_audit.py` reads the existing journal/config and four existing
+loopback status endpoints without importing the trading core, mutating orders,
+writing runtime files or replaying signals. Account identifiers are redacted.
+Missing timestamps and health remain unknown. `/ib/open-orders` is client-local;
+zero visible orders is not evidence that no foreign orders exist. Inspect exact
+TWS executions and all-client orders before any recovery.
+
+Run `python -B -m unittest discover -s tests -p 'test_smio*.py'` for the offline
+SMIO suite. The bridge CI workflow runs it alongside Edge isolation. Passing
+fixtures do not replace broker-confirmed paper execution.
+
+Issue #335's Trading Lab contract and controlled single-profile paper gates remain
+required before scheduler promotion. Preserve disputed #341 history/quarantine.
+Do not overwrite `C:\ib_bridge` from main: installed code contains local additions,
+and its autoreloader can activate edits immediately. A controlled stop, backup,
+file-delta review, installed-hash/config verification and broker reconciliation
+must accompany an authorized Windows rollout. Render LIVE does not update or
+verify Windows. Roll back code only after stopping it; do not restore stale
+journals over new fills. No live deployment was performed in this investigation.
+
 ## Issue #341 — Read-only SMIO publication audit (2026-10-24)
 
 The offline `bridge/smio_publication_audit.py` inspects a durable local Render outbox and optional SMIO demo journal without connecting to IB, Render or Google Sheets and without editing any state. Run from the repository root with `python bridge/smio_publication_audit.py --outbox C:\\ib_bridge\\vixale_render_outbox.json --journal C:\\ib_bridge\\smio_demo_journal.json`. The output distinguishes quarantined deliveries, HTTP 503 retries, malformed entries and unverified journal ownership. The mere presence of a journal setup is **not** evidence that the broker currently holds a position; a missing journal setup after clean slate is **not** evidence of a missing broker fill. Do not automatically replay, synthesize OPEN/CLOSE or clear quarantine. Run `python -m unittest tests.test_smio_publication_audit` for deterministic offline checks. This diagnostic changes no strategy logic, broker action, EOD timing, Render callback processing, or Sheets rows.
