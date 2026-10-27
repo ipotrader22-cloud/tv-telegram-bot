@@ -47,7 +47,9 @@ jobs:
           (async()=>{const c=new Client({connectionString:process.env.VIXALE_V2_TEST_DATABASE_URL});await c.connect();try{await c.query('CREATE DATABASE vixale_engine_v2_shadow_20990101')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1});
           JS
       - name: Run all shadow and real PostgreSQL integration tests
-        run: node --test engine-v2/*.test.cjs
+        run: |
+          node --test engine-v2/*.test.cjs
+          node tests/test_swing_research_inputs.js
 
       - name: Probe historical PLTR one-minute evidence (research only)
         if: always()

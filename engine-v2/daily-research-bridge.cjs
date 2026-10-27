@@ -21,7 +21,7 @@ function normalizeDailyEvidence({artifact,universe,reviewDate}={}){
  for(const ticker of universe){
   const r=map.get(ticker),m=r?.metrics;
   if(!m){errors.push('SYMBOL_NOT_COLLECTED:'+ticker);continue}
-  if(m.quoteDate!==reviewDate||!Number.isInteger(m.dailyBars)||m.dailyBars<200||
+  if((m.researchDate??m.quoteDate)!==reviewDate||!Number.isInteger(m.dailyBars)||m.dailyBars<200||
      !m.lastCompleteDate||m.lastCompleteDate>=reviewDate ||
      !['sma20','sma50','sma200','lastCompleteRelativeVolume','range20Pct','high20','high60','return20Pct','return60Pct'].every(k=>Number.isFinite(m[k]))){
     errors.push('INCOMPLETE_OHLCV_METRICS:'+ticker);continue;

@@ -25,7 +25,7 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
   const matches=artifact.data.filter(x=>x?.metrics?.symbol===ticker);
   if(matches.length!==1)return bad('BENCHMARK_MISSING_OR_DUPLICATE:'+ticker);
   const row=matches[0],m=row.metrics;
-  if(m.quoteDate!==date||m.lastCompleteDate!==completedSession||
+  if((m.researchDate??m.quoteDate)!==date||m.lastCompleteDate!==completedSession||
      !Number.isInteger(m.dailyBars)||m.dailyBars<200||
      !/^https:\/\/query[12]\.finance\.yahoo\.com\/v8\/finance\/chart\//.test(row.source||'')||
      [m.lastCompleteClose,m.sma50,m.return20Pct,m.return60Pct].some(x=>!good(x))||

@@ -5,9 +5,12 @@ const { session, previousSession } = require("./swing-market-calendar");
 const nyDay = t => new Intl.DateTimeFormat("en-CA", { timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date(t*1000));
 const mean = values => values.reduce((a,b)=>a+b,0)/values.length;
 const round = x => Math.round(x*1000)/1000;
-function analyze(chart, date) {
-  if (!chart || nyDay(chart.meta.regularMarketTime) !== date) throw new Error("Quote is not from today's session");
-  if (!Number.isFinite(chart.meta.regularMarketPrice) || chart.meta.regularMarketPrice<=0) throw new Error("Invalid current quote");
+function analyze(chart, date, {completedSessionOnly=false}={}) {
+  // Pre-open research is based on completed bars, not an unavailable new-session quote.
+  // The legacy intraday collector keeps its current-quote gate by default.
+  if (!chart?.meta) throw new Error("Missing chart metadata");
+  if (!completedSessionOnly && nyDay(chart.meta.regularMarketTime) !== date) throw new Error("Quote is not from today's session");
+  if (!completedSessionOnly && (!Number.isFinite(chart.meta.regularMarketPrice) || chart.meta.regularMarketPrice<=0)) throw new Error("Invalid current quote");
   const q = chart.indicators?.quote?.[0];
   if (!q) throw new Error("Missing daily OHLCV");
   const bars = chart.timestamp.map((t,i)=>({ date:nyDay(t), open:q.open[i], high:q.high[i], low:q.low[i], close:q.close[i], volume:q.volume[i] }))
@@ -19,13 +22,14 @@ function analyze(chart, date) {
   const range=n=>{ const a=back(n); return (Math.max(...a.map(x=>x.high))-Math.min(...a.map(x=>x.low)))/last.close*100; };
   let up=0,down=0;
   for(let i=complete.length-20;i<complete.length;i++) { if(complete[i].close>complete[i-1].close) up+=complete[i].volume; else if(complete[i].close<complete[i-1].close) down+=complete[i].volume; }
-  const metrics = { symbol:chart.meta.symbol, quoteDate:date, quoteTime:new Date(chart.meta.regularMarketTime*1000).toISOString(), price:chart.meta.regularMarketPrice,
+  const hasQuote=Number.isFinite(chart.meta.regularMarketTime)&&Number.isFinite(chart.meta.regularMarketPrice)&&chart.meta.regularMarketPrice>0;
+  const metrics = { symbol:chart.meta.symbol, researchDate:date, quoteDate:hasQuote?nyDay(chart.meta.regularMarketTime):null, quoteTime:hasQuote?new Date(chart.meta.regularMarketTime*1000).toISOString():null, price:hasQuote?chart.meta.regularMarketPrice:null,
     lastCompleteDate:last.date, lastCompleteClose:round(last.close), dailyBars:complete.length,
     sma20:round(mean(back(20).map(x=>x.close))), sma50:round(mean(back(50).map(x=>x.close))), sma200:round(mean(back(200).map(x=>x.close))),
     return20Pct:round((last.close/complete.at(-21).close-1)*100), return60Pct:round((last.close/complete.at(-61).close-1)*100),
     lastCompleteRelativeVolume:round(last.volume/mean(complete.slice(-21,-1).map(x=>x.volume))), upDownVolume20:down?round(up/down):null,
     range5Pct:round(range(5)), range20Pct:round(range(20)), high20:round(Math.max(...back(20).map(x=>x.high))), high60:round(Math.max(...back(60).map(x=>x.high))),
-    todayChangePct:round((chart.meta.regularMarketPrice/last.close-1)*100) };
+    todayChangePct:!completedSessionOnly?round((chart.meta.regularMarketPrice/last.close-1)*100):null };
   return { metrics, bars };
 }
 async function json(url) {

@@ -24,7 +24,7 @@ async function preparePreopen({date,url,clock=()=>new Date(),env,fetchFn=fetch,g
  if(et.date!==date||et.minute>=570||!sessionEvidence(date).isTradingDay)throw Error('OUTSIDE_PREOPEN_WINDOW');
  const previous=await getPrior({url}),sourceSession=previousSession(date),s=sessionEvidence(sourceSession),hm=s.closeEt.split(':').map(Number),through=etTime(sourceSession,hm[0]*60+hm[1]);
  if(previous&&previous.date>=date)throw Error('PREOPEN_ALREADY_REVIEWED');
- const runtime=createResearchRuntime({universeCsv:env.VIXALE_V2_RESEARCH_UNIVERSE,sectorByTicker:JSON.parse(env.VIXALE_V2_RESEARCH_SECTORS_JSON),fetchFn,clock});
+ const runtime=createResearchRuntime({universeCsv:env.VIXALE_V2_RESEARCH_UNIVERSE,sectorByTicker:JSON.parse(env.VIXALE_V2_RESEARCH_SECTORS_JSON),fetchFn,clock,completedSessionOnly:true});
  const providers=await runtime({date}),batch=await providers.researchProvider.getBatch({date,runAt:clock().toISOString(),session:sessionEvidence(date)}),exits=[];
  for(const position of previous?.active||[]){
   const r=batch.items.find(x=>x.ticker===position.ticker);if(!r)throw Error('HOLDING_OUTSIDE_RESEARCH_UNIVERSE');

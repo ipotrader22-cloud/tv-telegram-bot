@@ -1,5 +1,35 @@
 # VECO Developer Handbook
 
+## Engine 2 pre-open completed-session research repair — 2026-10-27
+
+The pre-open collector reused `analyze()` from the legacy intraday research
+script, whose mandatory current-session quote check rejected Yahoo's legitimate
+previous-session regularMarketTime before 09:30. Reproduced against real source
+data as `Quote is not from today's session`; Render exposed only
+`PREOPEN_PREPARATION_FAILED`.
+
+Only `preparePreopen` now selects `completedSessionOnly` analysis. It still
+requires at least 200 completed daily bars ending on the exact previous NYSE
+session for every stock and benchmark. Current-session bars never enter scoring.
+Metrics distinguish `researchDate` from the actual `quoteDate`/`quoteTime`;
+pre-open output does not claim a current-session percentage change. The legacy
+intraday collector and default runtime retain their existing quote checks.
+The research bridge/assessor accepts the explicit research date, with fallback
+to the older artifact field for existing immutable evidence compatibility.
+
+Regression tests exercise the actual collector/scorer/preparation path with
+previous-session source quotes, Monday and holiday-adjacent sessions, stale
+stocks/benchmarks, insufficient history, partial bars, and the 09:30 cutoff.
+The shared collector's legacy regression also runs in Engine 2 CI. A read-only
+real-source preparation completed for all ten staging stocks at 08:10 ET using
+October 26 history. This is not database persistence or morning publication
+proof; verify the deployed cron separately. No score weights, entry thresholds,
+model price policy, production portfolio, secrets, schedules or email change.
+
+Rollback: revert this patch on the isolated PR branch and redeploy the staging
+cron; retain all preparations, journals and model history. Handbook update
+required: YES. Production cutover remains prohibited.
+
 ## Engine 2.0 safe cron phase diagnostics — 2026-10-26
 
 The isolated staging cron now classifies missing/malformed shadow database URLs

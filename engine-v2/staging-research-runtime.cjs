@@ -6,7 +6,7 @@ const {collectNewsCoverage}=require('./news-evidence-collector.cjs');
 const {createAutonomousResearchProvider}=require('./autonomous-research-provider.cjs');
 const {createYahooMinuteProvider}=require('./yahoo-minute-fallback.cjs');
 const {createTargetWindowProvider}=require('./target-window-provider.cjs');
-function createResearchRuntime({universeCsv,sectorByTicker,fetchFn=fetch,clock=()=>new Date()}={}){
+function createResearchRuntime({universeCsv,sectorByTicker,fetchFn=fetch,clock=()=>new Date(),completedSessionOnly=false}={}){
  const {candidates,symbols}=parseV2Universe(universeCsv);
  if(candidates.some(t=>!['SMH','XLK','XLE'].includes(sectorByTicker?.[t])))throw Error('RESEARCH_SECTOR_MAPPING_INCOMPLETE');
  return async function prepareProviders({date}){
@@ -20,7 +20,7 @@ function createResearchRuntime({universeCsv,sectorByTicker,fetchFn=fetch,clock=(
     if(chart?.meta?.symbol!==ticker)throw Error('RESEARCH_SYMBOL_MISMATCH');
     const exchange=({NMS:'NASDAQ',NGM:'NASDAQ',NCM:'NASDAQ',NAS:'NASDAQ',NYQ:'NYSE',ASE:'AMEX',PCX:'AMEX'})[chart.meta.exchangeName];
     if(candidates.includes(ticker)&&(!exchange||!(chart.meta.longName||chart.meta.shortName)))throw Error('COMPANY_IDENTITY_UNVERIFIED');
-    return {source,exchange,companyName:chart.meta.longName||chart.meta.shortName,rawHash:createHash('sha256').update(JSON.stringify(raw)).digest('hex'),...analyze(chart,date)};
+    return {source,exchange,companyName:chart.meta.longName||chart.meta.shortName,rawHash:createHash('sha256').update(JSON.stringify(raw)).digest('hex'),...analyze(chart,date,{completedSessionOnly})};
    }));data.push(...batch);
   }
   for(const ticker of candidates)companies.push({ticker,name:data.find(x=>x.metrics.symbol===ticker).companyName});
