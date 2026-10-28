@@ -6,7 +6,8 @@ const {createResearchRuntime}=require('./staging-research-runtime.cjs');
 function assertCachedPreopen(prepared,{date,prior,now}={}){
  return require('./delayed-model-policy.cjs').validatePrepared(prepared,{date,previous:prior,now});
 }
-const SAFE_BLOCK_REASONS=new Set(['STAGING_CONFIGURATION_INCOMPLETE','STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING','STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE']);
+const SAFE_BLOCK_REASONS=new Set(['STAGING_CONFIGURATION_INCOMPLETE','STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING','STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE',
+ 'STAGING_LEDGER_EXCEPTION','STAGING_RESEARCH_EXCEPTION','STAGING_MODEL_EXCEPTION','STAGING_SHEET_EXCEPTION','STAGING_WEBSITE_EXCEPTION','STAGING_EMAIL_EXCEPTION']);
 function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=fetch}={}){
  const store=createPipelineStore({url});
  const delayed=env.VIXALE_V2_STAGING_PRICE_POLICY==='DELAYED_0940_MODEL_V1';
@@ -59,7 +60,11 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
      recipient:env.VIXALE_V2_STAGING_EMAIL_TO,allowedRecipient:env.VIXALE_V2_STAGING_EMAIL_ALLOWLIST,apiKey:env.VIXALE_V2_STAGING_RESEND_API_KEY});
    })().catch(()=>({status:'BLOCKED',reason:'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE'})).then(result=>{
     // Never publish provider exceptions, private inputs, recipients or credentials.
-    last={status:result.status,reason:result.status==='BLOCKED'?(SAFE_BLOCK_REASONS.has(result.reason)?result.reason:'STAGING_VERIFICATION_INCOMPLETE'):null,checkedAt:clock().toISOString()};
+    last={status:result.status,reason:result.status==='BLOCKED'?(SAFE_BLOCK_REASONS.has(result.reason)?result.reason:
+   /^SHEET:/.test(result.reason||'')?'STAGING_SHEET_VERIFICATION_FAILED':
+   /^WEBSITE:/.test(result.reason||'')?'STAGING_WEBSITE_PARITY_FAILED':
+   /^MODEL_CYCLE:/.test(result.reason||'')?'STAGING_MODEL_CYCLE_FAILED':
+   'STAGING_VERIFICATION_INCOMPLETE'):null,checkedAt:clock().toISOString()};
     return last;
    }).finally(()=>{flight=null});
    return flight;
