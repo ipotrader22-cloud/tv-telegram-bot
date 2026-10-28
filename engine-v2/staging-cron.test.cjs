@@ -101,3 +101,12 @@ test('cron retains only allowlisted morning block reasons and never exposes prov
  });
  assert.equal(preopen.result.reason,'STAGING_CONFIGURATION_INCOMPLETE');
 });
+
+test('cron preserves only safe stage-specific failure codes',async()=>{
+ for(const reason of ['STAGING_LEDGER_EXCEPTION','STAGING_RESEARCH_EXCEPTION','STAGING_MODEL_EXCEPTION',
+  'STAGING_SHEET_EXCEPTION','STAGING_WEBSITE_EXCEPTION','STAGING_EMAIL_EXCEPTION',
+  'STAGING_SHEET_VERIFICATION_FAILED','STAGING_WEBSITE_PARITY_FAILED','STAGING_MODEL_CYCLE_FAILED']){
+  const x=await invoke('2026-10-28T14:02:00Z',{createWorker:()=>({status:()=>({enabled:true,missing:[]}),tick:async()=>({status:'BLOCKED',reason})})});
+  assert.equal(x.result.reason,reason);assert.equal(x.result.exitCode,1);
+ }
+});
