@@ -3,6 +3,9 @@ const {createPipelineStore}=require('./staging-pipeline-store.cjs');
 const {runStagingPipeline}=require('./staging-pipeline.cjs');
 const {createSheetsClient,readMeta}=require('./staging-sheets-publisher.cjs');
 const {createResearchRuntime}=require('./staging-research-runtime.cjs');
+function assertCachedPreopen(prepared,{date,prior,now}={}){
+ return require('./delayed-model-policy.cjs').validatePrepared(prepared,{date,previous:prior,now});
+}
 const SAFE_BLOCK_REASONS=new Set(['STAGING_CONFIGURATION_INCOMPLETE','STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING','STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE']);
 function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=fetch}={}){
  const store=createPipelineStore({url});
@@ -32,7 +35,7 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
      // completed session and the immutable clean-epoch predecessor before
      // reporting success or allowing the 10:00 model cycle to reuse it.
      const prior=await require('./clean-ledger.cjs').readLastCleanState({url});
-     require('./delayed-model-policy.cjs').validatePrepared(cached,{date,previous:prior,now:clock().toISOString()});
+     assertCachedPreopen(cached,{date,prior,now:clock().toISOString()});
      return {status:'PREOPEN_PREPARED'};
     }
     const p=await require('./preopen-preparation.cjs').preparePreopen({date,url,env,clock,fetchFn:fetcher});
@@ -63,4 +66,4 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
   }
  };
 }
-module.exports={createStagingWorker};
+module.exports={createStagingWorker,assertCachedPreopen};
