@@ -26,7 +26,16 @@ test('formula corruption aborts publication and email',async t=>{const h=await h
 
 test('persisted position corruption cannot reuse an otherwise valid public fingerprint',async t=>{
  const h=await harness(t);h.alterApi();await h.run();h.store.rows.get(date).artifact.positions[0].currentPrice=999;
- assert.equal((await h.run()).reason,'STAGING_ARTIFACT_HASH_MISMATCH');assert.equal(h.sends,0);
+ const writes=h.sheets.writes,result=await h.run();
+ assert.equal(result.status,'BLOCKED');assert.equal(result.reason,'STAGING_LEDGER_EXCEPTION');
+ assert.equal(h.sheets.writes,writes);assert.equal(h.sends,0);
+});
+test('ledger exceptions expose only the stage and cannot write or send',async t=>{
+ const h=await harness(t);h.args.readRun=async()=>{throw Error('private-provider-secret')};
+ const result=await h.run();
+ assert.equal(result.status,'BLOCKED');assert.equal(result.reason,'STAGING_LEDGER_EXCEPTION');
+ assert.ok(!JSON.stringify(result).includes('private-provider-secret'));
+ assert.equal(h.sheets.writes,0);assert.equal(h.sends,0);
 });
 test('only one competing pipeline can write or send',async t=>{
  const h=await harness(t),out=await Promise.all([h.run(),h.run()]);

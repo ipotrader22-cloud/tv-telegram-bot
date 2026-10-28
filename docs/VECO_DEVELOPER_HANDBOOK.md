@@ -1,5 +1,26 @@
 # VECO Developer Handbook
 
+## Engine 2 CI discovery and sanitized corruption regression — 2026-10-28
+
+Do not infer missing CI from the commit-workflow connector alone: it filters
+to pull-request events. Query repository Actions runs by exact head SHA without
+an event filter, then inspect the matching run and job conclusion. Head
+`d381dc92` had push run `40719650115`; it failed one corruption regression
+because the test still expected a raw exception message after the pipeline
+adopted secret-safe stage codes. The regression now expects
+`STAGING_LEDGER_EXCEPTION` and explicitly proves that corruption causes no
+additional Sheet write or email. A provider-error regression also verifies
+that private exception text cannot escape the ledger boundary.
+
+The existing branch push workflow runs isolated tests with disposable PostgreSQL
+databases and read-only repository permissions. Passing local tests alone does
+not establish PostgreSQL integration or real morning publication. Require a
+successful Actions run at the exact new head before manually deploying either
+isolated Render service; both have auto-deploy off. No production merge/cutover,
+legacy workbook, trading bridge, customer email or scheduler change is included.
+Rollback: revert this test/documentation commit on the PR branch. Handbook update
+required: YES.
+
 ## Engine 2 cached pre-open evidence revalidation — 2026-10-28
 
 The isolated staging worker no longer treats an existing
