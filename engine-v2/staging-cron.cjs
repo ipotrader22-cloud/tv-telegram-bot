@@ -41,7 +41,10 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
   // Preserve only fixed, public-safe failure categories; never forward provider text.
   const safeReasons=new Set(['STAGING_CONFIGURATION_INCOMPLETE',
    'STAGING_WORKBOOK_METADATA_UNVERIFIED','PREOPEN_PREPARATION_MISSING',
-   'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE','STAGING_VERIFICATION_INCOMPLETE']);
+   'STAGING_WORKBOOK_OR_RUNTIME_UNAVAILABLE','STAGING_VERIFICATION_INCOMPLETE',
+   'STAGING_LEDGER_EXCEPTION','STAGING_RESEARCH_EXCEPTION','STAGING_MODEL_EXCEPTION',
+   'STAGING_SHEET_EXCEPTION','STAGING_WEBSITE_EXCEPTION','STAGING_EMAIL_EXCEPTION',
+   'STAGING_SHEET_VERIFICATION_FAILED','STAGING_WEBSITE_PARITY_FAILED','STAGING_MODEL_CYCLE_FAILED']);
   const reason=success.includes(status)?null:
    status==='BLOCKED'&&safeReasons.has(result.reason)?result.reason:'STAGING_RUN_REQUIRES_ATTENTION';
   return done(status,reason,success.includes(status)?0:1);
