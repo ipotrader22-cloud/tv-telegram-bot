@@ -26,7 +26,15 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
    if(!enabled||missing.length)return {status:'BLOCKED',reason:'STAGING_CONFIGURATION_INCOMPLETE'};
    const date=require('./market-data-adapter.cjs').localET(clock().toISOString()).date;
    return store.withLock(async journal=>{
-    if(await journal.getPrepared(date))return {status:'PREOPEN_PREPARED'};
+    const cached=await journal.getPrepared(date);
+    if(cached){
+     // A persisted pre-open row is not proof by itself. Recheck its hash,
+     // completed session and the immutable clean-epoch predecessor before
+     // reporting success or allowing the 10:00 model cycle to reuse it.
+     const prior=await require('./clean-ledger.cjs').readLastCleanState({url});
+     require('./delayed-model-policy.cjs').validatePrepared(cached,{date,previous:prior,now:clock().toISOString()});
+     return {status:'PREOPEN_PREPARED'};
+    }
     const p=await require('./preopen-preparation.cjs').preparePreopen({date,url,env,clock,fetchFn:fetcher});
     await journal.savePrepared(p);return {status:'PREOPEN_PREPARED'};
    });
