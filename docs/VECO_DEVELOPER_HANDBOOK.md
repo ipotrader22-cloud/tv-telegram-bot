@@ -3617,6 +3617,25 @@ Other open positions are a shared-restart consideration, not a blanket gate on
 resuming this independently verified NOW profile. No paper execution occurred
 October 27; PR #349 remains draft pending actual broker-confirmed acceptance.
 
+### SMIO verified manual-close repair — October 28, 2026
+
+Owner-confirmed manual closes and target cancellations for NKE/SBUX/OXY were
+reconciled from full exact broker execution evidence and archived cancellation
+proof. The current OWNERSHIP_LOST journal rows are now CLOSED with audited manual
+reconciliation metadata. Sheets has one accurate Manual Close per trade and zero
+matching OPEN/Pending rows; authenticated dashboard verification confirmed the
+same. No synthetic callback or broker order was generated. Unrelated history and
+two foreign ES orders were preserved. The controlled 07:19 ET restart retained
+installed source and effective EOD=1; all strategy alerts remain paused.
+
+The new offline `smio_manual_reconciliation.py` library validates evidence and
+requires exact ledger readback before returning a terminal journal update. It
+does not automatically adopt foreign fills or weaken runtime ownership checks.
+See [SMIO_MANUAL_RECONCILIATION_2026-10-28.md](SMIO_MANUAL_RECONCILIATION_2026-10-28.md)
+for evidence, repeat-safe procedure, tests and rollback. The prior NKE reservation
+is now resolved by verified history; the approved paper profile remains NOW 15m.
+PR #349 still requires its separate natural-signal CLOSE/EOD paper acceptance.
+
 ## Issue #341 — Read-only SMIO publication audit (2026-10-24)
 
 The offline `bridge/smio_publication_audit.py` inspects a durable local Render outbox and optional SMIO demo journal without connecting to IB, Render or Google Sheets and without editing any state. Run from the repository root with `python bridge/smio_publication_audit.py --outbox C:\\ib_bridge\\vixale_render_outbox.json --journal C:\\ib_bridge\\smio_demo_journal.json`. The output distinguishes quarantined deliveries, HTTP 503 retries, malformed entries and unverified journal ownership. The mere presence of a journal setup is **not** evidence that the broker currently holds a position; a missing journal setup after clean slate is **not** evidence of a missing broker fill. Do not automatically replay, synthesize OPEN/CLOSE or clear quarantine. Run `python -m unittest tests.test_smio_publication_audit` for deterministic offline checks. This diagnostic changes no strategy logic, broker action, EOD timing, Render callback processing, or Sheets rows.
