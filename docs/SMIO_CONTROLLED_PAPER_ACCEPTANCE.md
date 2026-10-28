@@ -1,5 +1,22 @@
 # SMIO authorized autonomous paper acceptance
 
+## October 28 owner-directed rollout supersession
+
+After the verified manual-close repair, the owner explicitly instructed:
+"next, continue, merge PR349 and turn back SMIO alerts". This changes the earlier
+merge-after-NOW-only-acceptance sequence below. Merge the reviewed, passing PR349
+and verify its exact normal Render deployment. Resume existing eligible SMIO demo
+alerts with unchanged settings/sizing after fresh exact-account, runtime, hash,
+flat/all-client-order and per-symbol reservation checks. BE, COP, APA and BIIB
+remain paused while their historical nonterminal reservations are unresolved.
+Do not clear those disputed rows or resume them based on broker-flat alone.
+
+Natural-signal CLOSE/EOD execution acceptance remains unproven, not waived into
+a claim of success. Continue evidence monitoring after restoration; keep the
+original evidence requirements below, but do not reapply its superseded NOW-only
+or draft/merge restriction. Do not enable live-money trading or alter strategy
+parameters, risk limits, order sizing, account, session or ownership guards.
+
 Updated October 26, 2026, after the owner said: "I give you the approval to do whatever is necessary to complete this fix." This supersedes the earlier owner-presence requirement and NKE selection. The owner need not remain in the chat. Broker evidence, the experimental contract, unchanged strategy settings/sizing and preservation of disputed history remain required.
 
 ## Installed repair and scheduled continuation

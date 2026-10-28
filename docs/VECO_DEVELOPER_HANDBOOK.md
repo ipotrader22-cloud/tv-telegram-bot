@@ -3636,6 +3636,19 @@ for evidence, repeat-safe procedure, tests and rollback. The prior NKE reservati
 is now resolved by verified history; the approved paper profile remains NOW 15m.
 PR #349 still requires its separate natural-signal CLOSE/EOD paper acceptance.
 
+### October 28 owner-directed merge and demo alert restoration
+
+Following the completed manual-close repair, the owner explicitly requested
+"merge PR349 and turn back SMIO alerts". This supersedes the earlier draft and
+NOW-only rollout sequencing. Proceed with passing PR349 and normal exact-commit
+deployment verification, then restore existing eligible demo profiles without
+changing parameters or sizing. Preserve unresolved BE/COP/APA/BIIB reservations
+and hold their alerts; broker-flat does not establish their historical closes.
+Natural-signal CLOSE/EOD acceptance is still unproven and must be reported and
+monitored accurately. The instruction authorizes rollout, not manufactured
+acceptance evidence, live-money activation or bypasses of account/session/
+ownership checks. See the supersession in SMIO_CONTROLLED_PAPER_ACCEPTANCE.md.
+
 ## Issue #341 — Read-only SMIO publication audit (2026-10-24)
 
 The offline `bridge/smio_publication_audit.py` inspects a durable local Render outbox and optional SMIO demo journal without connecting to IB, Render or Google Sheets and without editing any state. Run from the repository root with `python bridge/smio_publication_audit.py --outbox C:\\ib_bridge\\vixale_render_outbox.json --journal C:\\ib_bridge\\smio_demo_journal.json`. The output distinguishes quarantined deliveries, HTTP 503 retries, malformed entries and unverified journal ownership. The mere presence of a journal setup is **not** evidence that the broker currently holds a position; a missing journal setup after clean slate is **not** evidence of a missing broker fill. Do not automatically replay, synthesize OPEN/CLOSE or clear quarantine. Run `python -m unittest tests.test_smio_publication_audit` for deterministic offline checks. This diagnostic changes no strategy logic, broker action, EOD timing, Render callback processing, or Sheets rows.
