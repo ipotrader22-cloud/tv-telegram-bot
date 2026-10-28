@@ -1,5 +1,21 @@
 # VECO Developer Handbook
 
+## Engine 2 cached pre-open evidence revalidation — 2026-10-28
+
+The isolated staging worker no longer treats an existing
+`vixale_v2.preopen_preparations` row as automatically prepared. Before returning
+`PREOPEN_PREPARED` for a cached session, it reads the current clean-epoch
+predecessor and calls the existing `validatePrepared` contract to verify the
+artifact fingerprint, exact NYSE session, preparation time and prior-state
+identity. A corrupted, stale, or predecessor-mismatched row now fails closed
+rather than reporting a misleading successful morning preparation. The new
+regression covers valid cache reuse, tampering, wrong session, changed prior
+state, and invalid preparation time. No new scores, decisions, sheet writes,
+database migrations, production changes, emails, or broker operations.
+Rollback: revert the isolated worker and test commits and redeploy the staging
+cron/observer after CI. Handbook update required: YES.
+
+
 ## Engine 2 staging morning block-code propagation — 2026-10-27
 
 The isolated cron now preserves only a fixed set of safe worker block reasons:
