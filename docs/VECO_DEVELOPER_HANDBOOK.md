@@ -3503,6 +3503,152 @@ backups, exact file comparison and a clean restart/status check. Do not
 assume protection is running locally before those checks.
 
 
+## SMIO CLOSE/EOD investigation and candidate safeguards (2026-10-26)
+
+Handbook update required: YES. Full chronology, evidence limits, regression matrix
+and controlled rollout procedure are in
+[SMIO_CLOSE_EOD_INCIDENT_2026-10-26.md](SMIO_CLOSE_EOD_INCIDENT_2026-10-26.md).
+This is an engineering candidate, not a production installation or incident closure.
+
+The running Windows bridge had `SMIO_DEMO_EOD_FAILSAFE_ENABLED=1`, injected by
+autostart despite its absence from `.env`. The 15:30 SBUX/OXY timestamps were bar
+starts; their 16:00 bar-close signals reached Render after RTH. NKE arrived at the
+bridge at 14:30:24 ET, so its initial failure remains unverified. The enabled
+failsafe's missed 15:55 evaluation also remains unverified. Later RTH blockers
+must not be substituted for missing first-error history.
+
+The candidate preserves installed, unmerged #335/#336 session/EOD additions and
+adds bounded broker reads, all-client order visibility, independent maintenance
+phase error handling, post-cancellation ownership/session/position checks and a
+final session guard before market submission. Partial-close recovery proceeds
+despite an OPEN callback backlog; publication ordering still waits for OPEN.
+Dry-run and exact account gates apply before duplicate recovery. Unknown broker
+acknowledgements retain their intent and cannot be blindly resubmitted.
+
+Optional journal fields record handler receipt, first failure, last attempted
+broker action and bounded transition history. Existing `/ib/smio-demo-status`
+gains maintenance health, effective opt-in and task-running fields, including
+when account/connectivity attestation fails. Historical values are not invented.
+The follow-up candidate now durably records exact SMIO event/body identity before
+the shared `/tv` route acknowledges receipt. Storage failure/corruption returns
+503, conflicting identity returns 409, and invalid new input returns 400. Other
+strategy routes are unchanged. The single-writer `smio_demo_inbox.json` records
+receipt, claim and result. Same-process fresh work has at most three attempts
+within 90 seconds, separated by five seconds; prior-process/expired unfinished
+work is quarantined, never blindly replayed. A claimed event with unknown broker
+result is not resubmitted. See [ADR_SMIO_DURABLE_INGRESS.md](ADR_SMIO_DURABLE_INGRESS.md).
+The installed runtime retains its old behavior until controlled deployment;
+durable acceptance does not prove execution or complete incident resolution.
+
+Reconciliation isolates individual journal rows, so one historical ambiguous
+record cannot suppress the remaining positions. Offline fixtures close two owned
+symbols on the same connection once each. The demo status includes aggregate
+ingress states; the audit joins HTTP receipt time/state by exact event ID from
+the optional sibling receipt journal. Preserve this journal during rollback.
+
+`bridge/smio_execution_audit.py` reads the existing journal/config and four existing
+loopback status endpoints without importing the trading core, mutating orders,
+writing runtime files or replaying signals. Account identifiers are redacted.
+Missing timestamps and health remain unknown. `/ib/open-orders` is client-local;
+zero visible orders is not evidence that no foreign orders exist. Inspect exact
+TWS executions and all-client orders before any recovery.
+
+Run `python -B -m unittest discover -s tests -p 'test_smio*.py'` for the offline
+SMIO suite. The bridge CI workflow runs it alongside Edge isolation. Passing
+fixtures do not replace broker-confirmed paper execution.
+
+Issue #335's Trading Lab contract and controlled single-profile paper gates remain
+required before scheduler promotion. Preserve disputed #341 history/quarantine.
+Do not overwrite `C:\ib_bridge` from main: installed code contains local additions,
+and its autoreloader can activate edits immediately. A controlled stop, backup,
+file-delta review, installed-hash/config verification and broker reconciliation
+must accompany an authorized Windows rollout. Render LIVE does not update or
+verify Windows. Roll back code only after stopping it; do not restore stale
+journals over new fills. No live deployment was performed in this investigation.
+
+### SMIO controlled Windows installation — October 26, 22:04 ET
+
+The owner explicitly approved the prepared rollout and next-session supervised
+NKE 60-minute demo test. Candidate source `158aa4cf4e50129afa7d31a3188d284e780e8394`
+is now installed locally (five reviewed core/adapter/helper files). Baseline and
+installed hashes were verified; the core overlay preserves the local customization.
+Private backups are in `C:\ib_bridge\backups\smio-repair-20261026-220427`.
+Only the bridge/reloader was restarted, hidden with retained stdout/stderr logs.
+TWS/ngrok/foreign orders were untouched. Actual worker environment and autostart
+now have SMIO EOD `0` for the authorized test hold. All 51 filtered SMIO demo
+alerts are stopped; other alerts were outside the selection.
+
+Post-install: connected/exact demo account, ready true, maintenance task running,
+all phase timestamps advancing and durable ingress present. At 22:06:39 ET,
+NKE/OXY were flat; external SBUX +100 and five external orders remained; no SMIO
+open order. No manual journal/outbox rewrite, historical replay or broker order
+was performed. See [SMIO_WINDOWS_ROLLOUT_2026-10-26.md](SMIO_WINDOWS_ROLLOUT_2026-10-26.md).
+This supersedes the predeployment status above. PR #349 remains draft/unmerged;
+Render/main unchanged. The owner's subsequent explicit approval to do whatever
+is necessary to finish authorizes autonomous paper validation without continued
+chat presence. The amended plan selects existing NOW 15-minute profile
+`SMIO_RSI_DEMO_NOW_15`; NKE's OWNERSHIP_LOST row still reserves its symbol and must
+not be cleared for a test. NOW's only journal row was CLOSED; independent broker
+evidence at 23:43:17 ET confirmed it flat with no all-client working order.
+Reverify before activation. Same-chat heartbeat `smio-paper-acceptance` is active;
+the first intended preflight is October 27 at 09:20 ET. Only that profile and the
+approved EOD flag may be activated after account/session/runtime gates pass.
+Preserve strategy settings/sizing and require fresh natural signals and actual
+execution/reconciliation evidence. No signal is inconclusive, not a reason to
+fabricate one. See the amended controlled paper acceptance plan. All alerts/EOD
+remain held off at this checkpoint; do not enable all profiles.
+
+### SMIO EOD enablement — October 27, 18:04 ET
+
+The safe maintenance restart is complete. Account was independently flat before
+and after; two unrelated blank-ref ES BAG orders remained untouched. Effective
+worker and autostart SMIO EOD are now `1`. Existing entrypoint and all five source
+hashes match installed `158aa4c`; core status configuration matches the prior
+runtime. Maintenance runs and correctly reports outside_scan_window after RTH.
+Private backup: `C:\ib_bridge\backups\smio-eod-enable-20261027-180412`.
+The earlier orphaned worker was stopped and a fresh hidden process tree started.
+Do not use those recorded PIDs without fresh identity checks.
+
+All SMIO alerts remain paused. NOW's saved condition, contract and 15-minute
+interval were inspected without saving edits. Next preflight is October 28 at
+09:20 ET. Verify runtime/account/session/NOW eligibility and exact sizing, then
+resume only NOW; no second restart is needed while healthy and EOD enabled.
+Other open positions are a shared-restart consideration, not a blanket gate on
+resuming this independently verified NOW profile. No paper execution occurred
+October 27; PR #349 remains draft pending actual broker-confirmed acceptance.
+
+### SMIO verified manual-close repair — October 28, 2026
+
+Owner-confirmed manual closes and target cancellations for NKE/SBUX/OXY were
+reconciled from full exact broker execution evidence and archived cancellation
+proof. The current OWNERSHIP_LOST journal rows are now CLOSED with audited manual
+reconciliation metadata. Sheets has one accurate Manual Close per trade and zero
+matching OPEN/Pending rows; authenticated dashboard verification confirmed the
+same. No synthetic callback or broker order was generated. Unrelated history and
+two foreign ES orders were preserved. The controlled 07:19 ET restart retained
+installed source and effective EOD=1; all strategy alerts remain paused.
+
+The new offline `smio_manual_reconciliation.py` library validates evidence and
+requires exact ledger readback before returning a terminal journal update. It
+does not automatically adopt foreign fills or weaken runtime ownership checks.
+See [SMIO_MANUAL_RECONCILIATION_2026-10-28.md](SMIO_MANUAL_RECONCILIATION_2026-10-28.md)
+for evidence, repeat-safe procedure, tests and rollback. The prior NKE reservation
+is now resolved by verified history; the approved paper profile remains NOW 15m.
+PR #349 still requires its separate natural-signal CLOSE/EOD paper acceptance.
+
+### October 28 owner-directed merge and demo alert restoration
+
+Following the completed manual-close repair, the owner explicitly requested
+"merge PR349 and turn back SMIO alerts". This supersedes the earlier draft and
+NOW-only rollout sequencing. Proceed with passing PR349 and normal exact-commit
+deployment verification, then restore existing eligible demo profiles without
+changing parameters or sizing. Preserve unresolved BE/COP/APA/BIIB reservations
+and hold their alerts; broker-flat does not establish their historical closes.
+Natural-signal CLOSE/EOD acceptance is still unproven and must be reported and
+monitored accurately. The instruction authorizes rollout, not manufactured
+acceptance evidence, live-money activation or bypasses of account/session/
+ownership checks. See the supersession in SMIO_CONTROLLED_PAPER_ACCEPTANCE.md.
+
 ## Issue #341 — Read-only SMIO publication audit (2026-10-24)
 
 The offline `bridge/smio_publication_audit.py` inspects a durable local Render outbox and optional SMIO demo journal without connecting to IB, Render or Google Sheets and without editing any state. Run from the repository root with `python bridge/smio_publication_audit.py --outbox C:\\ib_bridge\\vixale_render_outbox.json --journal C:\\ib_bridge\\smio_demo_journal.json`. The output distinguishes quarantined deliveries, HTTP 503 retries, malformed entries and unverified journal ownership. The mere presence of a journal setup is **not** evidence that the broker currently holds a position; a missing journal setup after clean slate is **not** evidence of a missing broker fill. Do not automatically replay, synthesize OPEN/CLOSE or clear quarantine. Run `python -m unittest tests.test_smio_publication_audit` for deterministic offline checks. This diagnostic changes no strategy logic, broker action, EOD timing, Render callback processing, or Sheets rows.

@@ -9889,6 +9889,18 @@ async def tv_webhook(request: Request, background_tasks: BackgroundTasks):
     symbol = str(data.get("symbol", "")).upper().strip()
     side = str(data.get("side", "")).upper().strip()
 
+    # SMIO's installed adapter persists an exact receipt before acknowledgement.
+    # Other strategies retain their existing background route unchanged.
+    accept_smio = globals().get("_smio_accept_signal")
+    if callable(accept_smio):
+        receipt = await accept_smio(data)
+        if receipt is not None:
+            from fastapi.responses import JSONResponse
+            code = receipt.pop("http_status", 200)
+            if receipt.pop("process", False):
+                background_tasks.add_task(process_signal_background, data)
+            return JSONResponse(status_code=code, content=receipt)
+
     # Fast response to TradingView.
     # Heavy work goes to background.
     background_tasks.add_task(process_signal_background, data)
