@@ -14,6 +14,8 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
  publish=writePrivateStaging,readback=directReadback,send=sendViaResend,delivery=readResendDelivery,
  fetcher=fetch,recipient,allowedRecipient,emailEnabled=false,apiKey,enabled=false}={}){
  const blocked=reason=>({status:'BLOCKED',reason,published:false,productionCutover:false});
+ // Public-safe stage codes allow unattended diagnosis without leaking provider errors.
+ let stage='LEDGER';
  if(enabled!==true)return blocked('STAGING_PIPELINE_DISABLED');
  if(!store?.withLock||!api)return blocked('STAGING_DEPENDENCIES_MISSING');
  return store.withLock(async journal=>{
@@ -27,11 +29,13 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
     if(!record){
      if(validateMorningTrigger({date:targetDate,runAt:clock().toISOString()}).status!=='PASS')return blocked('OUTSIDE_MORNING_DECISION_WINDOW');
      if(typeof prepareProviders!=='function')return blocked('RESEARCH_PROVIDERS_MISSING');
+     stage='RESEARCH';
      const providers=await prepareProviders({date:targetDate,journal});
      const runAt=clock().toISOString();
      // Collection can consume the window: never backdate its completion.
      if(validateMorningTrigger({date:targetDate,runAt}).status!=='PASS')return blocked('RESEARCH_COMPLETED_AFTER_DECISION_WINDOW');
      await journal.guard();
+     stage='MODEL';
      const result=await runCycle({url,date:targetDate,runAt,clock,...providers,allowIndicativeFallback:true});
      if(!['SHADOW_COMMITTED','IDEMPOTENT_REPLAY'].includes(result.status))return blocked('MODEL_CYCLE:'+result.reason);
      record=await readRun({url,date:targetDate});
@@ -45,13 +49,16 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
    let state=saved.state;
    if(['DELIVERED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED'].includes(state.delivery))return {status:state.delivery,runId:manifest.payload.runId,published:false,productionCutover:false};
    await journal.guard();
+   stage='SHEET';
    const receipt=await publish({api,...artifact,enabled:'YES'});
    if(receipt.status!=='STAGING_COMMITTED_READBACK_PASS')return blocked('SHEET:'+receipt.reason);
    state=await journal.update(targetDate,{sheet:'VERIFIED',sheetReceipt:receipt});
    await journal.guard();
+   stage='WEBSITE';
    const parity=await readback({manifest,sheet:receipt.sheet,apiUrl:SHADOW_ORIGIN+'/v2/model/snapshot',htmlUrl:SHADOW_ORIGIN+'/v2/swing-trading',fetcher});
    if(parity.status!=='VERIFIED')return blocked('WEBSITE:'+parity.reason);
    state=await journal.update(targetDate,{publication:'VERIFIED'});
+   stage='EMAIL';
    if(!emailEnabled){await journal.update(targetDate,{delivery:'EMAIL_DISABLED'});return {status:'STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED',date:targetDate,snapshotId:feed.snapshot_id,published:false,productionCutover:false};}
    if(!recipient||recipient!==allowedRecipient)return blocked('STAGING_RECIPIENT_NOT_ALLOWLISTED');
    let plan=state.emailPlan;
@@ -76,7 +83,7 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
    if(proof.status==='BLOCKED')return blocked('DELIVERY:'+proof.reason);
    await journal.update(targetDate,{delivery:proof.status,deliveryCheckedAt:clock().toISOString()});
    return {status:proof.status,runId:plan.runId,snapshotId:plan.snapshotId,messageId:state.messageId,published:false,productionCutover:false};
-  }catch(e){return blocked(e.message)}
+  }catch(e){return blocked('STAGING_'+stage+'_EXCEPTION')}
  });
 }
 module.exports={runStagingPipeline,SHADOW_ORIGIN};
