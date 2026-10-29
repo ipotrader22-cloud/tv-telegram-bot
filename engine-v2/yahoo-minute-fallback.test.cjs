@@ -75,3 +75,13 @@ test('real Yahoo shape with null current-minute slot preserves exact fixed quote
  assert.equal(mark.timestamp,d+'T13:40:00.000Z');assert.equal(mark.price,102);
  assert.equal(parsed.length,2);
 });
+
+test('fixed quote provider accepts Yahoo live-tail payload through the fetch boundary',async()=>{
+ const {createFixedQuoteProvider}=require('./preopen-preparation.cjs');
+ const x=withLiveTail(),c=x.chart.result[0];
+ c.timestamp[1]=ts[0]+540;
+ const provider=createFixedQuoteProvider({clock:()=>new Date(at),fetchFn:async()=>({ok:true,json:async()=>x})});
+ const [mark]=await provider.getQuotes({date:d,tickers:['AMD']});
+ assert.equal(mark.timestamp,d+'T13:40:00.000Z');assert.equal(mark.price,102);
+ assert.equal(mark.exchangeVolume,600);assert.equal(mark.modelFill,false);
+});
