@@ -48,7 +48,7 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
    'STAGING_FIXED_0940_BAR_MISSING','STAGING_FIXED_0940_BAR_INVALID',
    'STAGING_MINUTE_SOURCE_UNAVAILABLE','STAGING_MINUTE_SOURCE_INVALID',
    'STAGING_PREOPEN_STATE_CONFLICT','STAGING_MODEL_EVIDENCE_INCOMPLETE',
-   'STAGING_DECISION_WINDOW_EXPIRED']);
+   'STAGING_DECISION_WINDOW_EXPIRED','STAGING_GOOGLE_QUOTE_INVALID']);
   const reason=success.includes(status)?null:
    status==='BLOCKED'&&safeReasons.has(result.reason)?result.reason:'STAGING_RUN_REQUIRES_ATTENTION';
   return done(status,reason,success.includes(status)?0:1);

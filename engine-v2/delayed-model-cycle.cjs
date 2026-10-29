@@ -16,7 +16,7 @@ function proposeDelayed({date,runAt,prepared,previous,quotes,pricePolicy=POLICY}
  }
  if(validateMorningTrigger({date,runAt}).status!=='PASS'||validateResearchBatch(prepared.batch).status!=='PASS')throw Error('DELAYED_REVIEW_UNVERIFIED');
  const byResearch=new Map(prepared.batch.items.map(x=>[x.ticker,x])),qm=new Map();
- for(const q of quotes){if(qm.has(q.ticker)||!(google?validGoogleQuote(q,{date,runAt}):validFixedQuote(q,{date,runAt})))throw Error('INVALID_OR_DUPLICATE_FIXED_QUOTE');qm.set(q.ticker,q)}
+ for(const q of quotes){if(qm.has(q.ticker)||!(google?validGoogleQuote(q,{date,runAt}):validFixedQuote(q,{date,runAt})))throw Error(google?'GOOGLE_QUOTE_STALE_OR_INVALID':'INVALID_OR_DUPLICATE_FIXED_QUOTE');qm.set(q.ticker,q)}
  const closed=structuredClone(previous?.closed||[]),active=[],events=[],cutoff=google?(quotes.length?quotes.map(q=>q.timestamp).sort()[0]:runAt):etTime(date,580);
  const event=(p,type,q,extra={})=>({eventId:[p.ticker,p.entryDate,type,date].join('|'),ticker:p.ticker,entryDate:p.entryDate,type,timestamp:q.timestamp,decisionAt:runAt,priceAsOf:q.timestamp,pricePolicy,sourceId:q.sourceId,...extra});
  for(const old of previous?.active||[]){
@@ -37,7 +37,7 @@ function proposeDelayed({date,runAt,prepared,previous,quotes,pricePolicy=POLICY}
  const eligible=prepared.batch.items.filter(x=>x.score>=70&&x.entryEligible===true&&x.entryEvidenceId&&(x.score>=80||x.compellingEntryEvidenceId)&&!excluded.has(x.ticker)).sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker));
  for(const r of eligible){
   if(active.length>=10||cash<10000)break;
-  const q=qm.get(r.ticker);if(!q)throw Error('ENTRY_0940_QUOTE_MISSING');
+  const q=qm.get(r.ticker);if(!q)throw Error(google?'GOOGLE_QUOTE_MISSING':'ENTRY_0940_QUOTE_MISSING');
   const lot={ticker:r.ticker,exchange:r.exchange,entryDate:date,entryTime:q.timestamp,entryPrice:q.price,currentPrice:q.price,shares:Math.floor(10000/q.price),entryScore:r.score,currentScore:r.score,factors:r.factors,fullReviewDate:date,publicNote:r.publicNote,quoteSourceId:q.sourceId,lastTargetCheckedAt:q.timestamp,modelEntryPriceKind:q.priceKind,modelEntryIndicative:true,pricePolicy,decisionAt:runAt,priceAsOf:q.timestamp};
   active.push(lot);events.push(event(lot,'OPEN',q,{price:q.price}));cash-=10000;
  }
