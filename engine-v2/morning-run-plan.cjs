@@ -22,7 +22,7 @@ function planMorningRun({date,runAt,session,positions=[],closed=[],research=[],q
   if(lot.entryDate<EPOCH)failures.push('LEGACY_LOT:'+k);
   const proof=rmap.get(lot.ticker),quote=qmap.get(lot.ticker);
   if(!proof||proof.complete!==true||proof.reviewDate!==date||!iso(proof.timestamp)||Date.parse(proof.timestamp)>Date.parse(runAt)||score(proof.factors)!==lot.currentScore)failures.push('RESEARCH_NOT_PROVEN:'+k);
-  if(!quote||quote.sourceId==null||!iso(quote.timestamp)||Date.parse(quote.timestamp)>Date.parse(runAt)||(pricePolicy===POLICY?!validFixedQuote(quote,{date,runAt}):Date.parse(runAt)-Date.parse(quote.timestamp)>300000)||!Number.isFinite(quote.price)||quote.price<=0||quote.price!==lot.currentPrice)failures.push('QUOTE_NOT_FRESH:'+k);
+  if(!quote||quote.sourceId==null||!iso(quote.timestamp)||Date.parse(quote.timestamp)>Date.parse(runAt)||(pricePolicy===POLICY?!validFixedQuote(quote,{date,runAt}):pricePolicy===require('./google-quote-provider.cjs').GOOGLE_POLICY?!require('./google-quote-provider.cjs').validGoogleQuote(quote,{date,runAt}):Date.parse(runAt)-Date.parse(quote.timestamp)>300000)||!Number.isFinite(quote.price)||quote.price<=0||quote.price!==lot.currentPrice)failures.push('QUOTE_NOT_FRESH:'+k);
  }
  if(failures.length)return blocked('INCOMPLETE_DAILY_EVIDENCE',failures);
  let snapshot;try{

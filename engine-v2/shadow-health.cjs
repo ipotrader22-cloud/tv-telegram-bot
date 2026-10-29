@@ -54,6 +54,25 @@ function marketProbe(){
   .finally(()=>{probeFlight=null});
  return probeFlight;
 }
+let googleProbeCache=null,googleProbeAt=0,googleProbeFlight=null;
+async function googleProbe(){
+ if(googleProbeCache&&Date.now()-googleProbeAt<60000)return googleProbeCache;
+ if(googleProbeFlight)return googleProbeFlight;
+ googleProbeFlight=(async()=>{
+  const {createSheetsClient}=require('./staging-sheets-publisher.cjs');
+  const {createGoogleQuoteProvider}=require('./google-quote-provider.cjs');
+  try{
+   const quotes=await createGoogleQuoteProvider({api:createSheetsClient(process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON)}).getQuotes({
+    date:require('./market-data-adapter.cjs').localET(new Date().toISOString()).date,
+    tickers:['NVDA','AMD','AVGO','MU','AMAT','MSFT','AAPL','ORCL','XOM','CVX']});
+   return {status:'GOOGLE_MODEL_QUOTES_OBSERVED',quotes,readOnly:true,modelEntryEligible:false};
+  }catch(e){
+   const allowed=new Set(['GOOGLE_QUOTE_STALE_OR_INVALID','GOOGLE_QUOTE_TIMESTAMP_INVALID','GOOGLE_QUOTE_IDENTITY_INVALID','GOOGLE_QUOTE_MISSING','GOOGLE_QUOTE_SHEET_INVALID','GOOGLE_QUOTE_FORMULA_INVALID']);
+   return {status:'BLOCKED',reason:allowed.has(e.message)?e.message:'GOOGLE_QUOTE_SOURCE_UNAVAILABLE',readOnly:true,modelEntryEligible:false};
+  }
+ })().then(r=>{googleProbeCache=r;googleProbeAt=Date.now();return r;}).finally(()=>{googleProbeFlight=null;});
+ return googleProbeFlight;
+}
 const server=http.createServer((req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  if(req.method==='GET'&&path==='/v2/swing-trading'){
@@ -71,6 +90,10 @@ const server=http.createServer((req,res)=>{
  if(req.method==='GET'&&path==='/v2/model/snapshot'){
   readPreview().then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'SHADOW_LEDGER_READ_UNAVAILABLE',published:false}))});
+  return;
+ }
+ if(req.method==='GET'&&path==='/v2/google-quotes/probe'){
+  googleProbe().then(result=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(result));});
   return;
  }
  if(req.method==='GET'&&path==='/v2/market-data/probe'){

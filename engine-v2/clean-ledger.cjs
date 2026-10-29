@@ -17,13 +17,13 @@ const ddl=[
 function dbName(url){if(!url)throw Error('Database URL missing');const n=new URL(url).pathname.slice(1);if(!/^vixale_engine_v2_shadow_\d{8}$/.test(n))throw Error('Refusing non-shadow database');return n}
 function validateMorningCommit(input){
  const evidence=validateResearchBatch(input.researchBatch||{});
- if(input.pricePolicy===require('./delayed-model-policy.cjs').POLICY){
+ if([require('./delayed-model-policy.cjs').POLICY,require('./google-quote-provider.cjs').GOOGLE_POLICY].includes(input.pricePolicy)){
   try{
    const p=input.sourceEvidence?.prepared;
    const {hash,etTime}=require('./delayed-model-policy.cjs');
    const {fingerprint,...payload}=p;
-   if(fingerprint!==hash(payload)||input.preparedHash!==fingerprint||input.priceAsOf!==etTime(input.date,580)||input.researchBatch.date!==p.date||stableStringify(input.researchBatch)!==stableStringify(p.batch))throw Error();
-   const expected=require('./delayed-model-cycle.cjs').proposeDelayed({date:input.date,runAt:input.runAt,prepared:p,previous:input.sourceEvidence.previous,quotes:input.sourceEvidence.quotes});
+   if(fingerprint!==hash(payload)||input.preparedHash!==fingerprint||(input.pricePolicy===require('./delayed-model-policy.cjs').POLICY&&input.priceAsOf!==etTime(input.date,580))||input.researchBatch.date!==p.date||stableStringify(input.researchBatch)!==stableStringify(p.batch))throw Error();
+   const expected=require('./delayed-model-cycle.cjs').proposeDelayed({date:input.date,runAt:input.runAt,prepared:p,previous:input.sourceEvidence.previous,quotes:input.sourceEvidence.quotes,pricePolicy:input.pricePolicy});
    if(stableStringify(expected)!==stableStringify(input))throw Error();
   }catch{return {status:'BLOCKED',reason:'DELAYED_POLICY_EVIDENCE_MISSING'}}
  }
@@ -57,7 +57,7 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
   // An epoch cannot silently reuse the old ledger, and later dates require an
   // independently persisted predecessor. Immutable state is in the SAME commit.
   const priorState=await db.query('SELECT session_date::text AS date,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 AND session_date<$2 ORDER BY session_date DESC LIMIT 1',[EPOCH,inputs.date]);
-  if(inputs.pricePolicy===require('./delayed-model-policy.cjs').POLICY){
+  if([require('./delayed-model-policy.cjs').POLICY,require('./google-quote-provider.cjs').GOOGLE_POLICY].includes(inputs.pricePolicy)){
    const frozen=await db.query('SELECT artifact FROM vixale_v2.preopen_preparations WHERE session_date=$1',[inputs.date]);
    if(frozen.rowCount!==1||stableStringify(frozen.rows[0].artifact)!==stableStringify(inputs.sourceEvidence.prepared))throw Error('PREOPEN_DURABLE_ARTIFACT_MISMATCH');
    const prior=priorState.rows[0];

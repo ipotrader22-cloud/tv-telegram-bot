@@ -17,7 +17,7 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
   if(!session.isTradingDay)return done('SKIPPED','NYSE_CLOSED',0);
   // Both UTC hours are scheduled; only the actual 10am ET hour proceeds.
   // New decisions remain bounded to 10:00–10:05 by the pipeline itself.
-  const preopen=env.VIXALE_V2_STAGING_PRICE_POLICY==='DELAYED_0940_MODEL_V1'&&et.minute<570;
+  const preopen=['DELAYED_0940_MODEL_V1','GOOGLE_LATEST_1000_MODEL_V1'].includes(env.VIXALE_V2_STAGING_PRICE_POLICY)&&et.minute<570;
   if(!preopen&&(et.minute<600||et.minute>620))return done('SKIPPED','OUTSIDE_STAGING_RETRY_WINDOW',0);
   phase='WORKER_INITIALIZATION';
   const worker=(createWorker||require('./staging-worker.cjs').createStagingWorker)({env,url,clock});

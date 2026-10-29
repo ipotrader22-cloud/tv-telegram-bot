@@ -1,5 +1,37 @@
 # VECO Developer Handbook
 
+## Owner-approved latest Google morning quote policy — 2026-10-29
+
+The owner explicitly accepts Google's latest timestamped quote available during
+the 10:00 ET review instead of an exact 09:40 minute close. Policy identifier:
+`GOOGLE_LATEST_1000_MODEL_V1`. TWS remains dedicated to VECO day trading.
+The prior Yahoo policy and its exact cutoff acceptance remain unchanged.
+
+Only the private staging workbook has a new `Engine 2 Quotes` tab (sheet ID
+290100001), A1:F11. Ten exchange-qualified stocks have Google price, actual
+tradetime formatted in the workbook's America/New_York timezone, datadelay
+and session volume. The provider verifies workbook/tab/timezone/formulas and
+reads resolved values through authenticated Sheets API. Missing, invalid,
+previous-session, future, non-RTH or >20-minute-old quotes block the review.
+Daily volume is explicitly retained as daily volume, never minute trade size.
+
+Frozen prior-session research and exit queues are unchanged. The Google mode
+uses the same exits-first fixed-$10K model, immutable prior-state/preparation
+checks, transactional recomputation, journal recovery and Sheet/API/HTML parity.
+Each model event/lot retains its source quote time and actual decision time;
+run-level reference_as_of is the oldest source quote time. Feed quote_times and
+EN/RU page notes expose per-stock timing rather than claim a shared 09:40 bar.
+No broker fill is asserted. Retry means latest available quote until a commit;
+after commit the immutable artifact is replayed, never repriced.
+
+Set only the isolated cron's VIXALE_V2_STAGING_PRICE_POLICY to the new policy
+after exact-head CI passes. Observer writer and email stay disabled. Research
+history and prior-session target scanning still use Yahoo; this quote change
+does not certify their future availability. Rollback: restore staging policy
+DELAYED_0940_MODEL_V1 and redeploy the prior tested branch head; preserve data.
+No production merge/cutover, legacy workbook, bridge, TWS subscription, customer
+email or scheduler changes. Handbook update required: YES.
+
 ## Engine 2 provider fallback investigation — 2026-10-29
 
 The owner permits Google Finance or IB TWS as alternative quote sources if

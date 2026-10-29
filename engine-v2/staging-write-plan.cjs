@@ -113,7 +113,7 @@ function buildStagingWrites(input={}){
  const updates=[
   [ids.feed,1,1,str(p.date)],[ids.feed,2,1,str(timeEt)],[ids.feed,3,1,str('Verified Engine 2 model review; research/model portfolio only')],
   [ids.feed,4,1,num(positions.length)],[ids.feed,5,1,num(candidates.length)],
-  [ids.feed,7,1,str('TWS verified LAST where available; Yahoo indicative 1m fallback')],
+  [ids.feed,7,1,str(p.feed?.price_policy==='GOOGLE_LATEST_1000_MODEL_V1'?'GOOGLEFINANCE latest timestamped indicative quotes; morning review':'TWS verified LAST where available; Yahoo indicative 1m fallback')],
   [ids.feed,10,0,str('engine2_snapshot_id')],[ids.feed,10,1,str(manifest.fingerprint)],
   [ids.portfolio,2,1,str(p.date)]
  ];

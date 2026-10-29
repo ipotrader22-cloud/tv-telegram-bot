@@ -12,7 +12,8 @@ function buildStagingArtifact(record,history=[]){
  const {date,runAt}=inputs;
  const timeEt=new Intl.DateTimeFormat('en-GB',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(runAt))+' ET';
  const positions=inputs.positions.map(p=>({...p,publicNote:inputs.researchBatch.items.find(r=>r.ticker===p.ticker)?.publicNote||'Reviewed '+date}));
- const notes=positions.map(p=>({ticker:p.ticker,reviewDate:date,reviewTimeET:timeEt,briefNote:p.publicNote+(inputs.pricePolicy?' | Model prices 09:40 ET; decision '+timeEt:'')}));
+ const google=inputs.pricePolicy===require('./google-quote-provider.cjs').GOOGLE_POLICY;
+ const notes=positions.map(p=>({ticker:p.ticker,reviewDate:date,reviewTimeET:timeEt,briefNote:p.publicNote+(google?' | Google quote '+p.priceAsOf+'; decision '+timeEt:inputs.pricePolicy?' | Model prices 09:40 ET; decision '+timeEt:'')}));
  const manifest=preparePublicationManifest({run:{runId:record.run_id,status:'SHADOW_COMMITTED',published:false},model:record.model,active:positions,closed:inputs.closed,notes,sourceEvidenceId:record.payload_hash});
  if(manifest.status!=='PUBLICATION_PLAN_ONLY')throw Error('MANIFEST_REJECTED:'+manifest.reason);
  const candidates=(record.evidence_manifest.publicCandidates||[]).slice().sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker)).slice(0,5);
@@ -24,7 +25,8 @@ function buildStagingArtifact(record,history=[]){
   feed.price_policy=inputs.pricePolicy;
   feed.decision_at=runAt;
   feed.research_session_date=inputs.sourceEvidence.prepared.sourceSession;
-  feed.price_time_et='09:40 ET';
+  feed.price_time_et=google?'Per-stock Google trade time':'09:40 ET';
+  if(google)feed.quote_times=inputs.sourceEvidence.quotes.map(q=>({ticker:q.ticker,price:q.price,timestamp:q.timestamp,fetched_at:q.fetchedAt,provider:q.provider}));
  }
  feed.notices=['Private staging validation. Research model only; indicative reference marks are not broker fills.'];
  manifest.payload.positions=positions;

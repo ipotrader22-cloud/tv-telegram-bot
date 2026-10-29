@@ -11,8 +11,9 @@ function renderShadowSwing(feed){
  if(!feed||feed.version!==2||feed.epoch!=='2026-10-19'||!Array.isArray(feed.active_portfolio)||
     !Array.isArray(feed.closed_trades)||feed.active_portfolio.length>10)throw Error('INVALID_ENGINE2_FEED');
  const current=feed.snapshot_date,committed=feed.status==='SHADOW_REVIEW_COMMITTED_NOT_PUBLISHED';
- const policyNotice=feed.price_policy==='DELAYED_0940_MODEL_V1'?'<p class="model-timing">Model portfolio · Model prices as of 09:40 ET · Research session '+esc(feed.research_session_date)+'. Not broker fills.<br>Модельный портфель · Модельные цены на 09:40 ET · Не брокерские исполнения.</p>':'';
+ const policyNotice=feed.price_policy==='GOOGLE_LATEST_1000_MODEL_V1'?'<p class="model-timing">Model portfolio · Latest timestamped Google quotes at morning review · Research session '+esc(feed.research_session_date)+'. Not broker fills.<br>Модельный портфель · Последние котировки Google при утреннем обзоре · Не брокерские исполнения.</p>':feed.price_policy==='DELAYED_0940_MODEL_V1'?'<p class="model-timing">Model portfolio · Model prices as of 09:40 ET · Research session '+esc(feed.research_session_date)+'. Not broker fills.<br>Модельный портфель · Модельные цены на 09:40 ET · Не брокерские исполнения.</p>':'';
  const status=committed?'SHADOW REVIEW — NOT PUBLISHED':'INCEPTION ONLY — REVIEW NOT COMPLETE';
+ const quoteTimes=Array.isArray(feed.quote_times)?feed.quote_times:[];
  const active=feed.active_portfolio.map(p=>{
   const entry=Number(p.entry_price),quote=Number(p.current_model_reference_price);
   const pnl=Number.isFinite(entry)&&entry>0&&Number.isFinite(quote)?10000*(quote/entry-1):NaN;
@@ -25,7 +26,7 @@ function renderShadowSwing(feed){
    '<td data-label="SL">'+money(entry*.95)+'</td>'+
    '<td data-label="P&L, $" class="'+(pnl>=0?'gain':'loss')+'">'+signed(pnl)+'</td>'+
    '<td data-label="Return">'+percent(quote/entry-1)+'</td>'+
-   '<td data-label="Research Note">'+esc(p.note||('Reviewed '+(p.last_full_review_date||'Unverified')))+'</td></tr>';
+   '<td data-label="Research Note">'+esc((p.note||('Reviewed '+(p.last_full_review_date||'Unverified')))+(quoteTimes.find(q=>q.ticker===p.ticker)?' | Google quote '+quoteTimes.find(q=>q.ticker===p.ticker).timestamp:''))+'</td></tr>';
  }).join('');
  const closed=feed.closed_trades.map(p=>'<tr><td>'+esc(p.ticker)+'</td><td>'+money(p.entry_price)+'</td>'+
   '<td>'+money(p.exit_price)+'</td><td>'+percent(p.exit_price/p.entry_price-1)+'</td>'+
