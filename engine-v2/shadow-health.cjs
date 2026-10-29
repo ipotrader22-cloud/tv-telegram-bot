@@ -143,6 +143,7 @@ const refresh=async()=>{
  }
  await refresh();
  server.listen(port,'0.0.0.0',()=>{
+  void require('./startup-readonly-audit.cjs').auditReadOnlySurface({port,googleProbe}).then(result=>console.log('Shadow startup read-only audit:',JSON.stringify(result)));
   void stagingWorker.tick();
   setInterval(()=>{void stagingWorker.tick()},60000).unref();
  });

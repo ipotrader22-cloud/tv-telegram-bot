@@ -24,7 +24,7 @@ EN/RU page notes expose per-stock timing rather than claim a shared 09:40 bar.
 No broker fill is asserted. Retry means latest available quote until a commit;
 after commit the immutable artifact is replayed, never repriced.
 
-Set only the isolated cron's VIXALE_V2_STAGING_PRICE_POLICY to the new policy
+The observer performs a bounded, read-only loopback startup audit of the real\nhealth, API and rendered HTML routes, plus the Google provider; its sanitized\nreceipt records configured policy, email/writer flags and source acceptance.\nThis is internal Render verification, not an external public-network readback.\n\nSet only the isolated cron's VIXALE_V2_STAGING_PRICE_POLICY to the new policy
 after exact-head CI passes. Observer writer and email stay disabled. Research
 history and prior-session target scanning still use Yahoo; this quote change
 does not certify their future availability. Rollback: restore staging policy
