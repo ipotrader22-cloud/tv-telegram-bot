@@ -568,7 +568,2979 @@ partial parent/target/close handling, cancellation confirmation and ordered
 outbox delivery prevent symbol fallback, reversals and duplicate retries. A
 foreign execution cancels only the stale owned target and reserves the setup for
 review. Unproven restart history remains blocked. No broker record is fabricated.
-…42469 tokens truncated…ey/value conditional delete followed by same-ID create. Each financial batch replaces BOTH exact expected fence and owned lease in the same ordered atomic batch as the ledger/feed/history changes. Duplicate-ID rejection on a changed value aborts the whole batch. See docs/ADR_SWING_NATIVE_WRITE_FENCING.md for the complete recipe, release/timeout rules and connector metadata readback. Never infer locking from GitHub concurrency or writer windows alone.
+
+Existing risk caps apply. The SMIO demo close path independently requires
+confirmed stock RTH even when the shared bridge's optional
+`BLOCK_MARKET_CLOSES_OUTSIDE_RTH` switch is false. Outside-RTH close intent
+remains durable and retains the exact target until the next permitted RTH; the
+signal timestamp is preserved. This is a demo execution guard only, not a change
+to the research Pine exit condition or Prime/Edge behavior. Retry of a terminal failed/partial market close is capped at two
+replacements and requires fresh exact executions and remaining-position proof.
+Ambiguous submission/ownership remains reserved for operator review, never blindly
+resubmitted. Fractional chart quantities and broker-invalid target increments can
+prevent execution; Engineering does not round shares or silently change targets.
+
+ADR: use a strategy-specific lifecycle adapter on the shared session because the
+existing SMI executor requires a target and cannot represent RSI-only exits.
+Deployment uses the existing bridge script's compile/backup/restore/restart path,
+including all imported adapters. Rollback restores the dependency set together;
+never discard a demo journal/outbox with unsettled broker state. Source inclusion
+is not deployment proof; the integration review records rollout separately.
+
+### 3A.1 SMI Histogram v0.4-FWD
+
+**Research freeze:** `SMI Histogram Strategy v0.4-FWD`
+**Engineering system ID:** `VIXALE_SMI_FWD`
+**Engineering strategy ID:** `SMI_HISTOGRAM_V0_4_FWD`
+**Canonical forward-test Pine:** `/pine/SMI_Histogram_v0_4_FWD_UAM.pine`
+**Repository status:** forward-test integration only; this section is not evidence of merge, deployment, or TWS activation.
+
+Trading Lab owns the frozen research behavior. Engineering must not derive, optimize,
+or reinterpret SMI signals, histogram state, cycle rules, MTF votes, stop rules,
+ATR targets, session rules, or signal timing. The UAM layer serializes and executes
+only an already-valid frozen research event.
+
+The Engineering transport contract is:
+
+```text
+BUY        -> SETUP / LONG
+SELL       -> SETUP / SHORT
+EXIT_LONG  -> CLOSE_STOP / LONG
+EXIT_SHORT -> CLOSE_STOP / SHORT
+EOD_FLAT   -> EOD_CLOSE / active side
+```
+
+Live sizing is owned by TradingView Strategy Properties. The Pine strategy uses
+`strategy.percent_of_equity` with `default_qty_value=3`. At the valid entry event,
+Pine snapshots the corresponding whole-share quantity from
+`strategy.default_entry_qty()` and serializes that integer as `qty` with
+`qty_source="TV Strategy Properties"` and `position_size_pct=3`. Render and the
+bridge must never recalculate the percentage, substitute `BRIDGE_DEFAULT_QTY`, or
+execute a missing/invalid SMI quantity. If `strategy.default_entry_qty()` does not
+produce at least one whole share, Pine emits no UAM entry alert; Engineering must
+never synthesize a one-share fallback.
+
+The ATR target is calculated and frozen by the approved Pine research event before
+transport. Engineering does not recompute ATR or target logic. SMI entries serialize
+as broker `MARKET` entries with the frozen positive directional target attached as
+`GTC`.
+
+Render treats `VIXALE_SMI_FWD` as an exact execution-first family. It validates the
+system/strategy/research identity, stock-only contract, canonical `setup_id`, 3%
+quantity provenance, signal/event/side mapping, entry order type, and target TIF.
+TradingView entry/close alerts are forwarded to the local bridge first; public
+OPEN/CLOSE publication requires broker callback evidence. Missing or inconsistent
+execution identity, fill quantity, fill price, target order identity, close order
+identity, or broker-flat evidence fails closed.
+
+The local bridge preserves the pre-SMI Prime/Edge implementation in
+`/bridge/ib_bridge_core.py`. `/bridge/ib_bridge.py` is a wrapper that installs
+`/bridge/smi_forward_adapter.py`; payloads outside `VIXALE_SMI_FWD` delegate to the
+pre-existing core unless an active SMI-managed symbol must be protected from a
+foreign broker-mutating action.
+
+SMI ownership is symbol-safe and fail-closed. Entry is refused when TWS already has
+a position, bridge managed state, or working orders for the symbol. An accepted but
+not-yet-filled SMI entry also reserves the symbol in-process until its exact broker
+entry reaches a proven terminal state, so a lagging open-orders snapshot cannot admit
+a duplicate SETUP. An SMI exit must
+match the active managed SMI `setup_id` and side, prove the exact managed target,
+and refuse unrelated working orders before any cancellation/market close. Ambiguous
+broker state produces no speculative broker action. If a partial target fill and
+market remainder create mixed execution evidence, the remaining broker position may
+be flattened only after synchronization, while automatic public close publication is
+withheld for evidence-safe manual reconciliation.
+
+Promotion remains a separate gate:
+
+```text
+Research Freeze v0.4-FWD
+-> Engineering/UAM integration
+-> regression verification
+-> PR
+-> explicit merge/deployment approval
+-> paper/shadow or forward-test activation as approved
+```
+
+No Engineering transport change may silently modify the frozen trading behavior.
+Any required strategy-logic change returns to Trading Lab as a new validated version.
+
+---
+
+## 4. Canonical Production Files
+
+### 4.1 Render / website / Telegram / Sheets service
+
+Current confirmed production baseline after the Fiona/Shrek classification and Telegram lifecycle patch:
+
+```text
+GitHub repository: ipotrader22-cloud/tv-telegram-bot
+Production branch: main
+Canonical repository path: /app.js
+Local clone: C:\Users\tradi\Documents\GitHub\tv-telegram-bot
+SHA-256: E0D8A90787C89CE54545C6CDA58A0DD9D312005C94F73DF884EE21135A342D96
+Line count: 8,160
+Verified: 2026-07-26
+```
+
+Verified features in this exact snapshot:
+
+- `FIONA_LIMIT_PULLBACK_ATR_TARGET` classification;
+- `🟣 Vixale Edge opened LONG/SHORT`;
+- Vixale Edge target, Stop Loss, and EOD lifecycle messages;
+- direction-aware `Close Under` / `Close Over` thresholds in Vixale Edge
+  pending/open messages, while Vixale Prime retains `Stop Ref`;
+- separate Vixale Prime opening messages preserved.
+
+Delivery convention when a direct file artifact is needed:
+
+- deliver production `app.js` as `.txt`;
+- provide a direct download link;
+- do not treat a chat artifact as canonical after the Git commit exists.
+
+### 4.2 Local IB bridge
+
+Current production bridge:
+
+```text
+ib_bridge.py
+Source snapshot: ib_bridge(6).py
+SHA-256 snapshot: bb8c7ca499312a1798c6c2b940680e07e55259e5fba7d99a28fe5a5a3cddac6a
+```
+
+The sanitized, reviewable bridge source is versioned at
+`/bridge/ib_bridge.py`. Local deployment remains
+`C:\ib_bridge\ib_bridge.py`. Use `/scripts/deploy-ib-bridge.ps1` to compile,
+back up, copy, restart only an identifiable existing bridge process, and verify
+`/ib/status`.
+
+Known local deployment directory:
+
+```text
+C:\ib_bridge\
+```
+
+### 4.3 TradingView Pine sources
+
+Shrek source snapshot:
+
+```text
+Shrek_1_4.pine
+Strategy title: Shrek 1.4
+Payload strategy ID: SHREK_1_4
+Variant field: not used
+```
+
+Vixale Edge canonical source:
+
+```text
+pine/Vixale_Edge_Limit_Pullback_v1_1.pine
+Strategy title: Vixale Edge 1.1
+Internal strategy: VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1
+Internal variant: FIONA_LIMIT_PULLBACK_ATR_TARGET
+```
+
+---
+
+## 5. Logical Architecture
+
+```text
+┌──────────────────────────┐
+│ TradingView strategy     │
+│ alert() JSON payload     │
+└─────────────┬────────────┘
+              │ POST /tv
+              ▼
+┌──────────────────────────┐
+│ Render app.js            │
+│ - validates/classifies   │
+│ - forwards to bridge     │
+│ - serves website         │
+│ - handles callbacks      │
+└─────────────┬────────────┘
+              │ POST BRIDGE_URL/tv
+              ▼
+┌──────────────────────────┐
+│ Local FastAPI bridge     │
+│ - safety checks          │
+│ - TWS order placement    │
+│ - fill monitoring        │
+│ - forced EOD             │
+└─────────────┬────────────┘
+              │ IB API
+              ▼
+┌──────────────────────────┐
+│ IBKR / TWS               │
+│ source of execution truth│
+└─────────────┬────────────┘
+              │ confirmed callback
+              ▼
+┌──────────────────────────┐
+│ Render app.js            │
+│ - Telegram               │
+│ - Google Sheets          │
+│ - Dashboard              │
+└──────────────────────────┘
+```
+
+---
+
+## 6. Repository / Folder Structure
+
+VECO is currently deployed across multiple locations rather than one fully standardized monorepo.
+
+### 6.1 Render application repository
+
+Canonical repository:
+
+```text
+ipotrader22-cloud/tv-telegram-bot
+```
+
+Known production layout:
+
+```text
+tv-telegram-bot/
+├── AGENTS.md               # Persistent Codex operating and safety instructions
+├── app.js                  # Express server, routes, Telegram, Sheets, dashboard, website
+├── package.json            # Node dependencies and start command
+├── docs/                   # Living project documentation
+│   └── VECO_DEVELOPER_HANDBOOK.md
+└── environment variables   # Configured in Render dashboard, never committed
+```
+
+Local Windows clone:
+
+```text
+C:\Users\tradi\Documents\GitHub\tv-telegram-bot
+```
+
+The complete root tree and package scripts should be refreshed here after a dedicated repository audit.
+
+### 6.2 Local bridge
+
+Known layout:
+
+```text
+C:\ib_bridge\
+├── ib_bridge.py
+├── .env
+├── vixale_managed_positions.json
+└── startup / PowerShell scripts
+```
+
+Known startup script:
+
+```text
+Vixale_AutoStart_v3.ps1
+```
+
+Known Windows Task Scheduler behavior:
+
+- launches TWS;
+- launches ngrok;
+- launches the bridge;
+- may leave visible PowerShell windows because of `-NoExit`;
+- TWS may still require manual password entry after a reboot.
+
+### 6.3 TradingView Alert Machine
+
+FAM is separate from VECO runtime, but feeds Fiona alert creation.
+
+Known local folder:
+
+```text
+C:\Users\tradi\Downloads\Fiona_Alert_Machine_v1.2_PF2_PythonFix\
+└── fiona_alert_machine_v1_1\
+    ├── Fiona_Alert_Machine.py
+    ├── fiona_core.py
+    ├── tv_automation.py
+    ├── output\
+    ├── automation_screenshots\
+    ├── tv_profile\
+    └── .venv\
+```
+
+`tv_profile` contains private TradingView session data and must not be uploaded publicly.
+
+---
+
+## 7. Configuration Locations
+
+## 7.1 Render environment variables
+
+Configuration lives in the Render service environment, not in source code.
+
+Important categories:
+
+### Telegram
+
+```text
+TELEGRAM_TOKEN
+CHAT_ID
+ADMIN_CHAT_ID
+```
+
+### Google Sheets
+
+```text
+GOOGLE_SHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
+```
+
+### Dashboard and website
+
+```text
+DASHBOARD_KEY
+SITE_BASE_URL
+RESEND_API_KEY
+EMAIL_FROM
+PASSWORD_REQUEST_BCC
+TURNSTILE_SITE_KEY
+TURNSTILE_SECRET_KEY
+OPTION_PROOFS_DIR
+```
+
+### Bridge forwarding and safety
+
+```text
+BRIDGE_URL
+BRIDGE_FORWARD_ENABLED
+BRIDGE_DRY_RUN
+BRIDGE_ALLOW_MANUAL_TESTS
+MAX_BRIDGE_QTY
+BRIDGE_DEFAULT_QTY
+BRIDGE_ALLOWED_SYMBOLS
+WEBHOOK_INBOX_RETRY_INTERVAL_MS
+WEBHOOK_INBOX_BACKOFF_BASE_MS
+WEBHOOK_INBOX_BACKOFF_MAX_MS
+WEBHOOK_INBOX_READ_COOLDOWN_BASE_MS
+WEBHOOK_INBOX_READ_COOLDOWN_MAX_MS
+WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS
+WEBHOOK_INBOX_SPOOL_FILE
+```
+
+For production, the webhook ingress spool must live on durable storage. When
+`WEBHOOK_INBOX_SPOOL_FILE` is not explicitly configured and the Render
+persistent disk is mounted at `/var/data`, the server defaults to
+`/var/data/vixale_webhook_inbox_spool.json`. Development/test environments
+without that mount fall back to the OS temporary directory.
+
+Never put secrets into this handbook.
+
+## 7.2 Local bridge `.env`
+
+Current critical values include:
+
+```text
+IB_HOST=127.0.0.1
+IB_PORT=7497
+IB_CLIENT_ID=77
+ENTRY_ORDER_TYPE=MARKET
+ALLOW_FUTURES=false
+```
+
+Forced EOD production configuration:
+
+```text
+FORCE_EOD_FLATTEN_ENABLED=true
+FORCE_EOD_FLATTEN_TIME=15:59
+FORCE_EOD_FLATTEN_TIMEZONE=America/New_York
+FORCE_EOD_BLOCK_NEW_STOCK_ENTRIES_AFTER=15:59
+FORCE_EOD_WEEKDAYS_ONLY=true
+FORCE_EOD_SCHEDULER_POLL_SECONDS=5
+BLOCK_MARKET_CLOSES_OUTSIDE_RTH=false
+```
+
+Other important bridge controls:
+
+```text
+DRY_RUN
+RENDER_WEBHOOK_URL
+MAX_ORDER_NOTIONAL
+MAX_SHARE_QTY
+DEFAULT_STOCK_QTY
+ALLOW_SHORTS
+ORDER_CONFIRM_DELAY
+PARTIAL_FILL_GRACE_SECONDS
+ENABLE_EXECUTION_FILL_MONITOR
+ENABLE_TARGET_FILL_MONITOR
+ENABLE_MANAGED_TARGET_RECONCILE
+MANAGED_POSITIONS_FILE
+CANCEL_ORPHAN_TARGETS_AFTER_FLAT
+ENABLE_RENDER_FLAT_RECONCILE
+ENABLE_RENDER_OUTBOX_RETRY
+RENDER_OUTBOX_FILE
+RENDER_OUTBOX_RETRY_SECONDS
+RENDER_OUTBOX_BACKOFF_BASE_SECONDS
+RENDER_OUTBOX_BACKOFF_MAX_SECONDS
+```
+
+## 7.3 TradingView alert configuration
+
+Live strategy alerts use:
+
+```text
+Condition: the strategy name
+Trigger: alert() function calls only
+Webhook: https://www.vixale.com/tv
+Expiration: Open-ended
+```
+
+Important: TradingView alerts store a snapshot of the strategy and its settings
+at creation time. Changing chart source, settings, symbol, or interval later
+does not update an existing alert. An alert may therefore remain active while
+its server-side snapshot differs from the visible chart instance. This is a
+possible diagnostic branch, not proof of any specific missed alert. Recreate
+the alert after every approved Pine lifecycle deployment so the active
+snapshot uses the reviewed source and settings.
+
+---
+
+## 8. Event and Payload Contract
+
+Core payload fields:
+
+```json
+{
+  "source": "TradingView",
+  "strategy": "...",
+  "variant": "...",
+  "event": "SETUP",
+  "sec_type": "STK",
+  "asset_class": "STOCK",
+  "symbol": "SOXL",
+  "exchange": "SMART",
+  "currency": "USD",
+  "side": "LONG",
+  "entry": 41.90,
+  "price": 41.90,
+  "target": 43.20,
+  "target_tif": "GTC",
+  "stop": 40.75,
+  "qty": 100,
+  "profile": "SOXL_45_FIONA_LIMIT",
+  "timeframe": "45",
+  "target_type": "ATR_LIMIT_OPPOSITE_FLIP",
+  "stop_type": "OPPOSITE_SUPERTREND_FLIP_CLOSE",
+  "eod_policy": "CLOSE_1600_ET",
+  "reason": "..."
+}
+```
+
+### 8.1 Event mapping
+
+```text
+SETUP / ENTRY      → SETUP
+PENDING_SETUP      → PENDING_SETUP (Vixale Edge publication only)
+ENTRY_FILL / FILL  → FILL
+TP / TARGET        → TP
+CLOSE_STOP / STOP  → SL internally
+EOD_CLOSE          → EOD
+CANCEL              → CANCEL
+RECONCILE_FLAT      → silent reconciliation
+STOP_REF_UPDATE     → silent stop-reference update
+EXTERNAL_CLOSE      → broker-confirmed Vixale Edge or Prime Manual Close
+```
+
+Vixale Edge payload version 2 uses `system_id=VIXALE_EDGE` and a deterministic
+`setup_id`:
+
+```text
+VIXALE_EDGE:<symbol>:<timeframe>:<LONG|SHORT>:<flip_bar_time>
+```
+
+The same ID is retained across `PENDING_SETUP`, submitted `SETUP`, confirmed
+`ENTRY_FILL`, EOD `CANCEL`, and replacement cleanup. `PENDING_SETUP` and
+`cancel_scope=PENDING_ONLY` are publication-only and are never forwarded to the
+IB bridge. An identified `SETUP` preserves the exact Pending row until the
+broker returns `ENTRY_FILL`; the fill removes that row by `setup_id` and creates
+Open once. Legacy Edge alerts without `setup_id` remain supported.
+
+For `source=TradingView`, `system_id=VIXALE_EDGE`, `payload_version=2`, the
+canonical `setup_id` is also the durable admission identity. Render validates
+that its symbol and side agree with the explicit payload and derives the
+timeframe segment when the redundant `timeframe` field is absent. Valid
+`PENDING_SETUP`, `SETUP`, `CANCEL` with `cancel_scope=PENDING_ONLY`, and
+`CLOSE_STOP` deliveries do not depend on optional Fiona profile/classifier
+fields for admission. A valid JSON object received through a text content type
+is normalized to the same object contract before recognition. Render accepts
+the raw body as an already-parsed object, a JSON string, or a UTF-8 Buffer only
+when decoding produces one JSON object; arrays and malformed input are never
+promoted to an Edge lifecycle payload.
+
+`ENTRY_FILL` remains a broker-only event and is not part of that TradingView
+allowed-event set. `make_entry_fill_payload()` explicitly changes the copied
+SETUP source to `IB_BRIDGE`, preserves the canonical identity and target, derives
+a missing timeframe from `setup_id`, and publishes actual IB fill price,
+quantity, entry execution identity, and entry/target order evidence. Render does
+not promote a `source=TradingView` ENTRY_FILL even if every IB-looking field is
+present. A complete broker callback removes only its exact Pending `setup_id`,
+creates Open and Trades once, publishes Telegram once, and is never forwarded
+back to the bridge.
+
+Edge `PENDING_SETUP` and every pending-only `CANCEL` update Google Sheets and
+the website/dashboard but never publish to Telegram. A TradingView `SETUP`
+continues to be forwarded to the bridge without public OPEN publication.
+Telegram OPEN begins only after the broker-confirmed `ENTRY_FILL` callback.
+
+For a newly created Edge `PENDING_SETUP`, `stop` is the current primary
+SuperTrend `stLine` from the confirmed flip bar. LONG carries the current
+bullish/green threshold and SHORT carries the current bearish/red threshold.
+The separate `broken_stl` field retains the frozen prior SuperTrend value used
+by the optional Broken STL limit-entry anchor.
+
+For internal Shrek/Fiona processing, `CLOSE_STOP` still means the broker-confirmed
+opposite SuperTrend flip close. The raw event and stored Sheets event
+`FLIP_CLOSE` remain unchanged for compatibility. Telegram, website, and dashboard
+render either value publicly as `Stop Loss`, including historical rows read from
+old raw JSON; no historical Sheets rows are rewritten.
+
+### 8.2 Strategy classification precedence
+
+This ordering is critical:
+
+1. Detect Vixale Edge using `system_id=VIXALE_EDGE`, variant
+   `FIONA_LIMIT_PULLBACK_ATR_TARGET`, strategy
+   `VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET_FIONA_v1`, or a supported legacy
+   Fiona Limit marker.
+2. Detect Vixale Prime / Shrek generic Opposite Flip.
+3. Detect Elvis / EMA Pullback.
+4. Detect other or older Vixale families.
+
+**Gotcha:** Shrek and Fiona currently share a generic `strategy` identifier containing `VX_ST_OPPOSITE_FLIP_ALWAYS_IN_MARKET`. Fiona must be identified by its specific `variant` before the generic Shrek classifier runs.
+
+`is_opposite_flip_payload()` explicitly returns false for Edge. This is an
+execution boundary, not only a public-label distinction.
+
+### 8.3 Vixale Edge broker-flat callback contract
+
+The bridge classifies a managed Edge position that becomes broker-flat by
+positive execution evidence:
+
+1. Exact managed target order/execution Filled → `TP`, actual price/quantity,
+   reason `IB_TARGET_EXECUTION_CONFIRMED`.
+2. Exact bridge Stop Loss close execution Filled → `CLOSE_STOP`, actual
+   price/quantity, reason `IB_STOP_CLOSE_EXECUTION_CONFIRMED`.
+3. One unambiguous post-entry, non-managed closing execution is proven →
+   `EXTERNAL_CLOSE`, public `Manual Close`, actual price/quantity, reason
+   `IB_POSITION_FLAT_EXTERNAL_EXECUTION`.
+4. None or more than one of those evidence classes is proven → no callback;
+   managed state remains for a later evidence refresh or manual review.
+
+A flat position, missing/non-working target, stored target price, or market
+touch is not TP evidence. Broker identity uses strongest-ID precedence:
+
+1. If the managed record has `permId`, the execution must match that exact
+   `permId`; a matching `orderRef` cannot override a mismatch.
+2. Otherwise, if it has `orderId`, the execution must match that exact
+   `orderId`.
+3. Only legacy records without either strong ID may fall back to `orderRef`.
+   That fallback additionally requires exact symbol and closing action,
+   sufficient quantity, an execution timestamp at or after
+   `entry_filled_at`, and one unambiguous matching execution group.
+
+Even exact target execution evidence is not sufficient for immediate TP
+publication: the target monitor performs a bounded broker-position check and
+must confirm zero before setting `broker_confirmed_flat=true` or calling
+Render. A Filled target with a non-flat broker position sends no callback,
+retains managed state, and is retried by persistent reconciliation.
+
+The same broker-flat gate applies to every Edge `CLOSE_STOP`, whether the
+market-order fill is observed immediately or by the delayed fill monitor. The
+bridge must confirm the close execution and then confirm the actual IB position
+is zero before it sets `broker_confirmed_flat=true` or sends `CLOSE_STOP` to
+Render. A Filled close with a non-flat position is persisted as
+`EDGE_STOP_CLOSE_POSITION_NOT_FLAT`, including the execution identity and
+`position_after_close`; managed state remains for recovery, and neither
+`CLOSE_STOP` nor `RECONCILE_FLAT` is published.
+
+A v2 Edge closing-bar `CLOSE_STOP` is recognized only when all of these fields
+agree:
+
+```json
+{
+  "close_execution_policy": "NEXT_RTH_OPEN",
+  "signal_at_rth_close": true,
+  "signal_session_date": "YYYY-MM-DD",
+  "signal_bar_time": 0
+}
+```
+
+The bridge persists it as `QUEUED_NEXT_RTH_OPEN`, including the exact setup,
+managed side, original managed quantity, managed entry
+`orderId`/`permId`/`orderRef`/execution IDs, exact queued-target identity,
+original payload, exact signal timestamp/New York date, queue timestamp,
+bridge process-instance ID/start time, IB connection generation, execution
+coverage start requirement, and deterministic reservation. The attempt remains
+zero until eligibility is proven. A duplicate reuses the same reservation; a
+stale setup is rejected. The webhook performs no target cancellation, market
+order, replacement, managed-state clear, or Render callback.
+Render/Sheets/Telegram/dashboard stay open until a later broker-confirmed
+callback completes the existing execution-first lifecycle.
+
+Scheduler eligibility for a queued close requires all of:
+
+1. the current New York date is later than `signal_session_date`;
+2. the current wall clock is inside stock RTH;
+3. the exact managed `setup_id` still matches after acquiring the shared close
+   lock and reloading the managed file;
+4. authoritative broker position evidence and execution history that explicitly
+   covers the queued signal interval are available;
+5. every symbol execution at or after the queued signal time is attributable
+   to the exact queued target or to an exact bridge close in the same
+   reservation;
+6. the current managed target still matches the queued snapshot using
+   `permId > orderId > orderRef` precedence, unless a durable exact bridge
+   record proves an authorized same-setup target replacement;
+7. current position side and absolute quantity exactly match
+   `original managed quantity - exact queued-target executions`; and
+8. IB contract details report one liquid-hours interval containing the current
+   time.
+
+Weekday/RTH wall-clock checks alone are insufficient. Missing, closed/holiday,
+unsupported, or ambiguous IB contract-session evidence returns
+`EDGE_STOP_NEXT_RTH_SESSION_UNCONFIRMED` and leaves the GTC target working.
+Likewise, a successful default `reqExecutions` response proves coverage only
+from the current New York day's midnight through the refresh time. It proves a
+same-date queued signal, but it is not evidence for the previous afternoon.
+Previous-day coverage is complete only when the bridge process-instance ID and
+IB connection generation are unchanged from queue creation and the union of
+continuously retained IB fills plus the current `reqExecutions` response covers
+the signal through the current pass. A same-signal-date restart may use the
+since-midnight response to reconstruct the full interval and establish a new
+process/generation continuity baseline; that new baseline must then remain
+unchanged through next-day recovery.
+
+Each refresh returns and persists:
+
+```text
+execution_history_scope_start
+execution_history_scope_end
+execution_history_covers_signal
+coverage_process_instance_id
+coverage_connection_generation
+coverage_gap_detected
+coverage_reason
+```
+
+A restart or IB disconnect/reconnect that destroys previous-day retained
+coverage persists `EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN`. A successful
+empty next-day `reqExecutions` response cannot clear that state. It is
+read-only and consumes no attempt: no target cancellation, market/replacement
+order, Render Stop Loss callback, or managed-state clear is permitted. Repeated
+scheduler/webhook passes remain non-mutating unless complete coverage later
+becomes authoritatively available. If the broker becomes flat, existing exact
+target-versus-Manual-Close reconciliation still runs and no Stop Loss order is
+created.
+
+Before the next date or outside RTH, recovery returns
+`EDGE_STOP_QUEUED_NEXT_RTH_OPEN`. Once eligible, the reservation becomes
+`RESERVED`, consumes attempt one, and reuses the existing Part 3A exact-target
+cancellation, position synchronization, market-close, fill, broker-flat, and
+publication path.
+
+Overnight outcomes are resolved before any queued Stop Loss order:
+
+- exact target fill plus broker flat uses existing TP reconciliation;
+- external/manual broker flat uses existing Manual Close reconciliation with
+  blank P&L;
+- an exact partial target fill reduces the ownership-proven remaining quantity,
+  so a 3-share target fill from an original 10 permits Part 3A to close only
+  the broker-confirmed remaining 7;
+- a still-open matching position enters Part 3A on the first safe confirmed
+  next-RTH scheduler pass;
+- any other post-signal execution, same-side close/reopen, manual partial close,
+  quantity increase, target identity change without durable authorization, or
+  incomplete restart history persists
+  `EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT`. That state is non-mutating: no target
+  cancellation, market/replacement order, Stop Loss publication, or managed
+  clear occurs. Broker-flat outcomes still use the existing evidence-based TP
+  versus Manual Close reconciliation instead of the ownership-conflict path.
+
+The managed queue survives bridge restart and the scheduler does not require a
+repeated TradingView alert, but restart survival is not the same as automatic
+broker-action eligibility. A same-signal-date restart may reconstruct complete
+coverage from the default since-midnight API response. Normal uninterrupted
+bridge/TWS operation may auto-promote the queue next morning. A restart or
+connection gap across midnight fails closed for manual reconciliation because
+closing a replacement position is the greater risk. Fully automatic recovery
+after such a gap would require a separate durable broker execution-history
+source; Part 3B does not implement one and does not rely on undocumented TWS
+Trade Log configuration.
+
+Every payload-version-2 Edge `CLOSE_STOP` uses a setup-scoped persistent close
+reservation before broker activity. The incoming `setup_id` must exactly match
+the active managed Edge row; a stale setup returns
+`EDGE_STOP_SETUP_MISMATCH` without target cancellation or order submission. A
+reservation write failure returns `EDGE_STOP_STATE_PERSISTENCE_FAILED` before
+broker activity. The reservation identity is `setup_id + ":CLOSE_STOP"` and
+stores a deterministic short-hash close `orderRef`, lifecycle state, target
+identity, close identity, fill evidence, and position verification.
+
+The strict Edge close sequence is:
+
+1. Load the exact active setup and persist `RESERVED`.
+2. Identify the one managed target by exact `permId`, otherwise exact
+   `orderId`, otherwise unambiguous `orderRef`.
+3. Persist `TARGET_CANCEL_PENDING`, cancel only that target, and poll until the
+   target is proven Filled or proven Cancelled / ApiCancelled / Inactive.
+4. After a partial target execution, calculate the maximum remaining quantity
+   as managed target quantity minus confirmed target execution quantity, then
+   poll the IB position with a bounded wait until it is on the managed side and
+   no greater than that maximum.
+5. If the target filled and the position is flat, submit no market close and
+   let exact target reconciliation publish TP.
+6. If the target partially filled and was then canceled, close only the
+   final synchronized broker quantity. If the position remains stale above the
+   expected maximum, submit no close, retain managed state, and return
+   `EDGE_STOP_POSITION_SYNC_UNCONFIRMED`. If cancellation remains ambiguous or
+   the target is still working, submit no close and return
+   `EDGE_STOP_TARGET_CANCEL_UNCONFIRMED`.
+
+The pre-cancel position quantity is never reused for Edge close sizing, and the
+generic broad symbol-order cancellation path is not called. Before market
+submission, the bridge persists `CLOSE_SUBMISSION_PENDING` with the
+deterministic order reference, attempt number, remaining quantity, partial
+target quantity, average price, and execution IDs. Repeated or concurrent
+alerts observe the same reservation.
+
+Crash-window recovery performs bounded IB refreshes for open orders/trades,
+completed orders and executions when the connected client supports them, and
+the current position. An exact recovered close order or execution has its
+actual `permId`, `orderId`, `orderRef`, status, and fills persisted and never
+causes a duplicate submission. If the broker is already flat, recovery submits
+no order and leaves publication to evidence-based reconciliation. If an
+authoritative refresh proves there is no matching order or execution while the
+managed-side position remains open, the bridge persists a retry attempt,
+polls the position through the same bounded synchronization gate used after a
+partial target, and permits one controlled replacement only when the managed
+side and quantity are confirmed. A stale quantity above original quantity
+minus all confirmed target executions persists `POSITION_SYNC_UNCONFIRMED`,
+returns `EDGE_STOP_POSITION_SYNC_UNCONFIRMED`, and submits no order. A
+Rejected, Cancelled, ApiCancelled, or Inactive close is
+`EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`, not permanently in progress, and may
+use that one replacement. A second replacement is prohibited across restart.
+Ambiguous or non-authoritative evidence returns
+`EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`, retains managed state, and submits no
+order because the position may be unprotected.
+
+Recovery is automatic: the existing persistent managed-position reconciliation
+loop scans active Edge close-reservation states on startup and every poll. It
+reconstructs the original payload from the managed row, performs the same
+authoritative refresh, and resumes target cancellation, position
+synchronization, close adoption/replacement, flat reconciliation, or pending
+Render delivery without requiring TradingView to resend `CLOSE_STOP`.
+
+Scheduler recovery and incoming payload-version-2 Edge `CLOSE_STOP` handling
+share the same close lock. After acquiring it, the scheduler reloads the
+managed row and reservation and revalidates the exact `setup_id`; a setup that
+changed while waiting returns `EDGE_STOP_SETUP_MISMATCH` with no broker
+activity. Target cancellation, re-cancellation, initial close submission, and
+replacement submission are allowed only for an eligible stock while
+`BLOCK_MARKET_CLOSES_OUTSIDE_RTH` applies and the New York stock session is
+currently RTH. Outside RTH, recovery returns
+`EDGE_STOP_RECOVERY_DEFERRED_OUTSIDE_RTH`, leaves the GTC target and reservation
+intact, and is limited to authoritative read-only refresh, execution-history
+collection, broker-flat reconciliation, and retry of an already-persisted
+Render publication.
+
+Recovery states are deliberately separated:
+
+```text
+Broker action (RTH + shared lock only):
+QUEUED_NEXT_RTH_OPEN (promotion only after next-date IB session confirmation)
+RESERVED
+TARGET_CANCEL_PENDING
+TARGET_CANCEL_UNCONFIRMED
+TARGET_RESOLVED
+CLOSE_SUBMISSION_PENDING
+RECOVERY_REPLACEMENT_SUBMISSION_PENDING
+EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN
+POSITION_SYNC_UNCONFIRMED
+
+Publication only (never cancel or submit):
+CALLBACK_PENDING
+MIXED_EXIT_EVIDENCE_INCOMPLETE
+POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION
+
+Read-only queue coverage (never cancel or submit while unproven):
+EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN
+```
+
+`CLOSE_SUBMITTED` is observation-only but not terminally stuck. Authoritative
+refresh maps a Filled close plus a flat broker position to
+`POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION`, and a Filled close plus a
+non-flat position to `FILLED_POSITION_NOT_FLAT`, preserving every exact
+execution component. Rejected, Cancelled, ApiCancelled, or Inactive plus an
+open managed-side position becomes
+`EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`; replacement is deferred until a
+later RTH broker-action pass. Submitted, PreSubmitted, and PendingSubmit remain
+`CLOSE_SUBMITTED`. Ambiguous or non-authoritative evidence becomes
+`EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`. The read-only pass never submits the
+replacement itself.
+
+Ambiguous recovery is non-mutating until a later authoritative refresh
+resolves it into a specific state.
+`FILLED_POSITION_NOT_FLAT` permits a residual close only when exact executions
+from the same setup prove the already-closed quantity and the broker position
+equals the calculated residual; it never permits a generic replacement.
+A non-flat position encountered in a publication-only state is persisted as
+`EDGE_STOP_POST_CLOSE_POSITION_CONFLICT`, including its prior state and
+position, and requires explicit/manual intervention. Every transition is
+saved before broker activity and the persisted attempt cap is honored across
+restart.
+
+When a partial target execution is followed by the Stop Loss remainder, the
+bridge publishes one final `CLOSE_STOP` for the full original managed
+quantity. Its exit price is the quantity-weighted average of confirmed target
+and every Stop Loss execution across all close attempts. The managed JSON
+stores an append-preserving `close_attempts` list with attempt number,
+`orderId`, `permId`, `orderRef`, status, cumulative filled quantity, average
+price, and execution IDs. Every positive target, Stop Loss attempt, or manual
+component must contain at least one real IB `execId`; `permId`, `orderId`, and
+`orderRef` are not sufficient for a mixed or multi-attempt final publication.
+Aggregation combines exact components from both `trade.fills` and execution
+history by unique `execId`. Identical duplicates count once, overlapping ID
+sets do not discard unrelated executions, and conflicting quantity or price
+for the same `execId` is ambiguous. Multiple `execId` values on one trade are
+valid when each has exact quantity and price and their unique quantity equals
+the broker cumulative fill; evidence is incomplete only when the exact total
+is lower than the cumulative total or an execution lacks required evidence.
+Authoritative history also reconstructs and durably saves multi-execution
+partial-target components after restart so they can participate in final
+mixed-exit accounting.
+
+The component total must equal the original quantity, the
+`reconciliation_id` contains the sorted complete `execId` set, and raw JSON
+retains every component. Its reason is
+`IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. The existing Sheets
+schema is unchanged. A partial target is not published as a separate TP. If
+any component price, quantity, or exact `execId` evidence is missing, the bridge
+persists `EDGE_STOP_MIXED_EXIT_EVIDENCE_INCOMPLETE`, withholds the callback,
+and retains the managed row for reconciliation rather than fabricating P&L.
+
+Every read-only recovery saves refreshed close-attempt and partial-target
+execution history before advancing state or authorizing a residual. If that
+managed-file save fails, recovery returns
+`EDGE_STOP_STATE_PERSISTENCE_FAILED`, retains the existing managed record, and
+performs no target cancellation, initial close, residual close, or replacement
+close. A residual is eligible only after all exact components used to prove
+its quantity have been durably saved.
+
+If a confirmed partial target is followed by an unambiguous attributed manual
+remainder, the same component accounting publishes one full-original-quantity
+`EXTERNAL_CLOSE` / `Manual Close` at the weighted actual exit price. It never
+publishes a partial TP. Every component must have confirmed price, quantity,
+and identity; otherwise publication is withheld. Manual Close continues to
+store blank result and result percentage even when all actual component prices
+are available.
+
+When one matching external execution is available after a reliably timestamped
+managed entry, its actual price and quantity are published. Before that callback
+is made durable, the bridge cancels and verifies the exact attached target so it
+cannot later open an unintended reverse position. External attribution requires
+`entry_filled_at` or `entry_order.filled_at`, a parseable execution time at or
+after that entry, matching symbol and closing action, and one unambiguous
+execution group. Without the managed entry timestamp, for a pre-entry fill, or
+when target cancellation cannot be verified, no callback is sent and managed
+state is retained. The bridge never substitutes the target price.
+`EXTERNAL_CLOSE` always blanks result and result percentage, ignores
+supplied P&L aliases, and never invokes normal close P&L fallback—even when
+actual execution price and
+quantity are available.
+
+The managed-position JSON persists entry, target, and bridge-close broker
+identity plus timestamps. Before Render delivery, reconciliation first persists
+the fixed callback on the managed row, then copies it into the local durable
+Render outbox keyed by `bridge_delivery_id`. Once the outbox write succeeds the
+managed row may be cleared; HTTP/network failure retains the callback in the
+outbox with per-item exponential `next_attempt_at` backoff. A poison item cannot
+block a newer due TP, Stop Loss, Manual Close, or `RECONCILE_FLAT` callback.
+
+`app.js` also treats broker-confirmed Edge `TP` and `CLOSE_STOP` as synchronous
+persistent callback lifecycles. Recognition requires
+`source=IB_BRIDGE`, `system_id=VIXALE_EDGE`, `setup_id`,
+`reconciliation_id`, `broker_confirmed_flat=true`, a zero
+`position_after_close`, and a valid broker execution identity. The HTTP route
+awaits exact Open removal, one Trades exit, one Closed Trade, Telegram
+publication, and `Trade Metadata` completion markers. It returns HTTP 200 only after
+all components succeed and HTTP 503 `RETRY` after a retryable Sheets or
+Telegram failure.
+
+Retries repair only missing components. The in-flight key is
+`setup_id + reconciliation_id + exit event`; durable `Trade Metadata` markers make a
+completed duplicate harmless after Render restart. TP remains `Take Profit`,
+`CLOSE_STOP` remains publicly `Stop Loss`, actual execution price/quantity are
+preserved, and neither callback is forwarded back to the bridge. No Google
+Sheets columns are added.
+
+`app.js` processes `EXTERNAL_CLOSE` synchronously as a broker callback for Edge
+and Prime, never forwards it back to the bridge, removes the exact setup-scoped
+Open row, stores
+`Manual Close` in the existing event column, and publishes:
+
+```text
+⚪ Vixale Edge closed manually
+Manual Close — price unavailable
+```
+
+New manual-close callbacks require actual execution price and quantity; legacy
+rows may still render the price-unavailable copy. Persistent publication markers
+live in `Trade Metadata`, so duplicate callbacks do not create another Trades
+row, Closed row, or Telegram message. A callback without confirmed broker-flat
+state, a valid `IB_BRIDGE` execution identity, actual price/quantity, or exact
+setup/reconciliation identity cannot close the public ledger.
+
+---
+
+## 9. Google Sheets Data Model
+
+Google Sheets is the persistent operational ledger used by the dashboard.
+
+### 9.1 `Trades`
+
+Columns A:K:
+
+```text
+A Timestamp
+B Symbol
+C Side
+D Event
+E Entry
+F Size
+G Target or Exit
+H Stop
+I Result
+J Status
+K Raw JSON
+```
+
+Only executed events are appended:
+
+```text
+FILL, TP, SL / FLIP_CLOSE, EOD, EXTERNAL_CLOSE / Manual Close
+```
+
+### 9.2 `Pending`
+
+Columns A:J:
+
+```text
+A Trade ID
+B Timestamp
+C Symbol
+D Side
+E Status
+F Entry
+G Size
+H Target
+I Stop
+J Raw JSON
+```
+
+### 9.3 `Open Positions`
+
+Columns A:L:
+
+```text
+A Trade ID
+B Open Time
+C Symbol
+D Side
+E Status
+F Entry
+G Size
+H Target
+I Stop
+J Last Price / GoogleFinance formula
+K Unrealized P&L formula
+L Raw Open JSON
+```
+
+### 9.4 `Closed Trades`
+
+Human-readable columns A:J:
+
+```text
+A Trade ID
+B Open Time
+C Close Time
+D Symbol
+E Side
+F Entry
+G Exit
+H Size
+I Result
+J Event
+```
+
+Technical identity, raw payloads, and publication state are not reconstructed
+from this sheet. Older K:L raw JSON cells may be read only as a compatibility
+fallback.
+
+### 9.5 `Trade Metadata`
+
+Columns A:Y are the authoritative technical companion to compact Closed Trades:
+
+```text
+Metadata ID, Trade ID, System, Symbol, Side, Open Time, Close Time, Event,
+Setup ID, Alert Instance ID, Strategy, Variant, Raw Open JSON, Raw Close JSON,
+Recorded At, System ID, Reconciliation ID, Bridge Delivery ID,
+Exit Execution ID, Broker Confirmed Flat, Position After Close,
+Closed Trade Written, Telegram Exit Published, Publication Complete,
+Publication Completed At
+```
+
+Durable close retries use setup/reconciliation/delivery identity and the final
+three completion fields. A human-facing Closed Trades row is never the source
+of technical publication truth.
+
+### 9.6 `Webhook Inbox`
+
+Columns A:M remain the authoritative Google Sheets processing/retry queue:
+
+```text
+Delivery ID, Received At, Event, System ID, Setup ID, Symbol, Side, Status,
+Attempts, Next Attempt At, Last Error, Raw JSON, Completed At
+```
+
+Recognized non-broker TradingView deliveries are first written synchronously to
+the deterministic local ingress spool. In production the default spool path is
+on the Render persistent disk at
+`/var/data/vixale_webhook_inbox_spool.json`. The spool write uses a temporary
+file, `fsync`, and atomic rename. If that durable local write fails, Render
+returns HTTP 503 and TradingView retains retry ownership. Once the local write
+succeeds, Render returns HTTP 200 without waiting for Google Sheets; migration
+to `Webhook Inbox` and normal downstream lifecycle processing continue
+asynchronously. Broker callbacks keep their separate synchronous
+execution-evidence/publication contract.
+
+`delivery_id` is deterministic from stable lifecycle identity. Duplicate
+deliveries reuse one row. Spool migration removes only the migrated delivery
+from the latest on-disk state, so a new alert arriving during an awaited Sheets
+write cannot be erased by a stale spool snapshot. `SETUP` execution work older
+than `WEBHOOK_SETUP_EXECUTION_MAX_AGE_SECONDS` (default 90 seconds) is marked
+`STALE_EXECUTION_DROPPED`; reliable payload alert/signal/bar-close timestamps
+take precedence over the original spool/Inbox receipt time, which is the
+fallback. Setup-origin `flip_bar_time` and bar-start identity are not
+execution-age evidence because a virtual Edge limit can fill later.
+Close/cancel safety work does not expire. Recovery processes at most
+`WEBHOOK_INBOX_MAX_CONCURRENCY` items concurrently (default 4). The recovery
+poll is process-wide single-flight and has a 15-second minimum interval. Its
+Inbox reads disable the Google client's local request retry so one quota
+response remains one request. HTTP 429 or a Sheets rate-limit reason starts a
+shared exponential cooldown with jitter (60 seconds by default, capped at five
+minutes); timer ticks skip without reading until the cooldown expires, and the
+next successful Inbox read resets the backoff. During Sheets failure or
+cooldown, the already-acknowledged disk-spooled delivery remains available for
+later migration.
+
+Structurally valid TradingView Edge v2 lifecycle JSON is admitted from its
+canonical `setup_id` before optional parsed-row classification and is persisted
+to the durable local ingress spool before HTTP 200. Missing redundant
+`timeframe` is not an ignore condition. Truly unrelated JSON, malformed canonical identity, mismatched
+symbol/side/timeframe, and Edge `CANCEL` without `PENDING_ONLY` remain outside
+this admission path. Broker callbacks continue through their separate strict
+execution-evidence checks and are not trusted by this TradingView-only rule.
+In particular, Edge `ENTRY_FILL` must arrive as `source=IB_BRIDGE`; it is never
+added to the TradingView event allowlist. Render additionally requires canonical
+Edge identity, Filled entry status, actual fill price and quantity, a valid entry
+execution identity, and entry plus attached-target order identity. The bridge
+persists that exact callback in its Render outbox before the first HTTP attempt.
+Render returns HTTP 200 only after Open ledger and Telegram publication are
+complete and HTTP 503 on retryable failure, so the bridge retains retry ownership
+with per-item backoff across restarts.
+
+Immediately before returning HTTP 200 `IGNORED`, Render emits one bounded safe
+diagnostic record containing content type, body representation/length, JSON
+parse outcome, canonical Edge fields and identity, and an exact structural
+reason such as `edge_v2_invalid_setup_id`, `edge_v2_symbol_mismatch`, or
+`edge_v2_unsupported_event`. It does not log authorization headers, secrets, or
+the raw body. Accepted deliveries do not emit this diagnostic.
+
+### 9.7 `Positions`
+
+Legacy sheet. Current code cleans matching legacy rows when processing modern events.
+
+---
+
+## 10. Dashboard and Admin Operations
+
+### 10.1 User dashboard
+
+Routes include:
+
+```text
+/login
+/dashboard
+/dashboard?key=...
+/dashboard/live-pnl.json
+```
+
+Authorization uses:
+
+- `DASHBOARD_KEY` query parameter; or
+- `vixale_dashboard_key` cookie.
+
+The dashboard reads from Google Sheets. TWS is the execution source of truth; Sheets is the displayed operational ledger.
+
+The authenticated `GET /dashboard/live-pnl.json` route supplies presentation-only
+running Open P&L updates to the public dashboard. It accepts the same active owner
+or viewer session as `/dashboard`, applies private no-store response headers, and
+returns only `ok`, `updated_at`, and a `positions` array containing `trade_id` and
+`open_pnl`. It never returns quote price, bid, ask, last, source, age, market-data
+type, entry, size, symbol, side, or other owner-only quote details.
+
+For each cached Open Position snapshot, a fresh TWS quote may recalculate running
+P&L using the existing live-quote staleness threshold. A quote that the shared
+quote helper marks stale is never used for public recalculation. When the TWS quote
+is stale or absent, the endpoint preserves the fallback P&L captured from the
+dashboard/Open Positions data. An empty startup snapshot safely returns an empty
+`positions` array.
+
+The browser performs one request at a time, schedules the next refresh about two
+seconds after the prior request completes, pauses while the document is hidden,
+and resumes when visible. HTTP 401 redirects to login; transient endpoint or
+network failures leave the last displayed value unchanged. This route mutates no
+Google Sheet, execution record, lifecycle state, broker state, or Telegram state
+and has no effect on TradingView, bridge, IB/TWS, EOD, or reconciliation behavior.
+
+The public dashboard's primary stock-performance chart is the **Equity Curve —
+Realized P&L**. It is presentation-only and reuses the existing `Closed Trades`
+worksheet read already performed by `GET /dashboard`; it adds no Google Sheets
+request and no new API route. The curve intentionally reads only `Closed Trades`
+column C (`Close Time`) and column I (`Result`). Rows with a valid close date and
+numeric realized result are grouped by calendar close date, same-day results are
+summed, dates are sorted ascending, and each point is the running cumulative sum
+of those daily realized results. Open/unrealized P&L, symbols, strategy metadata,
+Trade Metadata classification, entry/exit values, and open positions do not enter
+the calculation. Blank or non-numeric results are omitted rather than replaced
+with simulated values. The chart includes an explicit `$0` reference line,
+Date / Daily P&L / Cumulative P&L hover detail, and the latest cumulative value as
+`Total Realized P&L`. It refreshes with the normal dashboard page refresh cadence;
+the separate two-second `/dashboard/live-pnl.json` polling remains Open-P&L-only
+and never changes the realized equity curve between page refreshes.
+
+The authorized public dashboard also includes a read-only Option Journal table
+showing the latest 20 option records, newest first. Journal loading is isolated
+so a worksheet error does not prevent the existing dashboard from rendering.
+
+### 10.1.1 Dashboard access request security
+
+The public Dashboard Access request flow is separate from dashboard login and owner/admin authentication. Its public submission route remains `POST /password-request`.
+
+Admission order is fixed:
+
+```text
+honeypot body.website
+-> per-IP rate limit (5 attempts / 15 minutes)
+-> normalize and validate email
+-> per-normalized-email rate limit (3 attempts / 60 minutes)
+-> Cloudflare Turnstile server verification, action dashboard_access
+-> write Awaiting Verification request
+-> send Resend confirmation email
+-> applicant confirms one-time email token
+-> request becomes Pending
+-> existing owner notification
+-> existing manual Create 30-Day Code approval only
+```
+
+Turnstile protects only the public access form. The browser receives only `TURNSTILE_SITE_KEY`; `TURNSTILE_SECRET_KEY` remains server-side and is sent only to Cloudflare Siteverify. Missing production Turnstile configuration fails closed for new public access requests. The existing `body.website` honeypot is retained. Rate limiting is bounded in-process state and is not global Express middleware.
+
+The existing `Dashboard Access Requests` worksheet preserves A:I and appends J:L: `Verification Token Hash`, `Verification Expires At`, and `Verified At`. A new request is stored as `Awaiting Verification` for 60 minutes. Only a SHA-256 hash is persisted; the raw cryptographically random verification token is sent only in the email URL and is never stored or logged. Successful one-time verification clears the stored hash, writes `Verified At`, and changes status to `Pending`. Invalid, expired, or reused links cannot enter Pending or repeat owner notification. Confirmation-email delivery failure remains outside Pending as `Verification Email Failed`.
+
+Email verification never creates a viewer code. Existing owner/viewer authentication and `POST /dashboard-login` remain unchanged. Only the existing authenticated owner Approve action may create the 30-day viewer code.
+
+Pending Requests displays only status Pending. Approve and Reject retain their existing semantics. Owner-only permanent Delete uses the same `adminAccessRequestAllowed()` guard and Google Sheets `deleteDimension` pattern; it is refused when the request already has a Code ID or when an access-code row references the request. Deleting a request never revokes or modifies a viewer code.
+
+Production activation requires a real Cloudflare Turnstile widget authorized for the Vixale hostnames plus `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` in Render. Repository merge alone is not proof that Access Guard is active; Render deployment and live form/verification/manual-approval behavior must be independently verified.
+
+### 10.2 Operational admin surfaces
+
+VECO does not currently have one unified admin panel. Operational administration is split across:
+
+- Render Dashboard: deploys, logs, environment variables, instance plan;
+- Google Sheets: ledger inspection and manual verification;
+- TWS: broker positions and orders;
+- local bridge endpoints;
+- TradingView Alerts Manager;
+- Telegram channel.
+
+Important local bridge endpoints:
+
+```text
+GET  /
+GET  /ib/status
+GET  /ib/open-orders
+GET  /ib/positions
+GET  /ib/managed-positions
+GET  /ib/render-outbox
+POST /ib/retry-render-outbox-now
+DELETE /ib/render-outbox/{delivery_id}
+POST /ib/force-eod-close-now
+GET  /ib/cancel-orphan-targets
+POST /ib/qualify-contract
+POST /tv
+```
+
+Do not expose private bridge endpoints publicly without an explicit security design.
+
+---
+
+## 11. Website and Global CSS Conventions
+
+The public website and dashboard HTML/CSS currently live inside `app.js` render functions.
+
+### 11.1 Design tokens
+
+Primary variables include:
+
+```css
+--bg: #fbfcfb;
+--paper: #ffffff;
+--paper-soft: #f4f7f4;
+--ink: #101413;
+--muted: #68736f;
+--muted-2: #8b9691;
+--line: #e3e9e5;
+--line-2: #d7e1db;
+--green: #0bcf74;
+--green-dark: #078f51;
+--green-soft: #e9fff4;
+```
+
+### 11.2 Typography
+
+Current family:
+
+```css
+-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Segoe UI", Arial, sans-serif
+```
+
+Global convention:
+
+```css
+b, strong { font-weight: 500; }
+```
+
+The visual style intentionally avoids heavy bold typography.
+
+### 11.3 Component conventions
+
+Reusable visual patterns:
+
+- `.btn`, `.btn-primary`, `.btn-green`
+- `.badge`, `.dot`
+- `.card`
+- `.strategy-form-box`, `.strategy-form`
+- `.access`
+- `.partner-box`
+- `.reason-box`
+- `.positive`, `.negative`
+
+Before changing website layout or styling, preserve both English and Russian render flows.
+
+### 11.4 Options public sales page
+
+The public `/trading-systems/options` route is a commercial product page, while
+`/trading-systems/options/viewer` remains an authenticated read-only viewer for
+protected Options detail. The public sales page follows the customer flow Offer
+-> Product Preview -> What’s Included -> Results -> Subscription -> FAQ and keeps
+direct Day Trading / Swing Trading / Options product-family navigation.
+
+The single-system Options price remains `$49/month`. Paid onboarding uses the
+canonical `singleSystemRequestUrl("Options")` Telegram request. A paid Options
+CTA must therefore describe a subscription request (for example,
+`Request Options Subscription — $49/month`) and must not route to the free
+viewer-access form. The public `/access?system=options` route is a separate,
+free, read-only viewer request for protected material; it does not activate or
+purchase an Options subscription.
+
+Public Options evidence now has two layers sourced from the existing
+`Option Journal` without changing its owner write path:
+
+- the sales-page preview may show the latest eligible closed trade using
+  customer-safe journal fields;
+- the public Options performance chart and public Option Journal expose the
+  published trade record and recorded closed-trade results;
+- available brokerage proof files remain protected by the existing viewer
+  authorization boundary.
+
+The public page must not expose credentials, private storage metadata, customer
+identifiers, or owner-only controls, and it must not fabricate sample trades or
+P&L when the source is unavailable. Options copy must also remain strategy-neutral:
+the product is not described as restricted to one trade structure or to 0DTE.
+
+English and Russian use the same commercial/access semantics. The protected
+viewer authorization, Option Journal writes, trading logic, Telegram lifecycle,
+Google Sheet trading schemas, Pine, bridge, TWS/IBKR execution, and risk logic
+remain unchanged.
+
+### 11.5 October 6 user-friendliness / conversion contract
+
+The October 6 site audit supersedes older public-presentation decisions where
+they conflict with this section. It does **not** supersede the underlying data,
+security, evidence, or trading boundaries.
+
+Primary public navigation is intentionally task-focused:
+
+```text
+Day Trading
+Swing Trading
+Options
+Results
+Pricing
+```
+
+Returning-user `Log In` remains an action. The main acquisition action is the
+30-day Day Trading trial (`Get 30 Days Free`). `How It Works`, the broader
+`Trading Systems` hub, Daily Recaps, Services, About, and Help remain available
+as secondary/footer discovery rather than competing primary tasks.
+
+The homepage uses plain customer language and keeps the existing authentic
+Day/Swing/Options previews and evidence sources. The Day Trading trial is
+explicitly Day Trading Telegram signals only. Free viewer access is a separate
+read-only path for protected detail. Paid Single System and Three-System Bundle
+requests remain separate commercial paths.
+
+Pricing must explain what the visitor receives and how to join without exposing
+internal implementation commentary such as "fake checkout", "existing
+destination", or release-engineering language. Manual onboarding may be
+described in customer terms: choose the plan, send the prepared Telegram
+request, then receive payment/access instructions.
+
+Results remain system-specific. Day Trading, Swing Trading, and Options keep
+their existing distinct evidence sources; the page may present a next action for
+each system, but it must not combine the three into one performance total or
+substitute one system's results for another.
+
+Acquisition measurement may record aggregate CTA metadata such as system,
+offer, CTA kind, and originating public path. It must not record names, email
+addresses, Telegram handles, viewer codes, tokens, IP addresses, user-agent
+strings, credentials, or other customer-identifying values in the website funnel
+metrics file.
+
+This presentation contract is implemented as a narrow final HTML refinement
+layer so the existing auth/data/trading owners stay unchanged. In particular it
+does not change Turnstile, email verification, manual viewer approval, viewer
+code creation/expiry, Options proof authorization, VECO strategy behavior,
+signals, Pine, bridge/TWS/IBKR execution, risk logic, Swing Trading Lab logic, or
+Google Sheet trading write paths.
+
+---
+
+## 12. Reusable Code Modules and Helpers
+
+### 12.1 `app.js`
+
+Important logical modules:
+
+- environment parsing: `envFlag`, `envNumber`, `envSymbolSet`;
+- normalization: `normalizeSymbol`, `normalizeTradeId`, `makeTradeId`;
+- system classification functions;
+- TradingView text and JSON parsers;
+- Telegram formatter;
+- Google Sheets CRUD and ledger processing;
+- dashboard data parsing and rendering;
+- website HTML render functions;
+- password email functions;
+- bridge-forwarding and execution-first callback handling.
+
+Classification functions are architecture-sensitive. New systems should receive one explicit classifier and one explicit public label.
+
+### 12.2 `ib_bridge.py`
+
+Important logical modules:
+
+- environment and safety controls;
+- contract qualification;
+- order submission and attached targets;
+- reversal delta math;
+- fill and rejection detection;
+- partial-fill target repair;
+- entry and close fill monitors;
+- managed position persistence;
+- evidence-based Edge TP / Stop Loss / external-close reconciliation and deduplication;
+- orphan target cleanup;
+- forced EOD scheduler;
+- Render callbacks.
+
+Bridge callbacks are constructed from copies of the original TradingView payload. This preserves strategy metadata, including `variant`, `strategy`, `profile`, `stop`, and `target`.
+
+---
+
+## 13. Known Gotchas
+
+### 13.1 Shared strategy identifier
+
+Shrek and Fiona share a generic Opposite Flip strategy identifier. Always classify Fiona by `variant` first.
+
+### 13.2 TradingView alert snapshots
+
+Changing strategy settings or Pine source on the chart does not alter existing
+alerts. Recreate the alert after an approved Pine deployment. An alert can
+remain enabled and executing while retaining an older source/settings/interval
+snapshot; “active” does not prove that it matches the chart instance. Snapshot
+divergence must be verified from the alert configuration/logs rather than
+assumed from a missed event.
+
+### 13.2.1 July 30, 2026 Edge Pending expiry incident
+
+Eight active Edge Pending setups remained after 16:00 ET and no `CANCEL`
+appeared in the TradingView Alert Log. The alerts were not deleted, paused, or
+recreated before the close, so deletion is not a valid explanation. The local
+bridge's 15:59 `managed_symbols_checked=0` is also expected: Edge Pending
+setups are virtual TradingView/Render records, while the broker watchdog is
+intentionally restricted to managed Prime/Shrek positions.
+
+The legacy `isRthClosingBar` predicate was evaluated against modeled final bars
+for 15, 30, 45, and 60 minutes under both regular- and extended-hours chart
+alignments. Those modeled cases satisfied the predicate. Therefore the
+production miss was not reproduced from the predicate alone, and no single
+root cause is claimed without the exact server-side alert snapshot and runtime
+evidence.
+
+The hardened detector no longer mixes custom-session membership with the
+chart's `time` / `time_close` alignment. It compares the confirmed bar's
+explicit custom-session `time_close()` value directly with the New York 16:00
+timestamp. TradingView documents that these session-filtered functions create
+their own bar representations; a final custom bar can end at the session
+boundary even when its chart bar ends later.
+
+`process_orders_on_close=false` is not an explanation for a missing direct
+`alert()` call. With default strategy calculation settings, Pine still executes
+once on the confirmed bar's closing tick; the flag controls whether the broker
+emulator may fill an order on that same closing tick or waits for the next
+available bar. It remains required for the queued next-RTH Strategy Tester
+behavior.
+
+The server-side safety layer is independent of TradingView execution. Render
+runs an immediate startup/catch-up pass and a five-minute interval pass over
+the `Pending` worksheet. It removes only exact, classified Edge `setup_id`
+rows whose immutable flip/session identity proves that the associated New York
+RTH session has completed. No alert runtime, bridge connection, broker
+position, or synthetic lifecycle callback is required.
+
+### 13.3 TradingView quantity
+
+The Pine scripts derive quantity from TradingView Strategy Properties. FAM currently does not manage the Properties tab, so defaults such as `2% of equity` remain unless the Pine default or FAM is changed.
+
+### 13.4 Date Range and FAM
+
+FAM can set `Use Date Range` from NT8/XLSX inputs. Manual “Save as default” settings can be overwritten by FAM automation.
+
+### 13.5 NT8 `Break at EOD`
+
+For Fiona optimization and parity testing:
+
+```text
+Trading hours: US Equities RTH
+Break at EOD: True
+Exit on session close: True
+ExitOnSessionCloseSeconds: 300
+```
+
+Without `Break at EOD=True`, 45-minute and 60-minute bars can be aligned differently from TradingView, creating false optimization results.
+
+### 13.6 Bar timestamps
+
+TradingView normally labels intraday bars by bar start time. NinjaTrader often displays bar end time. Example:
+
+```text
+TV 10:15 on 45m ≈ NT8 11:00
+```
+
+Do not compare timestamps without adjusting for this convention.
+
+### 13.7 Historical limit fills
+
+Limit entry and target can both fall inside one higher-timeframe bar. Standard fill resolution can be optimistic. Finalists should be validated with a more precise execution model.
+
+### 13.8 Forced EOD
+
+Shrek Pine no longer owns forced EOD execution. The local bridge is the sole
+execution authority and starts its Shrek-only watchdog at 15:59
+`America/New_York`.
+
+The watchdog:
+
+- selects only managed rows whose strategy is `SHREK` or `SHREK_1_4`;
+- never closes Fiona, Elvis, manual, or other positions;
+- cancels attached targets and verifies cancellation before flattening;
+- treats a target fill during cancellation as a race-safe flat result;
+- submits the opposite-side DAY market order for the remaining quantity;
+- persists one idempotency key per date, symbol, and strategy;
+- verifies the TWS fill and zero position before callback publication;
+- retries verification and failed callback delivery during the remaining
+  regular session without duplicating the close order;
+- logs a critical error if the broker position remains open.
+
+`app.js` has no independent EOD order timer. It publishes Telegram, Sheets, and
+dashboard state only from a broker-confirmed EOD callback. Duplicate callbacks
+are rejected in memory, and the ledger rejects a close with no matching open
+position.
+
+`Break at EOD` and `Exit on session close` are separate concepts:
+
+- `Break at EOD` controls bar construction;
+- `Exit on session close` controls position closure.
+
+### 13.9 Target fill deduplication
+
+The in-memory target monitor and persistent managed-position reconciliation can detect the same target fill. `_target_report_claims` prevents duplicate reporting.
+
+For Vixale Edge, `_target_report_claims` is only the concurrent guard. The
+durable handoff is the managed-position reconciliation claim followed by the
+local Render outbox containing the fixed callback payload and
+`setup_id + exit execution identity`. Render failure retains the outbox item for
+retry even after the managed position has been cleared.
+
+### 13.10 Orphan targets
+
+After a confirmed flat position, leftover `TVFVG_*_TP` orders must be canceled to prevent accidental reverse entries.
+
+### 13.11 Render Free limits
+
+Free Render services can sleep and share a limited monthly pool of instance hours. VECO production should use:
+
+```text
+Workspace: Hobby
+Vixale web service: Starter paid instance
+```
+
+A Pro workspace is not required for the current single-owner architecture.
+
+### 13.12 Render outages and missed signals
+
+Recognized non-broker TradingView deliveries are acknowledged only after their
+deterministic delivery is durably written to the local ingress spool. Production
+uses the existing Render persistent disk at `/var/data` by default. Google
+Sheets `Webhook Inbox` persistence is no longer on the TradingView HTTP request
+critical path; the worker migrates the spooled delivery into the authoritative
+Sheets processing queue and then applies the existing retry/backoff lifecycle.
+If the local durable write fails, Render returns HTTP 503. A failed status update
+after a downstream side effect is caught and retried through the same durable
+delivery identity. Stale entry execution is suppressed after the configured
+maximum age, preferring a reliable payload emission/bar-close timestamp over
+the original receipt time, while close/cancel safety work remains eligible
+indefinitely. Do not manually backfill a missed live signal without an explicit
+decision.
+
+On October 6, 2026, several real Edge alerts at the market open showed
+TradingView `request took too long and timed out` while Render later completed
+their Pending/CANCEL work. The live path was awaiting Google Sheets before HTTP
+200, so concurrent alerts inherited multi-second Sheets latency and serialized
+ingress delay. The durable-disk-first ACK removes Google Sheets latency from that
+request path without weakening deterministic deduplication, the 90-second SETUP
+TTL, execution-first broker handling, or downstream publication safety.
+
+The Inbox recovery worker must not poll Sheets faster than every 15 seconds or
+overlap itself. A quota-limited read is not retried inside gaxios: it activates
+the shared 60-second-to-five-minute jittered read cooldown, and intervening
+timer ticks perform no Sheets reads. This cooldown is separate from per-item
+downstream retry timestamps and does not remove or bypass durable rows.
+
+Edge v2 admission must not depend on the transport content type producing an
+already-parsed Express object or on redundant `timeframe`/optional Fiona
+classifier fields. Render normalizes valid JSON text, validates canonical
+`VIXALE_EDGE:<symbol>:<timeframe>:<side>:<bar_time>` identity, and persists the
+delivery before ACK. This rule does not replay or execute previously missed
+setups; the ordinary 90-second `SETUP` TTL still fails closed.
+
+After the first admission hardening deployment, a manual canonical Edge v2
+`PENDING_SETUP` sent as `text/plain` completed through Webhook Inbox and Pending,
+while later real TradingView SBUX/XLE deliveries were still reported as unknown.
+The visible canonical fields alone did not reproduce that rejection across
+object, JSON-string, or UTF-8-Buffer tests. Do not infer a Pine or strategy
+semantic cause without the safe ignored-path diagnostic from the exact delivery.
+
+### 13.13 Execution order during reversals
+
+For Opposite Flip strategies, the bridge calculates a broker position delta rather than blindly submitting the desired final quantity.
+
+Example:
+
+```text
+Current: LONG 100
+Desired: SHORT 100
+Correct order: SELL 200
+Final position: SHORT 100
+```
+
+The attached target quantity covers only the final desired position, not the reversal delta.
+
+### 13.13.1 Rejected SETUP CANCEL cannot remove broker-confirmed Open state
+
+On October 7, 2026, an already-filled Vixale Edge TEAM position disappeared
+from the public `Open Positions` ledger after a later Vixale Prime TEAM SETUP
+was correctly blocked by the bridge's cross-system ownership guard. Render logs
+proved the Edge ENTRY_FILL had first appended the Open row, then the rejected
+Prime SETUP returned as a generic `CANCEL`, whose legacy cleanup deleted every
+Open row matching `TEAM/LONG`.
+
+This cleanup is unsafe because `symbol + side` and legacy trade IDs such as
+`TEAM_LONG` are not system-scoped and can collide across Prime, Edge, and
+other execution-first families. A rejected or blocked SETUP represents entry
+intent that never became a broker-confirmed new Open position. Therefore a
+generic setup `CANCEL` may clean Pending/legacy setup intent but must never
+delete a broker-confirmed `Open Positions` row.
+
+Broker-confirmed Open rows are removed only by the existing confirmed
+TP / Stop Loss / EOD / Manual Close / flat-reconciliation lifecycles. This is a
+Render/Sheets ledger-safety rule only; it does not change Pine signals,
+cross-system broker ownership, order submission, targets, stops, sizing, or
+TWS/IBKR execution.
+
+### 13.14 Website HTML refinement middleware
+
+Public website presentation refinements may be preloaded by `package.json` and
+intercept `res.send()` to transform HTML generated by `app.js`. These matchers
+operate on the serialized HTML, not on browser-visible text. Inline elements can
+split a phrase that looks contiguous on screen; for example,
+`Watch the <span class="accent">systems live.</span>` does not contain the
+literal serialized substring `Watch the systems live.`.
+
+For website output transforms:
+
+- locate the intended section structurally and verify stable markers before replacing it;
+- regression fixtures must mirror the actual `app.js` markup received by the middleware, including nested inline tags and real anchor IDs;
+- keep transforms idempotent and scoped to the intended route;
+- do not treat a simplified visible-text fixture as proof that a production HTML matcher will fire;
+- re-check the actual destination anchor before changing fragment CTAs.
+
+The homepage dashboard-access form currently uses `id="password-access"`, so a
+homepage conversion CTA that scrolls to that existing form must use
+`#password-access` unless the underlying form ID is explicitly changed.
+
+---
+
+## 14. Deployment Procedures
+
+### 14.1 Git and Render deployment workflow
+
+Default workflow for architectural or production changes:
+
+1. Pull/fetch the latest `main`.
+2. Read `/docs/VECO_DEVELOPER_HANDBOOK.md`.
+3. Confirm the current production file hash and Git status.
+4. Create a narrowly named feature branch.
+5. Make the smallest surgical code change.
+6. Update the handbook in the same branch when required.
+7. Run syntax/tests, including:
+
+```bash
+node --check app.js
+```
+
+8. Review the complete diff.
+9. Record the files changed, test results, rollback plan, and `Handbook update required: YES / NO`.
+10. Commit code and handbook together when the requested scope is understood and safe.
+11. Push the feature branch.
+12. Create a Pull Request.
+13. For an eligible normal Engineering task, apply the standing owner merge/deploy authorization in §14.2 and merge after clean checks without requesting a second confirmation. If an exception applies, stop before merge.
+14. Confirm whether Render Auto-Deploy is enabled for `main`; do not assume it.
+15. Confirm the exact merged commit reaches `Live` and inspect startup logs.
+16. Verify the complete affected VECO path with the safest appropriate test or evidence.
+
+Emergency direct-to-`main` changes are allowed only with task-specific explicit owner approval and a documented rollback commit.
+
+When a manual artifact is required, deliver the complete `app.js` as `app.js.txt`, but the committed Git version becomes canonical after merge.
+
+### 14.2 Codex default operating workflow and standing merge/deploy authorization
+
+Repository-root instructions live in:
+
+```text
+/AGENTS.md
+```
+
+Codex must read both `AGENTS.md` and `/docs/VECO_DEVELOPER_HANDBOOK.md` before production work.
+
+**Standing owner instruction — 2026-10-06:** when the owner explicitly asks Codex to implement a normal Engineering change, that implementation request carries standing authorization to merge the resulting clean PR to `main` and allow the normal production deployment without asking the owner for a second “merge and deploy” message.
+
+Default eligible-task behavior:
+
+```text
+sync clean main
+→ create feature branch
+→ make surgical change
+→ update handbook when required
+→ run checks
+→ review diff
+→ commit
+→ push feature branch
+→ create Pull Request
+→ merge when clean and eligible
+→ verify exact production deployment
+```
+
+The standing authorization is valid only when the complete diff is scoped to the requested task, relevant checks pass (or no required CI exists and the available scoped checks pass), no Source-of-Truth conflict remains, rollback is clear, and deployment follows the normal approved path such as Render Auto-Deploy from `main`.
+
+It does **not** authorize:
+
+- work the owner marks read-only, PR-only, “stop before merge,” or “do not deploy”;
+- merging with failed required checks, unresolved conflicts, or unexpected scope;
+- unvalidated Trading Lab strategy changes or silent changes to Pine entries/exits/filters/stops/targets/timeframes/session rules/validated parameters/signal timing;
+- destructive Git/history operations;
+- production secret or environment-value changes;
+- destructive database/data migrations or deletions;
+- bypassing a strategy-specific promotion, paper/shadow, activation, or other production gate explicitly documented elsewhere in this handbook.
+
+A task-specific owner instruction overrides the standing default. Direct pushes to `main` remain prohibited for normal work; production changes continue to use the PR path. Render Deploy Hooks remain off-limits unless explicitly authorized for a specific task. GitHub/OS permission dialogs may still require **Allow once**.
+
+### 14.3 Local bridge deployment
+
+1. Back up current `ib_bridge.py`.
+2. Replace the complete file.
+3. Preserve `.env`.
+4. Restart bridge.
+5. Verify:
+
+```text
+/ib/status → connected: true
+```
+
+6. Check managed positions and open orders.
+7. Test only after TWS and ngrok are confirmed online.
+
+### 14.4 TradingView strategy deployment
+
+1. Confirm the exact Pine source version.
+2. Add/update the strategy on the intended symbol and timeframe.
+3. Confirm inputs and Strategy Properties.
+4. Create alert using `alert() function calls only`.
+5. Confirm webhook and custom alert name.
+6. Remember that edits require alert recreation.
+
+---
+
+## 15. Production Verification Checklist
+
+For every strategy lifecycle change, verify:
+
+### Entry
+
+```text
+TradingView alert delivered
+Render receives SETUP
+Bridge receives SETUP
+Edge PENDING_SETUP was created only from aligned primary + completed 1H + completed 4H direction
+Edge PENDING_SETUP and pending-only CANCEL update Sheets/site without Telegram
+pre-broker Edge SETUP sends no Telegram OPEN
+Edge target is finite, positive, directionally valid, and GTC
+invalid Edge target returns PENDING_ONLY / EDGE_TARGET_REQUIRED with no IB order
+TWS entry fills
+TWS target is attached and working
+Bridge callback reaches Render
+Telegram OPEN is correct
+Open Positions row is correct
+Dashboard system label is correct
+```
+
+### Target
+
+```text
+TWS target fills
+bridge verifies the broker position is zero
+Bridge detects or reconciles fill
+Render synchronously completes Open removal, Trades, Closed Trades, and Telegram
+retryable publication failure returns HTTP 503 RETRY
+Telegram target message is correct
+Open Positions row is removed
+Closed Trades row is added once
+completed duplicate remains ignored after Render restart
+No orphan target remains
+```
+
+### Manual / external close
+
+```text
+IB position is confirmed flat
+managed target execution is not falsely inferred
+exact bridge Stop Loss execution is not falsely inferred
+Render receives EXTERNAL_CLOSE with reconciliation_id
+Telegram says Vixale Edge closed manually once
+Open Positions exact setup is removed
+Closed Trades says Manual Close
+unknown price shows price unavailable and no P&L
+known execution price/quantity are preserved without P&L or percentage
+unconfirmed or non-bridge callback leaves the public ledger open
+```
+
+### Opposite flip close
+
+```text
+Close is broker-confirmed
+Telegram says Vixale Prime / Vixale Edge hit Stop Loss
+Sheets event remains FLIP_CLOSE
+Dashboard renders FLIP_CLOSE / CLOSE_STOP as Stop Loss
+Position is flat or correctly reversed
+New opposite target quantity is correct
+```
+
+### Vixale Edge Stop Loss
+
+```text
+payload-version-2 setup_id exactly matches the managed setup
+close reservation is durable before target cancellation
+only the exact managed target is canceled and cancellation is verified
+target fill during cancellation submits no market close and later publishes TP
+partial target fill sizes the close from the re-read remaining IB position
+partial target position polling rejects a stale quantity above expected remaining
+unconfirmed partial-fill position sync returns EDGE_STOP_POSITION_SYNC_UNCONFIRMED with no market order
+partial target execution quantity, price, IDs, expected remaining, and confirmed remaining are persisted
+unconfirmed target cancellation returns EDGE_STOP_TARGET_CANCEL_UNCONFIRMED
+stale setup returns EDGE_STOP_SETUP_MISMATCH with no broker activity
+concurrent/restarted duplicate recovers the stored close and submits no second order
+CLOSE_SUBMISSION_PENDING recovery refreshes open/completed orders, executions, and position
+the managed reconciliation scheduler resumes active reservations without another alert
+webhook and scheduler recovery serialize on the same setup-scoped close lock
+the scheduler reloads setup state inside the lock and rejects a stale setup
+outside RTH scheduler recovery cancels no target and submits no close/replacement
+outside RTH authoritative read-only refresh may still reconcile and publish an already-filled close
+publication-only recovery states perform zero broker mutation
+publication-only state plus non-flat position persists EDGE_STOP_POST_CLOSE_POSITION_CONFLICT
+authoritative no-order recovery permits only one persisted replacement attempt
+Rejected/Cancelled/ApiCancelled/Inactive close is retryable, not permanently in progress
+ambiguous recovery returns EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS with no new order
+every replacement re-polls position and rejects a stale quantity above expected remaining
+Edge close execution is confirmed Filled
+bridge verifies the actual IB position is zero with a bounded wait
+only then Render receives CLOSE_STOP with broker_confirmed_flat=true
+partial target plus Stop Loss produces one full-quantity weighted CLOSE_STOP
+all stop attempts remain in close_attempts and are execution-ID deduplicated
+every positive mixed/multi-attempt component has a real IB execId
+duplicate execIds count once and conflicting duplicate quantity/price withholds publication
+reconciliation_id contains the sorted complete execId set
+mixed raw JSON contains target and every Stop Loss execution ID, price, and quantity
+partial target plus confirmed manual remainder produces one full-quantity Manual Close
+Manual Close keeps result and result percentage blank
+incomplete mixed evidence withholds publication and retains managed state
+partial target creates no standalone TP row
+Render awaits Trades, Closed Trades, Open removal, and Telegram publication
+retryable Sheets or Telegram failure returns HTTP 503 RETRY
+completed callback duplicates remain ignored after Render restart
+Filled but non-flat returns EDGE_STOP_CLOSE_POSITION_NOT_FLAT
+non-flat state retains managed execution identity and position_after_close
+no CLOSE_STOP or RECONCILE_FLAT is published while non-flat
+Prime reversal and EOD behavior remain unchanged
+```
+
+### Vixale Edge 16:00 ET queued Stop Loss
+
+```text
+closing-bar flip emits one v2 NEXT_RTH_OPEN payload per setup + signal bar
+payload retains setup_id, signal_session_date, and signal_bar_time
+closing-bar signal creates no opposite Pending setup
+active GTC target is not canceled by Pine or the queue webhook
+queue reservation is durable before webhook acknowledgement
+queue snapshots process instance, connection generation, exact signal
+timestamp/New York date, and coverage-required start
+duplicate queue payload reuses the same reservation and attempt remains zero
+restart recovery needs no repeated TradingView alert
+same-date restart may use successful since-midnight reqExecutions coverage
+next-day reqExecutions success/empty response is not prior-day coverage proof
+uninterrupted same-process/same-generation retained fills may prove overnight coverage
+restart or connection generation change across midnight persists EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN
+coverage-unproven state cancels no target, submits no order, and consumes no attempt
+coverage-unproven broker-flat state still enters TP/Manual Close reconciliation
+same-date and outside-RTH passes submit no order
+holiday, missing, unsupported, or ambiguous IB liquid-hours evidence fails closed
+next-date wall clock alone is never sufficient
+shared lock reloads and revalidates the exact setup before promotion
+eligible queue promotes once into the existing Part 3A close sequence
+overnight target-flat resolves through TP with no Stop Loss order
+overnight external-flat resolves through Manual Close with no Stop Loss order
+side/setup/evidence conflict submits no order
+no public close occurs until broker-confirmed Render callback publication
+Strategy Tester ordinary stops fill immediately; 16:00 queue fills next bar open
+Prime/Shrek behavior remains unchanged
+```
+
+### EOD
+
+```text
+Bridge Shrek watchdog runs at 15:59 ET
+Targets are canceled safely
+Positions become flat
+Render receives confirmed close
+Dashboard and Sheets clear open rows
+No duplicate Pine close is published later
+Edge unfilled Pending emits one final-bar CANCEL on 15m, 30m, 45m, and 60m
+Final-bar detection uses the explicit 09:30-16:00 New York custom-session close
+Regular- and extended-hours chart alignment does not change that custom close
+Render startup and interval cleanup remove exact stale Edge setup_id rows
+All Pending upserts/removals and EOD cleanup share one mutation serializer
+Render cleanup sends no Telegram or bridge/TWS request
+Render cleanup leaves Prime, Open Positions, Closed Trades, and GTC targets unchanged
+Edge Pending state and orange line are cleared before the next session
+Missing-date or prior-date Pending fails closed on the next session
+Edge open positions and active GTC targets remain untouched overnight
+```
+
+---
+
+## 16. Change Management Policy
+
+Each architectural patch should include:
+
+```text
+1. Problem statement
+2. Current behavior
+3. Desired behavior
+4. Files touched
+5. Payload/schema impact
+6. Backward compatibility impact
+7. Deployment steps
+8. Verification plan
+9. Rollback plan
+10. Handbook update
+```
+
+Do not combine unrelated changes in one production patch.
+
+---
+
+## 17. Architecture Decision Log
+
+### ADR-001 — Execution-first publication
+
+**Decision:** No public OPEN or CLOSED state without broker confirmation.  
+**Reason:** Prevent false positions and false results when orders are rejected, delayed, or unfilled.
+
+### ADR-002 — Broker-side Shrek 15:59 EOD flatten
+
+**Decision:** The local IB bridge is the sole forced-EOD execution authority
+for managed `SHREK` / `SHREK_1_4` positions and begins flattening at 15:59
+`America/New_York`. It verifies target cancellation, broker fill, and a zero
+position before sending one idempotent callback to Render. `app.js` does not
+independently submit an EOD close.
+**Reason:** TradingView bar timing cannot guarantee a final-session close, while
+parallel Pine and server timers could submit duplicate broker orders. TWS
+remains the execution source of truth.
+
+### ADR-003 — Fiona is a separate VECO system
+
+**Decision:** `FIONA_LIMIT_PULLBACK_ATR_TARGET` is publicly labeled Vixale Edge across Telegram, website, dashboard, and Sheets-derived system labels. The internal Fiona identity remains unchanged.
+**Reason:** It is a distinct trading model and basket from the internal Shrek / Vixale Prime system.
+
+### ADR-004 — Shrek remains the reclaim system
+
+**Decision:** Shrek, `SHREK`, `SHREK_1_4`, `FIONA_PULLBACK_HTF_ATR_TARGET`, and supported legacy Opposite-Flip identifiers remain the reclaim system internally and render publicly as Vixale Prime.
+**Reason:** Preserve internal ecosystem compatibility while using the current public Vixale naming.
+
+### ADR-005 — Variant-first classification
+
+**Decision:** Internal Fiona Limit classification must run before generic Opposite Flip / Shrek classification; public renaming does not alter that precedence.
+**Reason:** Both Pine scripts share a generic strategy identifier.
+
+### ADR-006 — Paid Render instance, Hobby workspace
+
+**Decision:** Keep the workspace on Hobby and run the Vixale web service on the paid Starter instance.  
+**Reason:** Prevent sleep and free-hour exhaustion without paying for unnecessary team features.
+
+### ADR-007 — NT8 Break at EOD required
+
+**Decision:** All Fiona NT8 tests use `Break at EOD=True`.  
+**Reason:** Required for TradingView bar alignment and valid optimization results.
+
+### ADR-008 — Git-hosted living developer handbook
+
+**Decision:** `/docs/VECO_DEVELOPER_HANDBOOK.md` in `ipotrader22-cloud/tv-telegram-bot` is the canonical project memory. Architectural changes update the handbook in the same branch and commit as the related code.  
+**Reason:** Chat history and temporary downloaded artifacts are not reliable long-term sources of truth.
+
+### ADR-009 — Standing owner authorization for normal merge/deploy
+
+**Decision:** Normal owner-requested Engineering changes use a feature branch, checks, complete diff review, and Pull Request. When the task satisfies the eligibility rules in §14.2, the owner's standing 2026-10-06 instruction pre-authorizes Codex to merge the clean PR to `main` and allow the normal production deployment without a second confirmation message. Sensitive/excluded operations retain their task-specific approval or promotion gates.  
+**Reason:** This removes a repetitive confirmation click while preserving clean-PR, test, Source-of-Truth, rollback, trading-freeze, secrets/config, destructive-operation, and deployment-verification safeguards.
+
+### ADR-010 — Repository-root Codex instructions
+
+**Decision:** `/AGENTS.md` is the persistent operating policy for Codex in this repository. It records the standing owner merge/deploy authorization and its exceptions so future Engineering sessions do not rely on chat memory for that workflow preference.  
+**Reason:** Project chat memory may be unavailable or non-persistent; repository-root instructions provide a durable, reviewable workflow contract.
+
+### ADR-011 — Public Vixale system names and Stop Loss terminology
+
+**Decision:** Public surfaces render internal Shrek identities as `Vixale Prime`,
+internal Fiona identities as `Vixale Edge`, and `CLOSE_STOP`, `FLIP_CLOSE`, or
+equivalent opposite-flip descriptions as `Stop Loss`. Internal strategy IDs,
+classification, raw events, Sheets values, payload contracts, and execution
+behavior remain unchanged. Historical records are mapped when rendered rather
+than rewritten.
+**Reason:** Present consistent customer-facing product names and exit terminology
+without changing the backward-compatible VECO execution contract.
+
+### ADR-012 — Vixale Edge session-bound pending and overnight-open policy
+
+**Decision:** Vixale Edge v1.1 creates pending setups only from confirmed RTH
+flips before the closing bar only when completed 1H and 4H SuperTrend bias both
+confirm the new direction. A pending setup has a stable `setup_id` and is
+permanently invalidated by loss of either HTF confirmation, an opposite primary
+flip, or RTH expiry. Cancellation removes the virtual entry and planned target,
+emits one publication-only `PENDING_ONLY` event, and clears the setup so later
+HTF realignment cannot reactivate it.
+
+The final RTH bar for 15-, 30-, 45-, and 60-minute alerts is recognized only
+when the confirmed bar's explicit `09:30-16:00`
+`America/New_York` custom-session `time_close()` equals 16:00. The
+session-filtered `time()` / `time_close()` representation is independent of
+regular- versus extended-hours chart-bar alignment; the chart `time_close`
+variable and a timeframe-duration heuristic are not used. A stored-session
+fallback treats a missing or different New York date as stale and prevents
+prior-session state from working the next day. Filled Edge positions are never
+closed at EOD; their ATR targets remain GTC overnight. `app.js` publishes
+Pending/CANCEL state to Sheets/site without Telegram, keeps pre-broker `SETUP`
+execution-first, and publishes Telegram/Open only after broker-confirmed
+`ENTRY_FILL`. A new pending setup publishes the current primary SuperTrend
+`stLine` as `stop`, while preserving the frozen prior level separately as
+`broken_stl`; broker-confirmed Telegram OPEN copy renders that threshold as
+`Close Under` for LONG and `Close Over` for SHORT.
+
+The July 30, 2026 miss was not reproduced by applying the legacy predicate to
+modeled 15/30/45/60 final bars under regular and extended alignment. Alert
+snapshot divergence remains possible because TradingView alerts retain their
+creation-time source/settings/interval, but it is not established as the
+incident root cause. `process_orders_on_close=false` controls simulated
+same-tick fills, not whether the confirmed-bar strategy calculation can execute
+a direct `alert()` call.
+
+Render independently scans the existing `Pending` worksheet at startup and
+every five minutes. It uses the existing Edge classifier plus immutable
+`flip_bar_time` or the timestamp embedded in the exact `setup_id`, never only
+the mutable row timestamp. Current-date rows remain until 16:00 ET; prior-date
+rows are catch-up eligible on restart. Cleanup revalidates and deletes only
+exact Edge identities and never publishes Telegram, forwards to the bridge,
+touches execution-backed position/close sheets, or changes broker/GTC-target
+state. Its complete read-through-delete sequence shares one Pending-only
+mutation serializer with `PENDING_SETUP`, exact Edge `CANCEL`, `ENTRY_FILL`
+Pending removal, and legacy symbol/side cleanup. This prevents concurrent row
+deletions or appends from invalidating a validated row number without
+serializing unrelated Open Positions or Closed Trades work.
+**Reason:** Keep unfilled intent session-bounded while preserving the strategy's
+overnight-position design and execution-first public ledger. Permanent
+invalidation prevents an obsolete virtual order from silently reactivating
+after its confirming market structure has disappeared. The independent Render
+cleanup prevents an active, stopped, or divergent TradingView alert snapshot
+from leaving virtual Pending rows indefinitely without creating a second
+execution lifecycle.
+
+**Deployment dependency:** This Part 2 source and server support must not be
+activated in TradingView until the unfinished Part 3 migration is completed and
+approved. This branch does not deploy or activate alerts.
+
+### ADR-013 — Vixale Edge bridge isolation and evidence-based flat reconciliation
+
+**Decision:** Vixale Edge is classified before generic Opposite Flip execution.
+It may hold one managed position per symbol across timeframes, enters with an
+ordinary MARKET order only when a finite, directionally valid frozen GTC target
+is present, and never performs broker reversal-delta or stacking. Invalid
+targets return `PENDING_ONLY / EDGE_TARGET_REQUIRED` before broker activity. A
+later flat state is TP only with exact managed target execution evidence plus a
+confirmed zero broker position, Stop Loss only with exact bridge-close
+execution evidence followed by a bounded confirmed-zero position check, and
+otherwise `EXTERNAL_CLOSE` / `Manual Close`. A Filled Edge Stop Loss that is
+still non-flat persists `EDGE_STOP_CLOSE_POSITION_NOT_FLAT` and its execution
+identity for recovery, and publishes neither `CLOSE_STOP` nor
+`RECONCILE_FLAT`.
+
+Payload-version-2 Stop Loss handling requires an exact active `setup_id` and a
+durable setup-scoped close reservation before broker activity. It cancels and
+verifies only the exact managed target, re-reads the broker position after the
+target reaches a proven terminal state, and sizes any market close from that
+current quantity. A partial target requires bounded position synchronization
+at or below original quantity minus confirmed target executions; otherwise it
+returns `EDGE_STOP_POSITION_SYNC_UNCONFIRMED` without a close order. A target
+fill during cancellation produces no Stop Loss order; an ambiguous cancellation returns
+`EDGE_STOP_TARGET_CANCEL_UNCONFIRMED`; a stale setup returns
+`EDGE_STOP_SETUP_MISMATCH`. The deterministic setup-hash close `orderRef` and
+reservation state prevent concurrent and post-restart duplicate orders.
+
+An existing `CLOSE_SUBMISSION_PENDING` reservation is recovered through
+bounded authoritative refresh of open orders/trades, supported completed-order
+and execution history, and position. Exact order or execution evidence is
+adopted without resubmission. Authoritative proof of an open managed position
+and no matching close permits one persisted replacement attempt only after the
+bounded position gate confirms the managed side and a quantity no greater than
+original quantity minus confirmed target executions; stale position data
+returns `EDGE_STOP_POSITION_SYNC_UNCONFIRMED` with no order. A rejected or
+canceled close follows the same capped recovery. Ambiguity returns
+`EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS` with no order. Flat recovery submits
+nothing and defers to execution-evidence reconciliation.
+
+The existing managed-position reconciliation scheduler performs this recovery
+automatically after bridge restart and on every poll for active close
+reservation states. It does not require a repeated TradingView alert. It
+shares the webhook close lock, reloads and revalidates the exact setup inside
+that lock, persists each transition before broker activity, adopts an already
+accepted order, and honors the attempt cap. All scheduler target cancellation
+and close/replacement submission is RTH-only and requires the configured stock
+market-close block policy. Outside RTH it returns
+`EDGE_STOP_RECOVERY_DEFERRED_OUTSIDE_RTH`, preserves the GTC target, and permits
+only authoritative read-only refresh, flat reconciliation, and Render
+publication retry.
+
+Broker-action and publication-only recovery states are separate.
+`CALLBACK_PENDING`, `MIXED_EXIT_EVIDENCE_INCOMPLETE`, and
+`POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION` never cancel or submit orders.
+A non-flat broker position in one of those states becomes
+`EDGE_STOP_POST_CLOSE_POSITION_CONFLICT` and requires explicit/manual
+intervention. Ambiguous recovery remains non-mutating until authoritative
+evidence resolves a specific state. `FILLED_POSITION_NOT_FLAT` can close only
+an exact, execution-proven residual from the same setup.
+
+Observation-only `CLOSE_SUBMITTED` is resolved by authoritative terminal
+broker state. Filled plus flat advances to
+`POSITION_FLAT_RECOVERY_PENDING_RECONCILIATION`; Filled plus non-flat advances
+to `FILLED_POSITION_NOT_FLAT`; Rejected, Cancelled, ApiCancelled, or Inactive
+plus an open managed-side position advances to
+`EDGE_STOP_CLOSE_REJECTED_POSITION_OPEN`; working Submitted, PreSubmitted, or
+PendingSubmit remains in progress. Ambiguous or non-authoritative evidence is
+persisted as `EDGE_STOP_CLOSE_RECOVERY_AMBIGUOUS`. None of these read-only
+transitions submits a broker order in the same pass.
+
+A partial target followed by Stop Loss is one public `CLOSE_STOP` for the full
+original quantity at the confirmed execution-weighted exit price. Every close
+attempt is retained in managed JSON as `close_attempts`; reconciliation
+aggregates confirmed fills across all attempts by real IB `execId`. Every
+positive target, Stop Loss, or manual component requires an `execId`;
+order-level identity alone is insufficient. Exact components are combined
+from `trade.fills` and execution history. Identical duplicates count once,
+overlapping ID sets retain their non-overlapping executions, and a conflicting
+duplicate ID is ambiguous. A trade with multiple `execId` values is complete
+when every execution has exact quantity and price and their unique total
+equals broker cumulative filled quantity. Multi-execution partial-target
+components are reconstructed and persisted from authoritative history after
+restart. The unique component quantity must equal the original position, the
+reconciliation identity contains the sorted complete `execId` set, and raw
+JSON retains all components with reason
+`IB_STOP_CLOSE_WITH_PARTIAL_TARGET_EXECUTION_CONFIRMED`. Incomplete component
+evidence is persisted and retried, never published as a remainder-only close
+or separate partial TP.
+
+Read-only recovery treats refreshed execution-history persistence as a hard
+precondition. A failed managed-file save returns
+`EDGE_STOP_STATE_PERSISTENCE_FAILED` and authorizes no broker mutation or state
+advance. In particular, a proven residual cannot be submitted until the exact
+components proving that residual are durably saved.
+
+When the remainder is an unambiguous post-entry manual execution, confirmed
+target and manual components instead produce one full-quantity
+`EXTERNAL_CLOSE` / `Manual Close` at their weighted actual price. Incomplete
+component evidence is withheld, and Manual Close result/result percentage
+remain blank.
+
+Broker-confirmed Edge TP and `CLOSE_STOP` callbacks use synchronous persistent
+Render publication keyed by `setup_id + reconciliation_id + event`. HTTP 200
+means exact Open removal, one Trades row, one Closed Trades row, Telegram, and
+Trade Metadata completion markers all succeeded; retryable failures return HTTP 503
+and repair only missing components. `Trade Metadata` is authoritative for Edge
+close identity, broker evidence, raw open/close payloads, ledger completion,
+Telegram completion, and publication completion. The human-facing `Closed Trades`
+sheet remains compact and is not used to reconstruct technical publication state;
+legacy raw JSON in older rows may be read only as a compatibility fallback.
+Broker evidence prefers exact `permId`,
+then exact `orderId`;
+legacy `orderRef` alone requires post-entry timestamped, quantity-complete,
+unambiguous evidence. External Manual Close price/quantity attribution also
+requires a reliable managed entry timestamp and a parseable, post-entry
+execution timestamp. Manual Close is withheld without that evidence; when
+published it retains actual price/quantity but never calculates fallback P&L.
+The managed file persists
+order/execution identity and a stable reconciliation claim until the fixed
+callback is durable in the local Render outbox. The outbox then owns delivery
+until Render confirms publication.
+
+**Reason:** The shared Fiona/Prime strategy text previously allowed Edge to
+enter Prime reversal handling, while flat-position reconciliation could
+fabricate a TP at the stored target without broker evidence. Explicit family
+isolation and durable execution identity keep TWS as the source of truth.
+
+**Schema impact:** `Trade Metadata` extends through column Y with Edge close
+identity, broker confirmation, and publication-state columns. Bridge identity
+remains in the managed-position JSON; `Closed Trades` remains human-readable A:J.
+
+**Activation dependency:** Part 3A remains the broker-close foundation. Part
+3B implements the queued 16:00 Vixale Edge Stop Loss in source, but source
+completion is separate from deployment and activation. Vixale Edge 1.1
+TradingView alerts must remain inactive until Part 3B is reviewed, merged,
+locally deployed, verified, and explicitly approved. Existing Fiona alerts are
+not removed by this source patch.
+
+### ADR-014 â€” Vixale Edge 16:00 signal queues for the next confirmed RTH
+
+**Decision:** A confirmed Vixale Edge opposite flip on the bar closing at
+16:00 `America/New_York` sends one v2 `CLOSE_STOP` with
+`close_execution_policy=NEXT_RTH_OPEN`. The bridge persists
+`QUEUED_NEXT_RTH_OPEN` without broker mutation and automatically resumes it
+only on a later New York date, inside stock RTH, after authoritative
+position/execution history, queue-ownership continuity, and IB contract
+liquid-hours confirmation. Queue ownership snapshots the managed side and
+quantity, entry identity/execution IDs, exact target identity, setup, signal
+session date, and signal bar time. Before promotion, all post-signal symbol
+executions must be exact queued-target fills or exact bridge closes in the same
+reservation, the target identity must remain continuous under
+`permId > orderId > orderRef`, and the position must equal the original
+quantity less exact target fills. It then reuses the complete Part 3A Stop Loss
+lifecycle. The GTC target remains active overnight and wins through TP
+reconciliation if it fills first; an external flat wins through Manual Close
+reconciliation. No queued signal changes public state.
+
+Default TWS `reqExecutions` history begins at the current day's midnight, so a
+successful next-day response is not previous-day coverage proof. Same-day
+signals may use the successful since-midnight response. Previous-day promotion
+requires the same bridge process instance and unchanged IB connection
+generation from queue creation through recovery, allowing continuously retained
+fills and the current API response to form one covered interval. The queue
+persists both identities and every coverage scope/reason field.
+
+If process or connection continuity across midnight is lost, recovery persists
+`EDGE_STOP_NEXT_RTH_HISTORY_COVERAGE_UNPROVEN`. This is a read-only,
+zero-attempt state: no target cancel, close/replacement order, Stop Loss
+publication, or managed clear may occur. Broker-flat TP/Manual Close
+reconciliation remains available. A same-date restart may recover from the
+since-midnight response; an overnight gap requires manual reconciliation.
+Automatic recovery after such a gap would require a separate durable broker
+execution-history source, which Part 3B does not implement. No undocumented
+TWS Trade Log setting is assumed.
+
+**Reason:** A market order created on the 16:00 closing bar must not be held
+blindly across a weekend/holiday or race an overnight GTC target. Durable queue
+identity, exact setup locking, and broker-session evidence preserve
+execution-first behavior without implementing a second close path. The durable
+ownership snapshot prevents a manually closed then same-side reopened position,
+a manual partial close, or a new same-side add from inheriting the stale queued
+close. Unproven continuity persists
+`EDGE_STOP_NEXT_RTH_OWNERSHIP_CONFLICT` and performs no broker or public-ledger
+mutation.
+
+Failing closed after an execution-history gap is intentionally safer than
+possibly flattening a manually closed and subsequently reopened replacement
+position.
+
+**Pine emulator note:** `process_orders_on_close=false`, immediate pre-16:00
+stops use `immediately=true`, and the closing-bar tester exit fills on the next
+available bar open. This represents the 09:30 ET next-RTH open only on an
+RTH-only chart/session. With extended-hours bars enabled, TradingView may fill
+on the next extended-hours bar; live bridge execution remains IB-RTH-gated.
+Bar-based results cannot reproduce IB session-detail failures or exact
+overnight execution ordering, so universal tester/live parity is not claimed.
+
+**Schema impact:** None. Queue state is stored only in existing managed-position
+JSON. No `app.js`, route, Google Sheets column, or public ledger contract
+changes.
+
+**Deployment/activation status:** Part 3B implementation is complete in source
+only when its feature PR is reviewed and merged. That is separate from local
+bridge deployment and TradingView alert activation. This change does not
+deploy/restart `C:\ib_bridge\ib_bridge.py`, activate Vixale Edge 1.1 alerts, or
+remove existing Fiona alerts.
+
+---
+
+### ADR-015 — Private option proof storage with authenticated proxy delivery
+
+**Public availability extension (2026-09-30):** The public Options journal reads
+the existing `Option Proofs!A2:G` metadata with read-only Sheets credentials,
+alongside its existing `Option Journal!A:S` read. Journal Q:S remain Notes,
+Created At, Updated At; they are not proof fields. Only validated trade/proof IDs
+are retained for the existing `/dashboard/options/:id/proofs/:proofId` links.
+Storage keys, filenames, and owner actions are not rendered. At the owner's
+explicit request, public Notes now comes from Option Journal column Q, matching
+the admin/live journal, and is HTML-escaped between P&L and Proofs. Notes wrap
+inside the existing content width; empty notes display a dash.
+Anonymous proof requests still redirect to `/login`; approved viewer access is
+still required. Multiple proofs use a native disclosure containing individual
+view links. Metadata-read failure preserves the journal and displays a brief
+availability message without creating or modifying a worksheet.
+
+The public journal shows the eight newest entries with an in-page Show More /
+Show Less button. All history remains in the response; no-JavaScript visitors
+can see every row. Desktop uses thirteen compact fixed-layout columns, omitting
+secondary times and the nonessential Exit Date column. Mobile presents labeled
+trade cards. The existing compact SVG now includes exit-date ticks, dollar
+ticks, and dotted horizontal gridlines including zero. Mobile card cells must
+reset inherited table widths to `auto`; otherwise the first date cell can
+collapse even when the page passes horizontal-overflow checks. The production
+browser regression also checks that this cell is at least 100px wide. Credit/Debit formulas,
+closed-only filtering, exit-date grouping, cumulative calculation, cache TTL,
+preview order, CTAs, and authentication remain unchanged. No trading, execution,
+broker, Google Sheets writer/schema, or admin implementation changes are involved.
+
+Rollback: revert the Options public-journal/chart presentation commit and
+redeploy. No proof-file, worksheet, broker-state, or customer-data rollback is
+needed. Record the exact PR/deployment/production QA in the Current-State manifest
+after live verification.
+
+**Decision:** Option-trade brokerage screenshots are stored as private files
+beneath the server directory configured by `OPTION_PROOFS_DIR`. Production must
+mount that directory on a Render persistent disk; the recommended configuration
+is a disk mounted at `/var/data` with `OPTION_PROOFS_DIR=/var/data/option-proofs`.
+Generated storage keys and trade associations are stored in a separate
+`Option Proofs` worksheet. The disk directory is not exposed as a static public
+path, and raw storage keys are never rendered as public links.
+
+Owner uploads are accepted only from the authenticated `/admin/live` surface,
+validated by same-origin checks, compressed in the browser, revalidated by
+server-side MIME signature checks, and limited to three screenshots per option
+trade. The authenticated dashboard receives only application proxy links. The
+Node process streams a file only after validating the dashboard or owner cookie
+and the proof-to-trade relationship.
+
+**Reason:** Render's ordinary service filesystem is ephemeral across deploys and
+restarts. An attached persistent disk provides durable private screenshot bytes
+without adding a second cloud-storage identity, while the separate Sheets
+metadata preserves the existing Option Journal association model. Authenticated
+proxy routes avoid permanent public file URLs and preserve owner-only
+upload/delete controls.
+
+**Operational constraint:** A Render persistent disk is required before proof
+uploads are enabled. The web service must remain a single instance because the
+disk is attached to one service instance. Attaching the disk also changes deploy
+behavior: disk-backed services do not use zero-downtime deploys, so activation
+and later deploys should be scheduled outside live signal windows.
+
+**Execution impact:** None. Proof upload, view, and deletion do not call the IB
+bridge, TradingView handlers, Telegram, or the execution-backed trade ledger.
+
+**Rollback:** Revert the proof feature commit and redeploy the previous
+confirmed commit. Existing files under `OPTION_PROOFS_DIR` and the `Option
+Proofs` worksheet remain inert until explicitly deleted. Removing the Render
+disk is a separate infrastructure action and must not be part of an automatic
+code rollback.
+
+---
+
+### ADR-017 — Dashboard access requires bot defense, email verification, and manual approval
+
+**Decision:** A public dashboard access submission does not enter the owner Pending queue until it passes the existing honeypot, bounded IP/email rate limits, server-validated Cloudflare Turnstile, and one-time email verification. Email verification changes only request review state; it cannot create a viewer code. The existing authenticated owner Approve action remains the sole viewer-code creation path. Rejected requests remain for audit; unlinked spam requests may be physically deleted only by the same owner authorization guard, and code-linked requests cannot be deleted from the request table.
+
+**Reason:** Public form submission and email delivery are insufficient evidence of a legitimate applicant. Separating anti-bot admission, email ownership proof, and manual access approval prevents automated submissions from filling Pending while preserving the established dashboard viewer-code trust boundary.
+
+**Schema impact:** `Dashboard Access Requests` extends from A:I to A:L by appending verification token hash, expiration, and verified timestamp. Existing historical A:I rows remain parseable. No dashboard access-code schema, trading worksheet, webhook payload, bridge, Pine, order, risk, or broker lifecycle contract changes.
+
+**Deployment impact:** Production requires a Cloudflare Turnstile widget and Render environment variables `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`. The secret is never browser-exposed. If configuration is incomplete, new public requests fail closed. Activation must be verified from the live Render deployment and public form before being recorded as active.
+
+---
+
+### ADR-023 — Vixale Edge GTC targets may execute in supported extended hours
+
+**Decision:** Vixale Edge keeps its frozen ATR profit target as one broker-side
+GTC limit order, but the bridge sets IB `outsideRth=true` on the attached
+target and on any repaired replacement target created after a partial entry
+fill. This permission is Edge-only. It does not change the frozen target price,
+target quantity, entry rules, signal timing, Stop Loss conditions, queued
+next-RTH close policy, or broker-confirmed publication requirements. Prime,
+EMA Pullback, and other target families retain their prior outside-RTH behavior.
+
+Edge market entries remain subject to the existing stock RTH entry gate. Edge
+opposite-flip / Stop Loss market closes remain subject to the existing RTH close
+gate. A target fill outside RTH still becomes a public TP only through the
+existing exact target-execution evidence plus broker-flat reconciliation.
+
+**Overnight venue boundary:** IBKR's distinct Overnight and Overnight+Day stock
+sessions do not support GTC orders. Therefore `outsideRth=true` expands Edge
+target eligibility to supported pre-market and after-hours execution but does
+not provide the separate 20:00-03:50 ET Overnight venue. True multi-day
+Overnight coverage requires a future durable target-rearm design that can
+replace an expiring DAY-style Overnight+Day order without leaving an
+unprotected window, duplicating targets, or breaking exact order/execution
+identity.
+
+**Reason:** Edge intentionally holds approved positions beyond the regular
+session. Allowing the already-frozen profit target to execute during supported
+extended hours captures valid target opportunities without modifying research
+logic or weakening Stop Loss safety. Keeping the separate Overnight venue out
+of this patch avoids pretending that a GTC order can provide unsupported 24/5
+coverage.
+
+**Schema/payload impact:** None. No TradingView payload, Render route, Google
+Sheet column, or public lifecycle schema changes. The change is local bridge
+order configuration only.
+
+**Deployment impact:** Repository merge alone does not update
+`C:\ib_bridge\ib_bridge.py`. Local bridge deployment/restart and paper
+verification are separate owner-approved steps. Verify an Edge target appears
+as GTC with outside-RTH eligibility in TWS and confirm that Prime targets and
+Edge Stop Loss execution remain unchanged.
+
+**Rollback:** Revert this bridge/handbook change and redeploy the previous
+reviewed bridge. Existing broker orders must be inspected rather than assumed
+to mutate automatically when code is rolled back.
+
+---
+
+## 18. Open Documentation Items
+
+The following should be added when next inspected:
+
+- exact Render repository folder tree;
+- exact `package.json` scripts and dependencies;
+- full list of public and private Express routes;
+- dashboard HTML structure and CSS separated from landing-page CSS;
+- exact Render Auto-Deploy configuration and watched branch;
+- backup and rollback locations;
+- exact Google Sheet document ownership and permissions model;
+- whether strategy/system should become an explicit Sheet column rather than derived from raw JSON;
+- unified admin panel requirements, if one is built later.
+
+---
+
+## 19. Owner Option Trading Journal
+
+The website provides an owner-only manual option journal for personal
+recordkeeping. It uses `ADMIN_DASHBOARD_KEY`, private no-store headers, POST for
+all mutations, same-origin validation, and immutable UUID record identifiers.
+
+Routes:
+
+```text
+GET  /admin/options/new
+GET  /admin/options
+POST /admin/options
+GET  /admin/options/:id/edit
+POST /admin/options/:id
+POST /admin/options/:id/delete
+POST /admin/options/:id/proofs
+GET  /admin/options/:id/proofs/:proofId
+POST /admin/options/:id/proofs/:proofId/delete
+GET  /dashboard/options/:id/proofs/:proofId
+```
+
+The owner-only `GET /admin/live` page includes an Option Journal preview below
+the existing Live Dashboard sections. It shows the latest 20 option records,
+newest first, without filters, and links to the existing create, full-journal,
+edit, and POST delete routes. Each row also includes owner-only proof controls:
+view existing screenshots, upload another screenshot, or delete an individual
+proof. Full filtering remains available only on `GET /admin/options`.
+
+Legs are formatted for display only. Stored values remain unchanged. The
+journal tables split display text on line breaks, `/`, semicolons, commas, and
+repeated `Long` or `Short` markers; each resulting leg is HTML-escaped and
+rendered on its own compact line. The entry form recommends entering one leg
+per line for the clearest display.
+
+The feature automatically creates an isolated `Option Journal` worksheet when
+absent and writes user values in `RAW` mode. Columns A:S are:
+
+```text
+ID, Trade Date, Entry Time, Symbol, Strategy, Legs, Expiration, Contracts,
+Multiplier, Trade Type, Entry Price, Exit Date, Exit Time, Exit Price, Fees,
+Status, Notes, Created At, Updated At
+```
+
+Proof metadata is stored separately in an automatically created `Option Proofs`
+worksheet. Columns A:G are:
+
+```text
+ID, Trade ID, Storage Key, File Name, Mime Type, Size Bytes, Uploaded At
+```
+
+The actual screenshot bytes are stored beneath `OPTION_PROOFS_DIR`. Production
+must point this variable to an attached Render persistent disk; the recommended
+configuration is:
+
+```text
+Render disk mount path: /var/data
+OPTION_PROOFS_DIR=/var/data/option-proofs
+```
+
+The application creates the final directory when the first screenshot is saved.
+Files use generated UUID-based storage keys, restrictive directory/file modes,
+and are never served through Express static middleware. Authenticated routes
+proxy the bytes after checking the journal association and the appropriate
+owner or dashboard cookie.
+
+The browser accepts PNG, JPG, or WebP input, resizes/compresses it to JPEG when
+necessary, and submits at most 1.4 MB of decoded image data. The server validates
+base64 syntax, allowed MIME type, image magic bytes, owner authentication, same
+origin, option-trade existence, and the three-proof-per-trade limit before
+writing the file and appending its metadata row.
+
+P&L is derived only for closed records and is never entered manually:
+
+```text
+Credit: (entry price - exit price) × contracts × multiplier - fees
+Debit:  (exit price - entry price) × contracts × multiplier - fees
+```
+
+This feature is recordkeeping only. It does not call the IB bridge, TradingView
+handlers, Telegram helpers, VECO lifecycle code, or broker execution. It does
+not read from or write to `Trades`, `Pending`, `Open Positions`,
+`Closed Trades`, or legacy `Positions`.
+
+The authorized public `GET /dashboard` view displays only Trade Date, Symbol,
+Strategy, Legs, Expiration, Contracts, Credit/Debit, Entry Price, Exit Price,
+Status, derived P&L, and authenticated brokerage-screenshot links. It shows the
+latest 20 records, newest first, without filters. It never renders Notes,
+owner upload/delete controls, create buttons, internal IDs, storage keys,
+Created At, Updated At, owner-authentication details, worksheet credentials, or
+internal errors. Screenshots are labeled as owner-provided and may be cropped or
+redacted; the application does not claim independent broker verification.
+
+Owner mutation surfaces remain protected by `ADMIN_DASHBOARD_KEY`. Option
+Journal records are not published through public APIs, Telegram, or VECO
+execution-backed Sheets. Proof files remain private on the persistent disk and
+are streamed only after owner or dashboard-cookie authorization. Proof metadata read failure
+falls back to the normal journal without links; journal read failure on either
+dashboard is caught and logged server-side without exposing internal details,
+and existing dashboard content continues rendering with a restrained warning
+only in the journal section.
+
+Rollback: revert the applicable dashboard journal/proof commit and redeploy the
+prior confirmed commit. Reverting the proof patch removes upload and screenshot
+links without changing saved Option Journal records. Existing files beneath
+`OPTION_PROOFS_DIR` and the `Option Proofs` worksheet remain inert historical
+data; deleting either requires separate explicit approval. Removing or resizing
+the Render disk is a separate infrastructure action.
+
+---
+
+### ADR-016 — Durable TradingView Inbox and evidence-only manual close
+
+**Decision:** Render persists every recognized non-broker TradingView lifecycle
+delivery to a deterministic local ingress spool before HTTP 200. On the
+production Render service that spool defaults to the persistent disk at
+`/var/data/vixale_webhook_inbox_spool.json`; development/test falls back to the
+OS temporary directory unless `WEBHOOK_INBOX_SPOOL_FILE` is configured. The
+write is atomic and fsynced. A failed local durable write returns HTTP 503.
+After the local write succeeds, Render ACKs immediately and the worker migrates
+the delivery to the Google Sheets `Webhook Inbox`, which remains the
+authoritative processing/retry queue. A deterministic delivery ID deduplicates
+both TradingView retries and spool-to-Sheets migration; per-item backoff and
+bounded recovery concurrency remain controlled by
+`WEBHOOK_INBOX_MAX_CONCURRENCY` (default 4). Entry `SETUP` work expires after
+90 seconds by default. A reliable payload alert/signal/bar-close timestamp is
+used when available, with the original receipt time only as fallback;
+setup-origin `flip_bar_time` and bar-start identity do not age a later
+virtual-limit fill. Close/cancel safety work does not expire. COMPLETE status
+persistence is awaited inside the retry boundary, so a post-side-effect
+status-write failure becomes RETRY rather than an escaped lost promise.
+
+The worker itself is single-flight and polls no faster than every 15 seconds.
+Worker-owned Inbox reads disable gaxios request retries only for those reads.
+A 429 or Sheets rate-limit reason starts one shared exponential cooldown with
+jitter, beginning at 60 seconds and capped at five minutes; ticks during the
+cooldown issue no worker reads, and a successful Inbox read resets the backoff.
+This quota control changes neither the Inbox schema nor durable ownership,
+per-item retry state, bounded processing concurrency, or the 90-second SETUP
+execution TTL.
+
+TradingView Edge v2 lifecycle admission is based on a structurally valid
+canonical `setup_id`, matching explicit symbol/side, and the supported event
+set (`PENDING_SETUP`, `SETUP`, pending-only `CANCEL`, `CLOSE_STOP`). Render
+derives a missing redundant timeframe from that identity and normalizes a valid
+JSON object, string, or UTF-8 Buffer before admission. Decoding must yield one
+object, never an array or malformed input. Optional Fiona classifier fields are
+not an admission dependency. This exception is source-scoped to TradingView; it
+does not weaken the separate broker callback confirmation, flat-position,
+execution identity, or reconciliation requirements. Structural validation
+returns either the parsed canonical identity or one stable reason code. Only an
+about-to-be-ignored request logs bounded transport/identity fields and that
+reason; raw bodies and authorization data are excluded.
+
+The bridge's `make_entry_fill_payload()` copies the canonical SETUP fields but
+explicitly overwrites `source=IB_BRIDGE` and `event=ENTRY_FILL`. It carries the
+actual IB fill price and quantity, entry execution IDs and normalized execution
+identity, entry/target order identities, target metadata, and a missing canonical
+timeframe derived from `setup_id`. A deterministic `bridge_delivery_id` keys the
+same callback across retries. Render requires this broker source contract plus
+canonical Edge identity and complete execution evidence. A fully populated
+`source=TradingView` ENTRY_FILL remains rejected even when it invents non-zero IB
+IDs and Render-forward markers. `ENTRY_FILL` remains outside the TradingView
+event allowlist. Edge target, broker-confirmed Stop Loss, Manual/External Close,
+and reconcile behavior retain their existing flat, execution-identity,
+reconciliation, and durable-publication gates; Prime classification and trading
+semantics are unchanged.
+
+The bridge durably queues ENTRY_FILL, TP, Stop Loss, Manual Close, and
+`RECONCILE_FLAT` callbacks before delivery. ENTRY_FILL uses the generic outbox
+without clearing the managed open position; exit handoff retains its existing
+managed-state clearing rules. Each callback has its own
+`next_attempt_at`, and recovery is bounded by
+`RENDER_OUTBOX_MAX_CONCURRENCY` (default 4), so one poison 503 cannot block later
+callbacks or create an unbounded Render request fan-out. Complete absence of an
+Open row, Trades/Closed row, and Trade Metadata is not proof of intentional
+deletion: the callback stays retryable because it may have arrived before
+ENTRY_FILL/Open publication. Render may return terminal HTTP 200 without another
+close or Telegram only when the same exact setup has durable evidence of a
+previous close in Trade Metadata/completed publication or compatible legacy
+Closed raw JSON. Compact Closed Trades identity alone is insufficient. A private
+operator can inspect, retry, or explicitly discard a genuinely abandoned local
+outbox item through the bridge diagnostic routes; automatic absence never
+performs that discard.
+
+Repository bridge code preserves the deployed `v6_edge_exit_durable_v2`
+operational contract while retaining the newer strict Edge recovery machinery:
+payload-only pending-close handoffs recover after restart, outbox diagnostics and
+explicit removal remain available, successful quote pushes log only when
+`QUOTE_PUSH_LOG_SUCCESS=true`, and an explicit `NO_EOD_CLOSE` managed row is
+excluded from forced flattening. A pending close handoff is also excluded from
+target reconciliation, forced EOD flattening, and managed quote subscription so
+the same broker lifecycle is not reclassified or executed again. Evidence-only
+target/manual reconciliation is not weakened.
+
+A broker-flat position alone is never TP or Manual Close evidence. Edge and
+Prime require exactly one matching evidence class: exact attached-target fill,
+exact bridge-close fill, or one unambiguous post-entry external closing
+execution. Manual Close uses the actual execution price and quantity and is
+published only after exact target cancellation is confirmed. Missing,
+historical, pre-entry, ambiguous, or cancellation-unverified evidence retains
+managed state and publishes nothing.
+
+**Reason:** HTTP acknowledgement before any durable ownership created a loss
+window, while waiting on remote Google Sheets before acknowledgement created the
+opposite failure mode: TradingView could time out even though Render later
+completed the delivery. Durable local ingress ownership closes both windows.
+Exact broker evidence still preserves execution-first publication across retries
+and restarts. Ledger absence remains ambiguous during out-of-order callback
+recovery and therefore cannot be a terminal idempotency signal by itself.
+
+**Schema impact:** The existing `Webhook Inbox` A:M worksheet is unchanged.
+Render adds a disk-backed JSON ingress spool on the existing persistent disk;
+`Trade Metadata` A:Y remains the technical publication authority and compact
+`Closed Trades` A:J remains human-readable. The local bridge JSON Render
+outbox is unchanged. TradingView payloads, canonical setup IDs, Pine logic,
+sizing, and EOD policy are unchanged.
+
+**Deployment impact:** The repository bridge and deployed
+`C:\ib_bridge\ib_bridge.py` were different at implementation time. Merging this
+ADR does not update or restart the local bridge; the deployed file remains the
+read-only operational baseline, and deploying the reconciled reviewed bridge
+file is a separate owner-approved production step. Render deployment likewise
+requires merge approval. Do not clear either durable queue during rollout.
+
+---
+
+## 20. Handbook Update Protocol
+
+When a future change is made:
+
+1. Read `/AGENTS.md` and `/docs/VECO_DEVELOPER_HANDBOOK.md` before editing code.
+2. Confirm the latest production source files, branch, Git status, and relevant hashes.
+3. State `Handbook update required: YES / NO`.
+4. Make the smallest safe patch on a feature branch unless an explicitly approved emergency requires otherwise.
+5. Update the affected handbook sections in the same branch.
+6. Add or amend an ADR when the change is architectural.
+7. Update source snapshot/version/hash information when the canonical production baseline changes.
+8. Review the code and handbook diff together.
+9. Commit code and handbook together.
+10. Push the feature branch and merge under the §14.2 standing owner authorization when the task is eligible; otherwise obtain the required task-specific approval before merge.
+11. Verify Render and the complete VECO lifecycle after deployment.
+
+A handbook is not considered implemented until it is committed at its canonical Git path. Temporary chat/download copies are not canonical.
+
+## Public Trading Systems information architecture (2026-08-27)
+
+- `/trading-systems` is presented horizon-first at the public product level: **Day Trading** and **Swing Trading**.
+- **Day Trading** groups the public system families **Prime** and **Edge**. **Options** is a separate top-level category with its own public intro and protected viewer evidence; do not present Options/Straddles as Day Trading.
+- **Swing Trading** is a single public category. Do not split the navigation into Daily and Weekly products; timeframe inputs belong inside each strategy profile.
+- Swing strategy presentation can show multi-session holding, ATR / percentage targets, defined risk, and daily-close target / stop evaluation when those rules are part of the approved public strategy specification.
+- This information-architecture change is website-only. It does not change signal generation, strategy logic, order routing, TWS / IBKR execution, risk-engine behavior, or live data sources.
+
+### ADR-018 — Shared public navigation and system-aware Results hub (Issue #107 PR 1)
+
+**Decision:** All major public English website surfaces use the shared navigation renderer in `website_navigation_disclosure_refinement.js`. The primary hierarchy is **How It Works**, **Trading Systems**, **Results**, **Services**, and **Help**, followed by a quiet **Log In** action and one prominent **Request Free Access** action. **About** is secondary/footer navigation rather than a competing first-time-visitor task. The shared renderer must also normalize standalone public page headers such as Swing Trading instead of allowing a separate mini-site navigation.
+
+The canonical public Results destination is `/results`. It is a system-aware routing and explanation hub, not a new performance calculation layer:
+
+- **Day Trading** links to the existing public Day Trading live/realized evidence and public closed-trades archive.
+- **Swing Trading** links to the existing Swing Leaders research/model portfolio and must state that Swing model results are not broker execution or brokerage-account performance.
+- **Options** links to the public Options evidence overview and the existing protected Options viewer; it must never reuse Day Trading performance as an Options result.
+
+`website_public_ia_refinement.js` owns the synthetic `/results` composition using the same narrow route-rewrite pattern already used for other public IA pages. It must not calculate, merge, infer, or synthesize trade results from the three systems.
+
+Homepage Day Trading, Swing Trading, and Options selector cards all route first to their public system-introduction pages:
+
+```text
+/trading-systems/day-trading
+/trading-systems/swing-trading
+/trading-systems/options
+```
+
+A system-specific evidence preview may still deep-link to its explicitly labeled evidence block, but a generic top-level **Performance** destination must not silently resolve to Day Trading only.
+
+CTA text must describe the actual destination. An access-form link uses request/access wording; the public Swing page separates **View Swing Portfolio** from dashboard-access requests; Options evidence links remain Options-specific. Existing `/dashboard` and `/trading-systems/options/viewer` authentication and authorization boundaries are unchanged.
+
+**Execution/trading impact:** None. This decision changes website navigation, public routing, copy, and presentation only. It does not change VECO strategy logic, signals, Pine, bridge behavior, TWS/IBKR execution, risk logic, Swing Trading Lab selection/writer behavior, Option Journal write workflow, or Google Sheet trading schemas.
+
+**Rollback:** Revert the Issue #107 PR 1 website/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, or Option Journal data rollback is required.
+
+### ADR-019 — First-time-visitor homepage hierarchy (Issue #107 PR 2)
+
+**Superseded presentation note (2026-10-06):** The October 6 user-friendliness / conversion contract in §11.5 supersedes the hero CTA hierarchy and primary-navigation implications below where they conflict. The evidence-source, read-only access, no-synthetic-data, and trading-safety boundaries remain in force.
+
+**Decision:** The public homepage teaches a first-time visitor before asking them to interpret detailed performance or access workflows. The canonical top-of-home sequence is:
+
+```text
+Hero
+-> How It Works
+-> Day / Swing / Options comparison
+-> one authentic Day Trading evidence preview
+-> existing detailed Day Trading evidence
+-> existing access and downstream public content
+```
+
+The hero keeps the approved H1 **“See how our trading systems perform before you commit.”** and exposes only one primary acquisition action, **Request Free Access**, plus the secondary **Explore Results** action. Returning-user **Log In** remains in shared header navigation and is not duplicated as a full-size hero CTA.
+
+The homepage **How It Works** block must explain the product in plain language before evidence-heavy content:
+
+```text
+Explore systems
+-> review available evidence
+-> request viewer access if useful
+```
+
+It must also state that viewer access is read-only, automation/setup/custom development are separate services, and Vixale does not trade or manage customer brokerage accounts.
+
+The homepage category comparison remains **Day Trading / Swing Trading / Options first**. It compares beginner-facing dimensions such as holding horizon, how often a visitor may check the category, public evidence, viewer-access boundary, and the relevant system-introduction route. Internal strategy/product names such as Prime, Edge, Swing Leaders, or Straddles are not introduced in this comparison before the visitor understands the three categories.
+
+The product/evidence preview reuses the existing Day Trading source and mirror targets from the detailed homepage Day Trading block. It must preserve the same freshness state and unavailable behavior, and must never synthesize or substitute profit values. The preview is the strongest visual treatment in the top composition; explanatory sections should use restrained styling and readable text sizes instead of a competing wall of bordered cards.
+
+The older lower-home beginner section beginning **“New to trading systems? Start here.”** is removed when the new early **How It Works** block is present, avoiding duplicate beginner guidance.
+
+**Architecture ownership:** `website_home_conversion_refinement.js` owns the hero copy/CTA hierarchy and removal of the superseded lower beginner section. `website_home_system_selector_refinement.js` owns the top homepage composition, beginner explanation, category comparison, and mirrored Day Trading preview. This continues the existing narrow HTML-refinement architecture and does not expand Issue #107 into the broader preload-consolidation work owned by Issue #89.
+
+**Execution/trading impact:** None. This decision changes homepage information hierarchy, copy, and presentation only. It does not change public data sources, calculations, authentication, viewer-code policy, VECO trading logic, strategy rules, Pine, bridge behavior, TWS/IBKR execution, Swing Trading Lab behavior, Option Journal writes, or Google Sheet schemas.
+
+**Rollback:** Revert the Issue #107 PR 2 homepage/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, workbook, viewer-code, Option Journal, or customer-data rollback is required.
+
+### ADR-020 — Standard public system-page teaching sequence (Issue #107 PR 3)
+
+**Superseded presentation note (2026-10-06):** The October 6 user-friendliness / conversion contract in §11.5 supersedes the older Options public/protected presentation and page-specific acquisition CTA wording below where they conflict. The system-specific evidence, authentication, and no-trading-change boundaries remain in force.
+
+**Decision:** The public Day Trading, Swing Trading, and Options system pages teach first-time visitors in the same semantic order:
+
+```text
+What this system is
+-> How it differs from the other two categories
+-> What the visitor will see
+-> What is available publicly now
+-> What viewer access adds
+-> Evidence/results for this system only
+-> One clear page-specific next action
+```
+
+The Trading Systems landing page is category-first. Its comparison uses beginner-facing dimensions — holding horizon, how often to check, public availability, and viewer-access boundary — before strategy/product names.
+
+**Day Trading:** The category is explained before Prime and Edge. Prime and Edge are described in practical user terms without exposing proprietary signal-generation rules. Public copy must remain accurate that some approved Edge positions can remain open overnight. Day Trading evidence links stay Day Trading-specific. The page-specific next action is the read-only access request; returning-user login remains in the shared header.
+
+**Swing Trading:** The canonical public page remains the live Swing research/model portfolio. The explanatory layer is inserted before the existing portfolio data without recalculating or rewriting Trading Lab output. It must say that the Swing model portfolio is already public, quotes may be delayed, results are model-portfolio evidence rather than broker execution or brokerage-account performance, and viewer access is not required to inspect Active Portfolio. The page-specific next action is **View Swing Portfolio**.
+
+**Options:** The public intro remains separate from Day Trading and Swing. It explains that Options evidence comes from the owner-entered Option Journal. Protected journal rows, closed-only realized equity, and owner-provided brokerage screenshots remain behind the existing viewer authentication. The page-specific next action is the access request; existing approved viewers can use the shared header login.
+
+**Architecture ownership:** `website_trading_systems_product_refinement.js` owns the Trading Systems landing page and the Day/Options public intro composition (plus the non-data Swing fallback composition). `website_swing_canonical_refinement.js` owns the explanatory sequence layered over the canonical live Swing portfolio. The Swing feed, Options journal workflow, and protected viewer implementations remain separate data/auth owners.
+
+**Execution/trading impact:** None. This decision changes public explanation, page composition, and CTA presentation only. It does not change strategy logic, Pine, signal generation, bridge/TWS/IBKR execution, Swing Trading Lab selection/scoring/writer behavior, Option Journal owner writes, public data calculations, Google Sheet schemas, or existing authentication/authorization.
+
+**Rollback:** Revert the Issue #107 PR 3 website/handbook commit(s) and redeploy the prior confirmed website commit. No broker, trading, Pine, Swing workbook, Option Journal, viewer-code, or customer-data rollback is required.
+
+### ADR-021 — Dedicated public access journey (Issue #107 PR 4)
+
+**Decision:** The canonical public acquisition route is `/access`. It is a presentation/routing layer over the existing secured dashboard-access form and workflow; it does not create a parallel access backend.
+
+The customer-facing process is:
+
+```text
+Request access
+-> verify email
+-> manual owner review
+-> receive individual viewer code if approved
+-> log in with that code
+```
+
+The dedicated page must explain before form submission that access is free and read-only, the email verification link expires after 60 minutes, approval is manual, the viewer code is used on the Log In page, and users should check Inbox plus Spam/Junk when the verification email is not visible. Approved viewer access opens the protected Day Trading dashboard and Options viewer; the Swing research/model portfolio remains public without login.
+
+**Duration policy:** Public copy does not promise a fixed viewer-code duration. Runtime code supports configurable code expiry through `DASHBOARD_VIEWER_DEFAULT_DAYS` and per-code expiration/extension. Until the owner freezes a public duration policy, customer-facing copy remains neutral: access is free, each issued code has its own expiration date, and an expired code no longer logs in. This decision does not change expiry logic or Render environment configuration.
+
+**Form and schema reuse:** `/access` reuses the existing `POST /password-request` form, Turnstile challenge, email-verification workflow, manual approval, code creation, sessions, and authorization. The already-approved `Dashboard Access Requests.Source` field stores presentation context such as `Access page · Day Trading`, `Access page · Swing Trading`, or `Access page · Options`; no new Sheet/API field is added.
+
+System-origin context may be carried in the public URL query (for example `/access?system=day-trading`) only to choose the allowed presentation label and existing Source value. Unknown values fall back to generic `Access page`.
+
+**Backward compatibility:** Legacy `/#password-access` links and the homepage access form remain functional for existing bookmarks/emails. New acquisition CTAs use `/access`. Funnel measurement must count both the dedicated route and the legacy fragment through the same privacy-preserving `access_cta_click` event.
+
+**Architecture ownership:** `website_public_ia_refinement.js` owns the synthetic `/access` composition by reusing the existing landing-page access section. `website_navigation_disclosure_refinement.js` owns shared-nav access destinations and system context. `lib/website-funnel-client.js` owns client-side CTA measurement compatibility. Access security remains owned by `website_dashboard_access_security.js` and `lib/dashboard-access-security-*.js`.
+
+**Execution/trading impact:** None. This decision does not modify Turnstile, verification tokens, email delivery logic, owner approval, viewer-code creation/expiry/session behavior, protected route authorization, Google Sheet schemas, strategy logic, Pine, bridge/TWS/IBKR execution, Swing Trading Lab behavior, or Option Journal writes.
+
+**Rollback:** Revert the Issue #107 PR 4 website/handbook commit(s) and redeploy the prior confirmed website commit. Legacy homepage-fragment access remains available without broker, trading, Pine, workbook, Option Journal, viewer-code, or customer-data rollback.
+
+### ADR-022 — Four-path Services taxonomy and intent-preserving forms (Issue #107 PR 5)
+
+**Decision:** The public Services page presents one commercial taxonomy with exactly four paths:
+
+1. **Signals & Research**
+2. **Automation / Setup**
+3. **Strategy Review / Development**
+4. **Custom Bot / Integration**
+
+Free viewer access is a small separate path to `/access`, not a fifth paid-service card.
+
+Each service card explains what the visitor provides, what Vixale returns, the expected request/consultation outcome, and the pricing posture. The website does not invent fixed prices. Scoped work is discussed or quoted only after the request is understood.
+
+**Intent routing:**
+- Signals & Research uses the existing `POST /appointment-request` contract with the existing `request_type` field set to `Signals & Research`. The public Research form asks only research/use-case questions and does not default to TWS/IBKR/automation questions.
+- Automation / Setup continues to use the existing `POST /appointment-request` form and may ask about TradingView, TWS/IBKR, alerts, dashboards, and setup state.
+- Strategy Review / Development continues to use `POST /strategy-review` and asks for strategy-specific market/rules/goal context.
+- Custom Bot / Integration continues to use `POST /bot-request` and asks for project behavior, market, platform/broker, and integration needs.
+
+No new service-request schema or backend route is introduced. The existing appointment fields carry the Research request type; backend delivery behavior remains unchanged.
+
+The legacy six-scenario **What can we help you with?** Services choice block is not rendered on the canonical Services page. Existing underlying form routes remain available and are reused rather than duplicated.
+
+Customer-facing forms must not be called a “Chat.” The bot path uses wording such as **Describe Your Bot** / **Custom Bot / Integration**.
+
+**Architecture ownership:** `website_public_ia_refinement.js` owns the canonical Services taxonomy, research-only presentation form, and presentation refinements for the existing Automation, Strategy, and Bot forms. The underlying POST handlers in `app.js` remain unchanged.
+
+**Execution/trading impact:** None. This decision changes service discovery, copy, form presentation, and intent values only. It does not connect to a broker, place trades, modify strategy logic, Pine, bridge/TWS/IBKR execution, access security, Swing Trading Lab output, Option Journal writes, or Google Sheet trading schemas.
+
+**Rollback:** Revert the Issue #107 PR 5 website/handbook commit(s) and redeploy the prior confirmed website commit. Existing service POST routes remain unchanged, so rollback requires no customer-data, trading, broker, workbook, or viewer-code cleanup.
+
+## Public Swing Leaders display feed (2026-08-27)
+
+- Frozen contract: **Research/Data Display Freeze: Vixale Swing Leaders v1.0**. Trading Lab remains the authority for Morning Leader scoring, Ready Now / Close to Breakout / Early Watch classification, portfolio membership, entry/exit values, market posture, research notes, and cash state.
+- The public page is `/swing-leaders`; the sanitized read-only JSON endpoint is `/api/swing-leaders`. Neither route creates trading signals, broker orders, portfolio decisions, or research classifications.
+- The backend reads only the approved workbook's `Public Feed` tab through the existing server-side Google Sheets authentication. Google credentials and private workbook access are never returned to browser JavaScript.
+- `lib/swing-leaders.js` enforces a strict public whitelist for snapshot, active, watch, and closed-trade fields. Extra/private workbook columns are ignored and never serialized. Prices, returns, scores, classifications, market posture, and membership are not recalculated or inferred by the website.
+- The approved quote source for v1.0 is the `GOOGLEFINANCE` value already resolved by Trading Lab in Google Sheets. The page visibly labels the delayed-quote/model-portfolio disclosure and never presents those values as broker execution prices.
+- The server caches the last complete validated snapshot in memory for display resilience. A failed or invalid refresh keeps that snapshot and marks it stale; if no valid snapshot has yet been loaded, the page/API fail closed with HTTP 503 instead of constructing a partial portfolio.
+- The displayed Last Updated value always comes from `snapshot_date` + `snapshot_time_et` in the feed. Website fetch time is not substituted for the research snapshot time.
+- This integration is website/data-display only and must remain isolated from TradingView alerts, UAM, TWS/IBKR execution, VECO order/risk logic, and broker lifecycle behavior.
+
+### Swing Equity History parsing and freshness gotcha (2026-09-16)
+
+- `Equity History` is a separate Google Sheets read from `Public Feed` and must have independent freshness state. If its refresh fails, the server may retain the last validated chart history, but a successful `Public Feed` refresh stays independently fresh and the chart must visibly disclose that cached Equity History is stale.
+- The Equity History read remains `FORMATTED_VALUE`. Its strict currency parser must accept legitimate Google Sheets formats such as `$99.95`, `+$99.95`, `-$99.95`, `$1,234.56`, `($99.95)`, and `($1,234.56)`, with accounting parentheses interpreted as negative values. Malformed currency text remains invalid.
+- Do not switch the complete Equity History range blindly to `UNFORMATTED_VALUE`; its date/time display contract also depends on formatted values. A malformed nonblank historical row still fails that Equity History refresh. The website must not interpolate, reconstruct, or synthesize missing history.
+- This is a Swing website/data-display concern only. It does not modify the Trading Lab writer, Sheet schema, scoring or membership logic, strategy rules, Pine, bridge, TWS/IBKR, or other trading systems.
+
+### Swing Active Portfolio reference prices (2026-09-28, proposed source change)
+
+`website_swing_active_model_pnl.js` displays TP and SL between Quantity and
+P&L, $ on `/trading-systems/swing-trading`. TP is the displayed Entry price
+multiplied by 1.10; SL is Entry multiplied by 0.95. Both use dollar formatting,
+thousands separators and two decimals, without the positive P&L sign.
+These are presentation-only reference prices, not execution targets or orders.
+The existing daily-close stop explanation above the table is preserved in EN/RU.
+Mobile rows use the existing data-label layout; empty rows span ten columns.
+
+The unchanged path is Public Feed -> validated Swing snapshot -> base HTML ->
+website display refinement. No API fields or Sheet columns are added. The
+existing 60-second browser quote refresh updates Current/Return/P&L only and
+retains its same-entry/membership guards. TP/SL remain tied to the rendered
+Entry, including when quotes change or refresh fails. The five-minute server
+snapshot cache, stale snapshot fallback and initial-unavailable HTTP 503 are
+unchanged. This addition does not alter Trading Lab, VECO, execution or lifecycle.
+Source/test status is recorded in `PROJECT-MEMORY/website/CURRENT-STATE.md`;
+merge and live deployment require separate verification.
+
+
+### Day Trading recent-signals card refinement (proposed source change)
+
+`website_day_trading_live_access_refinement.js` owns the compact hero card.
+Its desktop card starts 14px above the hero copy's content box, removing the
+hero's top-padding gap, and stretches to the copy/pricing row with natural
+minimum content height. Compact rows and padding keep the five signals visible.
+At 900px and below, the existing stacked layout keeps natural card height;
+the mobile header may wrap instead of overflowing.
+
+Card typography uses weights 400/500. Shared `.vx-conversion-system-hero span`
+styles otherwise override the card's font, color, case and letter spacing:
+keep card-specific selectors strong enough to win that cascade. SHORT adds
+only a presentation class for red symbol/side text; LONG remains green.
+P&L retains its independent positive/negative/neutral classification. A
+profitable SHORT still has green P&L. No data or lifecycle calculation changes.
+
+The `/closed-trades` fetch, five-row order, public closed-only boundary,
+all CTA destinations and Day Trading Live Overview remain unchanged.
+Validation: EN/RU browser checks using fetched production HTML with the proposed
+card assets and synthetic closed-trade fixtures at 1440/1024/768/390/320px.
+Desktop card/pricing bottom difference was 0–3.3px; all checked viewports had
+no horizontal overflow, correct direction/P&L colors and card weights <=500.
+Node regressions cover EN/RU rendering, five-row ordering, escaping, empty/error
+states and unchanged destinations. This is local proposed-source evidence,
+not deployment verification; merge and production checks remain separate.
+
+
+### Public Options results card and equity feed (2026-10-06)
+
+The public `/results` page may display Options realized-equity evidence alongside Day Trading and Swing Trading. The Options chart must mirror the same closed-only cumulative realized P&L calculation used by the protected Options Viewer; the website must not create a second P&L formula.
+
+`website_options_canonical_refinement.js` owns the canonical Options equity calculation from the owner-entered `Option Journal` and exposes only the sanitized read-only curve through `/public-options-performance.json`. That public response contains the equity curve and total realized P&L only. It does not expose journal rows, open-position detail, notes, brokerage proofs, credentials, or viewer-session data. Load failure returns an unavailable state rather than simulated or stale substitute values.
+
+`website_conversion_results_refinement.js` consumes that public endpoint for the Options card on `/results`. The card uses the same dark results-card presentation as Day Trading and Swing Trading, shows cumulative realized P&L history, and the whole card routes to `/trading-systems/options`. The protected `/trading-systems/options/viewer` authorization boundary remains unchanged.
+
+This is website/data-presentation only. It does not modify Option Journal writes, trading logic, signal generation, order/risk logic, Pine, bridge/TWS/IBKR execution, Google Sheet schema, pricing, or customer authentication. Rollback is to revert the public Options results-card/feed commits; no trading or journal-data rollback is required.
+
+
+### ADR-023 — Shareable daily trading summaries
+
+**Decision:** Vixale publishes a read-only daily recap archive at `/daily-trading-summary` with date permalinks at `/daily-trading-summary/YYYY-MM-DD`. The archive includes every activity date available from the existing authoritative ledger, including dates earlier than October 5, 2026, and has no fixed rolling-day limit; older posts remain addressable by their date permalinks as the history grows. The recap is generated server-side from existing Google Sheets records using the current service-account read-only access; it does not create a second trading ledger or a write path.
+
+Public Day Trading recap ownership is deliberately narrower than the private 16:05 owner email:
+
+- `Trades!A:J` supplies the aggregate count of broker-confirmed `FILL` / `ENTRY_FILL` records for the selected New York trading date.
+- `Closed Trades!A:J` supplies the public closed-trade rows and recorded numeric realized P&L for positions whose close date is the selected date.
+- `Trade Metadata!A:H` may supply the already-recorded public system label for a closed trade. Raw technical metadata, execution IDs, payload JSON, reconciliation IDs, and broker identities are never rendered.
+- `Option Journal!A:S` is included only for rows already marked Closed whose **Exit Date** equals the recap date. Each published closed Options trade also shows its realized Result/P&L using the existing canonical `optionPnl()` calculation from `website_options_canonical_refinement.js` (Credit/Debit direction, entry price, exit price, contracts, multiplier, and fees). The daily recap must not implement a second Options P&L formula. Open option positions, notes, internal IDs, brokerage-proof paths, and other private journal fields are not published.
+- A fill that remains open after the selected date contributes only to the aggregate new-fill count. Its symbol, side, entry, target, stop, and quantity are not exposed by this public recap.
+
+Historical Open Positions or Pending state is intentionally not reconstructed after the fact because those worksheets are mutable operational state. The private end-of-day email may include the live Open/Pending snapshot captured at its scheduled run; the public permalink remains durable evidence of recorded fills and closes without pretending to preserve that point-in-time state.
+
+The routes use the existing `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` configuration, a bounded one-minute process cache, canonical/Open Graph metadata, and share actions for copying the permalink, X, and LinkedIn. No new environment variable or Google Sheets schema is introduced.
+
+**Public discovery:** Daily Trading Recaps is a first-class public discovery route. The homepage hero includes a prominent `Daily Trading Recaps` CTA to `/daily-trading-summary`. The unified primary navigation uses the shorter label `Daily Recaps` and occupies the former About slot so the main menu does not grow wider; About remains available in secondary/footer navigation. The recap index and dated permalink pages are treated as public-navigation routes, with Daily Recaps marked active on dated pages. Russian localization uses `Ежедневные торговые итоги` for the hero CTA and `Ежедневные итоги` for the main-menu label.
+
+**Execution / trading impact:** None. This is website/data presentation only. It does not change TradingView/Pine, strategy rules, signals, entries/exits/stops/targets, sizing, bridge/TWS/IBKR execution, Telegram trade lifecycle, Google Sheets writes, authentication, or risk logic.
+
+**Rollback:** Revert the daily-summary website module/preload commit and redeploy the prior confirmed website commit. No broker, Pine, trade-ledger, Option Journal, or customer-data rollback is required.
+
+
+### Primary navigation Daily Recaps (2026-10-06)
+
+The public primary navigation includes `Daily Recaps` between `Results` and `Pricing`, linking to `/daily-trading-summary`. The Russian label is `Ежедневные итоги`. The existing Daily Recaps link may also remain in secondary/footer navigation for discovery. This is a website navigation-only change and does not modify trading logic, data generation, execution, authentication, or the Daily Trading Summary data source.
+
+
+### Swing Total P&L QA label contract (2026-10-06)
+
+The Swing page's current summary calculation remains `active_unrealized_model_pnl + closed_realized_model_pnl`. The final public presentation label is `Total P&L` (with `Portfolio P&L` used for the chart heading), not the older `Total Model P&L` label. Regression tests must validate the unchanged arithmetic separately from the current presentation copy. Russian public-page localization maps these labels to `Общий P&L` and `P&L портфеля` respectively. This is presentation/test localization only and does not change Swing Trading Lab calculations, feed fields, portfolio logic, or execution behavior.
+
+
+### Swing opening-stop clarification and recovery findings (2026-10-12)
+
+Owner-approved model policy uses the verified regular-session 9:30 AM ET opening price, at least 5% below original lot entry (inclusive), for lots held at that opening. Close using the actual contemporaneous market quote after confirmation. Late recovery is recorded at its real quote timestamp, never as an opening fill. A verified score below the existing minimum 70 closes immediately after new rankings. The +10% target remains unchanged.
+
+The shared `lib/swing-risk-copy.js` and English/Russian presentation now describe this policy consistently. Website runtime remains read-only: it does not research, score, execute exits, write Sheets, or send alerts. A separate 9:30 scheduled checker was proposed but its creation was blocked by automatic approval review pending explicit owner approval; this patch does not activate it.
+
+Recovery producer failure: explanatory text appended to `snapshot_time_et` invalidated the feed. Keep Public Feed B3 and Equity History B as strict `HH:MM ET`; place phase/status prose in market_posture or notes. An opening-event publication may retain explicitly labeled prior research dates. The daily-review gate must require fresh verified research for every active holding and candidate before a morning email. These are distinct gates, not interchangeable success claims.
+
+Current-day unrealized formulas must not remain in completed historical snapshots: October 9 D28 was found referencing mutable Open Positions after October 12 closes. Preserve Q/R inclusion-aware realized formulas and C+D / 100000+E totals. Restore historical marks only from dated verified evidence, disclose its true valuation time, and retain provenance; never manufacture the missing original morning mark.
+
+The retained ChatGPT tasks were hardened against self-disabling after failures and oversized read batches (at most four independent reads per invocation, lower if documented). This does not provide a distributed writer lock. PR287's concurrency protects publication verification only. A fully orchestrated research/ledger/delivery worker and immediate 9:30 scheduling remain separate work requiring their own verified activation.
+
+Validation: existing Swing core, active-rule, and instructional regression suites cover shared English policy and Russian summary copy. No schema, credentials, broker execution, or model accounting arithmetic changes in this presentation patch.
+
+Swing deployed-page follow-up (2026-10-12): the UI summary preload replaces the core How It Works section, so core-only rule changes were insufficient. `website_swing_ui_refinement.js` now uses the same shared opening rule and immediate below-70 ranking exit, with Russian translations. Its regression suite verifies the actual transformed output; obsolete test assumptions about adjacent start-command preloads were updated to check required modules independently. Four relevant Swing suites pass. The approved 9:30 Codex heartbeat is now ACTIVE; this supersedes the earlier pending-activation note. The verified two-lot event alert was delivered, but full daily research and immutable historical valuation restoration remain pending.
+
+
+### Swing daily research inputs and operational gates (2026-10-12)
+
+Owner requested fresh rankings and daily-task conflict audit. The missing technical evidence was obtained through dated Yahoo Finance daily charts (250 completed bars per current ticker), rather than substituting social message activity for exchange volume. New read-only `Swing Daily Research Inputs` Actions workflow runs at09:50 NewYork (DST guard), discovers the current public Active/Candidate universe plus benchmarks, validates today's quote and the previous completed NYSE session, computes MA20/50/200, relative performance, prior completed-session relative volume and ranges, and retains the source bars/metrics for30days. It makes no Sheet writes, model trades, email sends or broker calls. Source outages fail with exact fields; transient retries are bounded at3, batches at4. Full-year raw bars are retained; this is a research input gate, not a scored-review certificate or an automatic analyst.
+
+The independent morning parity gate now rejects explicit pending ranking reassessments even when public news-note dates are today. Event parity remains separate. NYSE published2026–2028 holidays/early closes are explicit; unknown years fail requiring calendar maintenance. Calendar source: https://www.nyse.com/trade/hours-calendars. No holiday is inferred from bank holidays.
+
+Saved operational roles: opening-stop job09:30–09:50; primary10:00–10:20; recovery10:25–10:35; TARGET monitor hourly minute40–50 from10:40. Scheduled writers check actual time before each atomic batch and do not start within2minutes of their window end; late runs are read-only/deferred. The hourly task's contradictory opening-stop recovery sentence is removed. Each writer re-reads exact lots including excluded ClosedTrades and reconciles Portfolio as well as OpenPositions. All delivery paths share the canonical morning date key or exact lot/date/reason event key, paginate full-date provider history, and distinguish accepted/delivered. Full internal factor review dates and no pending rankings are required for morning delivery; public note dates alone are insufficient.
+
+These are explicit task ownership/windows plus independent code gates; they are not a cross-service atomic distributed lock. Prompt adherence and scheduler timing still require operational verification. GitHub concurrency serializes its read-only workflows only. Runtime website remains read-only, with no new secrets/environment changes. The new source-input job is dynamic, but primary must re-read actual membership rather than trust an artifact after later exits.
+
+Validation: daily review gate rejects current-dated pending Active and Candidate research; source collector rejects stale quotes/missing completed sessions and excludes partial current bars from averages; calendar handles exchange holidays/early closes and the Saturday NewYear exception; publication bounded-retry tests pass. Live source collection passed for13tickers+5benchmarks. Rollback: revert this PR; protected formulas/accounting and broker runtime are unchanged.
+
+
+### Swing native write fencing and cloud task migration — final 2026-10-12 checkpoint
+
+This supersedes the earlier local-only 9:30 activation and window-only locking checkpoint. The existing owner-approved opening-stop task was migrated to an enabled ChatGPT cloud task in the VIXALE project; the local Codex duplicate is PAUSED after independent cloud readback. Exactly four cloud writer tasks are active: opening09:30, primary10:00, recovery10:25 and hourlyTARGET :40. Their final saved prompts were read back and require the same project Operational Control source, separate ownership windows, bounded retries, no failure-triggered task disable, and independent DATA/PUBLICATION/DELIVERY gates. Saved task details may show stale cached prompt values immediately after Save; reload before concluding that the server did not persist the update.
+
+Architecture decision: use native Google Sheets developerMetadata unique fixed IDs for a short writer lease (1030100, VIXALE_SWING_LEASE_V1) and persistent revision fence (1030101, VIXALE_SWING_FENCE_V1), DOCUMENT visibility. Acquire by fixed-ID create; refresh/reclaim by exact key/value conditional delete followed by same-ID create. Each financial batch replaces BOTH exact expected fence and owned lease in the same ordered atomic batch as the ledger/feed/history changes. Duplicate-ID rejection on a changed value aborts the whole batch. See docs/ADR_SWING_NATIVE_WRITE_FENCING.md for the complete recipe, release/timeout rules and connector metadata readback. Never infer locking from GitHub concurrency or writer windows alone.
 
 Live metadata proof: a wrong-value guarded batch failed HTTP400 on duplicate ID; a correct-value batch succeeded. Disposable metadata were removed; persistent production fence initialized. A later real service-note alignment used the guarded batch, verified factor notes after row compaction, then released its lease. Independent cloud readback verified the current fence and free lease. No broker or financial event was generated by these lock tests. Protection depends on all participating writers following the protocol; arbitrary unguarded manual edits and exact-second scheduling remain outside its guarantee.
 
