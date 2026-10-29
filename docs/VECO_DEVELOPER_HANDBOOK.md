@@ -1,5 +1,26 @@
 # VECO Developer Handbook
 
+## Engine 2 provider fallback investigation — 2026-10-29
+
+The owner permits Google Finance or IB TWS as alternative quote sources if
+Yahoo cannot work. Preserve exact completed 09:39-start/09:40-end evidence;
+a current or loosely delayed display quote cannot replace it. GOOGLEFINANCE's
+documented historical intervals are DAILY/WEEKLY, not minute bars. The existing
+bridge quote observer is display-only and has no verified historical-bar route.
+IB historical bars require a read-only reachable TWS/IB Gateway session and
+appropriate market-data permissions; do not modify the trading bridge or
+assume those prerequisites exist. References: Google Docs help 3093281 and
+Interactive Brokers TWS API historical-bars / market-data documentation.
+
+The shadow read-only minute probe now adds only a fixed sourceFailure category
+when a provider exception occurs: rate limit, access denied, source HTTP error,
+invalid chart/sequence/vector/JSON, timeout, or unclassified failure. Raw URLs,
+provider text and credentials remain masked. This changes observability only;
+no financial decision, price policy, trade, email, workbook or production route.
+Verify CI and exact-SHA isolated deployment before diagnosing Render egress.
+Rollback: revert this diagnostic change and redeploy staging.
+Handbook update required: YES.
+
 ## Engine 2 Yahoo minute live-tail repair — 2026-10-29
 
 A read-only MSFT `interval=1m&range=1d` response reproduced

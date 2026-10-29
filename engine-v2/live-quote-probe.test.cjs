@@ -18,3 +18,21 @@ test('stale bar blocks even if positive reference mark exists',async()=>{
  ]})}});
  assert.equal(x.status,'BLOCKED');
 });
+
+test('provider diagnostics expose only fixed safe categories',async()=>{
+ for(const [message,name,expected] of [
+  ['YAHOO_MINUTE_DATA_HTTP_429','Error','RATE_LIMITED'],
+  ['YAHOO_MINUTE_DATA_HTTP_403','Error','ACCESS_DENIED'],
+  ['YAHOO_MINUTE_TIMESTAMP_SEQUENCE_INVALID','Error','INVALID_MINUTE_SEQUENCE'],
+  ['INVALID_YAHOO_CHART','Error','INVALID_CHART'],
+  ['private URL and credentials','TimeoutError','REQUEST_TIMEOUT'],
+  ['private JSON payload','SyntaxError','INVALID_JSON'],
+  ['secret-token-123','Error','UNCLASSIFIED_PROVIDER_FAILURE'],
+  ['YAHOO_MINUTE_DATA_HTTP_429 secret-token-123','Error','UNCLASSIFIED_PROVIDER_FAILURE']
+ ]){
+  const result=await checkMinuteFeed({at,provider:{getBars:async()=>{const e=Error(message);e.name=name;throw e;}}});
+  assert.equal(result.sourceFailure,expected);assert.equal(result.status,'BLOCKED');
+  assert.equal(result.modelEntryEligible,false);assert.equal(result.tradeEvidenceVerified,false);
+  assert.doesNotMatch(JSON.stringify(result),/secret-token|private/);
+ }
+});
