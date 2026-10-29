@@ -78,3 +78,8 @@ A feature branch or pull request is **proposed work**, not production, until mer
 ## Maintenance rule
 
 Update the Current-State manifest whenever a website-facing change is merged/deployed or when an authoritative status changes. Record the verification source and date, and keep uncertain operational facts explicitly marked **UNVERIFIED**.
+
+## SMIO Engineering paper baseline (separate from website Current-State)
+
+- **2026-10-29 verified demo EOD/broker-flat session:** [`docs/SMIO_VERIFIED_PAPER_BASELINE_2026-10-29.md`](../docs/SMIO_VERIFIED_PAPER_BASELINE_2026-10-29.md).
+- Baseline is **paper-only** and bounded to recorded observations. It does not replace the website Current-State manifest or certify future runtime state, every fill, or live trading.
