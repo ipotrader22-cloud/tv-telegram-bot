@@ -47,5 +47,24 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   assert.equal(saved.evidence_manifest.inputs.priceAsOf,etTime(next,580));
   require('./staging-artifact.cjs').buildStagingArtifact(saved);
 
+  // Google morning policy must retain identical durable preparation/prior gates.
+  const googlePrevious=await require('./clean-ledger.cjs').readLastCleanState({url});
+  const googleDate='2026-10-26',googleAt=googleDate+'T14:00:00.000Z';
+  const googleBatch=JSON.parse(JSON.stringify(batch).replace(/2026-10-(22|23)/g,x=>({'2026-10-22':'2026-10-23','2026-10-23':'2026-10-26'}[x])));
+  const googleFrozen={policy:POLICY,date:googleDate,sourceSession:next,preparedAt:googleDate+'T12:59:00Z',priorHash:hash(priorIdentity(googlePrevious)),batch:googleBatch,exits:[],checkedThrough:next+'T20:00:00.000Z'};
+  googleFrozen.fingerprint=hash(googleFrozen);
+  const {normalizeGoogleQuote,GOOGLE_POLICY}=require('./google-quote-provider.cjs');
+  const googleQuote=normalizeGoogleQuote({symbol:'NASDAQ:AMD',price:114,tradeTimeET:googleDate+' 09:51:00',delayMinutes:15,dailyVolume:123456},{date:googleDate,fetchedAt:googleAt});
+  const googleInputs=require('./delayed-model-cycle.cjs').proposeDelayed({date:googleDate,runAt:googleAt,prepared:googleFrozen,previous:googlePrevious,quotes:[googleQuote],pricePolicy:GOOGLE_POLICY});
+  await assert.rejects(commitShadowRun({url,inputs:googleInputs}),/PREOPEN_DURABLE_ARTIFACT_MISMATCH/);
+  await store.withLock(j=>j.savePrepared(googleFrozen));
+  assert.equal((await commitShadowRun({url,inputs:googleInputs})).status,'SHADOW_COMMITTED');
+  assert.equal((await commitShadowRun({url,inputs:googleInputs})).status,'IDEMPOTENT_REPLAY');
+  const googleSaved=await readCleanRun({url,date:googleDate});
+  assert.equal(googleSaved.evidence_manifest.inputs.pricePolicy,GOOGLE_POLICY);
+  assert.equal(googleSaved.evidence_manifest.inputs.priceAsOf,googleDate+'T13:51:00.000Z');
+  const googleArtifact=require('./staging-artifact.cjs').buildStagingArtifact(googleSaved);
+  assert.equal(googleArtifact.feed.quote_times[0].provider,'GOOGLEFINANCE');
+
  }finally{await db.query('DROP SCHEMA IF EXISTS vixale_v2 CASCADE');await db.end()}
 });
