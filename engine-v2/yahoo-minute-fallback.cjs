@@ -18,6 +18,16 @@ function completedBars(raw,{ticker,date,asOf}={}){
  let prior=-Infinity;
  for(let i=0;i<chart.timestamp.length;i++){
   const second=chart.timestamp[i],start=second*1000;
+  // Yahoo appends a live quote (not an OHLCV minute) after the current
+  // minute slot. Recognize only its exact metadata/zero-volume signature;
+  // never round it, accept it as a bar, or relax actual minute sequencing.
+  const prices=[q.open[i],q.high[i],q.low[i],q.close[i]];
+  const liveTail=i===chart.timestamp.length-1&&i>0&&
+   chart.meta.dataGranularity==='1m'&&second===chart.meta.regularMarketTime&&
+   Number.isSafeInteger(second)&&start%60000!==0&&start>prior&&
+   Math.floor(start/60000)*60000===prior&&q.volume[i]===0&&
+   prices.every(p=>Number.isFinite(p)&&p>0&&p===prices[0]);
+  if(liveTail)continue;
   if(!Number.isSafeInteger(second)||start%60000!==0||start<=prior||seen.has(start))
    throw Error('YAHOO_MINUTE_TIMESTAMP_SEQUENCE_INVALID');
   prior=start;seen.add(start);
