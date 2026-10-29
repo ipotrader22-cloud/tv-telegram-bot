@@ -1,5 +1,27 @@
 # VECO Developer Handbook
 
+## Engine 2 staged morning diagnostic refinement — 2026-10-29
+
+The 2026-10-28 pre-open cron produced repeated verified `PREOPEN_PREPARED`
+runs, but 10:00–10:20 ET attempts returned only
+`STAGING_VERIFICATION_INCOMPLETE`; the private Sheet remained dated
+2026-10-27. The failure's underlying cause was not proven from the sanitized
+logs, so no model repair or backdated publication is asserted.
+
+The isolated staging worker now maps only known, fixed failure identifiers to
+safe, actionable cron reasons: exact 09:40 bar missing/invalid, Yahoo minute
+source unavailable/invalid, immutable pre-open state conflict, incomplete
+model evidence, and expired decision window. All unknown provider text stays
+masked. The classification changes **diagnostics only**, never eligibility,
+scoring, quote acceptance, financial writes, model decisions, emails, or
+production. Tests cover expected mappings and malicious secret-bearing input.
+The new diagnostic is useful only after GitHub CI and an exact-SHA staging
+deployment; it cannot retrospectively identify the October 28 failure.
+Do not merge/cut over or touch the legacy workbook/bridge. Rollback: revert
+this isolated diagnostic commit and redeploy staging. Handbook update
+required: YES.
+
+
 ## Engine 2 CI discovery and sanitized corruption regression — 2026-10-28
 
 Do not infer missing CI from the commit-workflow connector alone: it filters
