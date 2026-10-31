@@ -81,3 +81,25 @@ test('prior-session stop/target scan retains trigger, blocks a missing minute an
  raw.chart.result[0].indicators.quote[0].low[0]=null;
  assert.throws(()=>exitEvidence(raw,{position,through:'2026-10-21T20:00:00Z'}),/COVERAGE_GAP/);
 });
+
+
+test('current evidence with a score of 76 remains cash even if an upstream entry flag is mistakenly true',async()=>{
+ const {p,q,seal}=await fixture();
+ const research=p.batch.items[0];
+ // Mirrors the October 30 research-leader score without asserting a real
+ // CVX/XOM model trade; evidence is synthetic and is never persisted.
+ research.factors={market:10,sector:15,leadership:15,catalyst:0,base:10,
+  compression:6,volume:10,ma:5,resistance:5};
+ research.score=76;
+ research.entryEligible=true;
+ research.entryEvidenceId='SYNTHETIC_TEST_ONLY';
+ delete research.compellingEntryEvidenceId;
+ seal();
+ assert.equal(require('./research-attestation.cjs').validateResearchBatch(p.batch).status,'PASS');
+ const proposal=proposeDelayed({date,runAt,prepared:p,previous:null,quotes:[q]});
+ assert.equal(proposal.positions.length,0);
+ assert.equal(proposal.events.length,0);
+ const validated=validateMorningCommit(proposal);
+ assert.equal(validated.status,'READY_FOR_SHADOW_COMMIT');
+ assert.equal(validated.plan.model.equity,100000);
+});
