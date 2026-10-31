@@ -1,5 +1,34 @@
 # VECO Developer Handbook
 
+## Engine 2 isolated shadow-observer cold-start readback repair — 2026-10-30
+
+The October 30 staging morning pipeline prepared clean-epoch research and
+committed a verified 10:00 ET empty-inception model. At 10:01:14 ET its first
+website verification failed; the free-tier observer did not begin starting
+until 10:01:12 ET and confirmed exact API/HTML snapshot parity at 10:01:23 ET.
+At 10:02:07 ET, and on the following staging retries, the frozen publication
+was independently verified. That timing strongly indicates the observer
+startup as a contributor to the initial transient, but the failed HTTP status
+was not retained, so the precise failing response cannot be claimed.
+
+Private staging now retries ONLY an uncached observer transport exception,
+HTTP 429 or 5xx, for at most three attempts (3s/8s pauses). Each retry makes
+fresh API+HTML HTTP requests against the SAME immutable committed manifest.
+Non-retryable auth/4xx, cache-policy, fingerprint, amount, membership and
+rendered-HTML mismatches still fail closed on the first attempt. Exhausted
+observer availability uses a fixed safe log code separate from semantic
+website parity failure. No new model decisions, historical repricing, extra
+financial writes, broker execution or customer emails are authorized.
+
+Staging remains draft PR #329 and production cutover is prohibited. Test
+recovery, transient exhaustion with later immutable journal replay, and the
+no-retry invariant for 403 and API semantic drift. After exact-head CI passes,
+manually deploy ONLY isolated staging cron/observer. If health/parity remain
+blocked, preserve all journals, artifacts and prior published states.
+Rollback: revert this branch-only retry/diagnostic/test change and redeploy
+prior tested staging head. Handbook update required: YES.
+
+
 ## Owner-approved latest Google morning quote policy — 2026-10-29
 
 The owner explicitly accepts Google's latest timestamped quote available during
