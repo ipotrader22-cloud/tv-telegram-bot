@@ -41,3 +41,61 @@ test('only one competing pipeline can write or send',async t=>{
  const h=await harness(t),out=await Promise.all([h.run(),h.run()]);
  assert.deepEqual(out.map(x=>x.status).sort(),['ACCEPTED_NOT_DELIVERED','BUSY']);assert.equal(h.sends,1);assert.equal(h.sheets.writes,1);
 });
+
+
+const {directReadback}=require('./direct-publication-readback.cjs');
+test('cold-start 503 on shadow observer retries only uncached readback, never model or financial writes',async t=>{
+ const h=await harness(t),original=h.args.fetcher;let failedRequests=0,requests=0;
+ h.args.readback=options=>directReadback({...options,pause:async()=>{}});
+ h.args.fetcher=async(url,options)=>{
+  if(String(url).includes('/v2/')){
+   requests++;
+   if(failedRequests<4){failedRequests++;return new Response('Observer starting',{status:503});}
+  }
+  return original(url,options);
+ };
+ const result=await h.run();
+ assert.equal(result.status,'ACCEPTED_NOT_DELIVERED',JSON.stringify(result));
+ assert.equal(failedRequests,4);
+ assert.equal(requests,6);
+ assert.equal(h.sheets.writes,1);
+ assert.equal(h.sends,1);
+});
+test('repeated observer 503 blocks safely; a later retry replays the exact journal without another financial write',async t=>{
+ const h=await harness(t),original=h.args.fetcher;let requests=0;
+ h.args.readback=options=>directReadback({...options,pause:async()=>{}});
+ h.args.fetcher=async(url,options)=>{
+  if(String(url).includes('/v2/')){requests++;return new Response('Observer starting',{status:503})}
+  return original(url,options);
+ };
+ const blocked=await h.run();
+ assert.equal(blocked.reason,'WEBSITE:TRANSIENT_READBACK_UNAVAILABLE');
+ assert.equal(requests,6);
+ assert.equal(h.sheets.writes,1);
+ assert.equal(h.sends,0);
+ h.args.fetcher=original;
+ assert.equal((await h.run()).status,'ACCEPTED_NOT_DELIVERED');
+ assert.equal(h.sheets.writes,1);
+ assert.equal(h.sends,1);
+});
+test('client auth errors and semantic API drift are never retried or authorized to email',async t=>{
+ const h=await harness(t),original=h.args.fetcher;let requests=0;
+ h.args.readback=options=>directReadback({...options,pause:async()=>{}});
+ h.args.fetcher=async(url,options)=>{
+  if(String(url).includes('/v2/')){
+   requests++;
+   if(String(url).includes('/v2/model/snapshot'))return new Response('',{status:403});
+  }
+  return original(url,options);
+ };
+ const auth=await h.run();
+ assert.equal(auth.reason,'WEBSITE:HTTP_ERROR');assert.equal(requests,2);
+ assert.equal(h.sends,0);
+ h.args.fetcher=async(url,options)=>{if(String(url).includes('/v2/'))requests++;return original(url,options)};
+ h.alterApi();
+ const stale=await h.run();
+ assert.equal(stale.reason,'WEBSITE:EXACT_API_SNAPSHOT_MISMATCH');
+ assert.equal(requests,4);
+ assert.equal(h.sheets.writes,1);
+ assert.equal(h.sends,0);
+});
