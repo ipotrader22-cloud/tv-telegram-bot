@@ -1,0 +1,25 @@
+name: Engine 2 staging external API HTML parity (read only)
+on:
+  workflow_dispatch:
+  push:
+    branches: [engine-v2-shadow-foundation-20261016]
+    paths:
+      - 'engine-v2/staging-external-parity.cjs'
+      - 'engine-v2/shadow-swing-page.cjs'
+      - '.github/workflows/engine-v2-staging-external-parity.yml'
+permissions:
+  contents: read
+concurrency:
+  group: engine2-external-parity-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  external-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Inspect external read-only staging API and exact rendered HTML
+        run: node engine-v2/staging-external-parity.cjs
