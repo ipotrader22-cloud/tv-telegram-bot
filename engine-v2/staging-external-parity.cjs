@@ -26,7 +26,7 @@ async function probe({origin=ORIGIN,fetcher=fetch,pause=ms=>new Promise(resolve=
  if(health.mode!=='READ_ONLY'||health.databaseConnected!==true||health.schemaInitialized!==true)throw Error('SHADOW_HEALTH_UNVERIFIED');
  if(health.stagingPipeline?.emailEnabled!==false)throw Error('STAGING_EMAIL_NOT_DISABLED');
  if(health.cleanSlate?.epoch!=='2026-10-19'||health.cleanSlate?.readyForProduction!==false)throw Error('SHADOW_EPOCH_OR_SAFETY_INVALID');
- if(feed.version!==2||feed.epoch!=='2026-10-19'||!/^20\\d{2}-\\d{2}-\\d{2}$/.test(feed.snapshot_date||'')||feed.snapshot_date<'2026-10-19'||!Array.isArray(feed.active_portfolio)||!Array.isArray(feed.closed_trades)||!Array.isArray(feed.candidates))throw Error('SNAPSHOT_SCHEMA_UNVERIFIED');
+ if(feed.version!==2||feed.epoch!=='2026-10-19'||!/^20\d{2}-\d{2}-\d{2}$/.test(feed.snapshot_date||'')||feed.snapshot_date<'2026-10-19'||!Array.isArray(feed.active_portfolio)||!Array.isArray(feed.closed_trades)||!Array.isArray(feed.candidates))throw Error('SNAPSHOT_SCHEMA_UNVERIFIED');
  if(!/^[a-f0-9]{64}$/i.test(feed.snapshot_id||''))throw Error('SNAPSHOT_FINGERPRINT_INVALID');
  if(feed.active_portfolio.length!==feed.active_count||feed.active_count>10)throw Error('ACTIVE_MEMBERSHIP_MISMATCH');
  if(html!==renderShadowSwing(feed))throw Error('EXACT_VISIBLE_HTML_MISMATCH');
