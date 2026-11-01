@@ -36,3 +36,13 @@ test('no credential or unverified lease means no send and no provider interactio
  assert.equal((await sendViaResend({plan,lease:{...lease,snapshotId:'wrong'},apiKey:'re_test',fetchFn})).status,'BLOCKED');
  assert.equal(calls,0);
 });
+
+test('unrecognized provider event cannot establish delivered status',async()=>{
+ const r=await readResendDelivery({messageId:'test-id',plan,apiKey:'re_test',fetchFn:fetchFor({...data,last_event:'queued'})});
+ assert.equal(r.status,'ACCEPTED_NOT_DELIVERED');
+});
+test('malformed response from provider fails closed without delivery claim',async()=>{
+ const r=await readResendDelivery({messageId:'test-id',plan,apiKey:'re_test',fetchFn:async()=>new Response('not-json',{status:200})});
+ assert.equal(r.status,'BLOCKED');
+ assert.equal(r.reason,'DELIVERY_LOOKUP_FAILED');
+});
