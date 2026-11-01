@@ -6,6 +6,8 @@ on:
     paths:
       - 'engine-v2/staging-external-parity.cjs'
       - 'engine-v2/staging-external-parity.test.cjs'
+      - 'engine-v2/resend-provider-readback.test.cjs'
+      - 'engine-v2/resend-client.cjs'
       - 'engine-v2/shadow-swing-page.cjs'
       - '.github/workflows/engine-v2-staging-external-parity.yml'
 permissions:
@@ -24,5 +26,7 @@ jobs:
           node-version: '24'
       - name: Regression-test transient retries and permanent fail-closed gates
         run: node --test engine-v2/staging-external-parity.test.cjs
+      - name: Verify read-only Resend provider status and message identity gates
+        run: node --test engine-v2/resend-provider-readback.test.cjs
       - name: Inspect external read-only staging API and exact rendered HTML
         run: node engine-v2/staging-external-parity.cjs
