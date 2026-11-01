@@ -3857,3 +3857,9 @@ Delayed-policy ledger commits also compare the exact persisted pre-open artifact
 inside the transaction; a caller cannot replace it with a newly hashed artifact.
 The PostgreSQL integration test exercises missing-artifact rejection, JSONB
 roundtrip, next-session delayed commit and idempotent replay.
+
+## Engine 2 read-only external staging parity probe — 2026-11-01
+
+Draft PR #329 shadow branch includes `engine-v2/staging-external-parity.cjs` and `.github/workflows/engine-v2-staging-external-parity.yml`. The workflow is manual/push-triggered on the isolated branch, has contents:read permissions only, and does not access trading, Sheets-write or Resend credentials. It requests only the approved external Render observer endpoints `/health`, `/v2/model/snapshot` and `/v2/swing-trading` with no-cache/no-store enforcement and no redirects. It fails closed on HTTP errors, incorrect shadow mode/epoch, enabled staging email, unsafe production readiness, wrong count or fingerprint, and any byte-level rendered HTML mismatch against the exact JSON feed.
+
+The existing observer's loopback startup audit on October 31 reported EXACT_API_HTML_MATCH for the October 30 snapshot, but this does not establish independent external ingress parity. A GitHub Actions run must actually complete successfully, with a dated artifact/log, before the EXTERNAL PARITY gate is treated as PASS. The Resend customer-email gate remains disabled. A separate, allowlisted, durable-outbox-backed Engine 2 send/readback/idempotency replay test can happen only after DATA + SHEETS + exact external API/HTML publication succeed and an approved test recipient is configured; do not change credentials or send just because this probe exists. No production cutover or legacy-task retirement. Handbook update required: YES.
