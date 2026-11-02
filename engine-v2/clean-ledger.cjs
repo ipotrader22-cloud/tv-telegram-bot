@@ -23,7 +23,7 @@ function validateMorningCommit(input){
    const {hash,etTime}=require('./delayed-model-policy.cjs');
    const {fingerprint,...payload}=p;
    if(fingerprint!==hash(payload)||input.preparedHash!==fingerprint||(input.pricePolicy===require('./delayed-model-policy.cjs').POLICY&&input.priceAsOf!==etTime(input.date,580))||input.researchBatch.date!==p.date||stableStringify(input.researchBatch)!==stableStringify(p.batch))throw Error();
-   const expected=require('./delayed-model-cycle.cjs').proposeDelayed({date:input.date,runAt:input.runAt,prepared:p,previous:input.sourceEvidence.previous,quotes:input.sourceEvidence.quotes,pricePolicy:input.pricePolicy});
+   const expected=require('./delayed-model-cycle.cjs').proposeDelayed({date:input.date,runAt:input.runAt,prepared:p,previous:input.sourceEvidence.previous,quotes:input.sourceEvidence.quotes,openings:input.sourceEvidence.openings,pricePolicy:input.pricePolicy});
    if(stableStringify(expected)!==stableStringify(input))throw Error();
   }catch{return {status:'BLOCKED',reason:'DELAYED_POLICY_EVIDENCE_MISSING'}}
  }
