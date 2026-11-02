@@ -61,6 +61,24 @@ test('altered P&L and missing publication fail closed',async()=>{
  const drift=harness({pipeline:[{run_id:runId,snapshot_id:'other',artifact,state:{sheet:'VERIFIED',publication:'VERIFIED'}}]});
  assert.equal((await auditStagingDb({url,date,clientFactory:drift.clientFactory})).reason,'PUBLICATION_JOURNAL_MISMATCH');
 });
+test('read-only staging receipt independently revalidates the persisted carried 09:30 opening proof',async()=>{
+ const {etTime}=require('./delayed-model-policy.cjs');
+ const op=etTime(date,570);
+ const prior={ticker:'CVX',entryDate:'2026-10-30',entryTime:etTime('2026-10-30',600),entryPrice:100};
+ const proof={ticker:'CVX',date,open:94,time:op,minuteET:'09:30',
+  sourceId:'YAHOO_1M:CVX:'+Date.parse(op),confirmed:true,session:'REGULAR',
+  priceKind:'MINUTE_BAR_OPEN',indicative:true};
+ const run=opens=>({run_id:runId,model,evidence_manifest:{inputs:{events:expectedEvents,
+  runAt:etTime(date,600),sourceEvidence:{previous:{active:[prior]},openings:opens}}}});
+ const ok=harness({runs:[run([proof])]});
+ const result=await auditStagingDb({url,date,clientFactory:ok.clientFactory});
+ assert.equal(result.status,'PASS',JSON.stringify(result));assert.equal(result.carriedOpeningEvidenceCount,1);
+ for(const opens of [[],[{...proof,time:etTime(date,571)}],[{...proof,open:0}]]){
+  const bad=harness({runs:[run(opens)]});
+  assert.equal((await auditStagingDb({url,date,clientFactory:bad.clientFactory})).reason,
+   'CURRENT_OPENING_AUDIT_INVALID');
+ }
+});
 test('invalid DB, invalid date or DB access failure never leaks secrets',async()=>{
  assert.equal((await auditStagingDb({url:'postgresql://localhost/production',date})).reason,'SHADOW_DATABASE_REQUIRED');
  assert.equal((await auditStagingDb({url,date:'invalid'})).reason,'INVALID_SESSION_DATE');
