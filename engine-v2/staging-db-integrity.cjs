@@ -38,9 +38,9 @@ async function auditStagingDb({url,date,clientFactory=opts=>new Client(opts)}={}
   const active=daily.active,closed=daily.closed,model=run.model;
   if(!Array.isArray(active)||!Array.isArray(closed)||active.length>10||
      new Set(active.map(p=>p.ticker)).size!==active.length||
-     !model||Number(model.activeCount)!==active.length)return fail('MODEL_MEMBERSHIP_MISMATCH');
+     !model||Number(model.active)!==active.length)return fail('MODEL_MEMBERSHIP_MISMATCH');
   const unrealized=active.reduce((sum,p)=>sum+10000*(Number(p.currentPrice)/Number(p.entryPrice)-1),0);
-  const realized=closed.filter(c=>c.includePublic==='YES').reduce((sum,p)=>sum+10000*(Number(p.exitPrice)/Number(p.entryPrice)-1),0);
+  const realized=closed.filter(c=>c.includePublic!=='NO'&&c.effectiveDate<=date).reduce((sum,p)=>sum+10000*(Number(p.exitPrice)/Number(p.entryPrice)-1),0);
   if(!centsEqual(unrealized,model.unrealized)||!centsEqual(realized,model.realized)||
      !centsEqual(Number(model.realized)+Number(model.unrealized),model.total)||
      !centsEqual(100000+Number(model.total),model.equity))
