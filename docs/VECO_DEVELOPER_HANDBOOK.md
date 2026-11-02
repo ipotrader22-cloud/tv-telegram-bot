@@ -1,3 +1,30 @@
+## Engine 2 private read-only PostgreSQL staging integrity receipt — 2026-11-02
+
+Only the isolated PR #329 shadow observer runs `engine-v2/staging-db-integrity.cjs` at startup.
+The audit connects through the existing internal shadow DATABASE_URL, explicitly starts a
+READ ONLY transaction, and logs sanitized aggregate evidence (one session run,
+one daily state, one staging journal, pre-open evidence, unique event identities,
+fixed-$10k normalized P&L and matching snapshot fingerprints). It never writes
+to PostgreSQL, opens external network access, exposes an audit HTTP endpoint,
+alters a trading signal, activates email, or touches production.
+Tests cover success, tampering, duplicate events and fail-closed behavior.
+The real Render receipt must be inspected after the shadow observer deploy;
+CI tests on disposable PostgreSQL alone do not certify staging history.
+If an actual journal mismatch is found, preserve the immutable ledger and
+investigate before any repair, never overwrite or backdate financial history.
+
+Staging Google Sheets P&L uses fixed $10,000 normalized allocation *per
+position*, not the sum of fractional cash actually invested through rounded
+whole-share quantities. For November 2, the Portfolio KPI $19,666.96 and
+$-333.04 P&L are normalized model values; the $19,496.29 in displayed
+whole-share market values is a different accounting view and is not
+automatically a discrepancy. Equity History is an immutable 10:00 review
+mark, not an intraday mark-to-market of live GOOGLEFINANCE cells.
+Resend remains disabled until verified allowlisted provider delivery and
+idempotent retry evidence; no go-live authorization.
+Handbook update required: YES; rollback: revert only these branch changes
+and redeploy the previous tested isolated observer commit.
+
 ## Engine 2 opening-stop source guard — 2026-11-02
 
 The isolated pre-open minute scan previously treated **any** intraday one-minute
