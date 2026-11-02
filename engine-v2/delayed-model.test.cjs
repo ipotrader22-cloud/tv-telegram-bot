@@ -15,6 +15,10 @@ async function fixture(previous=null){
  const bar={ticker:'AMD',date,start:etTime(date,579),end:etTime(date,580),close:112,volume:100,provider:'YAHOO_CHART',sourceId:'fixed'};
  const q=fixedQuote([bar],{ticker:'AMD',date,fetchedAt:runAt});return {p,q,seal,bar};
 }
+const opening=(ticker,open=100)=>({ticker,date,open,time:etTime(date,570),minuteET:'09:30',
+ sourceId:'YAHOO_1M:'+ticker+':'+Date.parse(etTime(date,570)),confirmed:true,
+ session:'REGULAR',priceKind:'MINUTE_BAR_OPEN',indicative:true});
+
 test('fixed cutoff follows DST, never latest bar or retry minus twenty minutes',async()=>{
  assert.equal(etTime('2026-10-26',580),'2026-10-26T13:40:00.000Z');
  assert.equal(etTime('2026-11-02',580),'2026-11-02T14:40:00.000Z');
@@ -35,9 +39,50 @@ test('stop-trigger exits use 09:40 price, not stop level, and precede new entrie
  const prev={epoch:'2026-10-19',date:'2026-10-21',active:[{ticker:'OLD',entryDate:'2026-10-20',entryTime:'2026-10-20T13:40:00Z',entryPrice:100,exchange:'NASDAQ'}],closed:[]};
  const {p,q,seal}=await fixture(prev),r=structuredClone(p.batch.items[0]);r.ticker='OLD';p.batch.universe.push('OLD');p.batch.items.push(r);
  p.exits.push({ticker:'OLD',entryDate:'2026-10-20',reason:'STOP LOSS',triggerAt:'2026-10-21T15:00:00Z',sourceId:'prior-low'});seal();
- const input=proposeDelayed({date,runAt,prepared:p,previous:prev,quotes:[q,{...q,ticker:'OLD',price:91}]});
+ const input=proposeDelayed({date,runAt,prepared:p,previous:prev,quotes:[q,{...q,ticker:'OLD',price:91}],openings:[opening('OLD',100)]});
  assert.equal(input.closed[0].exitPrice,91);assert.equal(input.events[0].type,'CLOSE');assert.equal(input.events[1].type,'OPEN');assert.equal(input.closed[0].exitDate,date);
  assert.equal(validateMorningCommit(input).status,'READY_FOR_SHADOW_COMMIT');
+});
+test('current 09:30 stop uses the full original entry, not intraday low, and closes at 10:00 reference quote',async()=>{
+ const prev={epoch:'2026-10-19',date:'2026-10-21',active:[{ticker:'AMD',
+  entryDate:'2026-10-21',entryTime:'2026-10-21T14:00:00Z',entryPrice:100,
+  exchange:'NASDAQ'}],closed:[]};
+ const {p,q}=await fixture(prev);
+ const o=opening('AMD',95);
+ const stopped=proposeDelayed({date,runAt,prepared:p,previous:prev,quotes:[{...q,price:90}],openings:[o]});
+ assert.equal(stopped.closed.length,1);
+ assert.equal(stopped.closed[0].reason,'STOP LOSS');
+ assert.equal(stopped.closed[0].exitPrice,90);
+ assert.equal(stopped.closed[0].exitTime,q.timestamp);
+ assert.equal(stopped.closed[0].triggerEvidence.triggerAt,etTime(date,570));
+ assert.equal(stopped.events[0].triggerEvidence.sourceId,o.sourceId);
+ assert.equal(validateMorningCommit(stopped).status,'READY_FOR_SHADOW_COMMIT');
+ const untouched=proposeDelayed({date,runAt,prepared:p,previous:prev,quotes:[{...q,price:90}],openings:[opening('AMD',95.01)]});
+ assert.equal(untouched.closed.length,0,'intraday price below 95 alone is not an opening STOP');
+ assert.equal(untouched.events[0].type,'KEEP');
+ assert.equal(validateMorningCommit(untouched).status,'READY_FOR_SHADOW_COMMIT');
+ for(const tamper of [
+  x=>x.sourceEvidence.openings[0].open=95.01,
+  x=>x.sourceEvidence.openings[0].sourceId='fake',
+  x=>x.closed[0].exitPrice=95,
+  x=>x.events[0].triggerEvidence.openingPrice=1
+ ]){const x=structuredClone(stopped);tamper(x);
+  assert.equal(validateMorningCommit(x).status,'BLOCKED','tampering must not commit');
+ }
+});
+test('carried holdings reject missing 09:30 bar and never commit on provider failure',async()=>{
+ const prev={epoch:'2026-10-19',date:'2026-10-21',active:[{ticker:'AMD',
+  entryDate:'2026-10-21',entryTime:'2026-10-21T14:00:00Z',
+  entryPrice:100,exchange:'NASDAQ'}],closed:[]};
+ const {p,q}=await fixture(prev);
+ assert.throws(()=>proposeDelayed({date,runAt,prepared:p,previous:prev,quotes:[q],openings:[]}),/OPENING_COVERAGE/);
+ let commits=0;
+ const result=await runDelayedCycle({date,runAt,prepared:p,
+  clock:()=>new Date(runAt),getPrior:async()=>prev,
+  openingProvider:{getOpenings:async()=>[]},
+  quoteProvider:{getQuotes:async()=>[q]},
+  commit:async()=>{commits++;return {status:'SHADOW_COMMITTED'};}});
+ assert.equal(result.status,'BLOCKED');assert.equal(commits,0);
 });
 test('late, stale, mutated, wrong-state preparations fail closed',async()=>{
  const {p,seal,q}=await fixture();
