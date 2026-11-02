@@ -73,11 +73,11 @@ test('preopen cron dispatches preparation only and does not publish',async()=>{
  const result=await runScheduled({env,clock:()=>new Date('2026-10-26T12:00:00Z'),createWorker:()=>({status:()=>({enabled:true,missing:[]}),prepare:async()=>{preparations++;return {status:'PREOPEN_PREPARED'}},tick:async()=>{ticks++}})});
  assert.equal(result.status,'PREOPEN_PREPARED');assert.equal(preparations,1);assert.equal(ticks,0);
 });
-test('prior-session stop/target scan retains trigger, blocks a missing minute and excludes future bars',()=>{
+test('prior-session target scan ignores intraday stop-like lows, retains target and blocks missing minute coverage',()=>{
  const {exitEvidence}=require('./preopen-preparation.cjs');
  const position={ticker:'AMD',entryDate:'2026-10-21',entryTime:'2026-10-21T19:58:00Z',entryPrice:100};
  const raw={chart:{result:[{meta:{symbol:'AMD'},timestamp:[Date.parse(position.entryTime)/1000,Date.parse('2026-10-21T19:59:00Z')/1000],indicators:{quote:[{open:[100,100],high:[101,111],low:[94,99],close:[99,110],volume:[100,100]}]}}]}};
- const out=exitEvidence(raw,{position,through:'2026-10-21T20:00:00Z'});assert.equal(out.reason,'STOP LOSS');assert.equal(out.triggerAt,'2026-10-21T19:59:00.000Z');
+ const out=exitEvidence(raw,{position,through:'2026-10-21T20:00:00Z'});assert.equal(out.reason,'TARGET');assert.equal(out.triggerAt,'2026-10-21T20:00:00.000Z');
  raw.chart.result[0].indicators.quote[0].low[0]=null;
  assert.throws(()=>exitEvidence(raw,{position,through:'2026-10-21T20:00:00Z'}),/COVERAGE_GAP/);
 });
