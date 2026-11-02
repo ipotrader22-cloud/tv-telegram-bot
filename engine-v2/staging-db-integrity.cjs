@@ -35,6 +35,16 @@ async function auditStagingDb({url,date,clientFactory=opts=>new Client(opts)}={}
      events.some(e=>!expectedIds.includes(e.event_id))||
      new Set(events.map(e=>[e.type,e.ticker,e.entry_date].join('|'))).size!==events.length)
     return fail('DUPLICATE_OR_MISSING_EVENTS');
+  // Independently recheck the immutable current-session opening proof retained
+  // with the journal. Older inception-only sessions had no carried lots.
+  const inputs=run.evidence_manifest?.inputs||{};
+  const carried=inputs.sourceEvidence?.previous?.active||[];
+  if(!Array.isArray(carried))return fail('CURRENT_OPENING_AUDIT_INVALID');
+  if(carried.length)try{
+   require('./same-session-opening.cjs').verifyCurrentOpenings({
+    date,runAt:inputs.runAt,positions:carried,openings:inputs.sourceEvidence?.openings||[]
+   });
+  }catch{return fail('CURRENT_OPENING_AUDIT_INVALID')}
   const active=daily.active,closed=daily.closed,model=run.model;
   if(!Array.isArray(active)||!Array.isArray(closed)||active.length>10||
      new Set(active.map(p=>p.ticker)).size!==active.length||
@@ -57,6 +67,7 @@ async function auditStagingDb({url,date,clientFactory=opts=>new Client(opts)}={}
     return fail('PUBLICATION_JOURNAL_MISMATCH');
   return {status:'PASS',date,snapshotId:pipeline.snapshot_id,runCount:runRows.length,
    eventCount:events.length,activeCount:active.length,closedCount:closed.length,
+   carriedOpeningEvidenceCount:carried.length,
    modelEquity:Number(model.equity),normalizedPnl:Number(model.total),
    sheetVerified:true,publicationVerified:true,
    deliveryStatus:String(pipeline.state.delivery||'UNKNOWN'),writesPerformed:false};
