@@ -1,3 +1,16 @@
+## Current-session 09:30 opening proof (shadow only, 2026-11-02)
+
+For carried model positions, the 10:00 review must independently read the
+completed **current-session 09:30 RTH minute OPEN** from approved Yahoo 1-minute
+OHLCV, compare it with the **original** entry price at the inclusive 95% limit,
+and preserve the trigger, source ID, later review quote and decision time
+separately. Missing or invalid 09:30 evidence blocks ledger, staging Sheet,
+shadow API/HTML publication and email; a later intraday LOW is not an opening
+STOP. Older already-committed opening-day artifacts are not repriced or
+rewritten. Changes are restricted to draft PR #329 until real multi-day
+market-session acceptance, full publication readback and provider-gated test
+email; no production cutover or automatic client delivery.
+
 # VIXALE Engine 2.0 — shadow foundation
 
 Status: isolated, read-only prototype. **Do not merge or activate as a production portfolio writer yet.**
