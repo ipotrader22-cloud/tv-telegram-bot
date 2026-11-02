@@ -42,7 +42,10 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   const batch=JSON.parse(JSON.stringify(record.evidence_manifest.inputs.researchBatch).replaceAll('2026-10-22','2026-10-23').replaceAll('2026-10-21','2026-10-22').replaceAll('14:00:00','12:59:00').replaceAll('13:59:00','12:58:00'));
   const frozen={policy:POLICY,date:next,sourceSession:date,preparedAt:next+'T12:59:00Z',priorHash:hash(priorIdentity(previous)),batch,exits:[],checkedThrough:date+'T20:00:00.000Z'};frozen.fingerprint=hash(frozen);
   const quote={ticker:'AMD',price:113,timestamp:etTime(next,580),fetchedAt:at,provider:'YAHOO_CHART',sourceId:'pg-fixed-cutoff',session:'REGULAR',exchangeVolume:100,verified:true,policy:POLICY,priceKind:'MINUTE_BAR_CLOSE',indicative:true,modelFill:false};
-  const inputs=require('./delayed-model-cycle.cjs').proposeDelayed({date:next,runAt:at,prepared:frozen,previous,quotes:[quote]});
+  const opening=d=>({ticker:'AMD',date:d,open:120,time:etTime(d,570),minuteET:'09:30',
+  sourceId:'YAHOO_1M:AMD:'+Date.parse(etTime(d,570)),confirmed:true,
+  session:'REGULAR',priceKind:'MINUTE_BAR_OPEN',indicative:true});
+ const inputs=require('./delayed-model-cycle.cjs').proposeDelayed({date:next,runAt:at,prepared:frozen,previous,quotes:[quote],openings:[opening(next)]});
   await assert.rejects(commitShadowRun({url,inputs}),/PREOPEN_DURABLE_ARTIFACT_MISMATCH/);
   await store.withLock(j=>j.savePrepared(frozen));
   assert.equal((await commitShadowRun({url,inputs})).status,'SHADOW_COMMITTED');
@@ -59,7 +62,7 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   googleFrozen.fingerprint=hash(googleFrozen);
   const {normalizeGoogleQuote,GOOGLE_POLICY}=require('./google-quote-provider.cjs');
   const googleQuote=normalizeGoogleQuote({symbol:'NASDAQ:AMD',price:114,tradeTimeET:googleDate+' 09:51:00',delayMinutes:15,dailyVolume:123456},{date:googleDate,fetchedAt:googleAt});
-  const googleInputs=require('./delayed-model-cycle.cjs').proposeDelayed({date:googleDate,runAt:googleAt,prepared:googleFrozen,previous:googlePrevious,quotes:[googleQuote],pricePolicy:GOOGLE_POLICY});
+  const googleInputs=require('./delayed-model-cycle.cjs').proposeDelayed({date:googleDate,runAt:googleAt,prepared:googleFrozen,previous:googlePrevious,quotes:[googleQuote],openings:[opening(googleDate)],pricePolicy:GOOGLE_POLICY});
   await assert.rejects(commitShadowRun({url,inputs:googleInputs}),/PREOPEN_DURABLE_ARTIFACT_MISMATCH/);
   await store.withLock(j=>j.savePrepared(googleFrozen));
   assert.equal((await commitShadowRun({url,inputs:googleInputs})).status,'SHADOW_COMMITTED');
