@@ -144,6 +144,11 @@ const refresh=async()=>{
  await refresh();
  server.listen(port,'0.0.0.0',()=>{
   void require('./startup-readonly-audit.cjs').auditReadOnlySurface({port,googleProbe}).then(result=>console.log('Shadow startup read-only audit:',JSON.stringify(result)));
+  // One private aggregate receipt at startup; no public route or financial write.
+  const today=require('./market-data-adapter.cjs').localET(new Date().toISOString()).date;
+  void require('./staging-db-integrity.cjs').auditStagingDb({url,date:today})
+   .then(result=>console.log('Engine 2 staging DB integrity (read only):',JSON.stringify(result)))
+   .catch(()=>console.log('Engine 2 staging DB integrity (read only):',JSON.stringify({status:'BLOCKED',reason:'AUDIT_UNAVAILABLE',writesPerformed:false})));
   void stagingWorker.tick();
   setInterval(()=>{void stagingWorker.tick()},60000).unref();
  });
