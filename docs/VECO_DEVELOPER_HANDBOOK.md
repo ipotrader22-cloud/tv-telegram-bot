@@ -1,3 +1,46 @@
+## Engine 2 current-session 09:30 opening STOP guard — 2026-11-02
+
+The private Engine 2 10:00 staging decision now requires a completed, exact
+09:30 America/New_York REGULAR one-minute Yahoo OHLCV OPEN for **every position
+carried from the previous session**. `same-session-opening.cjs` reuses the approved
+read-only Yahoo minute adapter; the original lot must predate that opening.
+A missing, duplicated, malformed, premarket, non-09:30, mismatched-symbol or
+not-yet-completed opening fails closed before an immutable morning model commit,
+Sheet write, shadow HTML/API publication or Resend send. Unavailability is
+identified by sanitized `STAGING_CURRENT_OPENING_UNAVAILABLE`; malformed evidence
+by `STAGING_CURRENT_OPENING_INVALID`, without exposing source payloads.
+
+The inclusive stop trigger is `09:30 OPEN <= original entry price * 0.95`,
+not a minute LOW, day's LOW, current quote below threshold or prior close.
+A proven earlier-session target/stop/dropout in the frozen preopen queue takes
+precedence, preventing a new morning stop being invented for a lot already
+triggered earlier. For a new current-day opening STOP, record the actual
+later-model-review quote price and its source time as `exitPrice`/`exitTime`,
+the decision time separately, and the opening/bar ID and threshold evidence
+privately as `triggerEvidence`. Never claim a broker fill or a 09:30 exit.
+The current 10:00 Google policy remains indicative/timestamped; missing opening
+evidence cannot be substituted with delayed GOOGLEFINANCE `price` or prior-day
+data. This is a 10:00 check of the 09:30 event, not a separately scheduled
+09:30 execution engine; no new cron/scheduler ownership is introduced.
+
+Current-session evidence is carried in the immutable ledger inputs and
+recomputed in `validateMorningCommit` prior to transactional writes. No
+`sourceEvidence.openings` field is added for first-day/empty prior portfolios,
+preserving hashes of previously committed first-day runs. Post-commit retries
+reuse the frozen same snapshot; the publisher still requires native Sheets
+lease/fence, preserved Q/R/cash/Equity History formulas, exact workbook cell
+readback, uncached API/HTML parity and eligible Resend allowlist/leased delivery.
+Never loosen these gates merely to get a green report.
+
+Acceptance requires exact-head full CI with real disposable PostgreSQL, manual
+deployment of both isolated staging services only after CI PASS, actual
+following-session carried-lot opening proof and full publication readback,
+then separately gated private Resend provider verification. A simulated 09:30
+bar test is not real market-session certification. Production and legacy tasks
+remain untouched; draft PR #329 is NOT READY FOR CUTOVER. Rollback: redeploy
+prior tested isolated staging commit and preserve all immutable journals.
+Handbook update required: YES.
+
 ## Engine 2 private read-only PostgreSQL staging integrity receipt — 2026-11-02
 
 Only the isolated PR #329 shadow observer runs `engine-v2/staging-db-integrity.cjs` at startup.
