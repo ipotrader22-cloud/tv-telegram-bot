@@ -77,7 +77,9 @@ test('Google cycle closes first using each stock source time, not a common fabri
  const p=await prepared(previous),r=structuredClone(p.batch.items[0]);r.ticker='OLD';p.batch.universe.push('OLD');p.batch.items.push(r);
  p.exits.push({ticker:'OLD',entryDate:'2026-10-20',reason:'STOP LOSS',triggerAt:'2026-10-21T15:00:00Z',sourceId:'prior-low'});
  delete p.fingerprint;p.fingerprint=hash(p);
- const input=proposeDelayed({date,runAt,prepared:p,previous,pricePolicy:GOOGLE_POLICY,quotes:[quote(source),quote({...source,symbol:'NASDAQ:OLD',price:91,tradeTimeET:date+' 09:53:00'})]});
+ const openingTime=require('./delayed-model-policy.cjs').etTime(date,570);
+ const openings=[{ticker:'OLD',date,open:100,time:openingTime,minuteET:'09:30',sourceId:'YAHOO_1M:OLD:'+Date.parse(openingTime),confirmed:true,session:'REGULAR',priceKind:'MINUTE_BAR_OPEN',indicative:true}];
+ const input=proposeDelayed({date,runAt,prepared:p,previous,openings,pricePolicy:GOOGLE_POLICY,quotes:[quote(source),quote({...source,symbol:'NASDAQ:OLD',price:91,tradeTimeET:date+' 09:53:00'})]});
  assert.equal(input.events[0].type,'CLOSE');assert.equal(input.events[1].type,'OPEN');
  assert.equal(input.closed[0].exitTime,date+'T13:53:00.000Z');assert.equal(input.positions[0].entryTime,date+'T13:52:17.000Z');
  assert.equal(require('./clean-ledger.cjs').validateMorningCommit(input).status,'READY_FOR_SHADOW_COMMIT');
