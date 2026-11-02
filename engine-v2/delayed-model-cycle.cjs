@@ -55,7 +55,7 @@ function proposeDelayed({date,runAt,prepared,previous,quotes,openings=[],pricePo
   const lot={ticker:r.ticker,exchange:r.exchange,entryDate:date,entryTime:q.timestamp,entryPrice:q.price,currentPrice:q.price,shares:Math.floor(10000/q.price),entryScore:r.score,currentScore:r.score,factors:r.factors,fullReviewDate:date,publicNote:r.publicNote,quoteSourceId:q.sourceId,lastTargetCheckedAt:q.timestamp,modelEntryPriceKind:q.priceKind,modelEntryIndicative:true,pricePolicy,decisionAt:runAt,priceAsOf:q.timestamp};
   active.push(lot);events.push(event(lot,'OPEN',q,{price:q.price}));cash-=10000;
  }
- return {date,runAt,session:prepared.batch.session,positions:active,closed,researchBatch:prepared.batch,research:active.map(a=>({ticker:a.ticker,reviewDate:date,timestamp:byResearch.get(a.ticker).timestamp,complete:true,factors:a.factors})),quotes:active.map(a=>qm.get(a.ticker)),events,pricePolicy,sourceEvidence:{quotes,openings,prepared,previous:priorIdentity(previous)},preparedHash:prepared.fingerprint,priceAsOf:cutoff};
+ return {date,runAt,session:prepared.batch.session,positions:active,closed,researchBatch:prepared.batch,research:active.map(a=>({ticker:a.ticker,reviewDate:date,timestamp:byResearch.get(a.ticker).timestamp,complete:true,factors:a.factors})),quotes:active.map(a=>qm.get(a.ticker)),events,pricePolicy,sourceEvidence:{quotes,...(previous?.active?.length?{openings}:{}),prepared,previous:priorIdentity(previous)},preparedHash:prepared.fingerprint,priceAsOf:cutoff};
 }
 async function runDelayedCycle({url,date,runAt,clock,prepared,quoteProvider,openingProvider,pricePolicy=POLICY,getPrior=require('./clean-ledger.cjs').readLastCleanState,commit=require('./clean-ledger.cjs').commitShadowRun}){
  try{
