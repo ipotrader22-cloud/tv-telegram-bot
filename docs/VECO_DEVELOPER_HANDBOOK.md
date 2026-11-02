@@ -1,3 +1,26 @@
+## Engine 2 opening-stop source guard — 2026-11-02
+
+The isolated pre-open minute scan previously treated **any** intraday one-minute
+low <= 95% of entry as an opening STOP LOSS. That violates the October 12 FINAL
+owner rule: only a verified 09:30 regular-session **opening price** for a lot
+held at that opening may trigger STOP LOSS. The shadow-only exit scan now
+requires the 09:30 minute's OPEN, original entry date/time before the open,
+and records the opening timestamp/source as trigger evidence. Intraday lows
+remain eligible for neither opening STOP nor a fabricated historical close.
+A separate +10% TARGET may still use a verified completed minute high; an
+opening stop wins if both occur in the same opening minute. Regression tests
+cover these distinctions.
+
+**Still NOT READY FOR CUTOVER:** the frozen pre-open exit scan only covers
+completed previous-session history. The actual current-session 09:30 opening
+must be independently checked in the 10:00 review before any live morning
+decision for previously held lots. This change prevents false intraday stops
+but does not implement or certify that missing same-session opening check.
+No historical event was rewritten; no staging ledger/Sheet/email, broker bridge,
+production schedule or website was modified. Require exact-head CI and isolated
+staging deployment before relying on the patch. Rollback: revert this isolated
+commit and redeploy the prior tested staging head. Handbook update required: YES.
+
 # VECO Developer Handbook
 
 ## Engine 2 isolated shadow-observer cold-start readback repair — 2026-10-30

@@ -14,8 +14,14 @@ function exitEvidence(raw,{position,through}){
  dates.add(localET(through).date);
  const bars=[...dates].flatMap(date=>completedBars(raw,{ticker:position.ticker,date,asOf:through})).filter(b=>Date.parse(b.start)>=Date.parse(coverage.coverageFrom)).sort((a,b)=>a.start.localeCompare(b.start));
  for(const b of bars){
-  const stop=b.low<=position.entryPrice*.95,target=b.high+1e-9>=position.entryPrice*1.10;
-  if(stop||target)return {ticker:position.ticker,entryDate:position.entryDate,reason:stop?'STOP LOSS':'TARGET',triggerAt:b.end,sourceId:b.sourceId,ambiguousSameBar:stop&&target,checkedThrough:through};
+  // An opening STOP LOSS is NOT an intraday low: only the verified 09:30
+  // regular-session bar OPEN may trigger, and only for a lot held at that open.
+  const heldAtOpening=position.entryDate<b.date&&Date.parse(position.entryTime)<Date.parse(b.start);
+  const stop=heldAtOpening&&localET(b.start).minute===570&&b.open<=position.entryPrice*.95;
+  const target=b.high+1e-9>=position.entryPrice*1.10;
+  if(stop||target)return {ticker:position.ticker,entryDate:position.entryDate,reason:stop?'STOP LOSS':'TARGET',
+   triggerAt:stop?b.start:b.end,sourceId:b.sourceId,triggerPriceKind:stop?'MINUTE_BAR_OPEN':'MINUTE_BAR_HIGH',
+   ambiguousSameBar:stop&&target,checkedThrough:through};
  }
  return null;
 }

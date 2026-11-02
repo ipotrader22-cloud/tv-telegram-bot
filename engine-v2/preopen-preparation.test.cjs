@@ -73,3 +73,30 @@ test('preparation at opening is rejected before any source request',async()=>{
  await assert.rejects(()=>preparePreopen(f.args),/OUTSIDE_PREOPEN_WINDOW/);
  assert.equal(f.requests,0);
 });
+
+test('preopen exit scan never mistakes intraday low for opening stop',()=>{
+ const {exitEvidence}=require('./preopen-preparation.cjs');
+ const through='2026-10-23T13:33:00Z';
+ const position={ticker:'AMD',entryDate:'2026-10-22',entryTime:'2026-10-22T14:00:00Z',
+  entryPrice:100,lastTargetCheckedAt:'2026-10-23T13:30:00Z'};
+ const raw=bars=>({chart:{result:[{meta:{symbol:'AMD'},timestamp:bars.map((_,i)=>Date.parse('2026-10-23T13:30:00Z')/1000+i*60),
+  indicators:{quote:[{open:bars.map(b=>b[0]),high:bars.map(b=>b[1]),low:bars.map(b=>b[2]),
+   close:bars.map(b=>b[3]),volume:bars.map(()=>1000)}]}}]}});
+ const normal=[[100,101,94,100],[100,102,91,100],[100,103,95,101]];
+ assert.equal(exitEvidence(raw(normal),{position,through}),null,
+  'neither opening-minute low nor later intraday low is an opening STOP');
+ const openingStop=[[94,100,93,95],...normal.slice(1)];
+ const stop=exitEvidence(raw(openingStop),{position,through});
+ assert.equal(stop.reason,'STOP LOSS');
+ assert.equal(stop.triggerAt,'2026-10-23T13:30:00.000Z');
+ assert.equal(stop.triggerPriceKind,'MINUTE_BAR_OPEN');
+ const target=exitEvidence(raw([normal[0],[100,111,91,100],normal[2]]),{position,through});
+ assert.equal(target.reason,'TARGET');
+ assert.equal(target.triggerPriceKind,'MINUTE_BAR_HIGH');
+ assert.equal(target.triggerAt,'2026-10-23T13:32:00.000Z');
+ const both=exitEvidence(raw([[94,111,93,95],...normal.slice(1)]),{position,through});
+ assert.equal(both.reason,'STOP LOSS');
+ assert.equal(both.ambiguousSameBar,true);
+ assert.equal(exitEvidence(raw(openingStop),{position:{...position,entryDate:'2026-10-23',entryTime:'2026-10-23T13:30:00Z'},through}),null,
+  'a lot entered today cannot be treated as held at the opening');
+});
