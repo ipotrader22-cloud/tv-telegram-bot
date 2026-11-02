@@ -28,6 +28,10 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   const record=await readCleanRun({url,date});assert.equal(record.evidence_manifest.inputs.researchBatch.sourceEvidence.artifact.mode,'CLEAN_EPOCH');
   assert.equal((await commitShadowRun({url,inputs:record.evidence_manifest.inputs})).status,'IDEMPOTENT_REPLAY');
   h.args.store=competitor;h.deliver();assert.equal((await h.run()).status,'DELIVERED');assert.equal(h.sends,1);assert.equal(h.sheets.writes,1);
+  const liveAudit=await require('./staging-db-integrity.cjs').auditStagingDb({url,date});
+  assert.equal(liveAudit.status,'PASS',JSON.stringify(liveAudit));
+  assert.equal(liveAudit.deliveryStatus,'DELIVERED');
+  assert.equal(liveAudit.writesPerformed,false);
   assert.equal((await db.query('SELECT count(*)::int n FROM vixale_v2.clean_runs')).rows[0].n,1);
   assert.equal((await db.query('SELECT count(*)::int n FROM vixale_v2.clean_events')).rows[0].n,1);
   assert.equal((await db.query("SELECT state->>'delivery' status FROM vixale_v2.staging_pipeline")).rows[0].status,'DELIVERED');
