@@ -7,7 +7,7 @@ const active=[
  {ticker:'XOM',entryPrice:182.6,currentPrice:179.67}
 ];
 const unrealized=active.reduce((n,p)=>n+10000*(p.currentPrice/p.entryPrice-1),0);
-const model={activeCount:2,realized:0,unrealized,total:unrealized,equity:100000+unrealized};
+const model={active:2,realized:0,unrealized,total:unrealized,equity:100000+unrealized};
 const events=[{event_id:'CVX|2026-11-02|OPEN|2026-11-02',type:'OPEN',ticker:'CVX',entry_date:'2026-11-02'},
  {event_id:'XOM|2026-11-02|OPEN|2026-11-02',type:'OPEN',ticker:'XOM',entry_date:'2026-11-02'}];
 const expectedEvents=events.map(e=>({eventId:e.event_id}));
