@@ -5,6 +5,9 @@ const path = require('node:path');
 
 const SHA = /^[a-f0-9]{40}$/;
 const DATE = /^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const STAMP = /^20\d{2}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/;
+const HASH = /^[a-f0-9]{64}$/i;
+const APPROVED_WORKFLOWS = new Set(['Engine 2 Shadow Tests', 'Engine 2 Exact Head Certification (isolated)']);
 const STATES = Object.freeze({ PASS: 'PASS', FAIL: 'FAIL', UNVERIFIED: 'UNVERIFIED' });
 const REQUIRED_TABS = ['Portfolio', 'Open Positions', 'Closed Trades', 'Public Feed', 'Equity History', 'Engine 2 Quotes'];
 const SERVICES = Object.freeze({
@@ -51,9 +54,10 @@ function applyGates(input) {
     ci.required_workflows : ['Engine 2 Shadow Tests', 'Engine 2 Exact Head Certification (isolated)'];
   const ciParts = [
     flag('SOURCE_SHA_VALID', isSha(sourceSHA)),
+    flag('REQUIRED_WORKFLOWS_APPROVED', required.every(w => APPROVED_WORKFLOWS.has(w))),
     equal('CHECKOUT_SHA_MATCH', ci.checkout_sha, sourceSHA),
   ];
-  for (const workflow of required) {
+  for (const workflow of required.filter(w => APPROVED_WORKFLOWS.has(w))) {
     const matches = ciRuns.filter(r => r && r.name === workflow && r.head_sha === sourceSHA);
     const last = matches.slice().sort((a, b) =>
       String(b.created_at || '').localeCompare(String(a.created_at || '')) ||
@@ -106,6 +110,7 @@ function applyGates(input) {
   }
 
   const ledgerParts = [
+    flag('LEDGER_SNAPSHOT_FORMAT', ledger.snapshot_id == null ? null : HASH.test(ledger.snapshot_id)),
     flag('DATABASE_IDENTITY', verified(ledger.database_identity_verified)),
     flag('READ_ONLY_TRANSACTION', verified(ledger.read_only_transaction)),
     flag('SINGLE_WRITER_CRON', verified(ledger.single_writer_cron)),
@@ -126,6 +131,7 @@ function applyGates(input) {
     flag('CASH_EQUITY_PNL_PARITY', verified(sheet.accounting_parity)),
     equal('SHEET_SESSION_DATE', sheet.session_date, date),
     equal('SHEET_VS_LEDGER_SNAPSHOT', sheet.snapshot_id, ledger.snapshot_id),
+    equal('SHEET_VS_SESSION_POLICY', sheet.price_policy, expectedSource),
   ];
   const apiParts = [
     flag('READ_ONLY_MODE', verified(api.read_only_mode)),
@@ -134,6 +140,7 @@ function applyGates(input) {
     flag('POSITION_AMOUNTS_PARITY', verified(api.positions_amounts_parity)),
     equal('API_VS_LEDGER_SNAPSHOT', api.snapshot_id, ledger.snapshot_id),
     equal('API_SESSION_DATE', api.session_date, date),
+    equal('API_VS_SESSION_POLICY', api.price_policy, expectedSource),
   ];
   const resendState = resend.delivery_status;
   const resendParts = [
@@ -165,13 +172,13 @@ function applyGates(input) {
   const overall = logicStatus === STATES.FAIL ? STATES.FAIL : STATES.UNVERIFIED;
   return {
     report_version: 1,
-    as_of: typeof source.as_of === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(source.as_of) ? source.as_of : null,
+    as_of: typeof source.as_of === 'string' && STAMP.test(source.as_of) ? source.as_of : null,
     source_sha: isSha(sourceSHA) ? sourceSHA : null,
     research_session_date: DATE.test(date || '') ? date : null,
     price_policy: POLICIES.has(expectedSource) ? expectedSource : null,
-    decision_at: typeof session.decision_at === 'string' ? session.decision_at : null,
-    published_at: typeof api.published_at === 'string' ? api.published_at : null,
-    snapshot_id: /^[a-f0-9]{64}$/i.test(ledger.snapshot_id || '') ? ledger.snapshot_id : null,
+    decision_at: typeof session.decision_at === 'string' && STAMP.test(session.decision_at) ? session.decision_at : null,
+    published_at: typeof api.published_at === 'string' && STAMP.test(api.published_at) ? api.published_at : null,
+    snapshot_id: HASH.test(ledger.snapshot_id || '') ? ledger.snapshot_id : null,
     gates,
     evidence_logic_status: logicStatus,
     e2e_status: overall,
