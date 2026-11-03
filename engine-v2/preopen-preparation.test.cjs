@@ -121,12 +121,14 @@ test('Nov 3 preopen handles two Nov 2 carried positions with complete source-bac
   }
   assert.equal(u.searchParams.get('interval'),'1m');
   calls.minute++;
-  assert.equal(u.searchParams.get('period1'),String(Date.parse('2026-11-02T15:00:00Z')/1000));
+  assert.equal(u.searchParams.get('period1'),String(Date.parse('2026-11-02T14:59:00Z')/1000));
   assert.equal(u.searchParams.get('period2'),String(Date.parse('2026-11-02T21:00:00Z')/1000));
-  const stamps=Array.from({length:360},(_,i)=>Date.parse('2026-11-02T15:00:00Z')/1000+i*60);
+  // A 09:59 bar (before the 10:00 model lot) must never trigger a TARGET.
+  // The extra minute is fetched only to make Yahoo return the real 10:00 bar.
+  const stamps=Array.from({length:361},(_,i)=>Date.parse('2026-11-02T14:59:00Z')/1000+i*60);
   const raw={chart:{result:[{meta:{symbol:ticker,dataGranularity:'1m'},
    timestamp:stamps,indicators:{quote:[{open:stamps.map(()=>100),
-    high:stamps.map(()=>100.5),low:stamps.map(()=>99.5),
+    high:stamps.map((_,i)=>i===0?120:100.5),low:stamps.map(()=>99.5),
     close:stamps.map(()=>100),volume:stamps.map(()=>1000)}]}}]}};
   return {ok:true,json:async()=>raw};
  };
