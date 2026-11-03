@@ -154,3 +154,30 @@ test('Nov 3 carried-lot preopen blocks a missing minute rather than silently ign
  assert.throws(()=>exitEvidence(raw,{position,through:'2026-11-02T21:00:00.000Z'}),
   /TARGET_MINUTE_COVERAGE_GAP/);
 });
+
+
+test('preopen reports a redacted ledger-read stage, never the underlying connection error',async()=>{
+ const f=fixture('2026-11-03');let fetches=0;
+ f.args.getPrior=async()=>{throw Error('postgres credentials secret URI')};
+ f.args.fetchFn=async()=>{fetches++;throw Error('must not fetch')};
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_LEDGER_READ_FAILED');
+ assert.equal(fetches,0);
+});
+test('preopen reports a redacted research-collection stage without touching carried-minute history',async()=>{
+ const f=fixture('2026-11-03');let fetches=0;
+ f.args.fetchFn=async()=>{fetches++;throw Error('private Yahoo credential URL')};
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_RESEARCH_COLLECTION_FAILED');
+ assert.equal(fetches,4); // First parallel Yahoo batch only; no ledger or minute update.
+});
+test('preopen keeps a known research HTTP status safely distinguishable',async()=>{
+ const f=fixture('2026-11-03');
+ f.args.fetchFn=async()=>({ok:false,status:429});
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='RESEARCH_OHLCV_HTTP_429');
+});
+test('preopen labels opaque carried minute source failures after successful independent research',async()=>{
+ const f=fixture('2026-11-03');
+ f.args.getPrior=async()=>({epoch:'2026-10-19',date:'2026-11-02',closed:[],history:[],
+  active:[{ticker:'AMD',exchange:'NASDAQ',entryDate:'2026-11-02',
+   entryTime:'2026-11-02T15:00:00Z',lastTargetCheckedAt:'2026-11-02T15:00:00Z',entryPrice:100}]});
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_CARRIED_MINUTE_EVIDENCE_FAILED');
+});
