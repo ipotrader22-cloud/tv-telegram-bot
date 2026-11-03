@@ -32,6 +32,15 @@ lease/fence, preserved Q/R/cash/Equity History formulas, exact workbook cell
 readback, uncached API/HTML parity and eligible Resend allowlist/leased delivery.
 Never loosen these gates merely to get a green report.
 
+The isolated observer also performs a bounded, read-only journal scan
+at 10:05/10:10/10:15/10:20/10:25 ET on NYSE sessions. It logs a sanitized
+receipt only when the session's state or immutable snapshot fingerprint changes.
+The receipt validates any carried-lot opening proofs persisted with the actual
+ledger, and reports `carriedOpeningEvidenceCount`. This uses the existing internal
+PostgreSQL connection; it does not disclose credentials, add public endpoints,
+make trades or mutate the staging workbook. Missing today's journal remains a
+visible fail-closed audit state rather than a fabricated PASS.
+
 Acceptance requires exact-head full CI with real disposable PostgreSQL, manual
 deployment of both isolated staging services only after CI PASS, actual
 following-session carried-lot opening proof and full publication readback,
