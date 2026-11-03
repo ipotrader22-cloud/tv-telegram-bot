@@ -68,3 +68,25 @@ test('successful prepare and morning tick are unchanged',async()=>{
    tick:async()=>{tick++;return {status:'ACCEPTED_NOT_DELIVERED'}}})});
  assert.equal(morning.status,'ACCEPTED_NOT_DELIVERED');assert.equal(tick,1);
 });
+
+
+test('new preopen stage failures are fixed, redacted and do not trigger orders/emails',async()=>{
+ const known={
+  PREOPEN_LEDGER_READ_FAILED:'STAGING_PREOPEN_LEDGER_UNAVAILABLE',
+  PREOPEN_RESEARCH_COLLECTION_FAILED:'STAGING_PREOPEN_RESEARCH_COLLECTION_FAILED',
+  PREOPEN_RESEARCH_CERTIFICATION_FAILED:'STAGING_PREOPEN_RESEARCH_CERTIFICATION_FAILED',
+  PREOPEN_CARRIED_MINUTE_EVIDENCE_FAILED:'STAGING_CARRIED_MINUTE_EVIDENCE_INCOMPLETE',
+  TARGET_MINUTE_COVERAGE_GAP:'STAGING_CARRIED_MINUTE_EVIDENCE_INCOMPLETE',
+  TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY:'STAGING_CARRIED_MINUTE_EVIDENCE_INCOMPLETE',
+  TARGET_POSITION_OR_TIME_EVIDENCE_MISSING:'STAGING_CARRIED_POSITION_EVIDENCE_INVALID',
+  HOLDING_SCAN_START_MISSING:'STAGING_CARRIED_POSITION_EVIDENCE_INVALID',
+  HOLDING_OUTSIDE_RESEARCH_UNIVERSE:'STAGING_CARRIED_HOLDING_OUTSIDE_UNIVERSE',
+  NEWS_COVERAGE_FAILED:'STAGING_NEWS_COVERAGE_INCOMPLETE',
+  'Missing completed-session history':'STAGING_MODEL_EVIDENCE_INCOMPLETE',
+ };
+ for(const [reason,expected] of Object.entries(known)){
+  const x=await invoke(reason);
+  assert.deepEqual(x.result,{status:'BLOCKED',reason:expected,exitCode:1,productionCutover:false});
+  assert.equal(x.calls,1);assert.equal(x.orders,0);assert.equal(x.emails,0);
+ }
+});
