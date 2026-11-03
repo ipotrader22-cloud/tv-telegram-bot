@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   shadow-and-postgres:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'engine-v2-shadow-foundation-20261016' || github.event.pull_request.head.ref == 'engine-v2-shadow-foundation-20261016'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -67,6 +68,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   external-parity-unit:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.base.ref == 'engine-v2-shadow-foundation-20261016' || github.event.pull_request.head.ref == 'engine-v2-shadow-foundation-20261016'
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     permissions:
