@@ -33,7 +33,10 @@ async function preopenStage(work,unknownReason){
   const reason=error instanceof Error?error.message:'';
   const known=new Set(['NEWS_COVERAGE_FAILED','TARGET_MINUTE_COVERAGE_GAP',
    'TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY','TARGET_POSITION_OR_TIME_EVIDENCE_MISSING',
-   'HOLDING_OUTSIDE_RESEARCH_UNIVERSE','HOLDING_SCAN_START_MISSING']);
+   'HOLDING_OUTSIDE_RESEARCH_UNIVERSE','HOLDING_SCAN_START_MISSING',
+   'PREOPEN_TRIGGER_PROVIDER_FAILED','RESEARCH_SYMBOL_MISMATCH',
+   'COMPANY_IDENTITY_UNVERIFIED','RESEARCH_SECTOR_MAPPING_INCOMPLETE',
+   'Missing completed-session history']);
   if(known.has(reason)||/^RESEARCH_OHLCV_HTTP_\d{3}$/.test(reason))throw error;
   throw Error(unknownReason);
  }
