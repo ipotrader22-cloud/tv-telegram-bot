@@ -1,3 +1,32 @@
+## Engine 2 Resend staging writer ownership — 2026-11-02
+
+The isolated Render cron is the **only** writer to the Engine 2 PostgreSQL
+staging_pipeline publication and email outbox. The shadow observer is an
+independent read-only HTTP/API/HTML surface and private integrity auditor:
+**it must never run stagingWorker.tick()**, even when its own
+VIXALE_V2_STAGING_EMAIL_ENABLED is NO. Otherwise the observer races the cron,
+overwrites an ACCEPTED_NOT_DELIVERED state with EMAIL_DISABLED and can
+interfere with deterministic provider readback/retries. The original observer
+contained a one-minute tick loop; this loop was removed and guarded by
+shadow-observer-writer-isolation.test.cjs. Read-only diagnostics and audit
+remain available.
+
+A restricted Resend sending-only credential for verified vixale.com is
+configured **only** on the isolated staging cron. Its sole recipient and
+allowlist are ipotrader22@gmail.com, with
+VIXALE_V2_STAGING_EMAIL_ENABLED=YES. Provider acceptance/delivery remains
+conditional on a fresh trade session, correct 09:30 carried opening evidence,
+transactional journal, protected Google Sheet formulas and exact live
+staging HTML/API parity. Earlier journal entries marked EMAIL_DISABLED are
+not retroactively sent. Test letters carry '[STAGING — NOT LIVE]' and must
+never be sent to customers. A credential disclosed in conversation should
+be rotated through the approved secret-management workflow, not committed
+to the repository. Production cutover is prohibited.
+
+Handbook update required: YES. Rollback: revert only the observer writer
+isolation if necessary, but keep a single effective journal writer and
+continue staging-only. No production trade or client email effects.
+
 ## Engine 2 current-session 09:30 opening STOP guard — 2026-11-02
 
 The private Engine 2 10:00 staging decision now requires a completed, exact
