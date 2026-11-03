@@ -100,3 +100,93 @@ test('preopen exit scan never mistakes intraday low for opening stop',()=>{
  assert.equal(exitEvidence(raw(openingStop),{position:{...position,entryDate:'2026-10-23',entryTime:'2026-10-23T13:30:00Z'},through}),null,
   'a lot entered today cannot be treated as held at the opening');
 });
+
+
+test('Nov 3 preopen handles two Nov 2 carried positions with complete source-backed minute coverage',async()=>{
+ const date='2026-11-03',sourceSession='2026-11-02',at='2026-11-03T12:07:00Z';
+ const previous={epoch:'2026-10-19',date:sourceSession,
+  active:['AMD','NVDA'].map(ticker=>({ticker,entryDate:sourceSession,
+   entryTime:'2026-11-02T15:00:00Z',lastTargetCheckedAt:'2026-11-02T15:00:00Z',
+   entryPrice:100,exchange:'NASDAQ'})),closed:[],history:[]};
+ const calls={daily:0,minute:0,news:0};
+ const fetchFn=async source=>{
+  const u=new URL(source);
+  if(u.hostname==='news.google.com'){
+   calls.news++;return {ok:true,text:async()=>'<rss><channel></channel></rss>'};
+  }
+  assert.equal(u.hostname,'query1.finance.yahoo.com');
+  const ticker=u.pathname.split('/').at(-1);
+  if(u.searchParams.get('interval')==='1d'){
+   calls.daily++;return {ok:true,json:async()=>({chart:{result:[chart(ticker,date)]}})};
+  }
+  assert.equal(u.searchParams.get('interval'),'1m');
+  calls.minute++;
+  assert.equal(u.searchParams.get('period1'),String(Date.parse('2026-11-02T15:00:00Z')/1000));
+  assert.equal(u.searchParams.get('period2'),String(Date.parse('2026-11-02T21:00:00Z')/1000));
+  const stamps=Array.from({length:360},(_,i)=>Date.parse('2026-11-02T15:00:00Z')/1000+i*60);
+  const raw={chart:{result:[{meta:{symbol:ticker,dataGranularity:'1m'},
+   timestamp:stamps,indicators:{quote:[{open:stamps.map(()=>100),
+    high:stamps.map(()=>100.5),low:stamps.map(()=>99.5),
+    close:stamps.map(()=>100),volume:stamps.map(()=>1000)}]}}]}};
+  return {ok:true,json:async()=>raw};
+ };
+ const p=await preparePreopen({date,clock:()=>new Date(at),getPrior:async()=>previous,
+  env:{VIXALE_V2_RESEARCH_UNIVERSE:'AMD,NVDA',
+   VIXALE_V2_RESEARCH_SECTORS_JSON:JSON.stringify({AMD:'SMH',NVDA:'SMH'})},
+  fetchFn});
+ validatePrepared(p,{date,previous,now:at});
+ assert.equal(p.sourceSession,sourceSession);
+ assert.equal(p.checkedThrough,'2026-11-02T21:00:00.000Z');
+ assert.equal(p.batch.items.length,2);
+ assert.deepEqual(calls,{daily:7,minute:2,news:2});
+ assert.equal(p.exits.some(x=>x.reason==='TARGET'||x.reason==='STOP LOSS'),false);
+});
+
+test('Nov 3 carried-lot preopen blocks a missing minute rather than silently ignoring target coverage',async()=>{
+ const {exitEvidence}=require('./preopen-preparation.cjs');
+ const position={ticker:'NVDA',entryDate:'2026-11-02',entryTime:'2026-11-02T15:00:00Z',
+  lastTargetCheckedAt:'2026-11-02T15:00:00Z',entryPrice:100};
+ const stamps=Array.from({length:360},(_,i)=>Date.parse('2026-11-02T15:00:00Z')/1000+i*60)
+  .filter((_,i)=>i!==77);
+ const raw={chart:{result:[{meta:{symbol:'NVDA'},timestamp:stamps,
+  indicators:{quote:[{open:stamps.map(()=>100),high:stamps.map(()=>100.5),
+   low:stamps.map(()=>99.5),close:stamps.map(()=>100),volume:stamps.map(()=>1000)}]}}]}};
+ assert.throws(()=>exitEvidence(raw,{position,through:'2026-11-02T21:00:00.000Z'}),
+  /TARGET_MINUTE_COVERAGE_GAP/);
+});
+
+
+test('preopen reports a redacted ledger-read stage, never the underlying connection error',async()=>{
+ const f=fixture('2026-11-03');let fetches=0;
+ f.args.getPrior=async()=>{throw Error('postgres credentials secret URI')};
+ f.args.fetchFn=async()=>{fetches++;throw Error('must not fetch')};
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_LEDGER_READ_FAILED');
+ assert.equal(fetches,0);
+});
+test('preopen reports a redacted research-collection stage without touching carried-minute history',async()=>{
+ const f=fixture('2026-11-03');let fetches=0;
+ f.args.fetchFn=async()=>{fetches++;throw Error('private Yahoo credential URL')};
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_RESEARCH_COLLECTION_FAILED');
+ assert.equal(fetches,4); // First parallel Yahoo batch only; no ledger or minute update.
+});
+test('preopen keeps a known research HTTP status safely distinguishable',async()=>{
+ const f=fixture('2026-11-03');
+ f.args.fetchFn=async()=>({ok:false,status:429});
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='RESEARCH_OHLCV_HTTP_429');
+});
+test('preopen labels opaque carried minute source failures after successful independent research',async()=>{
+ const f=fixture('2026-11-03');
+ f.args.getPrior=async()=>({epoch:'2026-10-19',date:'2026-11-02',closed:[],history:[],
+  active:[{ticker:'AMD',exchange:'NASDAQ',entryDate:'2026-11-02',
+   entryTime:'2026-11-02T15:00:00Z',lastTargetCheckedAt:'2026-11-02T15:00:00Z',entryPrice:100}]});
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_CARRIED_MINUTE_EVIDENCE_FAILED');
+});
+
+
+test('failed real RSS coverage stays fail-closed with a known research source code',async()=>{
+ const f=fixture('2026-11-03'),original=f.args.fetchFn;
+ f.args.fetchFn=async url=>new URL(url).hostname==='news.google.com'
+  ?{ok:false,status:503}:original(url);
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='NEWS_COVERAGE_FAILED');
+ assert.equal(f.requests,6); // Yahoo completed-session history, no carried-minute or model commit.
+});
