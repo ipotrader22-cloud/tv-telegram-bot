@@ -12,9 +12,10 @@ const expected=Array.from({length:(END-START)/minute},(_,i)=>(START+i*minute)/10
 const sample=secs=>new Date(secs*1000).toISOString();
 const query=(ticker,mode)=>{
  const url=new URL('https://query1.finance.yahoo.com/v8/finance/chart/'+ticker);
- if(mode==='exact'){
+ if(['exact','lookback1m','lookback30m'].includes(mode)){
   url.searchParams.set('interval','1m');
-  url.searchParams.set('period1',String(START/1000));
+  const lookback=mode==='lookback1m'?60:mode==='lookback30m'?1800:0;
+  url.searchParams.set('period1',String(START/1000-lookback));
   url.searchParams.set('period2',String(END/1000));
  }else{
   url.searchParams.set('interval','1m');
@@ -80,7 +81,7 @@ async function main(){
  const checkedAt=new Date().toISOString();
  const results=[];
  for(const ticker of ['CVX','XOM']){
-  for(const mode of ['exact','range5d'])
+  for(const mode of ['exact','lookback1m','lookback30m','range5d'])
    results.push(await request(ticker,mode));
  }
  const report={session:'2026-11-02',market:'NYSE',runContext:'PREOPEN_2026-11-03',
