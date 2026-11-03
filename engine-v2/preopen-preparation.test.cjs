@@ -181,3 +181,12 @@ test('preopen labels opaque carried minute source failures after successful inde
    entryTime:'2026-11-02T15:00:00Z',lastTargetCheckedAt:'2026-11-02T15:00:00Z',entryPrice:100}]});
  await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='PREOPEN_CARRIED_MINUTE_EVIDENCE_FAILED');
 });
+
+
+test('failed real RSS coverage stays fail-closed with a known research source code',async()=>{
+ const f=fixture('2026-11-03'),original=f.args.fetchFn;
+ f.args.fetchFn=async url=>new URL(url).hostname==='news.google.com'
+  ?{ok:false,status:503}:original(url);
+ await assert.rejects(()=>preparePreopen(f.args),e=>e.message==='NEWS_COVERAGE_FAILED');
+ assert.equal(f.requests,6); // Yahoo completed-session history, no carried-minute or model commit.
+});
