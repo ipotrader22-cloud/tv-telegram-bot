@@ -33,11 +33,12 @@ function good() {
       staging_workbook_identity: true, timezone: 'America/New_York',
       tabs: ['Portfolio', 'Open Positions', 'Closed Trades', 'Public Feed', 'Equity History', 'Engine 2 Quotes'],
       protected_formulas: true, immutable_history: true, accounting_parity: true,
-      session_date: date, snapshot_id: hash,
+      session_date: date, snapshot_id: hash, price_policy: 'GOOGLE_LATEST_1000_MODEL_V1',
     },
     api: {
       read_only_mode: true, no_store: true, exact_html: true,
       positions_amounts_parity: true, session_date: date, snapshot_id: hash,
+      price_policy: 'GOOGLE_LATEST_1000_MODEL_V1',
     },
     resend: {
       audit_no_send: true, recipient_allowlisted: true, message_identity_verified: true,
@@ -89,6 +90,8 @@ test('fixed 09:40 policy is not silently converted to Google latest', () => {
   const e = good();
   e.session.price_policy = 'DELAYED_0940_MODEL_V1';
   e.session.bar_end_0940_valid = false;
+  e.sheet.price_policy = 'DELAYED_0940_MODEL_V1';
+  e.api.price_policy = 'DELAYED_0940_MODEL_V1';
   assert.ok(inspect(e, 'CRON_AND_MARKET_EVIDENCE').failures.includes('BAR_END_0940_EXACT'));
 });
 test('stale Google source is a fail, never a source-time workaround', () => {
@@ -144,4 +147,28 @@ test('Markdown output is derived from allowlisted gates only', () => {
   const md = toMarkdown(applyGates(good()));
   assert.match(md, /E2E: UNVERIFIED/);
   assert.match(md, /Cutover: NOT AUTHORIZED/);
+});
+
+
+test('untrusted workflow names and timestamp metadata never appear in an audit artifact', () => {
+  const e=good();
+  e.ci.required_workflows=['Engine 2 Shadow Tests','API_KEY_SECRET'];
+  e.source.as_of='2026-11-03T12:00:00ZSECRET';
+  e.session.decision_at='secret-token';
+  e.api.published_at='private-data';
+  const result=JSON.stringify(applyGates(e));
+  assert.equal(result.includes('API_KEY_SECRET'),false);
+  assert.equal(result.includes('secret-token'),false);
+  assert.equal(result.includes('private-data'),false);
+  assert.equal(result.includes('2026-11-03T12:00:00ZSECRET'),false);
+  assert.equal(applyGates(e).gates[0].status,'FAIL');
+});
+test('malformed ledger hash and drifted price-policy labels fail closed', () => {
+  const e=good();
+  e.ledger.snapshot_id='not-a-valid-fingerprint';
+  e.sheet.price_policy='DELAYED_0940_MODEL_V1';
+  e.api.price_policy='DELAYED_0940_MODEL_V1';
+  assert.equal(inspect(e,'POSTGRESQL_JOURNAL').status,'FAIL');
+  assert.equal(inspect(e,'PRIVATE_STAGING_SHEET').status,'FAIL');
+  assert.equal(inspect(e,'SHADOW_API_HTML').status,'FAIL');
 });
