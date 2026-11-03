@@ -4017,3 +4017,36 @@ The proposed minimal **diagnostics-only** change adds an allowlisted safePreopen
 **No model/business-logic change:** the same preopen worker is called once, exceptions still return BLOCKED exitCode=1 with productionCutover=false, and the scheduler's phase, retry window and all financial source/ledger/Sheet/Resend gates remain unchanged. Neither a source fallback nor an automatic replay is added. The same test covers a successful preopen and the normal morning delivery status; malicious input cannot alter a reason. Verify via node --test engine-v2/staging-preopen-diagnostics.test.cjs plus the existing Engine 2 shadow suite.
 
 This proposal does not diagnose the November 3 underlying failure retroactively, and is not deployed to the cron. Only a future permitted isolated deployment and subsequent direct log evidence can confirm its diagnostic value. No production merge/cutover or secrets/config changes. Rollback: revert the isolated cron diagnostic addition and test only, retaining all immutable staging financial history.
+
+
+## Engine 2 preopen failure-stage isolation — 2026-11-03 (draft; no deploy)
+
+The November 3 isolated staging cron repeatedly returned the opaque preopen
+failure status while the preceding completed session had two carried lots.
+The original exceptions were suppressed by the cron and cannot be recovered
+retroactively. The prior regression suite tested source-backed preopen research
+but did not test a two-lot carryover on November 3.
+
+The isolated follow-up PR adds a completed-minute carryover test and a
+redacted diagnostic boundary around exactly three existing preopen steps:
+read-only previous-ledger lookup, collection/certification of completed-session
+research evidence, and the previous-session carried-lot minute-history scan.
+Errors are reduced to fixed, allowlisted status categories; no provider URL,
+secret, symbol or raw exception is printed. Known HTTP/source/status codes are
+retained only through safe classifier mapping. Missing minute coverage,
+stale/incomplete research evidence and failed previous-ledger reads still
+abort before a financial decision or publication.
+
+This is **not** a retry, source substitution, skip, change to entry/exit
+strategy, stop/target threshold, model pricing, persistent hash, DB schema,
+Sheet formula, email setting or scheduler. No current-session financial
+E2E PASS is claimed from simulated coverage; only the following real session
+can identify which failure stage actually occurred. A stage label narrows
+diagnosis but does not itself prove the underlying provider cause.
+
+Validation: exact-head Engine 2 Shadow Tests including disposable PostgreSQL,
+staging-preopen-diagnostics.test.cjs and preopen-preparation.test.cjs.
+Keep production/main and existing staging services unchanged unless separately
+authorized. Rollback: revert the isolated diagnostics source/tests to the
+previous tested staging revision, without modifying immutable financial data.
+Handbook update required: YES.
