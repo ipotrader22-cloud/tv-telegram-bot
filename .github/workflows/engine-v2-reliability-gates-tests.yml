@@ -1,0 +1,26 @@
+name: Engine 2 Reliability Read-Only Gates Tests
+on:
+  pull_request:
+    paths:
+      - 'engine-v2/reliability/**'
+      - '.github/workflows/engine-v2-reliability-gates-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evaluate-fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 immutable
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 immutable
+        with:
+          node-version: '20'
+      - name: Check audit script syntax
+        run: node --check engine-v2/reliability/staging-audit.cjs
+      - name: Check audit test syntax
+        run: node --check engine-v2/reliability/staging-audit.test.cjs
+      - name: Run bounded fail-closed evidence tests
+        run: node --test engine-v2/reliability/staging-audit.test.cjs
