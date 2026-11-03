@@ -53,7 +53,11 @@ async function preparePreopen({date,url,clock=()=>new Date(),env,fetchFn=fetch,g
   const r=batch.items.find(x=>x.ticker===position.ticker);if(!r)throw Error('HOLDING_OUTSIDE_RESEARCH_UNIVERSE');
   const from=position.lastTargetCheckedAt||position.entryTime;
   if(!Number.isFinite(Date.parse(from)))throw Error('HOLDING_SCAN_START_MISSING');
-  const u='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(position.ticker)+'?interval=1m&period1='+Math.floor(Date.parse(from)/1000)+'&period2='+Math.ceil(Date.parse(through)/1000);
+  // Yahoo's interval=1m chart may return the first requested candle with invalid OHLCV.
+  // Fetch one extra earlier minute, but still validate/scan ONLY from the unchanged
+  // certified watermark. Historical targets/stops and source gates remain identical.
+  const requestStart=Date.parse(from)-60000;
+  const u='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(position.ticker)+'?interval=1m&period1='+Math.floor(requestStart/1000)+'&period2='+Math.ceil(Date.parse(through)/1000);
   const trigger=await preopenStage(async()=>{
    const res=await fetchFn(u,{headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(15000)});
    if(!res.ok)throw Error('PREOPEN_TRIGGER_PROVIDER_FAILED');
