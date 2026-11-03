@@ -100,3 +100,57 @@ test('preopen exit scan never mistakes intraday low for opening stop',()=>{
  assert.equal(exitEvidence(raw(openingStop),{position:{...position,entryDate:'2026-10-23',entryTime:'2026-10-23T13:30:00Z'},through}),null,
   'a lot entered today cannot be treated as held at the opening');
 });
+
+
+test('Nov 3 preopen handles two Nov 2 carried positions with complete source-backed minute coverage',async()=>{
+ const date='2026-11-03',sourceSession='2026-11-02',at='2026-11-03T12:07:00Z';
+ const previous={epoch:'2026-10-19',date:sourceSession,
+  active:['AMD','NVDA'].map(ticker=>({ticker,entryDate:sourceSession,
+   entryTime:'2026-11-02T15:00:00Z',lastTargetCheckedAt:'2026-11-02T15:00:00Z',
+   entryPrice:100,exchange:'NASDAQ'})),closed:[],history:[]};
+ const calls={daily:0,minute:0,news:0};
+ const fetchFn=async source=>{
+  const u=new URL(source);
+  if(u.hostname==='news.google.com'){
+   calls.news++;return {ok:true,text:async()=>'<rss><channel></channel></rss>'};
+  }
+  assert.equal(u.hostname,'query1.finance.yahoo.com');
+  const ticker=u.pathname.split('/').at(-1);
+  if(u.searchParams.get('interval')==='1d'){
+   calls.daily++;return {ok:true,json:async()=>({chart:{result:[chart(ticker,date)]}})};
+  }
+  assert.equal(u.searchParams.get('interval'),'1m');
+  calls.minute++;
+  assert.equal(u.searchParams.get('period1'),String(Date.parse('2026-11-02T15:00:00Z')/1000));
+  assert.equal(u.searchParams.get('period2'),String(Date.parse('2026-11-02T21:00:00Z')/1000));
+  const stamps=Array.from({length:360},(_,i)=>Date.parse('2026-11-02T15:00:00Z')/1000+i*60);
+  const raw={chart:{result:[{meta:{symbol:ticker,dataGranularity:'1m'},
+   timestamp:stamps,indicators:{quote:[{open:stamps.map(()=>100),
+    high:stamps.map(()=>100.5),low:stamps.map(()=>99.5),
+    close:stamps.map(()=>100),volume:stamps.map(()=>1000)}]}}]}};
+  return {ok:true,json:async()=>raw};
+ };
+ const p=await preparePreopen({date,clock:()=>new Date(at),getPrior:async()=>previous,
+  env:{VIXALE_V2_RESEARCH_UNIVERSE:'AMD,NVDA',
+   VIXALE_V2_RESEARCH_SECTORS_JSON:JSON.stringify({AMD:'SMH',NVDA:'SMH'})},
+  fetchFn});
+ validatePrepared(p,{date,previous,now:at});
+ assert.equal(p.sourceSession,sourceSession);
+ assert.equal(p.checkedThrough,'2026-11-02T21:00:00.000Z');
+ assert.equal(p.batch.items.length,2);
+ assert.deepEqual(calls,{daily:7,minute:2,news:2});
+ assert.equal(p.exits.some(x=>x.reason==='TARGET'||x.reason==='STOP LOSS'),false);
+});
+
+test('Nov 3 carried-lot preopen blocks a missing minute rather than silently ignoring target coverage',async()=>{
+ const {exitEvidence}=require('./preopen-preparation.cjs');
+ const position={ticker:'NVDA',entryDate:'2026-11-02',entryTime:'2026-11-02T15:00:00Z',
+  lastTargetCheckedAt:'2026-11-02T15:00:00Z',entryPrice:100};
+ const stamps=Array.from({length:360},(_,i)=>Date.parse('2026-11-02T15:00:00Z')/1000+i*60)
+  .filter((_,i)=>i!==77);
+ const raw={chart:{result:[{meta:{symbol:'NVDA'},timestamp:stamps,
+  indicators:{quote:[{open:stamps.map(()=>100),high:stamps.map(()=>100.5),
+   low:stamps.map(()=>99.5),close:stamps.map(()=>100),volume:stamps.map(()=>1000)}]}}]}};
+ assert.throws(()=>exitEvidence(raw,{position,through:'2026-11-02T21:00:00.000Z'}),
+  /TARGET_MINUTE_COVERAGE_GAP/);
+});
