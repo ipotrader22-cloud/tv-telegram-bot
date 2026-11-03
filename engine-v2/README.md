@@ -7,7 +7,10 @@ and preserve the trigger, source ID, later review quote and decision time
 separately. Missing or invalid 09:30 evidence blocks ledger, staging Sheet,
 shadow API/HTML publication and email; a later intraday LOW is not an opening
 STOP. Older already-committed opening-day artifacts are not repriced or
-rewritten. Changes are restricted to draft PR #329 until real multi-day
+rewritten. The read-only shadow observer independently checks persisted
+carried-lot opening evidence every five minutes from 10:05–10:25 ET on
+NYSE sessions and emits a sanitized new-snapshot receipt without opening
+PostgreSQL to the public internet. Changes are restricted to draft PR #329 until real multi-day
 market-session acceptance, full publication readback and provider-gated test
 email; no production cutover or automatic client delivery.
 
