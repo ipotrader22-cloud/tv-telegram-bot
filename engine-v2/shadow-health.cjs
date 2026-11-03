@@ -149,8 +149,8 @@ const refresh=async()=>{
   void require('./staging-db-integrity.cjs').auditStagingDb({url,date:today})
    .then(result=>console.log('Engine 2 staging DB integrity (read only):',JSON.stringify(result)))
    .catch(()=>console.log('Engine 2 staging DB integrity (read only):',JSON.stringify({status:'BLOCKED',reason:'AUDIT_UNAVAILABLE',writesPerformed:false})));
-  void stagingWorker.tick();
-  setInterval(()=>{void stagingWorker.tick()},60000).unref();
+  // Observer is read-only: only the isolated staging cron owns the durable
+  // publication/delivery writer. Never race it with an EMAIL_DISABLED receipt.
   // After a new morning commit, log the private verified 09:30 proof once,
   // without creating a public audit endpoint or opening database access.
   const morningAudit=require('./staging-db-monitor.cjs').createMorningDbAuditMonitor({url});
