@@ -4050,3 +4050,41 @@ Keep production/main and existing staging services unchanged unless separately
 authorized. Rollback: revert the isolated diagnostics source/tests to the
 previous tested staging revision, without modifying immutable financial data.
 Handbook update required: YES.
+
+
+## Engine 2 Yahoo 1m exact-start boundary / November 3 carried-lot incident — 2026-11-03 (proposed)
+
+The isolated Engine 2 staging cron emitted STAGING_CARRIED_MINUTE_EVIDENCE_INCOMPLETE
+in all 21 preopen retries November 3 (09:01–09:20 ET), after the research phase
+and while checking CVX/XOM carried lots from November 2. The exact underlying
+Render-side upstream response was not retained. Fail-closed behavior prevented
+a speculative portfolio update.
+
+Read-only Yahoo v8 chart queries from a separate GitHub Actions runner at
+09:26–09:28 ET (before the next NYSE opening) reproduced a query boundary
+artifact on both names: interval=1m with period1 at November 2 10:00 ET and
+period2 at 16:00 ET returned HTTP 200 but only 359 of 360 valid minutes.
+The 10:00 candle was returned with invalid bar values and excluded by the
+existing strict parser. The same query beginning one minute earlier (09:59
+ET), 30 minutes earlier (09:30 ET), and range=5d each returned all 360
+strictly valid 10:00–15:59 ET bars. This proves historical Yahoo data were
+available before the November 3 opening and the missing minute is correlated
+with exact request period1, not the delayed *current* quote. GitHub workflow
+evidence: runs 41653638220 and 41653966023. Separate runner egress is not
+direct proof of the precise Render egress problem at 09:00 ET.
+
+The proposed staging-only source-request repair subtracts 60 seconds from
+the Yahoo chart period1 of a carried lot; the original persisted entryTime
+and lastTargetCheckedAt watermark, close time, strict minute coverage,
+opening STOP vs TARGET rule, ranking, quotes and model/ledger contracts
+are **not** altered. The separately fetched preceding minute is not scanned
+for targets/stops. Tests assert the older minute may have an otherwise
+qualifying target high and still cannot trigger a close. No source
+substitution, history backfill, simulated financial result, cron retry,
+DB/Google Sheet/Resend change, production code or customer action.
+
+Rollback: restore the original request period1 without changing any persisted
+ledger; keep the November 3 session unverified. Promotion requires exact-head
+CI including PostgreSQL integration and a separately authorized isolated cron
+deployment, followed by a successful real-session preopen and 10:00 readback
+before any public cutover. Handbook update required: YES.
