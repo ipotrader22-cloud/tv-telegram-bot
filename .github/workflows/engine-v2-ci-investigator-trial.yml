@@ -1,0 +1,24 @@
+name: Engine 2 Reliability CI Investigator Trial
+on:
+  pull_request:
+    paths:
+      - 'engine-v2/reliability/ci-investigator*'
+      - '.github/workflows/engine-v2-ci-investigator-trial.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-investigation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 immutable
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 immutable
+        with:
+          node-version: '20'
+      - name: Check bounded investigator syntax
+        run: node --check engine-v2/reliability/ci-investigator.cjs
+      - name: Test known benign failure and adversarial logs (read only)
+        run: node --test engine-v2/reliability/ci-investigator.test.cjs
