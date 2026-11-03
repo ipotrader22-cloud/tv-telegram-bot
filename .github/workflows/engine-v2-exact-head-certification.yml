@@ -1,0 +1,87 @@
+name: Engine 2 Exact Head Certification (isolated)
+on:
+  pull_request:
+    branches:
+      - engine-v2-shadow-foundation-20261016
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: engine2-exact-head-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+jobs:
+  shadow-and-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: vixale_v2_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vixale_v2_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      VIXALE_V2_PIPELINE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vixale_engine_v2_shadow_20990101
+      VIXALE_V2_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vixale_v2_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, immutable
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, immutable
+        with:
+          node-version: '20'
+      - name: Check exact checkout SHA before execution
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Install disposable PostgreSQL driver
+        run: npm install --prefix engine-v2 --no-save --no-package-lock pg@8
+      - name: Initialize disposable pipeline database
+        run: |
+          node - <<'JS'
+          const {Client}=require('./engine-v2/node_modules/pg');
+          (async()=>{const c=new Client({connectionString:process.env.VIXALE_V2_TEST_DATABASE_URL});await c.connect();try{await c.query('CREATE DATABASE vixale_engine_v2_shadow_20990101')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1});
+          JS
+      - name: Run shadow tests, database integration and reliability negatives
+        run: |
+          node --test engine-v2/*.test.cjs
+          node tests/test_swing_research_inputs.js
+          node --test engine-v2/reliability/*.test.cjs
+      - name: Record exact source identity (not a staging certification)
+        run: node engine-v2/reliability/ci-exact-head.cjs --self
+      - name: Upload exact-head source evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: engine2-exact-head-${{ env.EXPECTED_HEAD_SHA }}
+          path: engine-v2/out/reliability-ci-head.json
+          if-no-files-found: error
+          retention-days: 30
+  external-parity-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, immutable
+        with:
+          ref: ${{ env.EXPECTED_HEAD_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, immutable
+        with:
+          node-version: '24'
+      - name: Check exact checkout SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - name: Test external parity and Resend readback safety without sending
+        run: node --test engine-v2/staging-external-parity.test.cjs engine-v2/resend-provider-readback.test.cjs
