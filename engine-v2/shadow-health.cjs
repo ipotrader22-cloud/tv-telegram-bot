@@ -151,6 +151,10 @@ const refresh=async()=>{
    .catch(()=>console.log('Engine 2 staging DB integrity (read only):',JSON.stringify({status:'BLOCKED',reason:'AUDIT_UNAVAILABLE',writesPerformed:false})));
   void stagingWorker.tick();
   setInterval(()=>{void stagingWorker.tick()},60000).unref();
+  // After a new morning commit, log the private verified 09:30 proof once,
+  // without creating a public audit endpoint or opening database access.
+  const morningAudit=require('./staging-db-monitor.cjs').createMorningDbAuditMonitor({url});
+  setInterval(()=>{void morningAudit().catch(()=>{})},60000).unref();
  });
 })().catch(e=>{console.error('Shadow observer startup failed:',e.message);process.exitCode=1});
 setInterval(refresh,60000).unref();
