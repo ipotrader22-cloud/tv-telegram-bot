@@ -2,6 +2,24 @@
 // One invocation, no web server and no legacy portfolio import.
 const {localET}=require('./market-data-adapter.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
+// Only literal, public-safe categories leave the pre-open exception boundary.
+// Unknown/raw provider errors remain hidden; this never changes success or retry policy.
+function safePreopenFailure(error) {
+ const message=error instanceof Error?error.message:null;
+ if(typeof message!=='string')return 'PREOPEN_PREPARATION_FAILED';
+ if(/^RESEARCH_OHLCV_HTTP_\d{3}$/.test(message))return 'STAGING_RESEARCH_SOURCE_UNAVAILABLE';
+ if(['RESEARCH_SYMBOL_MISMATCH','COMPANY_IDENTITY_UNVERIFIED','RESEARCH_SECTOR_MAPPING_INCOMPLETE'].includes(message))
+  return 'STAGING_RESEARCH_EVIDENCE_INVALID';
+ if(message==='PREOPEN_TRIGGER_PROVIDER_FAILED'||/^YAHOO_MINUTE_DATA_HTTP_\d{3}$/.test(message))
+  return 'STAGING_MINUTE_SOURCE_UNAVAILABLE';
+ if(message==='BENCHMARK_OR_STOCK_SESSION_INCOMPLETE')return 'STAGING_MODEL_EVIDENCE_INCOMPLETE';
+ if(['PREOPEN_IDENTITY_MISMATCH','PREOPEN_HASH_MISMATCH','PREOPEN_SESSION_INCOMPLETE',
+     'PREOPEN_TIME_INVALID','PREOPEN_ALREADY_REVIEWED'].includes(message))
+  return 'STAGING_PREOPEN_STATE_CONFLICT';
+ if(message==='OUTSIDE_PREOPEN_WINDOW')return 'STAGING_DECISION_WINDOW_EXPIRED';
+ return 'PREOPEN_PREPARATION_FAILED';
+}
+
 async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}={}){
  const done=(status,reason,exitCode)=>({status,reason,exitCode,productionCutover:false});
  let phase='SHADOW_IDENTITY';
@@ -53,16 +71,16 @@ async function runScheduled({env=process.env,clock=()=>new Date(),createWorker}=
   const reason=success.includes(status)?null:
    status==='BLOCKED'&&safeReasons.has(result.reason)?result.reason:'STAGING_RUN_REQUIRES_ATTENTION';
   return done(status,reason,success.includes(status)?0:1);
- }catch{
+ }catch(error){
   // No raw exception text: provider failures may contain URLs, keys or account data.
   const reasons={SHADOW_IDENTITY:'SHADOW_DATABASE_REQUIRED',NYSE_SESSION:'NYSE_SESSION_UNAVAILABLE',
    WORKER_INITIALIZATION:'STAGING_WORKER_INITIALIZATION_FAILED',
    WORKER_CONFIGURATION:'STAGING_WORKER_CONFIGURATION_FAILED',
    PREOPEN_PREPARATION:'PREOPEN_PREPARATION_FAILED',MORNING_REVIEW:'MORNING_REVIEW_FAILED'};
-  return done('BLOCKED',reasons[phase]||'STAGING_RUN_FAILED',1);
+  return done('BLOCKED',phase==='PREOPEN_PREPARATION'?safePreopenFailure(error):reasons[phase]||'STAGING_RUN_FAILED',1);
  }
 }
 if(require.main===module)runScheduled().then(result=>{
  console.log(JSON.stringify(result));process.exitCode=result.exitCode;
 });
-module.exports={runScheduled};
+module.exports={runScheduled,safePreopenFailure};
