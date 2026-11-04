@@ -34,11 +34,15 @@ const {
   DASHBOARD_OPEN_PNL_ID,
   DASHBOARD_HEADER_CLASS,
   DASHBOARD_METRIC_CLASS,
+  DASHBOARD_HISTORY_PATH,
+  DASHBOARD_HISTORY_CARD_CLASS,
+  DASHBOARD_METADATA_CLASS,
   HOME_PREVIEW_COPY,
   findTagByClass,
   buildDashboardWinRatePayload,
   handlePublicDashboardWinRateRequest,
   refineHome,
+  linkFullTradeHistory,
   refineDashboard,
   refinePage,
 } = require('../website_dashboard_snapshot_refinement');
@@ -152,6 +156,16 @@ function testDashboardRefinement() {
   const header = html.slice(headerRange.start, headerRange.end);
   const metrics = html.slice(metricRange.start, metricRange.end);
 
+  assert.strictEqual(DASHBOARD_HISTORY_PATH, '/daily-trading-summary');
+  const metadata = findTagByClass(html, 'div', DASHBOARD_METADATA_CLASS);
+  assert.ok(metadata, 'tracking metadata and history card must have a shared compact row');
+  const metadataHtml = html.slice(metadata.start, metadata.end);
+  assert.ok(metadataHtml.includes('vx-dashboard-tracking-row'));
+  assert.ok(metadataHtml.includes('Last refreshed:'));
+  assert.ok(metadataHtml.includes(`class="${DASHBOARD_HISTORY_CARD_CLASS}" href="${DASHBOARD_HISTORY_PATH}"`));
+  assert.ok(metadataHtml.includes('Trade History by every day'));
+  assert.ok(html.includes('linear-gradient(115deg,#ffffff 0%,#f5efff 55%,#eae0fd 100%)'), 'daily history card must be light purple');
+  assert.ok(html.includes('grid-column:2 / 4'), 'desktop card must sit centered in space under Prime/Edge');
   assert.ok(header.includes('<strong>Vixale Prime</strong>'));
   assert.ok(header.includes('<strong>Vixale Edge</strong>'));
   assert.ok(header.includes('vx-dashboard-subtitle-cell'), 'subtitle must be promoted to sibling of strategy cards');
@@ -226,6 +240,14 @@ function testDashboardRefinement() {
   assert.ok(html.includes(`@media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))`));
 }
 
+function testFullTradeHistoryLink() {
+  const source = '<a href="/old-history" class="top-action">Full Trade History</a><a href="/unrelated">Other</a>';
+  const linked = linkFullTradeHistory(source);
+  assert.ok(linked.includes('<a href="/daily-trading-summary" class="top-action">Full Trade History</a>'));
+  assert.ok(linked.includes('<a href="/unrelated">Other</a>'), 'unrelated links must stay untouched');
+  assert.strictEqual(linkFullTradeHistory(linked), linked, 'link update should be idempotent');
+}
+
 async function testAuthoritativeWinRateProjection() {
   assert.deepStrictEqual(
     buildDashboardWinRatePayload({ summary: { win_rate: 68.63 }, open_positions: [{ secret: true }] }),
@@ -268,6 +290,7 @@ function testRoutingAndIdempotency() {
 (async () => {
   testHomeRefinement();
   testDashboardRefinement();
+  testFullTradeHistoryLink();
   await testAuthoritativeWinRateProjection();
   testRoutingAndIdempotency();
   console.log('Dashboard snapshot refinement tests passed.');
