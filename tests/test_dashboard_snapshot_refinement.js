@@ -165,6 +165,12 @@ function testDashboardRefinement() {
   assert.ok(!header.includes('16:00 ET.'));
   assert.ok(!header.includes('until target or stop is reached.'));
   assert.ok(header.indexOf('Vixale Prime') < header.indexOf('Vixale Edge'));
+  const badgeIndex = html.indexOf('LIVE TRACKING');
+  const trackingRowIndex = html.indexOf('class="vx-dashboard-tracking-row"');
+  assert.ok(trackingRowIndex > headerRange.end, 'tracking badge row must be below the dashboard heading and strategy header');
+  assert.ok(badgeIndex > trackingRowIndex && badgeIndex < html.indexOf('Last refreshed:'), 'Live Tracking badge must sit directly above Last refreshed');
+  assert.strictEqual((html.match(/LIVE TRACKING/g) || []).length, 1, 'tracking badge must not be duplicated');
+  assert.ok(html.includes('.vx-dashboard-tracking-row{display:flex;justify-content:flex-start;align-items:center;margin:8px 0 6px}'), 'tracking badge row must retain its own visible layout');
   assert.ok(html.indexOf('Last refreshed:') > headerRange.end, 'refresh line must sit below the primary header row');
   assert.ok(html.indexOf('Last refreshed:') < metricRange.start, 'refresh line must remain above the metric strip');
   assert.ok(html.includes('Option Straddles'), 'existing third strategy note must not be deleted');
