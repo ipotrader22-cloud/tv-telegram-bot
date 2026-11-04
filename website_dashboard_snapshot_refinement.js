@@ -154,6 +154,21 @@ function injectStyles(html) {
   #${DASHBOARD_OPEN_PNL_ID}.neutral{color:inherit!important}
   @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge"} .vx-dashboard-system-card{white-space:normal!important;margin-top:0!important}.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
   @media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+
+  /* Compact dashboard header, refresh metadata and seven KPIs. */
+  .${DASHBOARD_HEADER_CLASS}{grid-template-columns:minmax(360px,1.12fr) repeat(2,minmax(250px,1fr));grid-template-areas:"heading prime edge" "subtitle prime edge";gap:2px 12px;align-items:center;margin:0 0 6px}
+  .vx-dashboard-heading-block{align-self:end!important}
+  .vx-dashboard-heading-block h1{margin:0!important;line-height:1.12!important}
+  .vx-dashboard-subtitle-cell{align-self:start;padding-top:0}
+  .vx-dashboard-system-card{margin:0!important;padding:7px 10px!important;align-self:center!important;white-space:normal!important}
+  .vx-dashboard-tracking-row{display:inline-flex;vertical-align:middle;margin:4px 10px 8px 0}
+  .vx-dashboard-updated{display:inline-block;vertical-align:middle;margin:4px 0 8px!important}
+  .${DASHBOARD_METRIC_CLASS}{gap:8px!important}
+  .${DASHBOARD_METRIC_CLASS}>.card{padding:12px 14px!important;min-height:0!important;border-radius:16px!important}
+  .${DASHBOARD_METRIC_CLASS}>.card .label{margin-bottom:8px!important}
+  .${DASHBOARD_METRIC_CLASS}>.card .value{line-height:1.15!important}
+  @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:minmax(250px,1fr) minmax(200px,1fr);grid-template-areas:"heading heading" "subtitle subtitle" "prime edge";gap:6px 10px}.vx-dashboard-system-card{margin:0!important}}
+  @media(max-width:760px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge";gap:5px}.vx-dashboard-tracking-row{margin-bottom:4px}.vx-dashboard-updated{display:block;margin:0 0 8px!important}.${DASHBOARD_METRIC_CLASS}>.card{padding:10px 12px!important}}
 </style>`;
   return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
 }
