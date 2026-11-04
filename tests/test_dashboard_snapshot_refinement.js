@@ -134,7 +134,8 @@ function testDashboardRefinement() {
   const html = refineDashboard(source);
 
   assert.ok(html.includes('<h1>Vixale Live Day Trading Dashboard</h1>'));
-  assert.ok(html.includes('Private live day-trading forward-test / paper-trading tracker'));
+  assert.ok(html.includes('Private live day-trading dashboard'));
+  assert.ok(!html.includes('Private live day-trading forward-test / paper-trading tracker'));
   assert.ok(!html.includes('<h1>Vixale Live Strategy Dashboard</h1>'));
   assert.ok(html.includes(`id="${STYLE_ID}"`));
   assert.ok(html.includes(`id="${SCRIPT_ID}"`));
@@ -148,6 +149,10 @@ function testDashboardRefinement() {
 
   assert.ok(header.includes('<strong>Vixale Prime</strong>'));
   assert.ok(header.includes('<strong>Vixale Edge</strong>'));
+  assert.ok(header.includes('Trades only intraday and closes all positions by 16:00 ET'));
+  assert.ok(header.includes('May hold positions overnight until target or stop is reached'));
+  assert.ok(!header.includes('Vixale Prime trades only intraday'));
+  assert.ok(!header.includes('Vixale Edge can hold positions overnight'));
   assert.ok(header.indexOf('Vixale Prime') < header.indexOf('Vixale Edge'));
   assert.ok(html.indexOf('Last refreshed:') > headerRange.end, 'refresh line must sit below the primary header row');
   assert.ok(html.indexOf('Last refreshed:') < metricRange.start, 'refresh line must remain above the metric strip');
@@ -189,6 +194,7 @@ function testDashboardRefinement() {
   assert.ok(!openSection.includes('OPEN POSITION'));
 
   assert.ok(html.includes(`grid-template-columns:repeat(7,minmax(0,1fr))`));
+  assert.ok(html.includes('@media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}'));
   assert.ok(html.includes(`@media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr}`));
   assert.ok(html.includes(`@media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))`));
 }
