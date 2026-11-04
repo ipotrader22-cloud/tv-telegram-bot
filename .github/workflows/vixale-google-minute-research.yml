@@ -1,0 +1,20 @@
+name: VIXALE Google Minute Source Research (read only)
+on:
+  push:
+    branches: ['probe/google-finance-minute-cvx-xom-20261104']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate exact 390-minute OHLCV coverage gates
+        run: node --test engine-v2/google-finance-minute-audit.test.cjs
+      - name: Test historical 2026-11-03 Google Finance CVX and XOM (no persistence)
+        run: node engine-v2/google-finance-minute-audit.cjs
