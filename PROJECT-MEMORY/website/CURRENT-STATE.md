@@ -1,5 +1,13 @@
 # VIXALE website — Current state
 
+## 2026-11-04 — Dashboard UI copy, PR #359 verified deploy
+
+- GitHub main UI SHA `ce1a0d1df2ad5f20bb83149af5e48461258439eb`; Render deployment `dep-dblhsinavr4c73cstf20` reported Live at 2026-11-04T12:01:25Z. Render build and server startup successful.
+- Source: `website_dashboard_snapshot_refinement.js`; tests updated: `tests/test_dashboard_snapshot_refinement.js`. Subtitle and Prime/Edge descriptions match owner wording exactly, desktop notes set to one line at >=1181px with responsive wrapping below.
+- Connected authenticated browser **before** deploy confirmed old text; fresh authenticated browser post-deploy and visual responsive QA **NOT RUN / UNVERIFIED**. A tab showed 502 during rollout. No PR-triggered CI runs were found; independent Node regression tests were not executed.
+- Source-of-truth details: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-04-PR359.md`. UI presentation only; no trading, broker, session, API, or financial-data changes.
+- Handbook change: not required. Documentation follow-up is separate from app deploy. Docs export/upload not performed (central exporter and local registry unavailable in this environment).
+
 ## Current column emphasis — 2026-09-28 source change
 
 `feature/swing-current-bold`, based on PR222 merge `54d0ec8`, adds one scoped
