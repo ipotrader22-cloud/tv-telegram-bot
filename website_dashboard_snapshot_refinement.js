@@ -139,7 +139,7 @@ function injectStyles(html) {
   .vx-dashboard-heading-block{grid-area:heading;min-width:0;margin:0!important;height:auto!important;align-items:center!important}
   .vx-dashboard-heading-block .brand{min-width:0}
   .vx-dashboard-subtitle-cell{grid-area:subtitle;min-width:0;align-self:start;padding-top:3px}
-  .vx-dashboard-system-card{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important;align-self:start!important;height:auto!important;min-height:0!important;padding:8px 12px!important;border-radius:12px!important;line-height:1.3!important}
+  .vx-dashboard-system-card{min-width:0!important;width:auto!important;max-width:none!important;margin:6px 0 0!important;align-self:start!important;height:auto!important;min-height:0!important;padding:8px 12px!important;border-radius:12px!important;line-height:1.3!important}
   .vx-dashboard-system-card strong{margin-bottom:2px!important;line-height:1.2!important}
   .vx-dashboard-system-card:nth-child(3){grid-area:prime}
   .vx-dashboard-system-card:nth-child(4){grid-area:edge}
