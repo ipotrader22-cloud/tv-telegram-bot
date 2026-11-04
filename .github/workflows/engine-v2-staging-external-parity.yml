@@ -4,11 +4,10 @@ on:
   push:
     branches: [engine-v2-shadow-foundation-20261016]
     paths:
-      - 'engine-v2/staging-external-parity.cjs'
-      - 'engine-v2/staging-external-parity.test.cjs'
-      - 'engine-v2/resend-provider-readback.test.cjs'
-      - 'engine-v2/resend-client.cjs'
-      - 'engine-v2/shadow-swing-page.cjs'
+      # A new model provider can change what the shadow site publishes even if
+      # the page renderer itself is unchanged. Recheck external parity for
+      # every staging model-source or publishing change, read-only.
+      - 'engine-v2/**'
       - '.github/workflows/engine-v2-staging-external-parity.yml'
 permissions:
   contents: read
