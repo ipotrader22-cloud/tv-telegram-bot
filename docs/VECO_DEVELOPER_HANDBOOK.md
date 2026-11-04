@@ -4192,3 +4192,28 @@ consent. A scraper's source-code licence is not market-data usage permission.
 This isolated feasibility test does NOT establish commercial approval. Do not
 activate Google 1m data as a VIXALE market source without a valid license.
 Handbook update required: YES.
+
+## 2026-11-04 — Historical Google-minute quality gate starts 09:31 (owner direction)
+
+The owner explicitly accepted 09:31 ET as the first *required historical
+minute* when evaluating Google Finance OHLCV quality. A missing 09:30 candle
+must NOT cause the historical target-window research audit to fail. The
+required coverage is strictly 09:31 through 15:59 ET inclusive, **389**
+separate completed 1m OHLCV candles, valid timestamp, regular session, price
+hierarchy and positive volume. Every missing bar from 09:31 onward, malformed
+required bar or duplicate is still a BLOCKED source-quality failure. An
+optional 09:30 bar, when present, is excluded from the 389 count and is not
+used to fill another minute. The audit continues reporting its presence
+separately for investigation.
+
+**Critical unchanged safety boundary:** a current-session 09:30 opening STOP
+for a held lot must be independently proved with the exact session-opening
+price (e.g., certified Google `priceopen`, once its own staging PR is
+separately validated and merged). The 09:31 OPEN/LOW is NOT a replacement
+for the market-opening price, and this historical research-gate change
+does not alter, activate or merge any trading strategy, broker, source
+adapter, preopen processing, financial commit, or production code.
+Google scraper's commercial/storage rights remain unverified; this read-only
+research scope grants none. Source windows crossing short trading days
+need future calendar-aware generalization before operational integration.
+Handbook update required: YES.

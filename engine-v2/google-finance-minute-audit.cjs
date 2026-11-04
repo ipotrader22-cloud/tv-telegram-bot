@@ -10,12 +10,26 @@ const ET=s=>{
   hourCycle:'h23'}).formatToParts(d).map(v=>[v.type,v.value]));
  return {date:p.year+'-'+p.month+'-'+p.day,minute:+p.hour*60+ +p.minute,second:+p.second};
 };
+// Owner-approved historical research window: 09:31 through 15:59 ET.
+// The 09:30 one-minute bar is OPTIONAL here, NOT a substitute for a
+// separately certified 09:30 session-open STOP reference (Google priceopen).
+const REQUIRED_START=571,REQUIRED_END=960,REQUIRED_MINUTES=REQUIRED_END-REQUIRED_START;
 function count(candles,{symbol,date=DATE}={}){
  const seen=new Set();let duplicates=0,invalid=0,otherSession=0;
- if(!Array.isArray(candles))return {symbol,status:'BLOCKED',reason:'CANDLES_NOT_RETURNED',count:0};
+ let optionalOpeningObserved=false,optionalOpeningCount=0;
+ if(!Array.isArray(candles))
+  return {symbol,status:'BLOCKED',reason:'CANDLES_NOT_RETURNED',count:0,
+   expected:REQUIRED_MINUTES,requiredFromET:'09:31',requiredThroughET:'15:59'};
  for(const c of candles){
   const t=ET(c?.time);
-  if(!t||t.date!==date||t.minute<570||t.minute>=960){otherSession++;continue}
+  if(t&&t.date===date&&t.minute===570){
+   optionalOpeningCount++;
+   if(t.second===0)optionalOpeningObserved=true;
+   continue; // never use 09:30 minute data to satisfy the target scan
+  }
+  if(!t||t.date!==date||t.minute<REQUIRED_START||t.minute>=REQUIRED_END){
+   otherSession++;continue;
+  }
   if(t.second!==0||seen.has(t.minute)){duplicates++;continue}
   seen.add(t.minute);
   const {open,high,low,close,volume}=c;
@@ -24,11 +38,13 @@ function count(candles,{symbol,date=DATE}={}){
     [open,high,low,close].some(v=>v<=0)||volume<=0||
     high<Math.max(open,low,close)||low>Math.min(open,high,close))invalid++;
  }
- const missing=390-seen.size;
- const ok=!missing&&!invalid&&!duplicates;
+ const missing=REQUIRED_MINUTES-seen.size,ok=!missing&&!invalid&&!duplicates;
  return {symbol,date,status:ok?'PASS':'BLOCKED',
-  count:seen.size,expected:390,missing,invalid,duplicates,otherSession,
-  opening930:seen.has(570),last1559:seen.has(959),
+  count:seen.size,expected:REQUIRED_MINUTES,missing,invalid,duplicates,otherSession,
+  requiredFromET:'09:31',requiredThroughET:'15:59',
+  optionalOpeningCount,opening930:optionalOpeningObserved,
+  opening930RequiredForTarget:false,opening930StopProof:'INDEPENDENT_PRICEOPEN_REQUIRED',
+  firstRequired931:seen.has(REQUIRED_START),last1559:seen.has(959),
   reason:ok?null:missing?'COVERAGE_GAP':invalid?'OHLCV_INVALID':duplicates?'DUPLICATE_MINUTES':'DATA_INVALID'};
 }
 function unpack(body){
