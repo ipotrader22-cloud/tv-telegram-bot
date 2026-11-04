@@ -232,11 +232,11 @@ function refineHome(html) {
 }
 
 function linkFullTradeHistory(html) {
-  return String(html).replace(/<a\\b[^>]*>[\\s\\S]*?Full Trade History[\\s\\S]*?<\\/a>/gi, (anchor) => {
-    const open = /^<a\\b[^>]*>/i.exec(anchor);
+  return String(html).replace(/<a\b[^>]*>(?:(?!<\/?a\b)[\s\S])*?Full Trade History(?:(?!<\/?a\b)[\s\S])*?<\/a>/gi, (anchor) => {
+    const open = /^<a\b[^>]*>/i.exec(anchor);
     if (!open) return anchor;
-    const linked = /\\bhref\\s*=\\s*(["'])[^"']*\\1/i.test(open[0])
-      ? open[0].replace(/\\bhref\\s*=\\s*(["'])[^"']*\\1/i, 'href="' + DASHBOARD_HISTORY_PATH + '"')
+    const linked = /\bhref\s*=\s*(["'])[^"']*\1/i.test(open[0])
+      ? open[0].replace(/\bhref\s*=\s*(["'])[^"']*\1/i, 'href="' + DASHBOARD_HISTORY_PATH + '"')
       : open[0].replace(/>$/, ' href="' + DASHBOARD_HISTORY_PATH + '">');
     return linked + anchor.slice(open[0].length);
   });
