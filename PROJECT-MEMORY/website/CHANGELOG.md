@@ -1,3 +1,9 @@
+## 2026-11-04 — Daily Trading Summaries archive heading/copy (PR #368)
+
+- Merged UI PR #368: archive h1 30% smaller; subtitle now instructs users to click a day to see that day's trades.
+- No change to ledger, links, calculations, or individual day pages. Regression assertions added; Node/browser tests not run during edit.
+- Render deploy for a196504c observed building at first check; final status/visual check not yet verified. Docs exporter/upload not performed.
+
 ## 2026-11-04 — Dashboard daily-history links (PR #366)
 
 - Merged presentation-only PR #366 (81e536ca): added compact white/light-purple daily trade history card beneath Prime/Edge and pointed Full Trade History to `/daily-trading-summary`.
