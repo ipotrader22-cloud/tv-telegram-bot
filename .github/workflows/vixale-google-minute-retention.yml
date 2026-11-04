@@ -1,0 +1,19 @@
+name: Google Minute History Retention Research (read only)
+on:
+  push:
+    branches: ['probe/google-finance-minute-retention-20261104']
+permissions:
+  contents: read
+jobs:
+  history-research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify minute OHLCV validation tests
+        run: node --test engine-v2/google-finance-minute-audit.test.cjs
+      - name: Observe 23-day old Google minute history (no prices persisted)
+        run: node engine-v2/google-finance-minute-lookback.cjs
