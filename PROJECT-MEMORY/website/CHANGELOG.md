@@ -1,5 +1,14 @@
 # VIXALE website — Documentation change log
 
+## 2026-11-04 — PR361 private dashboard correction (follow-up to PR359)
+
+- Fixed missed subtitle replacement by matching actual live pre-refined text as well as the raw source version.
+- Compact Prime/Edge cards: moved subtitle and two cards into a common desktop grid row, content-height padding and mobile stack.
+- Expanded renderer tests to cover the observed defect; isolated JS rendering checks and Chromium mock responsive checks passed.
+- PR #361 merged to main as `453a9cf2`; Render `dep-dbli4fqvcj2c738p8dng` finished Live with successful app startup.
+- Connected browser tab showed transient restart-window 502, so post-deploy authenticated screenshot/text remain UNVERIFIED; no CI test run was observed.
+- Updated index and selected dated source-of-truth; no engine, broker, data or auth changes. Documentation export/upload not performed.
+
 ## 2026-11-04 — PR359 dashboard text and deployment
 
 - Replaced private Day Trading Dashboard subtitle and both system-card explanations with owner-requested copy; no trade logic or data modifications.

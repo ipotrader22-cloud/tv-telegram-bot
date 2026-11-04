@@ -1,5 +1,13 @@
 # VIXALE website — Current state
 
+## 2026-11-04 — PR #361: corrected private dashboard subtitle and compact cards
+
+- Direct authenticated pre-fix browser read confirmed old `Private live day-trading forward-test / paper-trading tracker` after PR359. Root cause: regex expected only raw subtitle before another website refinement prepended `day-trading`.
+- PR361 code SHA `453a9cf2a4f2bf6a3600c3f370869d9176441997`; Render deploy `dep-dbli4fqvcj2c738p8dng` reported **live** at 12:17:55Z with successful build and startup.
+- Actual renderer targeted JS tests passed for raw EN, previously refined EN and unchanged RU cases. Chromium *mock* layouts checked 1440/1280/1181/1180/390/320px, no horizontal overflow, compact ~50px desktop cards and subtitle-row alignment. Full repo CI/production pixel inspection NOT RUN.
+- Browser tab retained a restart-window 502 after deploy; no available browser navigation action to reload. Authenticated page text after deploy remains UNVERIFIED. Details and constraints: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-04-PR361.md`.
+- No trading, broker, data, session or API changes. Handbook update not required; central documentation export and upload not performed.
+
 ## 2026-11-04 — Dashboard UI copy, PR #359 verified deploy
 
 - GitHub main UI SHA `ce1a0d1df2ad5f20bb83149af5e48461258439eb`; Render deployment `dep-dblhsinavr4c73cstf20` reported Live at 2026-11-04T12:01:25Z. Render build and server startup successful.
