@@ -4159,3 +4159,36 @@ and full publication parity remain separate gates.
 Read-only test failures must be resolved before interpreting a next-session
 launch as ready. This workflow does not merge production or initiate a
 new financial cycle. Handbook update required: YES.
+
+## November 4, 2026 — Google Finance minute OHLCV empirical read-only research
+
+The owner requested a measured, one-time source-quality and access audit for
+CVX:NYSE and XOM:NYSE on November 3, 2026. An experimental feature branch
+`probe/google-finance-minute-cvx-xom-20261104` contains a strictly separate
+source-audit script, validator tests and research workflow. It does not replace
+staging or production market providers or grant market-data usage rights.
+
+GitHub Actions measured CVX:NYSE at 389/390 regular session bars, with the
+09:30 start bar absent and all returned OHLCV values valid; XOM:NYSE had
+390/390 valid bars. The initial-date boundary was retested with a one-day
+buffer and CVX's 09:30 bar was STILL missing. Counts come from actual Google
+Finance c2u4wc response; no price values or raw bars are persisted or printed.
+Conclude the source is not certified as a full-coverage OHLCV replacement.
+The experimental workflow's source finding is intentionally a WARNING rather
+than code-test PASS; the JSON status retains BLOCKED and never enters the
+financial launch gate.
+
+The isolated shadow observer has a Nov-4-only READ_ONLY startup probe to test
+actual Render outbound Google minute-chart access. It logs a single safe,
+aggregate result. Never expose a public route, quote prices, API tokens,
+positions, source raw payload or any trading state mutation. Deploy observer
+ONLY after Engine 2 exact-head Shadow Tests succeed; staging cron does not
+need redeployment for this observer-only diagnostic. This hook self-disables
+on days after Nov 4. No effect on production, trades or emails.
+
+Google Finance legal disclaimer expressly restricts copying, downloading,
+storing, reprocessing and commercial use of market data absent prior written
+consent. A scraper's source-code licence is not market-data usage permission.
+This isolated feasibility test does NOT establish commercial approval. Do not
+activate Google 1m data as a VIXALE market source without a valid license.
+Handbook update required: YES.

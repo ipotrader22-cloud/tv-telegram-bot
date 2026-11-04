@@ -1,0 +1,27 @@
+name: VIXALE Google Minute Source Research (read only)
+on:
+  push:
+    branches: ['probe/google-finance-minute-cvx-xom-20261104']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate exact 390-minute OHLCV coverage gates
+        run: node --test engine-v2/google-finance-minute-audit.test.cjs
+      - name: Observe source completeness (report BLOCKED without treating research as a code failure)
+        run: |
+          set +e
+          node engine-v2/google-finance-minute-audit.cjs
+          status=$?
+          if [ "$status" != "0" ]; then
+            echo "::warning::Market-data source BLOCKED. See aggregate log; this is NOT approval to use it."
+          fi
+          exit 0

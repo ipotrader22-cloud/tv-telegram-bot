@@ -153,6 +153,15 @@ const refresh=async()=>{
   // publication/delivery writer. Never race it with an EMAIL_DISABLED receipt.
   // After a new morning commit, log the private verified 09:30 proof once,
   // without creating a public audit endpoint or opening database access.
+  // Single-day, isolated research probe of the Google Finance 1m chart
+  // response. Never writes to the ledger, feeds, Sheets, or broker; logs no
+  // prices, positions, customer information, or raw source payload.
+  if(today==='2026-11-04'&&mode==='READ_ONLY'){
+   void require('./google-finance-minute-audit.cjs').probe({environment:'RENDER'})
+    .then(result=>console.log('Engine 2 one-off Google minute source audit (read only):',JSON.stringify(result)))
+    .catch(()=>console.log('Engine 2 one-off Google minute source audit (read only):',
+      JSON.stringify({status:'BLOCKED',reason:'SOURCE_TRANSPORT_UNAVAILABLE',environment:'RENDER',writesPerformed:false})));
+  }
   const morningAudit=require('./staging-db-monitor.cjs').createMorningDbAuditMonitor({url});
   setInterval(()=>{void morningAudit().catch(()=>{})},60000).unref();
  });
