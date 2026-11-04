@@ -211,6 +211,12 @@ function testDashboardRefinement() {
   assert.ok(!openSection.includes('OPEN POSITION'));
 
   assert.ok(html.includes(`grid-template-columns:repeat(7,minmax(0,1fr))`));
+  assert.ok(html.includes('grid-template-areas:"heading prime edge" "subtitle prime edge"'), 'desktop title and strategy cards must share compact rows');
+  assert.ok(html.includes('display:inline-flex;vertical-align:middle;margin:4px 10px 8px 0'), 'tracking badge must share a line with timestamp');
+  assert.ok(html.includes('.vx-dashboard-updated{display:inline-block;vertical-align:middle'), 'desktop timestamp must align with badge');
+  assert.ok(html.includes('>.card{padding:12px 14px!important;min-height:0!important'), 'metric padding must be compact');
+  assert.ok(html.includes('grid-template-areas:"heading heading" "subtitle subtitle" "prime edge"'), 'tablet strategy cards must align');
+  assert.ok(html.includes('grid-template-areas:"heading" "subtitle" "prime" "edge"'), 'mobile strategy cards must stack');
   assert.ok(html.includes('@media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}'));
   assert.ok(html.includes('margin:6px 0 0!important;align-self:start!important'), 'cards must begin at subtitle text level on desktop');
   assert.ok(html.includes('.vx-dashboard-system-card{white-space:normal!important;margin-top:0!important}'), 'mobile cards must stack without extra offset');
