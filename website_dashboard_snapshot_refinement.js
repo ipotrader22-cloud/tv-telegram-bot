@@ -144,6 +144,7 @@ function injectStyles(html) {
   .vx-dashboard-system-card:nth-child(3){grid-area:prime}
   .vx-dashboard-system-card:nth-child(4){grid-area:edge}
   @media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}
+  .vx-dashboard-tracking-row{display:flex;justify-content:flex-start;align-items:center;margin:8px 0 6px}
   .vx-dashboard-updated{margin:0 0 14px!important}
   .vx-dashboard-other-system-notes{grid-template-columns:1fr!important;margin:14px 0 0!important}
   .${DASHBOARD_METRIC_CLASS}{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
@@ -226,6 +227,12 @@ function transformDashboardHero(html) {
     updatedBlock = addClassToOpeningTag(topBlock.slice(updatedRange.start, updatedRange.end), "vx-dashboard-updated");
     topBlock = topBlock.slice(0, updatedRange.start) + topBlock.slice(updatedRange.end);
   }
+  const badgeRange = findTagByClass(topBlock, "div", "badge");
+  let trackingBlock = "";
+  if (badgeRange) {
+    trackingBlock = `<div class="vx-dashboard-tracking-row">${topBlock.slice(badgeRange.start, badgeRange.end)}</div>`;
+    topBlock = topBlock.slice(0, badgeRange.start) + topBlock.slice(badgeRange.end);
+  }
   topBlock = addClassToOpeningTag(topBlock, "vx-dashboard-heading-block");
   const subtitleRange = findTagByClass(topBlock, "div", "subtitle");
   if (!subtitleRange) return result;
@@ -246,7 +253,7 @@ function transformDashboardHero(html) {
     ? addClassToOpeningTag(remainingNotes, "vx-dashboard-other-system-notes")
     : "";
 
-  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${subtitleBlock}${primeBlock}${edgeBlock}</div>${updatedBlock}`;
+  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${subtitleBlock}${primeBlock}${edgeBlock}</div>${trackingBlock}${updatedBlock}`;
   hero = hero.slice(0, topRange.start) + header + hero.slice(notesRange.end);
 
   let cardsRange = findTagByClass(hero, "div", "cards");
