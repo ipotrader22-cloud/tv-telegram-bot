@@ -139,6 +139,7 @@ function injectStyles(html) {
   .vx-dashboard-heading-block{min-width:0;margin:0!important;height:100%;align-items:flex-start!important}
   .vx-dashboard-heading-block .brand{min-width:0}
   .vx-dashboard-system-card{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important;height:100%}
+  @media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}
   .vx-dashboard-updated{margin:0 0 14px!important}
   .vx-dashboard-other-system-notes{grid-template-columns:1fr!important;margin:14px 0 0!important}
   .${DASHBOARD_METRIC_CLASS}{display:grid!important;grid-template-columns:repeat(7,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
@@ -203,7 +204,7 @@ function refineHome(html) {
 function transformDashboardHero(html) {
   let result = String(html)
     .replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i, "<h1>Vixale Live Day Trading Dashboard</h1>")
-    .replace(/(<div\b[^>]*\bclass=(["'])[^"']*\bsubtitle\b[^"']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i, "$1Private live day-trading forward-test / paper-trading tracker$3");
+    .replace(/(<div\b[^>]*\bclass=(["'])[^"']*\bsubtitle\b[^"']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i, "$1Private live day-trading dashboard$3");
 
   if (result.includes(`class="${DASHBOARD_HEADER_CLASS}"`) || result.includes(`class='${DASHBOARD_HEADER_CLASS}'`)) return result;
 
@@ -223,7 +224,9 @@ function transformDashboardHero(html) {
   }
   topBlock = addClassToOpeningTag(topBlock, "vx-dashboard-heading-block");
 
-  const notesBlock = hero.slice(notesRange.start, notesRange.end);
+  const notesBlock = hero.slice(notesRange.start, notesRange.end)
+    .replace("Vixale Prime trades only intraday and closes all positions by 16:00 ET", "Trades only intraday and closes all positions by 16:00 ET")
+    .replace("Vixale Edge can hold positions overnight when trade conditions remain active", "May hold positions overnight until target or stop is reached");
   const primeRange = findChildByClassAndText(notesBlock, "div", "strategy-note", "Vixale Prime");
   const edgeRange = findChildByClassAndText(notesBlock, "div", "strategy-note", "Vixale Edge");
   if (!primeRange || !edgeRange) return result;
