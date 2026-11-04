@@ -1,0 +1,18 @@
+name: Google Finance VIXALE daily research proof
+on:
+  push:
+    branches: ['probe/vixale-google-daily-research-20261104']
+permissions:
+  contents: read
+jobs:
+  read-only-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Verify minute audit tests
+        run: node --test engine-v2/google-finance-minute-audit.test.cjs
+      - name: Check Google OHLCV daily research coverage without storing values
+        run: node engine-v2/google-finance-daily-research-probe.cjs
