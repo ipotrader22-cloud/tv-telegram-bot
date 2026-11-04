@@ -135,7 +135,8 @@ test('Google opening provider validates immutable G priceopen and C/D formulas',
  const {createGoogleOpeningProvider}=require('./google-quote-provider.cjs');
  const make=()=>{
   const d=gridFixture(),cells=d.sheets[0].data[0].rowData[1].values;
-  cells.push({userEnteredValue:{formulaValue:'=IFERROR(GOOGLEFINANCE(A2,"priceopen"),"")'},
+  // Column F is the existing quote-grid spacer; opening evidence belongs in G.
+  cells.push({}, {userEnteredValue:{formulaValue:'=IFERROR(GOOGLEFINANCE(A2,"priceopen"),"")'},
    effectiveValue:{numberValue:104}});
   return d;
  };
