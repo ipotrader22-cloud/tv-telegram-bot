@@ -1,0 +1,17 @@
+name: Engine 2 real Google preopen non-writing rehearsal
+on:
+  push:
+    branches: ['probe/engine2-google-real-preopen-no-writes-20261104']
+permissions:
+  contents: read
+jobs:
+  source-backed-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Real Google 15-source preopen and nine-factor synthetic-lot rehearsal
+        run: node engine-v2/google-live-preopen-readonly-rehearsal.cjs
