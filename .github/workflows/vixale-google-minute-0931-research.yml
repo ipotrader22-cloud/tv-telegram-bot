@@ -1,0 +1,25 @@
+name: VIXALE Google Finance 09:31 Research (read only)
+on:
+  push:
+    branches:
+      - 'fix/engine2-google-0931-coverage-research-20261104'
+permissions:
+  contents: read
+jobs:
+  minute-research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test strict 09:31-15:59 OHLCV validator
+        run: node --test engine-v2/google-finance-minute-audit.test.cjs
+      - name: Check Nov 3 minute OHLCV completeness (read only, no price logs)
+        run: node engine-v2/google-finance-minute-audit.cjs
+      - name: Check Oct 12 1m history after 09:31 (read only)
+        run: |
+          node engine-v2/google-finance-minute-lookback.cjs |
+            tee /tmp/minute-history-status.txt
+          grep -q '"status":"PASS"' /tmp/minute-history-status.txt
