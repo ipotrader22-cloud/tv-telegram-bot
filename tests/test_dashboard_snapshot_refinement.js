@@ -206,6 +206,8 @@ function testDashboardRefinement() {
 
   assert.ok(html.includes(`grid-template-columns:repeat(7,minmax(0,1fr))`));
   assert.ok(html.includes('@media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}'));
+  assert.ok(html.includes('margin:6px 0 0!important;align-self:start!important'), 'cards must begin at subtitle text level on desktop');
+  assert.ok(html.includes('.vx-dashboard-system-card{white-space:normal!important;margin-top:0!important}'), 'mobile cards must stack without extra offset');
   assert.ok(html.includes('height:auto!important;min-height:0!important'), 'cards should hug their content');
   assert.ok(html.includes('min-height:0!important;padding:8px 12px!important'), 'compact card padding is required');
   assert.ok(html.includes(`@media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge"}`));
