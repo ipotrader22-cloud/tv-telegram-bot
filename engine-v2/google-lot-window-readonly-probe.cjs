@@ -7,11 +7,20 @@ const {etTime}=require('./delayed-model-policy.cjs');
 async function run(source=createGoogleChartSource()){
  const date='2026-11-05',fromDate='2026-11-02',throughDate='2026-11-04';
  const cutoff=etTime(throughDate,960),tickets=['CVX','XOM'];
- const daily=await source.getDailyMany({tickers:tickets,date});
+ let daily;
+ try{daily=await source.getDailyMany({tickers:tickets,date})}
+ catch(error){const allowed=new Set(['GOOGLE_CHART_DAILY_HISTORY_INCOMPLETE','GOOGLE_CHART_SERIES_MISSING','GOOGLE_CHART_INTERVAL_INVALID','GOOGLE_CHART_RESPONSE_INVALID','GOOGLE_CHART_CANDLE_INVALID','GOOGLE_CHART_ACCESS_RESTRICTED','GOOGLE_CHART_TRANSPORT_FAILED','GOOGLE_CHART_UPSTREAM_UNAVAILABLE']);
+  return {status:'BLOCKED',stage:'DAILY',reason:allowed.has(error?.message)?error.message:'GOOGLE_DAILY_READ_UNAVAILABLE',readOnly:true}}
+
  const checks=[];
  for(const ticker of tickets){
   const sourceRow=daily.find(x=>x.ticker===ticker);
-  const candles=await source.getMinuteHistory({ticker,fromDate,throughDate});
+  let candles;
+  try{candles=await source.getMinuteHistory({ticker,fromDate,throughDate})}
+  catch(error){const allowed=new Set(['GOOGLE_CHART_DAILY_HISTORY_INCOMPLETE','GOOGLE_CHART_SERIES_MISSING','GOOGLE_CHART_INTERVAL_INVALID','GOOGLE_CHART_RESPONSE_INVALID','GOOGLE_CHART_CANDLE_INVALID','GOOGLE_CHART_ACCESS_RESTRICTED','GOOGLE_CHART_TRANSPORT_FAILED','GOOGLE_CHART_UPSTREAM_UNAVAILABLE']);
+   checks.push({ticker,status:'BLOCKED',stage:'MINUTE',reason:allowed.has(error?.message)?error.message:'GOOGLE_MINUTE_READ_UNAVAILABLE',readOnly:true});
+   continue;
+  }
   const dailyBars=sourceRow?.chart.timestamp.map((t,i)=>({
    date:new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t*1000)),
    open:sourceRow.chart.indicators.quote[0].open[i]
