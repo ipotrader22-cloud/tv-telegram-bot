@@ -136,6 +136,11 @@ function testDashboardRefinement() {
   assert.ok(html.includes('<h1>Vixale Live Day Trading Dashboard</h1>'));
   assert.ok(html.includes('Private live day-trading dashboard'));
   assert.ok(!html.includes('Private live day-trading forward-test / paper-trading tracker'));
+  assert.ok(!html.includes('Private live forward-test / paper-trading tracker'));
+  const priorRefinement = source.replace('Private live forward-test / paper-trading tracker', 'Private live day-trading forward-test / paper-trading tracker');
+  const priorRefinementHtml = refineDashboard(priorRefinement);
+  assert.ok(priorRefinementHtml.includes('Private live day-trading dashboard'), 'must replace the exact subtitle currently seen on the authenticated site');
+  assert.ok(!priorRefinementHtml.includes('Private live day-trading forward-test / paper-trading tracker'));
   assert.ok(!html.includes('<h1>Vixale Live Strategy Dashboard</h1>'));
   assert.ok(html.includes(`id="${STYLE_ID}"`));
   assert.ok(html.includes(`id="${SCRIPT_ID}"`));
@@ -149,6 +154,10 @@ function testDashboardRefinement() {
 
   assert.ok(header.includes('<strong>Vixale Prime</strong>'));
   assert.ok(header.includes('<strong>Vixale Edge</strong>'));
+  assert.ok(header.includes('vx-dashboard-subtitle-cell'), 'subtitle must be promoted to sibling of strategy cards');
+  assert.ok(header.indexOf('vx-dashboard-subtitle-cell') < header.indexOf('vx-dashboard-system-card'));
+  assert.strictEqual((header.match(/vx-dashboard-subtitle-cell/g) || []).length, 1);
+  assert.ok(html.includes('grid-template-areas:"heading heading heading" "subtitle prime edge"'), 'desktop cards align with subtitle row');
   assert.ok(header.includes('Trades only intraday and closes all positions by 16:00 ET'));
   assert.ok(header.includes('May hold positions overnight until target or stop is reached'));
   assert.ok(!header.includes('Vixale Prime trades only intraday'));
@@ -197,7 +206,9 @@ function testDashboardRefinement() {
 
   assert.ok(html.includes(`grid-template-columns:repeat(7,minmax(0,1fr))`));
   assert.ok(html.includes('@media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}'));
-  assert.ok(html.includes(`@media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr}`));
+  assert.ok(html.includes('height:auto!important;min-height:0!important'), 'cards should hug their content');
+  assert.ok(html.includes('min-height:0!important;padding:8px 12px!important'), 'compact card padding is required');
+  assert.ok(html.includes(`@media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge"}`));
   assert.ok(html.includes(`@media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))`));
 }
 
