@@ -5,6 +5,27 @@ Scope: PR #329, private staging workbook and shadow page only. No broker orders,
 production cutover, production workbook writes or email. This document supersedes
 the proposed current-price 10:00 staging scenario, not production trading rules.
 
+## Delayed 09:30 opening evidence (owner clarification, 2026-11-04)
+
+Both Google Finance and Yahoo quote feeds may be delayed approximately 20 minutes.
+An opening observation stamped 09:30 ET may become available around 09:50 ET,
+not at 09:30. This is an *availability expectation*, not proof of an exact
+provider latency SLA. The isolated model does not request current-session
+09:30 Yahoo minute evidence for carried lots before 09:50 ET; the actual
+decision window remains 10:00–10:05 ET. It must verify the genuine completed
+09:30 one-minute OPEN with strict symbol, date, source and OHLCV, never a
+nearby price, intraday LOW, invented candle or 09:30 wall-clock fetch.
+
+An unavailable 09:30 bar at 10:00 blocks the financial commit. A single
+read-only retry against Yahoo's second fixed chart host is permitted for
+rate-limit, upstream/server, network or timeout failures, and once for a
+successfully fetched chart missing the exact opening bar. No broker order or
+customer communication is triggered by these reads. Retries remain bounded;
+provider statuses are reduced to sanitized category codes. Google Finance
+remains the approved quote source in GOOGLE_LATEST_1000_MODEL_V1; its latest
+price/tradetime formula is *not* interchangeable with a 09:30 opening OHLCV
+certificate. The exact 09:40 reference-price contract is unchanged.
+
 ## Session timeline
 
 1. Before 09:30 America/New_York, including overnight after the preceding session

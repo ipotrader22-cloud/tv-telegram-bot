@@ -85,3 +85,35 @@ test('fixed quote provider accepts Yahoo live-tail payload through the fetch bou
  assert.equal(mark.timestamp,d+'T13:40:00.000Z');assert.equal(mark.price,102);
  assert.equal(mark.exchangeVolume,600);assert.equal(mark.modelFill,false);
 });
+
+test('bounded Yahoo host fallback recovers HTTP 429 without changing certified bars',async()=>{
+ let calls=0;
+ const provider=createYahooMinuteProvider({fetchFn:async url=>{
+  calls++;
+  if(url.includes('query1.finance.yahoo.com'))return {ok:false,status:429};
+  assert.match(url,/query2\.finance\.yahoo\.com/);
+  return {ok:true,json:async()=>raw};
+ }});
+ const result=await provider.getBars({ticker:'AMD',date:d,at});
+ assert.equal(result.usedFallback,true);assert.equal(calls,2);
+ assert.equal(openingFromBars(result.bars,{ticker:'AMD',date:d}).open,100);
+});
+test('both Yahoo hosts unavailable remains blocked with sanitized failure',async()=>{
+ let calls=0;
+ const provider=createYahooMinuteProvider({fetchFn:async()=>{calls++;return {ok:false,status:429}}});
+ await assert.rejects(()=>provider.getBars({ticker:'AMD',date:d,at}),/YAHOO_MINUTE_DATA_HTTP_429/);
+ assert.equal(calls,2);
+});
+test('transport failure gets one bounded retry; malformed JSON never gets a second host',async()=>{
+ let calls=0;
+ const recovery=createYahooMinuteProvider({fetchFn:async url=>{
+  calls++;if(url.includes('query1.finance.yahoo.com'))throw Error('private URL token');
+  return {ok:true,json:async()=>raw};
+ }});
+ assert.equal((await recovery.getBars({ticker:'AMD',date:d,at})).bars.length,3);
+ assert.equal(calls,2);
+ calls=0;
+ const bad=createYahooMinuteProvider({fetchFn:async()=>{calls++;return {ok:true,json:async()=>{throw Error('private raw body')}}}});
+ await assert.rejects(()=>bad.getBars({ticker:'AMD',date:d,at}),/YAHOO_MINUTE_DATA_INVALID_JSON/);
+ assert.equal(calls,1);
+});
