@@ -5,7 +5,9 @@ const {createGoogleChartSource}=require('./google-finance-chart-source.cjs');
 const {googleHistoricalExit}=require('./google-target-window.cjs');
 const {etTime}=require('./delayed-model-policy.cjs');
 async function run(source=createGoogleChartSource()){
- const date='2026-11-05',fromDate='2026-11-02',throughDate='2026-11-04';
+ // Today is Nov 4 while NYSE is open; only complete through Nov 3.
+ // Nov 4 must be checked after the exchange closes, never pre-certified.
+ const date='2026-11-04',fromDate='2026-11-02',throughDate='2026-11-03';
  const cutoff=etTime(throughDate,960),tickets=['CVX','XOM'];
  let daily;
  try{daily=await source.getDailyMany({tickers:tickets,date})}
