@@ -153,6 +153,8 @@ function testDashboardRefinement() {
   assert.ok(header.includes('May hold positions overnight until target or stop is reached'));
   assert.ok(!header.includes('Vixale Prime trades only intraday'));
   assert.ok(!header.includes('Vixale Edge can hold positions overnight'));
+  assert.ok(!header.includes('16:00 ET.'));
+  assert.ok(!header.includes('until target or stop is reached.'));
   assert.ok(header.indexOf('Vixale Prime') < header.indexOf('Vixale Edge'));
   assert.ok(html.indexOf('Last refreshed:') > headerRange.end, 'refresh line must sit below the primary header row');
   assert.ok(html.indexOf('Last refreshed:') < metricRange.start, 'refresh line must remain above the metric strip');
