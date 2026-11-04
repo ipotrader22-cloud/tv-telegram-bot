@@ -14,7 +14,7 @@ async function run(fetchFn=fetch){
   try{
    const r=await fetchFn(url,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded;charset=UTF-8',origin:'https://www.google.com',referer:'https://www.google.com/finance/beta','x-same-domain':'1'},body,signal:AbortSignal.timeout(18000)});
    if(!r.ok){result.push(...chunk.map(symbol=>({symbol,status:'BLOCKED',reason:'HTTP_'+(r.status===429?'RATE_LIMIT':r.status)})));continue}
-   chart=flatten(unpack(await r.text()));
+   const raw=unpack(await r.text()); chart=flatten(raw); for(const x of chart){const match=raw[0].find(s=>Array.isArray(s?.[0])&&s[0].join(':')===x.symbol);x.nameAvailable=typeof match?.[7]==='string'&&match[7].length>2;}
   }catch{result.push(...chunk.map(symbol=>({symbol,status:'BLOCKED',reason:'RESEARCH_SOURCE_UNAVAILABLE'})));continue}
   for(const symbol of chunk){
    const rows=chart.find(c=>c.symbol===symbol);
@@ -22,7 +22,7 @@ async function run(fetchFn=fetch){
    const dates=(rows.candles||[]).map(x=>etDate(x.time)),seen=new Set(dates);
    const invalid=(rows.candles||[]).filter(x=>![x.open,x.high,x.low,x.close,x.volume].every(v=>typeof v==='number'&&Number.isFinite(v))||x.close<=0||x.volume<0).length;
    const last=dates.at(-1),first=dates[0],enough=rows.seconds===86400&&dates.length>=200&&seen.size===dates.length&&invalid===0&&last==='2026-11-03';
-   result.push({symbol,status:enough?'PASS':'BLOCKED',count:dates.length,intervalSeconds:rows.seconds,
+   result.push({symbol,status:enough?'PASS':'BLOCKED',count:dates.length,nameAvailable:rows.nameAvailable,intervalSeconds:rows.seconds,
     uniqueDates:seen.size,invalid,firstDate:first,lastDate:last,requestedThrough:'2026-11-03'});
   }
  }
