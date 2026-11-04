@@ -91,7 +91,7 @@ test('bounded Yahoo host fallback recovers HTTP 429 without changing certified b
  const provider=createYahooMinuteProvider({fetchFn:async url=>{
   calls++;
   if(url.includes('query1.finance.yahoo.com'))return {ok:false,status:429};
-  assert.match(url,/query2\\.finance\\.yahoo\\.com/);
+  assert.match(url,/query2\.finance\.yahoo\.com/);
   return {ok:true,json:async()=>raw};
  }});
  const result=await provider.getBars({ticker:'AMD',date:d,at});
