@@ -86,3 +86,31 @@ test('invalid DB, invalid date or DB access failure never leaks secrets',async()
  assert.equal(r.reason,'STAGING_READ_ONLY_AUDIT_UNAVAILABLE');
  assert.doesNotMatch(JSON.stringify(r),/secret/);
 });
+
+test('read-only audit distinguishes no completed session from inconsistent journal',async()=>{
+ for(const preopenCount of [0,1]){
+  const h=harness({runs:[],daily:[],pipeline:[],preopen:[{n:preopenCount}]});
+  const result=await auditStagingDb({url,date,clientFactory:h.clientFactory});
+  assert.deepEqual(result,{status:'BLOCKED',reason:'SESSION_NOT_COMMITTED',
+   writesPerformed:false,date,runCount:0,dailyCount:0,pipelineCount:0,
+   preopenCount});
+  assert.ok(h.calls.includes('BEGIN READ ONLY'));
+  assert.equal(h.calls.at(-1),'end');
+  assert.ok(h.calls.every(s=>!/^INSERT|^UPDATE|^DELETE|^CREATE|^DROP/i.test(s)));
+ }
+});
+test('partial or ambiguous session journals remain integrity failures, never PASS',async()=>{
+ for(const override of [
+  {daily:[]},
+  {runs:[]},
+  {pipeline:[]},
+  {runs:[],daily:[],pipeline:[],preopen:[{n:2}]}
+ ]){
+  const h=harness(override);
+  const result=await auditStagingDb({url,date,clientFactory:h.clientFactory});
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'SESSION_JOURNAL_CARDINALITY_MISMATCH');
+  assert.equal(result.writesPerformed,false);
+  assert.ok(result.runCount!==undefined&&result.dailyCount!==undefined);
+ }
+});
