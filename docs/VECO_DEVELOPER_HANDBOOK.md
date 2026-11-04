@@ -4159,3 +4159,32 @@ and full publication parity remain separate gates.
 Read-only test failures must be resolved before interpreting a next-session
 launch as ready. This workflow does not merge production or initiate a
 new financial cycle. Handbook update required: YES.
+
+## 2026-11-04 — Google Finance priceopen opening evidence, Yahoo-Render rate limit
+
+Real 11/04 read-only GitHub Actions source preflight proved Google model
+quotes valid, 09:30 Yahoo bars for the two carried lots present from a
+GitHub runner, but Render observer Yahoo outbound requests RATE_LIMITED.
+Staging-only Google `priceopen` formulas were added to the existing private
+`Engine 2 Quotes` worksheet G2:G11, retaining A:F and exact formula identity.
+Google's documented non-historical `priceopen` attribute is the current
+session market opening reference. It is not minute OHLCV and not an execution
+fill. Google trade-time C, delay D, symbol/exchange A and priceopen G must be
+validated for today's session after 09:50 ET (same-day, non-future,
+<=20-minute quote age, positive numeric open, fixed formula).
+The Google-only model policy now selects this validated Google opening
+reference without a Render Yahoo request, while delayed Yahoo-specific
+policy retains its original exact 09:30 minute bar requirement.
+Immutable source-value hashes, provider and quote kind, explicit 09:30
+model trigger time, separate observedAt/tradeTime, original entry-price
+STOP rule, current review exit price and read-only observer journal
+verification are retained. Failure to verify any field BLOCKS.
+No production, broker, customer mail, trading policy, or legacy Sheet
+schema is altered.
+
+Caveat: pre-open prior-day minute TARGET scanning still uses Yahoo in
+`preopen-preparation.cjs`. This patch removes the current-session
+09:30 Yahoo single-point dependency under GOOGLE_LATEST_1000_MODEL_V1,
+but does not certify full next-day preopen success. A complete
+real end-to-end market cycle remains required before cutover.
+Handbook update required: YES.

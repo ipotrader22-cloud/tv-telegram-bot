@@ -69,3 +69,19 @@ test('missing delayed 09:30 evidence after 09:50 checks backup once and fails cl
  assert.equal(out[0].status,'BLOCKED');assert.equal(out[0].reason,'FALLBACK_0930_OPEN_UNAVAILABLE');
  assert.equal(calls,2);
 });
+
+test('Google priceopen opening passes same strict held-lot identity and fails closed when tampered',()=>{
+ const {normalizeGoogleOpening}=require('./google-quote-provider.cjs');
+ const open=normalizeGoogleOpening({symbol:'NYSE:CVX',open:95,
+  tradeTimeET:date+' 09:45:00',delayMinutes:15},{date,observedAt:runAt});
+ assert.equal(verifyCurrentOpenings({date,runAt,positions:[previous],openings:[open]}).get('CVX').open,95);
+ for(const change of [
+  o=>o.open=1,o=>o.time=etTime(date,571),o=>o.sourceId='unverified',
+  o=>o.sourceValues.open=90,o=>o.observedAt=etTime(date,601),
+  o=>o.sourceTradeTime=etTime(date,600)
+ ]){
+  const invalid=structuredClone(open);change(invalid);
+  assert.throws(()=>verifyCurrentOpenings({date,runAt,positions:[previous],openings:[invalid]}),
+   /CURRENT_OPENING_EVIDENCE_INVALID/);
+ }
+});
