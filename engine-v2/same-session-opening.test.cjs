@@ -46,3 +46,26 @@ test('provider retrieves completed exact 09:30 Yahoo bar, never intraday LOW or 
  assert.equal(verify([previous],openings).get('CVX').open,225);
  assert.equal(completedBars(raw,{ticker:'CVX',date,asOf:runAt}).length,3);
 });
+
+test('delayed 09:30 opening is not fetched before 09:50 ET, but is accepted afterwards',async()=>{
+ let calls=0;
+ const seconds=[570,571].map(m=>Date.parse(etTime(date,m))/1000);
+ const delayed={chart:{result:[{meta:{symbol:'CVX'},timestamp:seconds,
+  indicators:{quote:[{open:[225,224],high:[226,225],low:[220,210],
+   close:[225,224],volume:[1000,1300]}]}}]}};
+ const provider=createCurrentOpeningProvider({fetchFn:async()=>{calls++;return {ok:true,json:async()=>delayed}}});
+ await assert.rejects(()=>provider.getOpenings({date,runAt:etTime(date,589),positions:[previous]}),/YAHOO_0930_RELEASE_PENDING/);
+ assert.equal(calls,0);
+ const out=await provider.getOpenings({date,runAt:etTime(date,590),positions:[previous]});
+ assert.equal(out[0].time,openingTime);assert.equal(out[0].open,225);
+ assert.equal(calls,1);
+});
+test('missing delayed 09:30 evidence after 09:50 checks backup once and fails closed',async()=>{
+ let calls=0;
+ const delayed={chart:{result:[{meta:{symbol:'CVX'},timestamp:[Date.parse(etTime(date,571))/1000],
+  indicators:{quote:[{open:[224],high:[225],low:[220],close:[224],volume:[1000]}]}}]}};
+ const provider=createCurrentOpeningProvider({fetchFn:async()=>{calls++;return {ok:true,json:async()=>delayed}}});
+ const out=await provider.getOpenings({date,runAt:etTime(date,600),positions:[previous]});
+ assert.equal(out[0].status,'BLOCKED');assert.equal(out[0].reason,'FALLBACK_0930_OPEN_UNAVAILABLE');
+ assert.equal(calls,2);
+});

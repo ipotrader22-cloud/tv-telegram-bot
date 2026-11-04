@@ -69,15 +69,40 @@ function targetFromBars(bars,{ticker,date,entryTime,at}={}){
  return {ticker,confirmed:true,session:'REGULAR',high:high.high,time:high.end,sourceId:high.sourceId,priceKind:'MINUTE_BAR_HIGH',indicative:true};
 }
 function createYahooMinuteProvider({fetchFn=fetch}={}){
- async function getBars({ticker,date,at}){
+ // Two fixed Yahoo chart hosts, never arbitrary URLs. Query2 is a bounded
+ // availability retry, not a substitute price or a relaxation of OHLCV checks.
+ async function fetchChart(host,ticker){
+  const url='https://'+host+'/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval=1m&range=1d';
+  let response;
+  try{
+   response=await fetchFn(url,{headers:{Accept:'application/json','Cache-Control':'no-cache','User-Agent':'VixaleResearch/2.0'},
+     signal:AbortSignal.timeout(10000)});
+  }catch(error){
+   throw Error(error?.name==='TimeoutError'||error?.name==='AbortError'?
+    'YAHOO_MINUTE_DATA_TIMEOUT':'YAHOO_MINUTE_DATA_TRANSPORT');
+  }
+  if(!response?.ok){
+   const status=response?.status;
+   throw Error(Number.isInteger(status)&&status>=100&&status<=599?
+    'YAHOO_MINUTE_DATA_HTTP_'+status:'YAHOO_MINUTE_DATA_HTTP_INVALID');
+  }
+  try{return await response.json()}catch{throw Error('YAHOO_MINUTE_DATA_INVALID_JSON')}
+ }
+ async function getBars({ticker,date,at,alternateOnly=false}){
   if(!supportedSymbol(ticker))throw Error('INVALID_SYMBOL');
-  const url='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker)+'?interval=1m&range=1d';
-  const response=await fetchFn(url,{headers:{Accept:'application/json','Cache-Control':'no-cache','User-Agent':'VixaleResearch/2.0'},
-    signal:AbortSignal.timeout(10000)});
-  if(!response.ok)throw Error('YAHOO_MINUTE_DATA_HTTP_'+response.status);
-  const raw=await response.json();
+  let raw,usedFallback=alternateOnly;
+  if(alternateOnly)raw=await fetchChart('query2.finance.yahoo.com',ticker);
+  else try{raw=await fetchChart('query1.finance.yahoo.com',ticker)}
+  catch(error){
+   const reason=error instanceof Error?error.message:'';
+   // Only genuine rate-limit/server/transport failures justify a second host.
+   // A malformed successful payload must fail closed instead.
+   if(!/^YAHOO_MINUTE_DATA_HTTP_(429|5\d\d)$/.test(reason)&&
+      !['YAHOO_MINUTE_DATA_TIMEOUT','YAHOO_MINUTE_DATA_TRANSPORT'].includes(reason))throw error;
+   usedFallback=true;raw=await fetchChart('query2.finance.yahoo.com',ticker);
+  }
   const bars=completedBars(raw,{ticker,date,asOf:at});
-  return {ticker,bars,sourceHash:createHash('sha256').update(JSON.stringify(raw)).digest('hex')};
+  return {ticker,bars,sourceHash:createHash('sha256').update(JSON.stringify(raw)).digest('hex'),usedFallback};
  }
  return {getBars,
   async getQuotes({date,runAt,tickers}){
@@ -87,7 +112,24 @@ function createYahooMinuteProvider({fetchFn=fetch}={}){
    return values;
   },
   async getOpenings({date,runAt,positions}){
-   return Promise.all(positions.map(async p=>openingFromBars((await getBars({ticker:p.ticker,date,at:runAt})).bars,{ticker:p.ticker,date})));
+   if(!Array.isArray(positions)||!Number.isFinite(Date.parse(runAt||'')))
+    throw Error('CURRENT_OPENING_INPUT_INVALID');
+   // Owner timing contract: a delayed 09:30 bar is not expected before 09:50 ET.
+   // Do not query or manufacture opening evidence during that release window.
+   const observed=localET(runAt);
+   if(positions.length&&(observed.date!==date||observed.minute<590))
+    throw Error('YAHOO_0930_RELEASE_PENDING');
+   return Promise.all(positions.map(async p=>{
+    const first=await getBars({ticker:p.ticker,date,at:runAt});
+    let opening=openingFromBars(first.bars,{ticker:p.ticker,date});
+    // A 200 response with a missing 09:30 bar can reflect delayed publication.
+    // One independent-host read is permitted; the exact bar remains mandatory.
+    if(opening.status==='BLOCKED'&&!first.usedFallback){
+     const second=await getBars({ticker:p.ticker,date,at:runAt,alternateOnly:true});
+     opening=openingFromBars(second.bars,{ticker:p.ticker,date});
+    }
+    return opening;
+   }));
   },
   async getTargets({date,runAt,positions}){
    return Promise.all(positions.map(async p=>targetFromBars((await getBars({ticker:p.ticker,date,at:runAt})).bars,

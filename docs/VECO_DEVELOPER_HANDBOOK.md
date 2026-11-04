@@ -4088,3 +4088,25 @@ ledger; keep the November 3 session unverified. Promotion requires exact-head
 CI including PostgreSQL integration and a separately authorized isolated cron
 deployment, followed by a successful real-session preopen and 10:00 readback
 before any public cutover. Handbook update required: YES.
+
+## 2026-11-04 — Engine 2 staging delayed opening release gate and Yahoo availability retry
+
+Owner clarified that Yahoo and Google Finance model quotes may arrive roughly
+20 minutes delayed: a 09:30 ET opening candle is expected no earlier than
+approximately 09:50 ET. Staging opening evidence is therefore requested only
+after 09:50 ET for carried positions; 10:00–10:05 model decision and frozen
+09:40 reference price remain unchanged. No opening read, fresh model decision
+or financial write is allowed on missing or fabricated 09:30 source evidence.
+
+The Engine 2 Yahoo minute provider now attempts a single alternate fixed
+Yahoo chart hostname for retryable HTTP 429/5xx, timeout or transport failure,
+or a valid primary response that omits the exact completed 09:30 bar. Both
+hosts pass through identical strict OHLCV, symbol, minute-time and opening
+source validation. Other HTTP failures, malformed payloads, and unverified
+prices fail closed. Stage diagnostics distinguish provider throttling,
+upstream/server error, timeout and transport errors without leaking dynamic
+provider messages or credentials. Google Finance remains the model quote
+source under GOOGLE_LATEST_1000_MODEL_V1; its latest quote is not evidence
+of exact 09:30 open. No broker, production, strategy, risk, customer-email,
+sheet-schema or deployment policy changes. See
+docs/ENGINE2_STAGING_DELAYED_0940_RUN.md. Handbook update required: YES.
