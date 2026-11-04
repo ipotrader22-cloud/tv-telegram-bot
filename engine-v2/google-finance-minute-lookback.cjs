@@ -1,7 +1,7 @@
 'use strict';
 // One-time research of 23-day historical Google Finance 1m retention.
 // Never persists OHLCV or passes data to the financial engine.
-const {unpack,flatten}=require('./google-finance-minute-audit.cjs');
+const {unpack,flatten,count}=require('./google-finance-minute-audit.cjs');
 async function probe({fetcher=fetch}={}){
  const requested='2026-10-12';
  const entities=[[null,['CVX','NYSE']],[null,['XOM','NYSE']]];
@@ -18,9 +18,9 @@ async function probe({fetcher=fetch}={}){
   const series=flatten(unpack(await resp.text()));
   const checks=['CVX:NYSE','XOM:NYSE'].map(symbol=>{
    const s=series.find(x=>x.symbol===symbol);
-   const num=(s?.candles||[]).filter(c=>typeof c?.time==='string'&&c.time.slice(0,10)===requested).length;
-   return {symbol,requestedDate:requested,intervalSeconds:s?.seconds??null,barCount:num,
-    expected:390,status:s?.seconds===60&&num===390?'PASS':'BLOCKED'};
+   const evidence=count(s?.candles,{symbol,date:requested});
+   return {...evidence,requestedDate:requested,intervalSeconds:s?.seconds??null,
+    status:s?.seconds===60&&evidence.status==='PASS'?'PASS':'BLOCKED'};
   });
   return {status:checks.every(x=>x.status==='PASS')?'PASS':'BLOCKED',
    date:requested,checks,writesPerformed:false,rawPricesLogged:false,rawPricesStored:false};
