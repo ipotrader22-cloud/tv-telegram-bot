@@ -1,0 +1,17 @@
+name: Engine 2 Google 11/05 Held-Lot Source Gate (read only)
+on:
+  push:
+    branches: ['probe/engine2-google-nov5-lot-window-readonly']
+permissions:
+  contents: read
+jobs:
+  historical-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify live Nov 2-4 carried-lot Google OHLCV evidence (no writes)
+        run: node engine-v2/google-lot-window-readonly-probe.cjs
