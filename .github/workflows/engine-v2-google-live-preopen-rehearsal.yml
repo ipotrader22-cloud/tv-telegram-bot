@@ -13,5 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install isolated research module test dependency
+        run: npm install --prefix engine-v2 --no-save --no-package-lock pg@8
       - name: Real Google 15-source preopen and nine-factor synthetic-lot rehearsal
         run: node engine-v2/google-live-preopen-readonly-rehearsal.cjs
