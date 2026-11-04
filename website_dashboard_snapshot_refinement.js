@@ -135,10 +135,14 @@ function injectStyles(html) {
   if (html.includes(`id="${STYLE_ID}"`)) return html;
   const styles = `
 <style id="${STYLE_ID}">
-  .${DASHBOARD_HEADER_CLASS}{display:grid;grid-template-columns:minmax(320px,1.15fr) repeat(2,minmax(220px,.85fr));gap:14px;align-items:stretch;margin:0 0 8px}
-  .vx-dashboard-heading-block{min-width:0;margin:0!important;height:100%;align-items:flex-start!important}
+  .${DASHBOARD_HEADER_CLASS}{display:grid;grid-template-columns:minmax(200px,.7fr) repeat(2,minmax(300px,1fr));grid-template-areas:"heading heading heading" "subtitle prime edge";gap:8px 14px;align-items:start;margin:0 0 8px}
+  .vx-dashboard-heading-block{grid-area:heading;min-width:0;margin:0!important;height:auto!important;align-items:center!important}
   .vx-dashboard-heading-block .brand{min-width:0}
-  .vx-dashboard-system-card{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important;height:100%}
+  .vx-dashboard-subtitle-cell{grid-area:subtitle;min-width:0;align-self:start;padding-top:3px}
+  .vx-dashboard-system-card{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important;align-self:start!important;height:auto!important;min-height:0!important;padding:8px 12px!important;border-radius:12px!important;line-height:1.3!important}
+  .vx-dashboard-system-card strong{margin-bottom:2px!important;line-height:1.2!important}
+  .vx-dashboard-system-card:nth-child(3){grid-area:prime}
+  .vx-dashboard-system-card:nth-child(4){grid-area:edge}
   @media(min-width:1181px){.vx-dashboard-system-card{white-space:nowrap;font-size:12px}}
   .vx-dashboard-updated{margin:0 0 14px!important}
   .vx-dashboard-other-system-notes{grid-template-columns:1fr!important;margin:14px 0 0!important}
@@ -147,7 +151,7 @@ function injectStyles(html) {
   #${DASHBOARD_OPEN_PNL_ID}.positive{color:#00954f!important}
   #${DASHBOARD_OPEN_PNL_ID}.negative{color:#ef3f4a!important}
   #${DASHBOARD_OPEN_PNL_ID}.neutral{color:inherit!important}
-  @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr}.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
+  @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge"} .vx-dashboard-system-card{white-space:normal!important}.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
   @media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 </style>`;
   return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
@@ -204,7 +208,7 @@ function refineHome(html) {
 function transformDashboardHero(html) {
   let result = String(html)
     .replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i, "<h1>Vixale Live Day Trading Dashboard</h1>")
-    .replace(/(<div\b[^>]*\bclass=(["'])[^"']*\bsubtitle\b[^"']*\2[^>]*>)\s*Private live forward-test \/ paper-trading tracker\s*(<\/div>)/i, "$1Private live day-trading dashboard$3");
+    .replace(/(<div\b[^>]*\bclass=(["'])[^"']*\bsubtitle\b[^"']*\2[^>]*>)\s*Private live (?:day-trading )?forward-test \/ paper-trading tracker\s*(<\/div>)/i, "$1Private live day-trading dashboard$3");
 
   if (result.includes(`class="${DASHBOARD_HEADER_CLASS}"`) || result.includes(`class='${DASHBOARD_HEADER_CLASS}'`)) return result;
 
@@ -223,6 +227,10 @@ function transformDashboardHero(html) {
     topBlock = topBlock.slice(0, updatedRange.start) + topBlock.slice(updatedRange.end);
   }
   topBlock = addClassToOpeningTag(topBlock, "vx-dashboard-heading-block");
+  const subtitleRange = findTagByClass(topBlock, "div", "subtitle");
+  if (!subtitleRange) return result;
+  const subtitleBlock = addClassToOpeningTag(topBlock.slice(subtitleRange.start, subtitleRange.end), "vx-dashboard-subtitle-cell");
+  topBlock = topBlock.slice(0, subtitleRange.start) + topBlock.slice(subtitleRange.end);
 
   const notesBlock = hero.slice(notesRange.start, notesRange.end)
     .replace("Vixale Prime trades only intraday and closes all positions by 16:00 ET.", "Trades only intraday and closes all positions by 16:00 ET")
@@ -238,7 +246,7 @@ function transformDashboardHero(html) {
     ? addClassToOpeningTag(remainingNotes, "vx-dashboard-other-system-notes")
     : "";
 
-  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${primeBlock}${edgeBlock}</div>${updatedBlock}`;
+  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${subtitleBlock}${primeBlock}${edgeBlock}</div>${updatedBlock}`;
   hero = hero.slice(0, topRange.start) + header + hero.slice(notesRange.end);
 
   let cardsRange = findTagByClass(hero, "div", "cards");
