@@ -1,7 +1,7 @@
 'use strict';
 // Isolated research probe. Never commits market data or trades.
 const {unpack,flatten}=require('./google-finance-minute-audit.cjs');
-const symbols=['AMD:NASDAQ','NVDA:NASDAQ','XOM:NYSE','CVX:NYSE','SPY:NYSEARCA','QQQ:NASDAQ','SMH:NASDAQ','XLK:NYSEARCA'];
+const symbols=['AMD:NASDAQ','NVDA:NASDAQ','AVGO:NASDAQ','MU:NASDAQ','AMAT:NASDAQ','MSFT:NASDAQ','AAPL:NASDAQ','ORCL:NYSE','XOM:NYSE','CVX:NYSE','SPY:NYSEARCA','QQQ:NASDAQ','SMH:NASDAQ','XLK:NYSEARCA','XLE:NYSEARCA'];
 function etDate(t){const d=new Date(t);return Number.isFinite(+d)?new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(d):null}
 async function run(fetchFn=fetch){
  const result=[];
