@@ -7,6 +7,8 @@ const {readLastCleanState}=require('./clean-ledger.cjs');
 const {createResearchRuntime}=require('./staging-research-runtime.cjs');
 const {createYahooMinuteProvider,completedBars}=require('./yahoo-minute-fallback.cjs');
 const {verifyTargetWindow}=require('./target-window-provider.cjs');
+const {createGoogleChartSource}=require('./google-finance-chart-source.cjs');
+const {googleHistoricalExit}=require('./google-target-window.cjs');
 function exitEvidence(raw,{position,through}){
  const coverage=verifyTargetWindow(raw,{position,runAt:through});
  const dates=new Set();
@@ -32,6 +34,7 @@ async function preopenStage(work,unknownReason){
  catch(error){
   const reason=error instanceof Error?error.message:'';
   const known=new Set(['NEWS_COVERAGE_FAILED','TARGET_MINUTE_COVERAGE_GAP',
+   'GOOGLE_MINUTE_COVERAGE_GAP','GOOGLE_MINUTE_COVERAGE_EMPTY','GOOGLE_HISTORICAL_OPEN_MISSING',
    'TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY','TARGET_POSITION_OR_TIME_EVIDENCE_MISSING',
    'HOLDING_OUTSIDE_RESEARCH_UNIVERSE','HOLDING_SCAN_START_MISSING',
    'PREOPEN_TRIGGER_PROVIDER_FAILED','RESEARCH_SYMBOL_MISMATCH',
@@ -44,21 +47,29 @@ async function preopenStage(work,unknownReason){
 async function preparePreopen({date,url,clock=()=>new Date(),env,fetchFn=fetch,getPrior=readLastCleanState}){
  const started=clock().toISOString(),et=localET(started);
  if(et.date!==date||et.minute>=570||!sessionEvidence(date).isTradingDay)throw Error('OUTSIDE_PREOPEN_WINDOW');
+ const google=env?.VIXALE_V2_STAGING_PRICE_POLICY===require('./google-quote-provider.cjs').GOOGLE_POLICY;
  const previous=await preopenStage(()=>getPrior({url}),'PREOPEN_LEDGER_READ_FAILED'),sourceSession=previousSession(date),s=sessionEvidence(sourceSession),hm=s.closeEt.split(':').map(Number),through=etTime(sourceSession,hm[0]*60+hm[1]);
  if(previous&&previous.date>=date)throw Error('PREOPEN_ALREADY_REVIEWED');
- const runtime=createResearchRuntime({universeCsv:env.VIXALE_V2_RESEARCH_UNIVERSE,sectorByTicker:JSON.parse(env.VIXALE_V2_RESEARCH_SECTORS_JSON),fetchFn,clock,completedSessionOnly:true});
+ const runtime=createResearchRuntime({universeCsv:env.VIXALE_V2_RESEARCH_UNIVERSE,sectorByTicker:JSON.parse(env.VIXALE_V2_RESEARCH_SECTORS_JSON),fetchFn,clock,completedSessionOnly:true,sourcePolicy:google?'GOOGLE':'YAHOO'});
  const providers=await preopenStage(()=>runtime({date}),'PREOPEN_RESEARCH_COLLECTION_FAILED');
  const batch=await preopenStage(()=>providers.researchProvider.getBatch({date,runAt:clock().toISOString(),session:sessionEvidence(date)}),'PREOPEN_RESEARCH_CERTIFICATION_FAILED'),exits=[];
  for(const position of previous?.active||[]){
   const r=batch.items.find(x=>x.ticker===position.ticker);if(!r)throw Error('HOLDING_OUTSIDE_RESEARCH_UNIVERSE');
   const from=position.lastTargetCheckedAt||position.entryTime;
   if(!Number.isFinite(Date.parse(from)))throw Error('HOLDING_SCAN_START_MISSING');
-  // Yahoo's interval=1m chart may return the first requested candle with invalid OHLCV.
-  // Fetch one extra earlier minute, but still validate/scan ONLY from the unchanged
-  // certified watermark. Historical targets/stops and source gates remain identical.
-  const requestStart=Date.parse(from)-60000;
-  const u='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(position.ticker)+'?interval=1m&period1='+Math.floor(requestStart/1000)+'&period2='+Math.ceil(Date.parse(through)/1000);
   const trigger=await preopenStage(async()=>{
+   if(google){
+    const daily=batch.sourceEvidence?.artifact?.data?.find(x=>x.metrics?.symbol===position.ticker);
+    if(!Array.isArray(daily?.bars)||daily.source!=='GOOGLE_FINANCE_CHART_1DAY')
+     throw Error('GOOGLE_HISTORICAL_OPEN_MISSING');
+    const minutes=await createGoogleChartSource({fetchFn}).getMinuteHistory({
+     ticker:position.ticker,fromDate:localET(from).date,throughDate:sourceSession
+    });
+    return googleHistoricalExit({position,through,bars:minutes.bars,dailyBars:daily.bars});
+   }
+   // Legacy Yahoo path remains isolated; only Google policy avoids it.
+   const requestStart=Date.parse(from)-60000;
+   const u='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(position.ticker)+'?interval=1m&period1='+Math.floor(requestStart/1000)+'&period2='+Math.ceil(Date.parse(through)/1000);
    const res=await fetchFn(u,{headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(15000)});
    if(!res.ok)throw Error('PREOPEN_TRIGGER_PROVIDER_FAILED');
    return exitEvidence(await res.json(),{position,through});

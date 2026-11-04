@@ -4,6 +4,7 @@
 // a guaranteed contemporaneous model-entry trade. Publisher must stay blocked.
 const {createHash}=require('node:crypto');
 const {validateResearchBatch}=require('./research-attestation.cjs');
+const {validatedResearchSource}=require('./research-source-identity.cjs');
 const benchmarks=new Set(['SPY','QQQ','SMH','XLK','XLE']);
 function normalizeDailyEvidence({artifact,universe,reviewDate}={}){
  const errors=[];
@@ -26,7 +27,7 @@ function normalizeDailyEvidence({artifact,universe,reviewDate}={}){
      !['sma20','sma50','sma200','lastCompleteRelativeVolume','range20Pct','high20','high60','return20Pct','return60Pct'].every(k=>Number.isFinite(m[k]))){
     errors.push('INCOMPLETE_OHLCV_METRICS:'+ticker);continue;
   }
-  if(!r.source||!/^https:\/\/query[12]\.finance\.yahoo\.com\/v8\/finance\/chart\//.test(r.source)){
+  if(!validatedResearchSource(r)){
     errors.push('SOURCE_PROVENANCE_MISSING:'+ticker);continue;
   }
   const raw={ticker,date:reviewDate,lastCompletedSessionDate:m.lastCompleteDate,completedDailyBars:m.dailyBars,
@@ -34,7 +35,7 @@ function normalizeDailyEvidence({artifact,universe,reviewDate}={}){
    lastCompletedClose:m.lastCompleteClose,upDownVolume20:m.upDownVolume20,range5Pct:m.range5Pct,
    range20Pct:m.range20Pct,high20:m.high20,high60:m.high60,return20Pct:m.return20Pct,return60Pct:m.return60Pct,
    quoteTime:m.quoteTime,quotePrice:m.price,
-   sourceUrl:r.source,sourceHash:createHash('sha256').update(JSON.stringify(r)).digest('hex')};
+   sourceUrl:validatedResearchSource(r),sourceHash:createHash('sha256').update(JSON.stringify(r)).digest('hex')};
   items.push(raw);
  }
  for(const b of benchmarks)if(!map.has(b))errors.push('BENCHMARK_MISSING:'+b);

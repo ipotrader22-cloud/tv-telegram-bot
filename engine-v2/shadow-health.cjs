@@ -60,12 +60,27 @@ async function googleProbe(){
  if(googleProbeFlight)return googleProbeFlight;
  googleProbeFlight=(async()=>{
   const {createSheetsClient}=require('./staging-sheets-publisher.cjs');
-  const {createGoogleQuoteProvider}=require('./google-quote-provider.cjs');
+  const {createGoogleQuoteProvider,createGoogleOpeningProvider}=require('./google-quote-provider.cjs');
   try{
    const quotes=await createGoogleQuoteProvider({api:createSheetsClient(process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON)}).getQuotes({
     date:require('./market-data-adapter.cjs').localET(new Date().toISOString()).date,
     tickers:['NVDA','AMD','AVGO','MU','AMAT','MSFT','AAPL','ORCL','XOM','CVX']});
-   return {status:'GOOGLE_MODEL_QUOTES_OBSERVED',quotes,readOnly:true,modelEntryEligible:false};
+
+   let openingCoverage='NOT_DUE';
+   try{
+    const now=new Date(),date=require('./market-data-adapter.cjs').localET(now.toISOString()).date;
+    const minute=require('./market-data-adapter.cjs').localET(now.toISOString()).minute;
+    if(minute>=590&&minute<960){
+     const snapshot=await readPreview();
+     const positions=(snapshot.active_portfolio||[]).map(p=>({ticker:p.ticker}));
+     const proofs=await createGoogleOpeningProvider({
+      api:createSheetsClient(process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON),
+      clock:()=>now}).getOpenings({date,positions});
+     openingCoverage=proofs.length===positions.length?'PASS':'BLOCKED';
+    }
+   }catch{openingCoverage='BLOCKED'}
+   return {status:'GOOGLE_MODEL_QUOTES_OBSERVED',openingCoverage,quotes,
+    readOnly:true,modelEntryEligible:false};
   }catch(e){
    const allowed=new Set(['GOOGLE_QUOTE_STALE_OR_INVALID','GOOGLE_QUOTE_TIMESTAMP_INVALID','GOOGLE_QUOTE_IDENTITY_INVALID','GOOGLE_QUOTE_MISSING','GOOGLE_QUOTE_SHEET_INVALID','GOOGLE_QUOTE_FORMULA_INVALID']);
    return {status:'BLOCKED',reason:allowed.has(e.message)?e.message:'GOOGLE_QUOTE_SOURCE_UNAVAILABLE',readOnly:true,modelEntryEligible:false};

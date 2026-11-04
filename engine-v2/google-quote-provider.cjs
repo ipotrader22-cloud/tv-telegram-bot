@@ -66,4 +66,70 @@ function createGoogleQuoteProvider({api,clock=()=>new Date()}={}){
   });
  }};
 }
-module.exports={GOOGLE_POLICY,QUOTE_SHEET,QUOTE_SHEET_ID,MAX_AGE_MS,sourceTime,normalizeGoogleQuote,validGoogleQuote,createGoogleQuoteProvider};
+
+const GOOGLE_OPEN_KIND='GOOGLEFINANCE_SESSION_OPEN';
+function normalizeGoogleOpening(v,{date,observedAt}={}){
+ if(!v||!/^(NASDAQ|NYSE|AMEX):[A-Z][A-Z0-9.-]{0,14}$/.test(v.symbol||''))
+  throw Error('GOOGLE_OPEN_IDENTITY_INVALID');
+ const now=Date.parse(observedAt||''),tradeTime=sourceTime(v.tradeTimeET);
+ const market=localET(observedAt),source=localET(tradeTime);
+ if(!Number.isFinite(now)||market.date!==date||market.minute<590||market.minute>=960||
+    source.date!==date||source.minute<570||source.minute>=960||
+    now<Date.parse(tradeTime)||now-Date.parse(tradeTime)>MAX_AGE_MS||
+    !Number.isFinite(v.delayMinutes)||v.delayMinutes<0||v.delayMinutes>20||
+    !Number.isFinite(v.open)||v.open<=0)
+  throw Error('GOOGLE_OPEN_STALE_OR_INVALID');
+ const ticker=v.symbol.split(':')[1],time=etTime(date,570);
+ return {ticker,date,open:v.open,time,minuteET:'09:30',
+  sourceId:'GOOGLEFINANCE_PRICEOPEN:'+ticker+':'+Date.parse(time)+':'+hash(v),
+  confirmed:true,session:'REGULAR',priceKind:GOOGLE_OPEN_KIND,provider:'GOOGLEFINANCE',
+  verified:true,indicative:true,modelFill:false,sourceTradeTime:tradeTime,
+  observedAt,sourceValues:v};
+}
+function validGoogleOpening(o,{date,runAt}={}){
+ try{
+  if(!o||!Number.isFinite(Date.parse(runAt||''))||
+     Date.parse(o.observedAt)>Date.parse(runAt))return false;
+  return hash(normalizeGoogleOpening(o.sourceValues,{date,observedAt:o.observedAt}))===hash(o);
+ }catch{return false}
+}
+function createGoogleOpeningProvider({api,clock=()=>new Date()}={}){
+ return {async getOpenings({date,positions=[]}={}){
+  if(!Array.isArray(positions)||new Set(positions.map(p=>p?.ticker)).size!==positions.length)
+   throw Error('GOOGLE_OPEN_IDENTITY_INVALID');
+  if(!positions.length)return [];
+  const r=await api.spreadsheets.get({spreadsheetId:STAGING_ID,
+   ranges:["'"+QUOTE_SHEET+"'!A1:G11"],includeGridData:true,
+   fields:'spreadsheetId,properties(timeZone),sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue))))'});
+  const d=r.data,s=d?.sheets?.[0],grid=s?.data?.[0];
+  if(d.spreadsheetId!==STAGING_ID||d.properties?.timeZone!=='America/New_York'||
+     s?.properties?.sheetId!==QUOTE_SHEET_ID||s.properties.title!==QUOTE_SHEET||
+     (grid?.startRow||0)!==0||(grid?.startColumn||0)!==0)
+    throw Error('GOOGLE_OPEN_SHEET_INVALID');
+  const observedAt=clock().toISOString(),byTicker=new Map();
+  for(let i=1;i<(grid.rowData||[]).length;i++){
+   const cells=grid.rowData[i].values||[],symbol=cells[0]?.effectiveValue?.stringValue;
+   if(!symbol)continue;
+   const ticker=symbol.split(':')[1],row=i+1;
+   if(byTicker.has(ticker))throw Error('GOOGLE_OPEN_IDENTITY_INVALID');
+   if(cells[6]?.userEnteredValue?.formulaValue!==
+      '=IFERROR(GOOGLEFINANCE(A'+row+',"priceopen"),"")'||
+      cells[2]?.userEnteredValue?.formulaValue!==
+      '=IFERROR(TEXT(GOOGLEFINANCE(A'+row+',"tradetime"),"yyyy-mm-dd hh:mm:ss"),"")'||
+      cells[3]?.userEnteredValue?.formulaValue!==
+      '=IFERROR(GOOGLEFINANCE(A'+row+',"datadelay"),"")')
+    throw Error('GOOGLE_OPEN_FORMULA_INVALID');
+   byTicker.set(ticker,{symbol,open:cells[6]?.effectiveValue?.numberValue,
+    tradeTimeET:cells[2]?.effectiveValue?.stringValue,
+    delayMinutes:cells[3]?.effectiveValue?.numberValue});
+  }
+  return positions.map(p=>{
+   if(!byTicker.has(p.ticker))throw Error('GOOGLE_OPEN_MISSING');
+   return normalizeGoogleOpening(byTicker.get(p.ticker),{date,observedAt});
+  });
+ }};
+}
+
+module.exports={GOOGLE_POLICY,QUOTE_SHEET,QUOTE_SHEET_ID,MAX_AGE_MS,GOOGLE_OPEN_KIND,
+ sourceTime,normalizeGoogleQuote,validGoogleQuote,createGoogleQuoteProvider,
+ normalizeGoogleOpening,validGoogleOpening,createGoogleOpeningProvider};

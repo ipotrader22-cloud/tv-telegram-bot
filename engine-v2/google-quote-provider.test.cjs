@@ -107,3 +107,72 @@ test('Google artifact retries preserve one ledger/Sheet write and email remains 
  assert.equal((await h.run()).status,'STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED');
  assert.equal(commits,1);assert.equal(h.sheets.writes,1);assert.equal(h.sends,0);
 });
+
+test('Google priceopen certifies current-session 09:30 with separate as-of source time',()=>{
+ const {normalizeGoogleOpening,validGoogleOpening,GOOGLE_OPEN_KIND}=require('./google-quote-provider.cjs');
+ const v={symbol:'NASDAQ:AMD',open:104,tradeTimeET:date+' 09:52:17',delayMinutes:15};
+ const o=normalizeGoogleOpening(v,{date,observedAt:runAt});
+ assert.equal(o.time,date+'T13:30:00.000Z');
+ assert.equal(o.open,104);assert.equal(o.priceKind,GOOGLE_OPEN_KIND);
+ assert.equal(o.sourceTradeTime,date+'T13:52:17.000Z');
+ assert.equal(o.modelFill,false);assert.equal(validGoogleOpening(o,{date,runAt}),true);
+ for(const bad of [{...o,open:99},{...o,sourceId:'fake'},
+  {...o,sourceValues:{...o.sourceValues,tradeTimeET:'2026-10-21 09:52:17'}}])
+  assert.equal(validGoogleOpening(bad,{date,runAt}),false);
+});
+test('Google priceopen rejects stale, wrong date, future, 09:49 and invalid opening price',()=>{
+ const {normalizeGoogleOpening}=require('./google-quote-provider.cjs');
+ const v={symbol:'NASDAQ:AMD',open:104,tradeTimeET:date+' 09:52:17',delayMinutes:15};
+ for(const [value,now] of [
+  [{...v,open:0},runAt],[{...v,open:'104'},runAt],
+  [{...v,tradeTimeET:'2026-10-21 09:52:17'},runAt],
+  [{...v,tradeTimeET:date+' 10:00:01'},runAt],
+  [{...v,delayMinutes:21},runAt],
+  [v,date+'T13:49:00.000Z'],[v,date+'T14:30:00.000Z']
+ ])assert.throws(()=>normalizeGoogleOpening(value,{date,observedAt:now}));
+});
+test('Google opening provider validates immutable G priceopen and C/D formulas',async()=>{
+ const {createGoogleOpeningProvider}=require('./google-quote-provider.cjs');
+ const make=()=>{
+  const d=gridFixture(),cells=d.sheets[0].data[0].rowData[1].values;
+  // Column F is the existing quote-grid spacer; opening evidence belongs in G.
+  cells.push({}, {userEnteredValue:{formulaValue:'=IFERROR(GOOGLEFINANCE(A2,"priceopen"),"")'},
+   effectiveValue:{numberValue:104}});
+  return d;
+ };
+ const data=make();
+ const api={spreadsheets:{get:async req=>{assert.equal(req.spreadsheetId,STAGING_ID);
+  assert.deepEqual(req.ranges,["'Engine 2 Quotes'!A1:G11"]);return {data};}}};
+ const o=(await createGoogleOpeningProvider({api,clock:()=>new Date(runAt)}).getOpenings({
+  date,positions:[{ticker:'AMD'}]}))[0];
+ assert.equal(o.open,104);
+ assert.equal(o.sourceId.startsWith('GOOGLEFINANCE_PRICEOPEN:AMD:'),true);
+ for(const mutate of [
+  d=>d.sheets[0].data[0].rowData[1].values[6].userEnteredValue.formulaValue='=104',
+  d=>d.sheets[0].data[0].rowData[1].values[6].effectiveValue.numberValue=0,
+  d=>d.sheets[0].data[0].rowData[1].values[2].effectiveValue.stringValue='2026-10-21 09:52:17'
+ ]){
+  const bad=make();mutate(bad);
+  await assert.rejects(()=>createGoogleOpeningProvider({api:{spreadsheets:{get:async()=>({data:bad})}},
+   clock:()=>new Date(runAt)}).getOpenings({date,positions:[{ticker:'AMD'}]}));
+ }
+});
+
+test('Google opening proof may trigger an opening STOP without Yahoo 1m; 10:00 quote remains the exit price',async()=>{
+ const {normalizeGoogleOpening}=require('./google-quote-provider.cjs');
+ const {proposeDelayed}=require('./delayed-model-cycle.cjs');
+ const {validateMorningCommit}=require('./clean-ledger.cjs');
+ const previous={epoch:'2026-10-19',date:'2026-10-21',active:[{
+  ticker:'AMD',entryDate:'2026-10-21',entryTime:'2026-10-21T14:00:00Z',
+  entryPrice:100,exchange:'NASDAQ'}],closed:[]};
+ const p=await prepared(previous),opening=normalizeGoogleOpening({
+  symbol:'NASDAQ:AMD',open:95,tradeTimeET:date+' 09:52:17',delayMinutes:15
+ },{date,observedAt:runAt});
+ const result=proposeDelayed({date,runAt,prepared:p,previous,quotes:[quote({...source,price:94})],
+  openings:[opening],pricePolicy:GOOGLE_POLICY});
+ assert.equal(result.closed.length,1);
+ assert.equal(result.closed[0].exitPrice,94);
+ assert.equal(result.closed[0].reason,'STOP LOSS');
+ assert.equal(result.closed[0].triggerEvidence.sourceId,opening.sourceId);
+ assert.equal(validateMorningCommit(result).status,'READY_FOR_SHADOW_COMMIT');
+});
