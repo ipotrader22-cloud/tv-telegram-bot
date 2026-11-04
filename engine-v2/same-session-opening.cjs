@@ -1,6 +1,6 @@
 'use strict';
 // Read-only current-session 09:30 opening evidence for previously held model lots.
-// Yahoo 1-minute OPEN is an indicative regular-session reference, not a broker fill.
+// Google priceopen or Yahoo 1-minute OPEN is indicative, never a broker fill.
 const {etTime}=require('./delayed-model-policy.cjs');
 const {createYahooMinuteProvider}=require('./yahoo-minute-fallback.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
@@ -21,12 +21,15 @@ function verifyCurrentOpenings({date,runAt,positions=[],openings=[]}={}){
  }
  const byTicker=new Map();
  for(const o of openings){
+  const yahoo=o?.priceKind==='MINUTE_BAR_OPEN'&&
+    o.sourceId==='YAHOO_1M:'+o.ticker+':'+Date.parse(openingTime);
+  const google=o?.priceKind===require('./google-quote-provider.cjs').GOOGLE_OPEN_KIND&&
+    require('./google-quote-provider.cjs').validGoogleOpening(o,{date,runAt});
   if(!o||!eligible.has(o.ticker)||byTicker.has(o.ticker)||o.date!==date||
      o.time!==openingTime||o.minuteET!=='09:30'||
      o.confirmed!==true||o.session!=='REGULAR'||
-     o.priceKind!=='MINUTE_BAR_OPEN'||o.indicative!==true||
-     !Number.isFinite(o.open)||o.open<=0||
-     o.sourceId!=='YAHOO_1M:'+o.ticker+':'+Date.parse(openingTime))
+     ![yahoo,google].some(Boolean)||o.indicative!==true||
+     !Number.isFinite(o.open)||o.open<=0)
     throw Error('CURRENT_OPENING_EVIDENCE_INVALID');
   byTicker.set(o.ticker,o);
  }
