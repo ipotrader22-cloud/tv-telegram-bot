@@ -1,0 +1,25 @@
+name: Engine 2 pre-session source health (read only)
+on:
+  workflow_dispatch:
+  push:
+    branches: [engine-v2-shadow-foundation-20261016]
+    paths:
+      - 'engine-v2/staging-morning-readonly-preflight.cjs'
+      - 'engine-v2/staging-morning-readonly-preflight.test.cjs'
+      - 'engine-v2/live-quote-probe.cjs'
+      - '.github/workflows/engine-v2-readonly-market-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  independent-readonly-source-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test delayed quote probe and safe market preflight
+        run: node --test engine-v2/live-quote-probe.test.cjs engine-v2/staging-morning-readonly-preflight.test.cjs
+      - name: Query Render egress, Google quote formulas and exact held 09:30 bars (read only)
+        run: node engine-v2/staging-morning-readonly-preflight.cjs
