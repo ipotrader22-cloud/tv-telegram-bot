@@ -54,9 +54,9 @@ function flatten(raw){
    })))};
  });
 }
-async function fetchBars(fetcher=fetch,rpc='c2u4wc'){
+async function fetchBars(fetcher=fetch,rpc='c2u4wc',startDay=3){
  const entities=NAMES.map(s=>{const [ticker,exchange]=s.split(':');return [null,[ticker,exchange]]});
- const args=[entities,null,[[2026,11,3],[2026,11,3],1],null,null,null,null,1];
+ const args=[entities,null,[[2026,11,startDay],[2026,11,3],1],null,null,null,null,1];
  const req=[[[rpc,JSON.stringify(args),null,'1']]];
  const url='https://www.google.com/finance/beta/_/FinHubUi/data/batchexecute?rpcids='+rpc+'&hl=en&gl=US';
  const result=await fetcher(url,{method:'POST',
@@ -84,8 +84,26 @@ async function probe({fetcher=fetch,environment='GITHUB'}={}){
   const check=count(data.candles,{symbol});
   return data.seconds===60?check:{...check,status:'BLOCKED',reason:'NOT_ONE_MINUTE'};
  });
- return {status:checks.every(c=>c.status==='PASS')?'PASS':'BLOCKED',
-  date:DATE,environment,checks,writesPerformed:false,pricesLogged:false,storedBars:false};
+ // Boundary-control diagnostic: if the requested session's first 09:30
+ // candle was missing, ask for one earlier day without fabricating a bar.
+ let bufferedChecks=null,bufferedRequestStatus=null;
+ if(checks.some(c=>c.missing>0)){
+  let buffered;
+  try{buffered=await fetchBars(fetcher,'c2u4wc',2)}
+  catch{buffered={status:'BLOCKED',reason:'GOOGLE_NETWORK_OR_PARSER_ERROR'}}
+  bufferedRequestStatus=buffered.status;
+  if(buffered.status==='RECEIVED'){
+   bufferedChecks=NAMES.map(symbol=>{
+    const data=buffered.chart.find(s=>s.symbol===symbol);
+    return data?.seconds===60?count(data.candles,{symbol}):
+     {symbol,status:'BLOCKED',reason:'BUFFERED_SERIES_MISSING_OR_INVALID'};
+   });
+  }
+ }
+ const finalChecks=bufferedChecks&&bufferedChecks.every(c=>c.status==='PASS')?bufferedChecks:checks;
+ return {status:finalChecks.every(c=>c.status==='PASS')?'PASS':'BLOCKED',
+  date:DATE,environment,checks,bufferedChecks,bufferedRequestStatus,
+  writesPerformed:false,pricesLogged:false,storedBars:false};
 }
 if(require.main===module)probe({environment:process.env.VIXALE_PROBE_ORIGIN||'GITHUB'}).then(r=>{
  console.log('VIXALE_GOOGLE_MINUTE_PROBE',JSON.stringify(r));
