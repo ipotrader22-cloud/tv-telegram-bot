@@ -6,7 +6,17 @@ const {previousSession}=require('../scripts/swing-market-calendar');
 const date='2026-11-04',sourceSession=previousSession(date),at=etTime(date,420);
 const exch={CVX:'NYSE',XOM:'NYSE',SPY:'NYSEARCA',QQQ:'NASDAQ',
  SMH:'NASDAQ',XLK:'NYSEARCA',XLE:'NYSEARCA'};
-const dayDates=()=>{let d=sourceSession,days=[];while(days.length<220){days.unshift(d);d=previousSession(d)}return days};
+const dayDates=()=>{
+ // Research input fixture intentionally spans 2025; the operational NYSE
+ // session calendar covers 2026 onward. Generate historical weekdays without
+ // pretending these are independent holiday-certified sessions.
+ let d=new Date(sourceSession+'T12:00:00Z'),days=[];
+ while(days.length<220){
+  if(d.getUTCDay()!==0&&d.getUTCDay()!==6)days.unshift(d.toISOString().slice(0,10));
+  d=new Date(+d-86400000);
+ }
+ return days;
+};
 function fake({badMinute=false}={}){
  const calls={googleDaily:0,googleMinute:0,news:0,yahoo:0};
  const daily=dayDates();
