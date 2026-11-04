@@ -225,8 +225,8 @@ function transformDashboardHero(html) {
   topBlock = addClassToOpeningTag(topBlock, "vx-dashboard-heading-block");
 
   const notesBlock = hero.slice(notesRange.start, notesRange.end)
-    .replace("Vixale Prime trades only intraday and closes all positions by 16:00 ET", "Trades only intraday and closes all positions by 16:00 ET")
-    .replace("Vixale Edge can hold positions overnight when trade conditions remain active", "May hold positions overnight until target or stop is reached");
+    .replace("Vixale Prime trades only intraday and closes all positions by 16:00 ET.", "Trades only intraday and closes all positions by 16:00 ET")
+    .replace("Vixale Edge can hold positions overnight when trade conditions remain active.", "May hold positions overnight until target or stop is reached");
   const primeRange = findChildByClassAndText(notesBlock, "div", "strategy-note", "Vixale Prime");
   const edgeRange = findChildByClassAndText(notesBlock, "div", "strategy-note", "Vixale Edge");
   if (!primeRange || !edgeRange) return result;
