@@ -4110,3 +4110,27 @@ source under GOOGLE_LATEST_1000_MODEL_V1; its latest quote is not evidence
 of exact 09:30 open. No broker, production, strategy, risk, customer-email,
 sheet-schema or deployment policy changes. See
 docs/ENGINE2_STAGING_DELAYED_0940_RUN.md. Handbook update required: YES.
+
+## 2026-11-04 — Staging DB integrity: missing session versus inconsistent journal
+
+The shadow observer previously reported SESSION_JOURNAL_CARDINALITY_MISMATCH
+whenever the day's immutable clean run, daily state, publication journal or
+preopen preparation did not each contain exactly one row. This conflated two
+distinct situations: an aborted 10:00 market-data cycle that correctly committed
+no financial session, and a genuinely partial/inconsistent financial journal.
+
+The isolated, read-only auditor now returns BLOCKED/SESSION_NOT_COMMITTED with
+sanitized per-table row counts when *all three* session financial tables have
+zero rows (with zero or one preopen preparation). It still returns
+BLOCKED/SESSION_JOURNAL_CARDINALITY_MISMATCH, also with counts, for every
+partial run, orphan, duplicate or missing preopen record. It does not re-create,
+backdate, delete or silently certify any session. No API surface, database
+schema, production, broker, strategy, email, workbook or customer data change.
+
+Live evidence: November 2 observer startup checks reported PASS with one run,
+two events and two active positions; November 4's failed 10:00 Yahoo evaluation
+did not establish a published session. The new count-bearing read-only startup
+receipt is required to determine whether November 4 was truly a missing session
+or a partial journal. Runtime validation after deployment must inspect that
+receipt, not infer PASS from code tests. Next successful real 10:00 cycle remains
+a separate launch gate. Handbook update required: YES.

@@ -24,7 +24,20 @@ async function auditStagingDb({url,date,clientFactory=opts=>new Client(opts)}={}
   const stateRows=(await db.query('SELECT run_id,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 AND session_date=$2',[EPOCH,date])).rows;
   const pipelineRows=(await db.query('SELECT run_id,snapshot_id,artifact,state FROM vixale_v2.staging_pipeline WHERE session_date=$1',[date])).rows;
   const preopenRows=(await db.query('SELECT count(*)::integer AS n FROM vixale_v2.preopen_preparations WHERE session_date=$1',[date])).rows;
-  if(runRows.length!==1||stateRows.length!==1||pipelineRows.length!==1||preopenRows[0]?.n!==1)return fail('SESSION_JOURNAL_CARDINALITY_MISMATCH');
+  // Missing *all* financial rows is not a malformed financial journal.
+  // A 10:00 provider failure can legitimately leave the preopen preparation
+  // intact without committing a session. Report that distinct BLOCKED state
+  // rather than falsely accusing the immutable ledger of inconsistent rows.
+  const counts={runCount:runRows.length,dailyCount:stateRows.length,
+   pipelineCount:pipelineRows.length,preopenCount:preopenRows[0]?.n};
+  if(counts.runCount===0&&counts.dailyCount===0&&counts.pipelineCount===0&&
+     Number.isInteger(counts.preopenCount)&&counts.preopenCount<=1&&counts.preopenCount>=0)
+   return {...fail('SESSION_NOT_COMMITTED'),date,...counts};
+  // Any partial financial commit, duplicate, or missing preopen proof remains
+  // a hard integrity failure. Preserve read-only transaction boundaries.
+  if(counts.runCount!==1||counts.dailyCount!==1||
+     counts.pipelineCount!==1||counts.preopenCount!==1)
+   return {...fail('SESSION_JOURNAL_CARDINALITY_MISMATCH'),date,...counts};
   const run=runRows[0],daily=stateRows[0],pipeline=pipelineRows[0];
   if(run.run_id!==daily.run_id||run.run_id!==pipeline.run_id)return fail('RUN_ID_MISMATCH');
   const events=(await db.query('SELECT event_id,type,ticker,entry_date::text AS entry_date FROM vixale_v2.clean_events WHERE run_id=$1',[run.run_id])).rows;
