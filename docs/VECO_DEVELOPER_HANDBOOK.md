@@ -4134,3 +4134,28 @@ receipt is required to determine whether November 4 was truly a missing session
 or a partial journal. Runtime validation after deployment must inspect that
 receipt, not infer PASS from code tests. Next successful real 10:00 cycle remains
 a separate launch gate. Handbook update required: YES.
+
+## 2026-11-04 — Independent read-only next-session preflight
+
+Following the Nov 4 minute-source block, Engine 2 staging now includes
+`engine-v2/staging-morning-readonly-preflight.cjs` and a narrowly scoped
+read-only GitHub Actions workflow (manual dispatch or staging push).
+The script checks independent external Render observer health, exact
+shadow mode/price policy, Google Finance quote observation, and Render-hosted
+Yahoo minute-source opening evidence. It separately requests completed
+09:30 Yahoo OHLCV for current held tickers from the isolated GitHub runner.
+Only aggregate PASS/BLOCKED category/number-of-holdings is logged; no prices,
+private worksheet data, secrets, customer emails, portfolio mutation or
+broker operations are performed.
+
+The Render SPY probe additionally exposes whether the completed
+09:30 opening bar exists even when the legacy five-minute latest-bar
+freshness gate correctly rejects a roughly 20-minute delayed mark.
+An observed 09:30 bar is independent of the latest indicative price
+and does not authorize a trade. An after-hours diagnostic does not
+certify next-session provider availability; a real 10:00 financial cycle
+and full publication parity remain separate gates.
+
+Read-only test failures must be resolved before interpreting a next-session
+launch as ready. This workflow does not merge production or initiate a
+new financial cycle. Handbook update required: YES.
