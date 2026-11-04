@@ -160,3 +160,37 @@ Before declaring success, verify a pre-open PREOPEN_PREPARED log and a subsequen
 STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED result, exact Sheet/API/HTML parity,
 and restart recovery. Unit/integration fixtures are not a real source-backed run.
 Rollback: set staging pipeline NO and deploy, retaining all immutable evidence.
+
+
+## 2026-11-04 — Google-only Engine 2 staging daily research and carried 09:31 minute targets
+
+Owner direction: complete the staging migration away from Yahoo, after the
+read-only source proof verified 296 daily 1d bars for each of the configured
+10 stocks and five benchmarks, and 389/389 completed 09:31–15:59 1m OHLCV
+for held CVX/XOM on Nov 3 and Oct 12 from GitHub and Render.
+
+New narrow `google-finance-chart-source.cjs` validates the fixed authorized
+universe and exchange identity, 1d/1m resolution, timestamp order and uniqueness,
+actual OHLCV, source hash and completed NYSE sessions. A Google-policy preopen
+fetches a 440-calendar-day daily window to certify at least 200 completed
+sessions for nine-factor scoring, using the unchanged scoring engine and
+Google RSS evidence. It never requests the Yahoo daily chart in that policy.
+
+The preopen carried-lot scanner uses certified Google 1m candles from 09:31
+through each completed close, strictly requires every expected intraday minute
+since the watermark, and blocks on a missing/non-trading/minute-invalid bar.
+A historical opening STOP at 09:30 still requires a *separate* authentic
+Google completed daily OHLCV OPEN; the 09:31 low/OPEN is not a substitute.
+A 10:00 same-day held-lot STOP requires the independent `priceopen`
+Google Sheets source, not a missing minute candle. No fictitious fills,
+no daily low used as a stop. Previous immutable historical session records
+are never replayed or rewritten to force artificial success.
+
+IMPORTANT: The observable price source remains an indicative, delayed
+research model, not an executable broker fill. The staging Google mode
+does not use Yahoo for daily research, carried-target history or 09:30 STOP.
+Legacy Yahoo policy code remains untouched for backward compatibility.
+Testing is confined to isolated staging; production cutover is gated on
+real data availability, evidence matching private Sheets/API/HTML, financial
+reconciliation, no duplicate commits, and separate market-data rights.
+Handbook update required: YES.
