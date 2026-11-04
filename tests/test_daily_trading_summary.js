@@ -70,6 +70,13 @@ const earlierHistory = {
 };
 assert(blog.availableDates(earlierHistory).includes("2026-07-01"));
 
+const indexHtml = blog.renderIndexPage([summary], false);
+assert(indexHtml.includes('<h1 class="daily-summary-index-title">Daily Trading Summaries</h1>'));
+assert(indexHtml.includes('Click on any date to see all trades for that trading day'));
+assert(!indexHtml.includes('Shareable daily recaps of recorded trading activity and realized results across the available Vixale ledger history.'));
+assert(indexHtml.includes('.hero h1.daily-summary-index-title{font-size:clamp(25.2px,3.5vw,42px)}'));
+assert(indexHtml.includes('href="/daily-trading-summary/2026-10-05"'), 'date cards must still link to detailed day reports');
+
 const html = blog.renderDayPage(summary, false);
 assert(html.includes("Vixale Daily Trading Summary"));
 assert(html.includes("Copy Link"));
