@@ -18,7 +18,7 @@ Source inspection confirmed that `app.js` creates `<div class="badge"><span clas
 - Changed files: `website_dashboard_snapshot_refinement.js`, `tests/test_dashboard_snapshot_refinement.js`.
 - The existing badge is extracted once from the heading and rendered in a dedicated left-aligned row directly ahead of the unchanged timestamp. Its original badge/dot markup and refresh mechanism are preserved.
 - Source/structural assertions verified the extraction, row placement, and regression test assertions. Full local Node test suite and CI: **NOT RUN**. No post-deploy authenticated visual check was performed.
-- Render service `tv-telegram-bot` (`srv-d86vh7j7uimc73ao479g`), deploy `dep-dbli9k5ckfvc73fjbj9g`, exact UI commit matched; status last observed `update_in_progress` during this documentation preparation. Final completion and authenticated rendered positioning remain **UNVERIFIED** until directly checked.
+- Render service `tv-telegram-bot` (`srv-d86vh7j7uimc73ao479g`), deploy `dep-dbli9k5ckfvc73fjbj9g`, exact UI commit matched; deploy status **live**, finished `2026-11-04T12:28:49.145041Z` per direct Render deploy listing. Authenticated browser-rendered badge positioning remains **UNVERIFIED** after this deploy because the connected browser is read-only and did not reload the Dashboard tab.
 
 ## Safety, rollback, and documentation
 
