@@ -1,5 +1,13 @@
 # VIXALE website — Documentation change log
 
+## 2026-11-04 — PR359 dashboard text and deployment
+
+- Replaced private Day Trading Dashboard subtitle and both system-card explanations with owner-requested copy; no trade logic or data modifications.
+- Updated desktop one-line card styling, retaining mobile wrapping; extended dashboard copy regression assertions.
+- PR #359 merged as `ce1a0d1`; Render deploy `dep-dblhsinavr4c73cstf20` reported Live, with successful build and application startup.
+- Fresh authenticated browser post-deploy and real responsive overflow checks remain UNVERIFIED; no PR CI runs observed. Recorded restart-window 502 separately.
+- Set VIXALE-WEBSITE-CURRENT-STATE-2026-11-04-PR359.md as the indexed website source-of-truth manifest; prior Issue #337 manifest retained historically. No docs exporter or ChatGPT upload performed.
+
 ## 2026-09-28 — Current column emphasis
 
 - Set Active Portfolio Current values to font-weight 700 using scoped CSS.
