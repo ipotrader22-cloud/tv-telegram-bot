@@ -151,7 +151,7 @@ function injectStyles(html) {
   #${DASHBOARD_OPEN_PNL_ID}.positive{color:#00954f!important}
   #${DASHBOARD_OPEN_PNL_ID}.negative{color:#ef3f4a!important}
   #${DASHBOARD_OPEN_PNL_ID}.neutral{color:inherit!important}
-  @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge"} .vx-dashboard-system-card{white-space:normal!important}.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
+  @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge"} .vx-dashboard-system-card{white-space:normal!important;margin-top:0!important}.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
   @media(max-width:760px){.${DASHBOARD_METRIC_CLASS}{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 </style>`;
   return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
