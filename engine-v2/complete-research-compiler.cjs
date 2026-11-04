@@ -6,6 +6,7 @@ const {normalizeDailyEvidence}=require('./daily-research-bridge.cjs');
 const {validateResearchBatch}=require('./research-attestation.cjs');
 const {CAPS,score}=require('./core.cjs');
 const {createHash}=require('node:crypto');
+const {validatedResearchSource}=require('./research-source-identity.cjs');
 function compileFullResearch({artifact,date,runAt,universe,session,assessments,newsReview}={}){
  const blocked=(reason,errors=[])=>({status:'BLOCKED',reason,errors,complete:false});
  const metrics=normalizeDailyEvidence({artifact,universe,reviewDate:date});
@@ -67,7 +68,7 @@ function compileFullResearch({artifact,date,runAt,universe,session,assessments,n
  if(errors.length)return blocked('INCOMPLETE_FACTOR_RESEARCH',errors);
  const benchmarks=['SPY','QQQ','SMH','XLK','XLE'].map(ticker=>{
   const r=artifact.data.find(x=>x.metrics?.symbol===ticker);
-  return {ticker,sourceId:r?.source||null,timestamp:artifact.collectedAt||runAt};
+  return {ticker,sourceId:validatedResearchSource(r)||null,timestamp:artifact.collectedAt||runAt};
  });
  const batch={date,runAt,universe,items,benchmarks,session};
  const validated=validateResearchBatch(batch);

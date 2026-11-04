@@ -7,6 +7,7 @@ const {normalizeDailyEvidence}=require('./daily-research-bridge.cjs');
 const {CAPS,score}=require('./core.cjs');
 const {createHash}=require('node:crypto');
 const {previousSession}=require('../scripts/swing-market-calendar');
+const {validatedResearchSource}=require('./research-source-identity.cjs');
 const BENCHMARKS=['SPY','QQQ','SMH','XLK','XLE'];
 const good=x=>typeof x==='number'&&Number.isFinite(x);
 function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={}){
@@ -27,7 +28,7 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
   const row=matches[0],m=row.metrics;
   if((m.researchDate??m.quoteDate)!==date||m.lastCompleteDate!==completedSession||
      !Number.isInteger(m.dailyBars)||m.dailyBars<200||
-     !/^https:\/\/query[12]\.finance\.yahoo\.com\/v8\/finance\/chart\//.test(row.source||'')||
+     !validatedResearchSource(row)||
      [m.lastCompleteClose,m.sma50,m.return20Pct,m.return60Pct].some(x=>!good(x))||
      m.lastCompleteClose<=0||m.sma50<=0)
     return bad('BENCHMARK_SESSION_OR_SOURCE_UNVERIFIED:'+ticker);
@@ -37,7 +38,7 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
     newsReview.tickers?.length!==universe.length||universe.some(t=>!newsReview.tickers.includes(t)))
    return bad('INCOMPLETE_NEWS_COVERAGE');
  const bench=Object.fromEntries(artifact.data.filter(x=>BENCHMARKS.includes(x.metrics?.symbol))
-  .map(x=>[x.metrics.symbol,{...x.metrics,sourceId:x.source}]));
+  .map(x=>[x.metrics.symbol,{...x.metrics,sourceId:validatedResearchSource(x)}]));
  if(!bench.SPY||!bench.QQQ)return bad('MARKET_BENCHMARKS_MISSING');
  const errors=[],assessments=[];
  const a=bench.SPY,b=bench.QQQ;
