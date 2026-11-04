@@ -1,3 +1,9 @@
+## 2026-11-04 — Dashboard daily-history links (PR #366)
+
+- Merged presentation-only PR #366 (81e536ca): added compact white/light-purple daily trade history card beneath Prime/Edge and pointed Full Trade History to `/daily-trading-summary`.
+- Added responsive/card/link regression assertions; full Node tests and authenticated visual QA not run.
+- Render deploy dep-dblii3k9v7es73d6hgl0 observed building; final visual verification unverified at documentation time. Updated source-of-truth index and dated manifest. Central export/upload not performed.
+
 # VIXALE website — Documentation change log
 
 ## 2026-11-04 — PR361 private dashboard correction (follow-up to PR359)
