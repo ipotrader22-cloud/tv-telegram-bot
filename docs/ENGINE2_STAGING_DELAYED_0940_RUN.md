@@ -160,3 +160,21 @@ Before declaring success, verify a pre-open PREOPEN_PREPARED log and a subsequen
 STAGING_PUBLICATION_VERIFIED_EMAIL_DISABLED result, exact Sheet/API/HTML parity,
 and restart recovery. Unit/integration fixtures are not a real source-backed run.
 Rollback: set staging pipeline NO and deploy, retaining all immutable evidence.
+
+## 2026-11-04 — Google Finance primary current-session opening
+
+For `GOOGLE_LATEST_1000_MODEL_V1`, the private staging `Engine 2 Quotes`
+tab now contains an independent `GOOGLEFINANCE(Arow,"priceopen")`
+formula in column G. Unlike `price`/last-trade, this current-day
+attribute represents the market-opening price, available after quote
+release. For the held-lot 09:30 STOP check the model requires a
+numeric Google priceopen, exact exchange ticker, unmodified formula,
+same-session trade timestamp and source delay from C/D, witnessed
+at/after 09:50 ET and within the unchanged 10:00–10:05 decision window.
+Google opening evidence carries a distinct, immutable hash/source ID
+and provenance `GOOGLEFINANCE_SESSION_OPEN`, never claims a Yahoo minute
+bar, real-time fill or broker execution. Both Google and Yahoo evidence
+are independently revalidated against persisted journal state.
+The legacy Yahoo model policy continues using strict 1m OHLCV.
+The previous-session minute TARGET scan remains Yahoo-dependent;
+GOOGLEFINANCE priceopen is not a substitute for those bars.

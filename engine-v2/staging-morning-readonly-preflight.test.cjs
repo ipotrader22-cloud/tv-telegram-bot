@@ -6,7 +6,7 @@ const opening='2026-11-04T14:30:00.000Z';
 const openingBar={ticker:'CVX',date:d,start:opening,end:'2026-11-04T14:31:00.000Z',
  open:200,close:201,high:202,low:199,volume:100,
  sourceId:'YAHOO_1M:CVX:'+Date.parse(opening),provider:'YAHOO_CHART'};
-function mock({yahoo={openingBarObserved:true},google={status:'GOOGLE_MODEL_QUOTES_OBSERVED'},feed={epoch:'2026-10-19',snapshot_date:'2026-11-02',active_portfolio:[{ticker:'CVX'}]},health={mode:'READ_ONLY',databaseConnected:true,schemaInitialized:true,stagingPipeline:{enabled:false,emailEnabled:false,pricePolicy:'GOOGLE_LATEST_1000_MODEL_V1'},cleanSlate:{readyForProduction:false}},bars=[openingBar]}={}){
+function mock({yahoo={openingBarObserved:true},google={status:'GOOGLE_MODEL_QUOTES_OBSERVED',openingCoverage:'PASS'},feed={epoch:'2026-10-19',snapshot_date:'2026-11-02',active_portfolio:[{ticker:'CVX'}]},health={mode:'READ_ONLY',databaseConnected:true,schemaInitialized:true,stagingPipeline:{enabled:false,emailEnabled:false,pricePolicy:'GOOGLE_LATEST_1000_MODEL_V1'},cleanSlate:{readyForProduction:false}},bars=[openingBar]}={}){
  const paths=[],data={'/health':health,'/v2/model/snapshot':feed,
   '/v2/market-data/probe':yahoo,'/v2/google-quotes/probe':google};
  return {paths,fetcher:async url=>{const p=new URL(url).pathname;paths.push(p);

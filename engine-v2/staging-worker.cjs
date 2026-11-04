@@ -54,7 +54,7 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
     if(metadata.status!=='PASS')return {status:'BLOCKED',reason:'STAGING_WORKBOOK_METADATA_UNVERIFIED'};
     return runStagingPipeline({store,url,api,clock,prepareProviders:delayed?async({date,journal})=>{
       const prepared=await journal.getPrepared(date);if(!prepared)throw Error('PREOPEN_PREPARATION_MISSING');
-      return {prepared,quoteProvider:google?require('./google-quote-provider.cjs').createGoogleQuoteProvider({api,clock}):require('./preopen-preparation.cjs').createFixedQuoteProvider({fetchFn:fetcher,clock}),openingProvider:require('./same-session-opening.cjs').createCurrentOpeningProvider({fetchFn:fetcher})};
+      return {prepared,quoteProvider:google?require('./google-quote-provider.cjs').createGoogleQuoteProvider({api,clock}):require('./preopen-preparation.cjs').createFixedQuoteProvider({fetchFn:fetcher,clock}),openingProvider:google?require('./google-quote-provider.cjs').createGoogleOpeningProvider({api,clock}):require('./same-session-opening.cjs').createCurrentOpeningProvider({fetchFn:fetcher})};
      }:prepareProviders,
      ...(delayed?{runCycle:opts=>require('./delayed-model-cycle.cjs').runDelayedCycle({...opts,...(google?{pricePolicy:require('./google-quote-provider.cjs').GOOGLE_POLICY}:{})})}:{}),fetcher,enabled:true,emailEnabled,
      recipient:env.VIXALE_V2_STAGING_EMAIL_TO,allowedRecipient:env.VIXALE_V2_STAGING_EMAIL_ALLOWLIST,apiKey:env.VIXALE_V2_STAGING_RESEND_API_KEY});

@@ -56,8 +56,9 @@ async function preflight({now=new Date(),fetcher=fetch,
   if(et.minute>=960){receipt.status='AFTER_HOURS_GOOGLE_NOT_CHECKED'}
   else{
    const google=await getJson('/v2/google-quotes/probe',{fetcher});
-   receipt.checks.google=google.status==='GOOGLE_MODEL_QUOTES_OBSERVED'?'PASS':
-    google.reason||'GOOGLE_UNAVAILABLE';
+   receipt.checks.google=google.status==='GOOGLE_MODEL_QUOTES_OBSERVED'&&
+    google.openingCoverage==='PASS'?'PASS':
+    google.reason||'GOOGLE_OPEN_OR_QUOTE_UNAVAILABLE';
   }
   const failures=[];
   for(const ticker of tickers){
