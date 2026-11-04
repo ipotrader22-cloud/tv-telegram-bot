@@ -11,6 +11,9 @@ const HOME_WIN_RATE_ID = "vx-home-proof-win-rate";
 const DASHBOARD_OPEN_PNL_ID = "vx-dashboard-open-live-pnl";
 const DASHBOARD_HEADER_CLASS = "vx-dashboard-header-grid";
 const DASHBOARD_METRIC_CLASS = "vx-dashboard-metric-row";
+const DASHBOARD_HISTORY_PATH = "/daily-trading-summary";
+const DASHBOARD_HISTORY_CARD_CLASS = "vx-dashboard-daily-history-card";
+const DASHBOARD_METADATA_CLASS = "vx-dashboard-metadata-row";
 
 const HOME_PREVIEW_COPY = "This preview mirrors the verified Day Trading block below. If the source is unavailable, values remain unavailable rather than being simulated.";
 
@@ -169,6 +172,13 @@ function injectStyles(html) {
   .${DASHBOARD_METRIC_CLASS}>.card .value{line-height:1.15!important}
   @media(max-width:1180px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:minmax(250px,1fr) minmax(200px,1fr);grid-template-areas:"heading heading" "subtitle subtitle" "prime edge";gap:6px 10px}.vx-dashboard-system-card{margin:0!important}}
   @media(max-width:760px){.${DASHBOARD_HEADER_CLASS}{grid-template-columns:1fr;grid-template-areas:"heading" "subtitle" "prime" "edge";gap:5px}.vx-dashboard-tracking-row{margin-bottom:4px}.vx-dashboard-updated{display:block;margin:0 0 8px!important}.${DASHBOARD_METRIC_CLASS}>.card{padding:10px 12px!important}}
+  .${DASHBOARD_METADATA_CLASS}{display:grid;grid-template-columns:minmax(360px,1.12fr) repeat(2,minmax(250px,1fr));gap:12px;align-items:center;margin:2px 0 8px}
+  .vx-dashboard-metadata-left{min-width:0}
+  .${DASHBOARD_HISTORY_CARD_CLASS}{grid-column:2 / 4;justify-self:center;display:flex;align-items:center;justify-content:center;min-width:260px;max-width:440px;width:68%;min-height:42px;padding:9px 16px;border:1px solid #dcd1f4;border-radius:12px;background:linear-gradient(115deg,#ffffff 0%,#f5efff 55%,#eae0fd 100%);color:#50357c;font-weight:650;text-align:center;text-decoration:none;box-shadow:0 4px 16px rgba(94,69,147,.06);transition:border-color .15s ease,box-shadow .15s ease}
+  .${DASHBOARD_HISTORY_CARD_CLASS}:hover{border-color:#b6a2e7;box-shadow:0 5px 18px rgba(94,69,147,.13)}
+  .${DASHBOARD_HISTORY_CARD_CLASS}:focus-visible{outline:3px solid #7654be;outline-offset:3px}
+  @media(max-width:1180px){.${DASHBOARD_METADATA_CLASS}{grid-template-columns:1fr 1fr}.vx-dashboard-metadata-left{grid-column:1 / 2}.${DASHBOARD_HISTORY_CARD_CLASS}{grid-column:2 / 3;width:100%;min-width:0}}
+  @media(max-width:760px){.${DASHBOARD_METADATA_CLASS}{grid-template-columns:1fr;gap:4px}.${DASHBOARD_HISTORY_CARD_CLASS}{grid-column:1;width:100%;margin:3px 0 0;min-height:40px}}
 </style>`;
   return html.includes("</head>") ? html.replace("</head>", `${styles}\n</head>`) : `${styles}${html}`;
 }
@@ -221,6 +231,17 @@ function refineHome(html) {
   return injectScript(result);
 }
 
+function linkFullTradeHistory(html) {
+  return String(html).replace(/<a\\b[^>]*>[\\s\\S]*?Full Trade History[\\s\\S]*?<\\/a>/gi, (anchor) => {
+    const open = /^<a\\b[^>]*>/i.exec(anchor);
+    if (!open) return anchor;
+    const linked = /\\bhref\\s*=\\s*(["'])[^"']*\\1/i.test(open[0])
+      ? open[0].replace(/\\bhref\\s*=\\s*(["'])[^"']*\\1/i, 'href="' + DASHBOARD_HISTORY_PATH + '"')
+      : open[0].replace(/>$/, ' href="' + DASHBOARD_HISTORY_PATH + '">');
+    return linked + anchor.slice(open[0].length);
+  });
+}
+
 function transformDashboardHero(html) {
   let result = String(html)
     .replace(/<h1>\s*Vixale Live Strategy Dashboard\s*<\/h1>/i, "<h1>Vixale Live Day Trading Dashboard</h1>")
@@ -268,7 +289,9 @@ function transformDashboardHero(html) {
     ? addClassToOpeningTag(remainingNotes, "vx-dashboard-other-system-notes")
     : "";
 
-  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${subtitleBlock}${primeBlock}${edgeBlock}</div>${trackingBlock}${updatedBlock}`;
+  const historyCard = `<a class="${DASHBOARD_HISTORY_CARD_CLASS}" href="${DASHBOARD_HISTORY_PATH}">Trade History by every day</a>`;
+  const metadataRow = `<div class="${DASHBOARD_METADATA_CLASS}"><div class="vx-dashboard-metadata-left">${trackingBlock}${updatedBlock}</div>${historyCard}</div>`;
+  const header = `<div class="${DASHBOARD_HEADER_CLASS}">${topBlock}${subtitleBlock}${primeBlock}${edgeBlock}</div>${metadataRow}`;
   hero = hero.slice(0, topRange.start) + header + hero.slice(notesRange.end);
 
   let cardsRange = findTagByClass(hero, "div", "cards");
@@ -293,7 +316,7 @@ function transformDashboardHero(html) {
 }
 
 function refineDashboard(html) {
-  let result = transformDashboardHero(String(html));
+  let result = linkFullTradeHistory(transformDashboardHero(String(html)));
   result = injectStyles(result);
   return injectScript(result);
 }
@@ -359,6 +382,9 @@ module.exports = {
   DASHBOARD_OPEN_PNL_ID,
   DASHBOARD_HEADER_CLASS,
   DASHBOARD_METRIC_CLASS,
+  DASHBOARD_HISTORY_PATH,
+  DASHBOARD_HISTORY_CARD_CLASS,
+  DASHBOARD_METADATA_CLASS,
   HOME_PREVIEW_COPY,
   findTagRangeFromOpen,
   findTagByClass,
@@ -371,6 +397,7 @@ module.exports = {
   injectStyles,
   injectScript,
   refineHome,
+  linkFullTradeHistory,
   transformDashboardHero,
   refineDashboard,
   refinePage,
