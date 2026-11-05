@@ -17,7 +17,11 @@ function providers(){
 }
 function memoryStore(){
  const rows=new Map();let busy=false;
- const store={rows,async withLock(work){if(busy)return {status:'BUSY'};busy=true;try{return await work({guard:async()=>{},get:async d=>roundTrip(rows.get(d)||null),save:async artifact=>{const r={artifact:roundTrip(artifact),state:{}};rows.set(artifact.manifest.payload.date,r);return roundTrip(r)},update:async(d,c)=>{const r=rows.get(d);r.state={...r.state,...roundTrip(c)};return roundTrip(r.state)},pending:async()=>[...rows].find(([,r])=>!['DELIVERED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED','EMAIL_DISABLED'].includes(r.state.delivery))?.[0]||null})}finally{busy=false}},async publishedFeed(){return [...rows.values()].filter(r=>r.state.sheet==='VERIFIED').at(-1)?.artifact.feed||null}};
+ const store={rows,async withLock(work){if(busy)return {status:'BUSY'};busy=true;try{return await work({guard:async()=>{},get:async d=>roundTrip(rows.get(d)||null),save:async artifact=>{const r={artifact:roundTrip(artifact),state:{}};rows.set(artifact.manifest.payload.date,r);return roundTrip(r)},update:async(d,c)=>{const r=rows.get(d);r.state={...r.state,...roundTrip(c)};return roundTrip(r.state)},pending:async reviewDate=>[...rows].find(([day,{state}])=>{
+    if(['DELIVERED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED','EMAIL_DISABLED'].includes(state.delivery))return false;
+    const accepted=state.delivery==='ACCEPTED_NOT_DELIVERED'&&state.messageId;
+    return !(day<reviewDate&&accepted&&state.sheet==='VERIFIED'&&state.publication==='VERIFIED');
+   })?.[0]||null})}finally{busy=false}},async publishedFeed(){return [...rows.values()].filter(r=>r.state.sheet==='VERIFIED').at(-1)?.artifact.feed||null}};
  return store;
 }
 function memoryLedger(){

@@ -99,3 +99,26 @@ test('client auth errors and semantic API drift are never retried or authorized 
  assert.equal(h.sheets.writes,1);
  assert.equal(h.sends,0);
 });
+
+test('send-only receipt denial preserves verified publication and the accepted ID on restart',async t=>{
+ const h=await harness(t);
+ const fetcher=h.args.fetcher;
+ h.args.fetcher=(url,options)=>String(url).startsWith('https://api.resend.com/emails/')?
+  new Response(JSON.stringify({name:'restricted_api_key'}),{status:401}):fetcher(url,options);
+ const expected='STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED';
+ assert.equal((await h.run()).status,expected);
+ const state=h.store.rows.get(date).state;
+ assert.equal(state.delivery,'ACCEPTED_NOT_DELIVERED');
+ assert.equal(state.deliveryLookup,'SEND_ONLY');
+ assert.equal(state.messageId,'test-message');
+ assert.equal(state.publication,'VERIFIED');
+ h.args.publish=h.args.readback=h.args.send=()=>assert.fail('receipt retry replayed publication or send');
+ assert.equal((await h.run()).status,expected);
+ h.args.fetcher=()=>Promise.resolve(new Response(JSON.stringify({name:'invalid_api_key'}),{status:403}));
+ assert.equal((await h.run()).reason,'DELIVERY:DELIVERY_LOOKUP_HTTP_403');
+ h.args.fetcher=fetcher;
+ h.deliver();
+ assert.equal((await h.run()).status,'DELIVERED');
+ assert.equal(h.sends,1);
+ assert.equal(h.sheets.writes,1);
+});

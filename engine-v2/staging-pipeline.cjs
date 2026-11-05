@@ -20,9 +20,10 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
  if(!store?.withLock||!api)return blocked('STAGING_DEPENDENCIES_MISSING');
  return store.withLock(async journal=>{
   try{
-   const pending=await journal.pending();
+   const reviewDate=date||localET(clock().toISOString()).date;
+   const pending=await journal.pending(reviewDate);
    // Finish a durable previous session before starting new financial decisions.
-   const targetDate=pending||date||localET(clock().toISOString()).date;
+   const targetDate=pending||reviewDate;
    let saved=await journal.get(targetDate);
    if(!saved){
     let record=await readRun({url,date:targetDate});
@@ -48,6 +49,27 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
    const artifact=assertArtifact(saved.artifact),{manifest,feed}=artifact;
    let state=saved.state;
    if(['DELIVERED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED'].includes(state.delivery))return {status:state.delivery,runId:manifest.payload.runId,published:false,productionCutover:false};
+   async function checkAcceptedDelivery(plan){
+    if(state.sheet!=='VERIFIED'||state.publication!=='VERIFIED'||!state.messageId||
+       plan?.status!=='VERIFIED_DELIVERY_PLAN'||plan.runId!==manifest.payload.runId||
+       plan.snapshotId!==manifest.fingerprint||plan.to!==recipient||recipient!==allowedRecipient)
+     return blocked('DELIVERY:ACCEPTED_JOURNAL_INVALID');
+    const proof=await delivery({messageId:state.messageId,plan,apiKey,fetchFn:fetcher});
+    const deliveryCheckedAt=clock().toISOString();
+    if(proof.reason==='DELIVERY_LOOKUP_SEND_ONLY'&&proof.status==='BLOCKED'){
+     await journal.update(targetDate,{deliveryLookup:'SEND_ONLY',deliveryCheckedAt});
+     return {status:'STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED',date:targetDate,snapshotId:plan.snapshotId,published:false,productionCutover:false};
+    }
+    if(proof.status==='BLOCKED')return blocked('DELIVERY:'+proof.reason);
+    await journal.update(targetDate,{delivery:proof.status,deliveryLookup:'READ',deliveryCheckedAt});
+    return {status:proof.status,runId:plan.runId,snapshotId:plan.snapshotId,messageId:state.messageId,published:false,productionCutover:false};
+   }
+   // A saved provider ID makes this a receipt-only retry. No model, Sheet or send replay.
+   if(state.delivery==='ACCEPTED_NOT_DELIVERED'&&state.messageId){
+    stage='EMAIL';
+    if(!emailEnabled)return {status:'ACCEPTED_NOT_DELIVERED',published:false,productionCutover:false};
+    return await checkAcceptedDelivery(state.emailPlan);
+   }
    await journal.guard();
    stage='SHEET';
    const receipt=await publish({api,...artifact,enabled:'YES'});
@@ -79,10 +101,7 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
     if(sent.status!=='ACCEPTED_NOT_DELIVERED')return blocked('EMAIL:'+sent.reason);
     state=await journal.update(targetDate,{messageId:sent.messageId,delivery:'ACCEPTED_NOT_DELIVERED'});
    }
-   const proof=await delivery({messageId:state.messageId,plan,apiKey,fetchFn:fetcher});
-   if(proof.status==='BLOCKED')return blocked('DELIVERY:'+proof.reason);
-   await journal.update(targetDate,{delivery:proof.status,deliveryCheckedAt:clock().toISOString()});
-   return {status:proof.status,runId:plan.runId,snapshotId:plan.snapshotId,messageId:state.messageId,published:false,productionCutover:false};
+   return await checkAcceptedDelivery(plan);
   }catch(e){return blocked('STAGING_'+stage+'_EXCEPTION')}
  });
 }

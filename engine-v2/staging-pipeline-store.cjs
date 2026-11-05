@@ -37,7 +37,15 @@ function createPipelineStore({url,clientFactory=opts=>new Client(opts)}={}){
       return stored;
      },
      async update(date,changes){await guard();const q=await db.query("UPDATE vixale_v2.staging_pipeline SET state=state||$2::jsonb,updated_at=now() WHERE session_date=$1 RETURNING state",[date,JSON.stringify(changes)]);if(q.rowCount!==1)throw Error('PIPELINE_RUN_MISSING');return q.rows[0].state},
-     async pending(){return (await db.query("SELECT session_date::text AS date FROM vixale_v2.staging_pipeline WHERE COALESCE(state->>'delivery','') NOT IN ('DELIVERED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED','EMAIL_DISABLED') ORDER BY session_date LIMIT 1")).rows[0]?.date||null}
+     async pending(reviewDate){
+      // Only a completed publication with durable email acceptance can yield to a later review.
+      const result=await db.query(`SELECT session_date::text AS date FROM vixale_v2.staging_pipeline
+       WHERE COALESCE(state->>'delivery','') NOT IN ('DELIVERED','BOUNCED','COMPLAINED','FAILED','SUPPRESSED','EMAIL_DISABLED')
+       AND NOT COALESCE((session_date < $1::date AND state->>'sheet'='VERIFIED' AND state->>'publication'='VERIFIED'
+        AND state->>'delivery'='ACCEPTED_NOT_DELIVERED' AND length(state->>'messageId')>0),false)
+       ORDER BY session_date LIMIT 1`,[reviewDate]);
+      return result.rows[0]?.date||null;
+     }
     };
     return await work(repo);
    }finally{if(locked&&!lost)try{await db.query('SELECT pg_advisory_unlock(hashtext($1))',['engine2-staging-pipeline'])}catch{}await db.end()}

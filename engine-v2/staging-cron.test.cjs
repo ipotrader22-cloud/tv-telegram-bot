@@ -114,3 +114,12 @@ test('cron preserves only safe stage-specific failure codes',async()=>{
   assert.equal(x.result.reason,reason);assert.equal(x.result.exitCode,1);
  }
 });
+
+test('verified publication with restricted receipt lookup has a distinct successful cron result',async()=>{
+ const status='STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED';
+ const x=await invoke('2026-11-05T15:04:00Z',{createWorker:()=>({
+  status:()=>({enabled:true,missing:[]}),tick:async()=>({status})
+ })});
+ assert.equal(x.result.status,status);
+ assert.equal(x.result.exitCode,0);
+});

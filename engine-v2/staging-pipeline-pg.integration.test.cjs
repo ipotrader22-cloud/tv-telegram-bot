@@ -25,6 +25,13 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   });
   const h=await harness(t,{store,ledger:{}});h.args.url=url;
   const first=await h.run();assert.equal(first.status,'ACCEPTED_NOT_DELIVERED',JSON.stringify(first));
+  await store.withLock(async journal=>{
+   assert.equal(await journal.pending(date),date);
+   assert.equal(await journal.pending('2026-10-23'),null);
+   await journal.update(date,{publication:'PENDING'});
+   assert.equal(await journal.pending('2026-10-23'),date);
+   await journal.update(date,{publication:'VERIFIED'});
+  });
   const record=await readCleanRun({url,date});assert.equal(record.evidence_manifest.inputs.researchBatch.sourceEvidence.artifact.mode,'CLEAN_EPOCH');
   assert.equal((await commitShadowRun({url,inputs:record.evidence_manifest.inputs})).status,'IDEMPOTENT_REPLAY');
   h.args.store=competitor;h.deliver();assert.equal((await h.run()).status,'DELIVERED');assert.equal(h.sends,1);assert.equal(h.sheets.writes,1);

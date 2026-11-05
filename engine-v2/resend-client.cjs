@@ -21,6 +21,10 @@ async function readResendDelivery({messageId,plan,apiKey,fetchFn=fetch}={}){
  if(!/^re_/.test(apiKey||'')||!/^[-a-zA-Z0-9]{1,100}$/.test(messageId||'')||!plan)return bad('DELIVERY_LOOKUP_NOT_CONFIGURED');
  try{
   const response=await fetchFn(ORIGIN+'/'+encodeURIComponent(messageId),{redirect:'error',headers:{Authorization:'Bearer '+apiKey},signal:AbortSignal.timeout(10000)});
+  if(response.status===401||response.status===403){
+   const error=await response.json().catch(()=>null);
+   if(error?.name==='restricted_api_key')return bad('DELIVERY_LOOKUP_SEND_ONLY');
+  }
   if(!response.ok)return bad('DELIVERY_LOOKUP_HTTP_'+response.status);
   const x=await response.json();
   if(x.id!==messageId||x.from!==plan.from||x.subject!==plan.subject||x.text!==plan.text||

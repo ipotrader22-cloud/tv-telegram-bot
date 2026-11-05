@@ -4250,3 +4250,7 @@ Testing is confined to isolated staging; production cutover is gated on
 real data availability, evidence matching private Sheets/API/HTML, financial
 reconciliation, no duplicate commits, and separate market-data rights.
 Handbook update required: YES.
+
+## Engine 2 staging — November 5 delivery receipt isolation
+
+Once the private Sheet and shadow publication are verified and Resend has returned a durable message ID, retries check only that ID. A restricted send-only key can send the allowlisted test but cannot retrieve its receipt. An explicit provider restricted_api_key reply is reported as STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED. The journal keeps ACCEPTED_NOT_DELIVERED until a matching provider receipt is obtained. Invalid credentials, provider identity mismatches, and transient lookup failures remain errors. Verify external delivery against the exact provider ID without resending or granting broad key access. A prior verified publication with an accepted ID cannot consume a newer financial decision window. Unfinished publication and ambiguous sends retain their existing recovery priority. No schema migration or financial replay is required.
