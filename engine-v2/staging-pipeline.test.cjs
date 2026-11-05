@@ -113,7 +113,15 @@ test('send-only receipt denial preserves verified publication and the accepted I
  assert.equal(state.messageId,'test-message');
  assert.equal(state.publication,'VERIFIED');
  h.args.publish=h.args.readback=h.args.send=()=>assert.fail('receipt retry replayed publication or send');
+ h.args.fetcher=()=>assert.fail('known permission denial should not be retried');
  assert.equal((await h.run()).status,expected);
+ assert.equal(h.sends,1);
+ assert.equal(h.sheets.writes,1);
+});
+test('unexpected lookup denial remains an error and a later matching receipt can recover',async t=>{
+ const h=await harness(t);
+ const fetcher=h.args.fetcher;
+ assert.equal((await h.run()).status,'ACCEPTED_NOT_DELIVERED');
  h.args.fetcher=()=>Promise.resolve(new Response(JSON.stringify({name:'invalid_api_key'}),{status:403}));
  assert.equal((await h.run()).reason,'DELIVERY:DELIVERY_LOOKUP_HTTP_403');
  h.args.fetcher=fetcher;

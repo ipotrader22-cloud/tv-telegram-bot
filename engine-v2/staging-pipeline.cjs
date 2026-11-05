@@ -54,11 +54,13 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
        plan?.status!=='VERIFIED_DELIVERY_PLAN'||plan.runId!==manifest.payload.runId||
        plan.snapshotId!==manifest.fingerprint||plan.to!==recipient||recipient!==allowedRecipient)
      return blocked('DELIVERY:ACCEPTED_JOURNAL_INVALID');
+    const restricted={status:'STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED',date:targetDate,snapshotId:plan.snapshotId,published:false,productionCutover:false};
+    if(state.deliveryLookup==='SEND_ONLY')return restricted;
     const proof=await delivery({messageId:state.messageId,plan,apiKey,fetchFn:fetcher});
     const deliveryCheckedAt=clock().toISOString();
     if(proof.reason==='DELIVERY_LOOKUP_SEND_ONLY'&&proof.status==='BLOCKED'){
      await journal.update(targetDate,{deliveryLookup:'SEND_ONLY',deliveryCheckedAt});
-     return {status:'STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED',date:targetDate,snapshotId:plan.snapshotId,published:false,productionCutover:false};
+     return restricted;
     }
     if(proof.status==='BLOCKED')return blocked('DELIVERY:'+proof.reason);
     await journal.update(targetDate,{delivery:proof.status,deliveryLookup:'READ',deliveryCheckedAt});
