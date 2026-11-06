@@ -53,6 +53,12 @@ function equityRows() {
 }
 
 async function run() {
+  const engine2 = canonicalRows();
+  engine2.find(row => row[0] === 'quote_source')[1] = 'GOOGLEFINANCE latest timestamped indicative quotes; morning review';
+  assert.equal(parsePublicFeed(engine2).quote_source, engine2.find(row => row[0] === 'quote_source')[1]);
+  const unknown = canonicalRows();
+  unknown.find(row => row[0] === 'quote_source')[1] = 'GOOGLEFINANCE unverified provider';
+  assert.throws(() => parsePublicFeed(unknown), /quote_source/);
   const canonical = parsePublicFeed(canonicalRows());
   assert.strictEqual(canonical.intern_count, 1);
   assert.strictEqual(canonical.interns[0].ticker, 'SNOW');
