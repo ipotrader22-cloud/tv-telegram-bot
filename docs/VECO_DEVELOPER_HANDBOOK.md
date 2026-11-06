@@ -3661,3 +3661,5 @@ The owner supplied a TWS demo end-of-day screenshot showing zero stock quantitie
 ## November 6 — Engine 2 Swing release preparation
 
 An isolated release branch adds explicit VIXALE_SWING_SOURCE selection to the shared Swing display wrapper. Default LEGACY uses the current workbook, ENGINE2 reads both Public Feed and Equity History from the existing private Engine 2 workbook. This is an inactive release candidate. The source change requires a service restart and production authorization. See docs/releases/ENGINE2_SWING_ROLLOUT.md for activation checks, outstanding authenticated access evidence, and rollback verification. Handbook update required: YES.
+
+November 6 follow-up: source rollout now includes full-preload HTTP EN/RU owner/viewer regression and a dedicated CI path. Engine 2 accounting dashes are normalized only for its workbook; exact unused template rows are excluded and malformed historical rows remain rejected. A normal Render deploy, not Restart, is required after changing the source environment value. Live credentialed staging and production activation remain gated.
