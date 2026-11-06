@@ -1,3 +1,11 @@
+## 2026-11-06 — Homepage introductory video
+
+The public homepage is composed by `website_conversion_home_refinement.js` in the existing website preload stack. A 55-second Three Trading Systems, One Platform introduction sits immediately after the hero trading-system preview and before the three system description cards. A hero text CTA links to `#meet-vixale-video`. The media has a responsive 16:9 container, playback controls, accessible labels and an illustrative-content note. English and Russian content and media are selected by `html[lang="ru"]`; neither navigation nor live data is changed.
+
+The English source uses HeyGen embed video ID `5b58c907fc054fe7b8a6807ccfd69633`; the Russian version uses the completed HeyGen translation path `cc6bde06dc634fb2a1ba927cfb1a426e-ru`. Avoid temporary signed MP4 download links. Public sharing and cross-site playback require live browser verification; code tests establish only layout/markup. Fallback HeyGen links are provided. Vixale trading feeds must not depend on HeyGen availability.
+
+Regression: `tests/test_home_intro_video.js` checks EN/RU content, placement, idempotence, responsive style, and stable media URL usage. No trading engine, TWS/IBKR, data, Sheets, auth, or route contract changes. Roll back by reverting the homepage video patch via PR and normal Render deployment.
+
 ## Oct 22, 2026 — Header-only Google Sheet grid blocks broker-confirmed entries
 
 Observed in `Webhook Inbox` for EQT and RTX: `ENTRY_FILL` was in `RETRY`
