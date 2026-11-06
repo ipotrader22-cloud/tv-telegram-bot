@@ -51,6 +51,18 @@ jobs:
           node --test engine-v2/*.test.cjs
           node tests/test_swing_research_inputs.js
 
+      - name: Probe Nov 2 CVX/XOM Yahoo minute coverage (research only)
+        if: always()
+        continue-on-error: true
+        run: node engine-v2/yahoo-nov02-minute-coverage-probe.cjs
+      - name: Preserve sanitized Nov 2 Yahoo coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yahoo-nov02-minute-coverage
+          path: engine-v2/out/yahoo-nov02-minute-coverage.json
+          retention-days: 7
+          if-no-files-found: warn
       - name: Probe historical PLTR one-minute evidence (research only)
         if: always()
         continue-on-error: true
