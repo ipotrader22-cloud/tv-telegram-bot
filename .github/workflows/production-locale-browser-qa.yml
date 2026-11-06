@@ -141,6 +141,7 @@ jobs:
         run: |
           node tests/test_issue123_pr1_direct_navigation.js
           node tests/test_issue123_pr2_homepage_preview.js
+          node tests/test_home_intro_video.js
 
       - name: October 6 user-friendliness and funnel regressions
         run: |
