@@ -1,3 +1,11 @@
+## 2026-11-06 — PR #380 homepage intro video
+
+- Merged homepage video PR #380 to `main` as `1668433afb08379b9ba5664bf5d7acbcb56e7f2d`; Render deploy `dep-dbn6j8lckfvc73ft04a0` directly reported live at 2026-11-06 23:59:14Z.
+- EN/RU 55-second intro video after system preview and before Day/Swing/Options cards; hero link, responsive 16:9 player, no autoplay, illustrative-content caveat and HeyGen fallback.
+- PR workflow `42315245695` success; locale-contract suite passed including `tests/test_home_intro_video.js`. PR browser-qa job skipped. Source/V8 homepage rendering checks passed.
+- External media playback and fresh production EN/RU desktop/mobile screenshots NOT RUN / UNVERIFIED; cached public crawler result is not a live check. HeyGen-hosted media, not uploaded MP4 binary.
+- Details: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-06-PR380.md`. No trading engine, order, broker, Sheets, auth or route changes. Handbook updated; docs exporter/upload not performed.
+
 # VIXALE website — Current state
 
 ## 2026-11-04 — PR #361: corrected private dashboard subtitle and compact cards
