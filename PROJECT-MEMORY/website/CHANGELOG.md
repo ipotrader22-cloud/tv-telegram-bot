@@ -1,3 +1,10 @@
+## 2026-11-06 — Homepage introductory video (PR #380)
+
+- Merged 55-second Vixale introductory video under hero trading-system preview; added small hero CTA, EN/RU media and copy, responsive layout and no-autoplay controls.
+- PR CI `42315245695` passed locale-contract plus the new regression. Render `dep-dbn6j8lckfvc73ft04a0` live on exact code SHA `1668433afb08379b9ba5664bf5d7acbcb56e7f2d`.
+- Live browser playback/mobile visual QA remains UNVERIFIED; new selected source-of-truth manifest explicitly records limits.
+- Handbook updated; no trading or protected-data changes; docs export/upload not performed.
+
 ## 2026-11-04 — Daily Trading Summaries archive heading/copy (PR #368)
 
 - Merged UI PR #368: archive h1 30% smaller; subtitle now instructs users to click a day to see that day's trades.
