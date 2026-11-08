@@ -14,7 +14,7 @@ function sourceTime(value){
  return t;
 }
 function normalizeGoogleQuote(v,{date,fetchedAt,runAt=fetchedAt}={}){
- if(!v||!/^(NASDAQ|NYSE|AMEX):[A-Z][A-Z0-9.-]{0,14}$/.test(v.symbol||''))throw Error('GOOGLE_QUOTE_IDENTITY_INVALID');
+ if(!v||!/^(NASDAQ|NYSE|AMEX|BATS):[A-Z][A-Z0-9.-]{0,14}$/.test(v.symbol||''))throw Error('GOOGLE_QUOTE_IDENTITY_INVALID');
  const timestamp=sourceTime(v.tradeTimeET),t=localET(timestamp);
  const age=Date.parse(runAt)-Date.parse(timestamp),fetchAge=Date.parse(fetchedAt)-Date.parse(timestamp);
  if(!Number.isFinite(v.price)||v.price<=0||!Number.isFinite(v.dailyVolume)||v.dailyVolume<=0||
@@ -36,7 +36,7 @@ function createGoogleQuoteProvider({api,clock=()=>new Date()}={}){
  return {async getQuotes({date,tickers}){
   if(!Array.isArray(tickers)||new Set(tickers).size!==tickers.length)throw Error('GOOGLE_QUOTE_IDENTITY_INVALID');
   if(!tickers.length)return [];
-  const r=await api.spreadsheets.get({spreadsheetId:STAGING_ID,ranges:["'"+QUOTE_SHEET+"'!A1:F11"],
+  const r=await api.spreadsheets.get({spreadsheetId:STAGING_ID,ranges:["'"+QUOTE_SHEET+"'!A1:F651"],
    includeGridData:true,fields:'spreadsheetId,properties(timeZone),sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue))))'});
   const d=r.data,s=d?.sheets?.[0],grid=s?.data?.[0];
   if(d.spreadsheetId!==STAGING_ID||d.properties?.timeZone!=='America/New_York'||
@@ -69,7 +69,7 @@ function createGoogleQuoteProvider({api,clock=()=>new Date()}={}){
 
 const GOOGLE_OPEN_KIND='GOOGLEFINANCE_SESSION_OPEN';
 function normalizeGoogleOpening(v,{date,observedAt}={}){
- if(!v||!/^(NASDAQ|NYSE|AMEX):[A-Z][A-Z0-9.-]{0,14}$/.test(v.symbol||''))
+ if(!v||!/^(NASDAQ|NYSE|AMEX|BATS):[A-Z][A-Z0-9.-]{0,14}$/.test(v.symbol||''))
   throw Error('GOOGLE_OPEN_IDENTITY_INVALID');
  const now=Date.parse(observedAt||''),tradeTime=sourceTime(v.tradeTimeET);
  const market=localET(observedAt),source=localET(tradeTime);
@@ -99,7 +99,7 @@ function createGoogleOpeningProvider({api,clock=()=>new Date()}={}){
    throw Error('GOOGLE_OPEN_IDENTITY_INVALID');
   if(!positions.length)return [];
   const r=await api.spreadsheets.get({spreadsheetId:STAGING_ID,
-   ranges:["'"+QUOTE_SHEET+"'!A1:G11"],includeGridData:true,
+   ranges:["'"+QUOTE_SHEET+"'!A1:G651"],includeGridData:true,
    fields:'spreadsheetId,properties(timeZone),sheets(properties(sheetId,title),data(startRow,startColumn,rowData(values(userEnteredValue,effectiveValue))))'});
   const d=r.data,s=d?.sheets?.[0],grid=s?.data?.[0];
   if(d.spreadsheetId!==STAGING_ID||d.properties?.timeZone!=='America/New_York'||

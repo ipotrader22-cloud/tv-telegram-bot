@@ -24,7 +24,7 @@ function validateInput({spreadsheetId,manifest,positions,closed,equityRowIndex,t
  if(!Array.isArray(positions)||positions.length>10||!Array.isArray(closed)||closed.length>150)throw Error('INVALID_LEDGER_SIZE');
  const expected=manifest.payload.active.map(x=>x.ticker).sort(),actual=positions.map(x=>x.ticker).sort();
  if(JSON.stringify(expected)!==JSON.stringify(actual)||new Set(actual).size!==actual.length)throw Error('MANIFEST_MEMBERSHIP_MISMATCH');
- for(const p of positions)if(!/^[A-Z][A-Z0-9.-]{0,14}$/.test(p.ticker)||!['NASDAQ','NYSE','AMEX'].includes(p.exchange)||
+ for(const p of positions)if(!/^[A-Z][A-Z0-9.-]{0,14}$/.test(p.ticker)||!['NASDAQ','NYSE','AMEX','BATS'].includes(p.exchange)||
     !p.entryDate||p.entryDate<EPOCH||p.fullReviewDate!==manifest.payload.date||
     !Number.isFinite(p.entryPrice)||p.entryPrice<=0||!Number.isFinite(p.currentPrice)||p.currentPrice<=0||
     !Number.isInteger(p.currentScore)||p.currentScore<70||p.currentScore>100)throw Error('MODEL_POSITION_NOT_CERTIFIED');

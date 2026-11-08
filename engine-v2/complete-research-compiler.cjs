@@ -66,7 +66,7 @@ function compileFullResearch({artifact,date,runAt,universe,session,assessments,n
   });
  }
  if(errors.length)return blocked('INCOMPLETE_FACTOR_RESEARCH',errors);
- const benchmarks=['SPY','QQQ','SMH','XLK','XLE'].map(ticker=>{
+ const benchmarks=(artifact.benchmarks||['SPY','QQQ','SMH','XLK','XLE']).map(ticker=>{
   const r=artifact.data.find(x=>x.metrics?.symbol===ticker);
   return {ticker,sourceId:validatedResearchSource(r)||null,timestamp:artifact.collectedAt||runAt};
  });

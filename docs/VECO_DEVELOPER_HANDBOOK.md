@@ -1,3 +1,20 @@
+## Engine 2 index universe expansion — 2026-11-08
+
+Handbook update required: YES. Owner requested S&P 500 union Nasdaq 100.
+ADR: use a pinned, source-verified 518-security membership manifest with exact
+exchange and sector identities, plus explicit unscored exclusions for inadequate
+history or a missing individual provider symbol. Never assign missing research
+a low score or fabricate a price. Full request failures still block. This expands
+research scope while preserving nine-factor weights, all model rules, fixed-$10K
+accounting, Q/R controls, immutable history and website presentation.
+
+See [ENGINE2_INDEX_UNIVERSE.md](ENGINE2_INDEX_UNIVERSE.md) for source provenance,
+versioned membership refresh, bounded collection, cache binding, quote formulas,
+verification and rollback. Membership updates are reviewed releases, not an
+automatic index-subscription claim. Existing preopen retries remain the sole
+writer; no new broker path, email send or schedule is introduced. Deploy the
+narrow PR to the branch actually used by Engine 2, separately from website main.
+
 ## Engine 2 Resend staging writer ownership — 2026-11-02
 
 The isolated Render cron is the **only** writer to the Engine 2 PostgreSQL

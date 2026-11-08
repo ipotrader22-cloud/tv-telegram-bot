@@ -33,7 +33,7 @@ function gridFixture(){
 }
 test('authenticated provider reads only staging quote grid and validates resolved formulas',async()=>{
  const data=gridFixture();let reads=0;
- const api={spreadsheets:{get:async req=>{reads++;assert.equal(req.spreadsheetId,STAGING_ID);assert.deepEqual(req.ranges,["'Engine 2 Quotes'!A1:F11"]);return {data};}}};
+ const api={spreadsheets:{get:async req=>{reads++;assert.equal(req.spreadsheetId,STAGING_ID);assert.deepEqual(req.ranges,["'Engine 2 Quotes'!A1:F651"]);return {data};}}};
  const p=createGoogleQuoteProvider({api,clock:()=>new Date(runAt)});
  assert.equal((await p.getQuotes({date,tickers:['AMD']}))[0].price,112);assert.equal(reads,1);
  for(const mutate of [
@@ -142,7 +142,7 @@ test('Google opening provider validates immutable G priceopen and C/D formulas',
  };
  const data=make();
  const api={spreadsheets:{get:async req=>{assert.equal(req.spreadsheetId,STAGING_ID);
-  assert.deepEqual(req.ranges,["'Engine 2 Quotes'!A1:G11"]);return {data};}}};
+  assert.deepEqual(req.ranges,["'Engine 2 Quotes'!A1:G651"]);return {data};}}};
  const o=(await createGoogleOpeningProvider({api,clock:()=>new Date(runAt)}).getOpenings({
   date,positions:[{ticker:'AMD'}]}))[0];
  assert.equal(o.open,104);
@@ -175,4 +175,18 @@ test('Google opening proof may trigger an opening STOP without Yahoo 1m; 10:00 q
  assert.equal(result.closed[0].reason,'STOP LOSS');
  assert.equal(result.closed[0].triggerEvidence.sourceId,opening.sourceId);
  assert.equal(validateMorningCommit(result).status,'READY_FOR_SHADOW_COMMIT');
+});
+
+test('expanded quote grid reads row 519 and preserves BATS identity and strict formulas',async()=>{
+ const data=gridFixture(),grid=data.sheets[0].data[0],row=structuredClone(grid.rowData[1]);
+ row.values[0]={userEnteredValue:{stringValue:'BATS:CBOE'},effectiveValue:{stringValue:'BATS:CBOE'}};
+ row.values.push({}, {userEnteredValue:{formulaValue:'=IFERROR(GOOGLEFINANCE(A2,"priceopen"),"")'},effectiveValue:{numberValue:104}});
+ for(const c of row.values)if(c.userEnteredValue?.formulaValue)c.userEnteredValue.formulaValue=c.userEnteredValue.formulaValue.replaceAll('A2','A519');
+ grid.rowData=Array.from({length:519},()=>({}));grid.rowData[518]=row;
+ const api={spreadsheets:{get:async()=>({data})}},clock=()=>new Date(runAt);
+ assert.equal((await createGoogleQuoteProvider({api,clock}).getQuotes({date,tickers:['CBOE']}))[0].ticker,'CBOE');
+ const {createGoogleOpeningProvider}=require('./google-quote-provider.cjs');
+ assert.equal((await createGoogleOpeningProvider({api,clock}).getOpenings({date,positions:[{ticker:'CBOE'}]}))[0].open,104);
+ row.values[1].userEnteredValue.formulaValue='=100';
+ await assert.rejects(createGoogleQuoteProvider({api,clock}).getQuotes({date,tickers:['CBOE']}),/FORMULA_INVALID/);
 });

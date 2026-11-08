@@ -37,6 +37,7 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
      // reporting success or allowing the 10:00 model cycle to reuse it.
      const prior=await require('./clean-ledger.cjs').readLastCleanState({url});
      assertCachedPreopen(cached,{date,prior,now:clock().toISOString()});
+     assertUniverseConfiguration(cached,env);
      return {status:'PREOPEN_PREPARED'};
     }
     const p=await require('./preopen-preparation.cjs').preparePreopen({date,url,env,clock,fetchFn:fetcher});
@@ -54,6 +55,7 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
     if(metadata.status!=='PASS')return {status:'BLOCKED',reason:'STAGING_WORKBOOK_METADATA_UNVERIFIED'};
     return runStagingPipeline({store,url,api,clock,prepareProviders:delayed?async({date,journal})=>{
       const prepared=await journal.getPrepared(date);if(!prepared)throw Error('PREOPEN_PREPARATION_MISSING');
+      assertUniverseConfiguration(prepared,env);
       return {prepared,quoteProvider:google?require('./google-quote-provider.cjs').createGoogleQuoteProvider({api,clock}):require('./preopen-preparation.cjs').createFixedQuoteProvider({fetchFn:fetcher,clock}),openingProvider:google?require('./google-quote-provider.cjs').createGoogleOpeningProvider({api,clock}):require('./same-session-opening.cjs').createCurrentOpeningProvider({fetchFn:fetcher})};
      }:prepareProviders,
      ...(delayed?{runCycle:opts=>require('./delayed-model-cycle.cjs').runDelayedCycle({...opts,...(google?{pricePolicy:require('./google-quote-provider.cjs').GOOGLE_POLICY}:{})})}:{}),fetcher,enabled:true,emailEnabled,
@@ -67,4 +69,8 @@ function createStagingWorker({env=process.env,url,clock=()=>new Date(),fetcher=f
   }
  };
 }
-module.exports={createStagingWorker,assertCachedPreopen};
+function assertUniverseConfiguration(prepared,env){
+ if(env.VIXALE_V2_RESEARCH_UNIVERSE===require('./index-universe.cjs').INDEX_POLICY)
+  require('./universe-coverage.cjs').validateUniverseCoverage(prepared?.batch?.sourceEvidence?.artifact,{required:true});
+}
+module.exports={createStagingWorker,assertCachedPreopen,assertUniverseConfiguration};
