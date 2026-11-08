@@ -1,6 +1,6 @@
-# Engine 2 Swing page release preparation
+# Engine 2 Swing page rollout record
 
-Target November 9, 2026. Prepared November 6. Activation remains pending.
+Owner authorized production activation November 8, 2026. Preparation notes below are historical; the deployment evidence section records actual activation.
 
 The shared Swing display service selects both Public Feed and Equity History from one workbook. VIXALE_SWING_SOURCE defaults to LEGACY. ENGINE2 selects the existing private Engine 2 workbook. Invalid values fail at startup. The selection is frozen when the service starts. A normal deploy is required to apply a changed source setting; Render Restart retains the running deployment configuration. Existing owner/viewer authorization and canonical route rewrites remain in the normal application entry points.
 
@@ -33,3 +33,25 @@ The rendered page exposed a real precision bug: aggregate P&L was -1011.00 while
 Production activation and production Google-account access remain separate gates. This staging setup does not authorize a main merge or cutover. Preserve the verified legacy production deployment `dep-dbliq3favr4c73cu79c0` / commit `0ab75ceec6b94b53e6ab13f38af6707d126e08ab` as a historical rollback baseline and re-read its current state before any activation.
 
 Live viewer acceptance also passed using a disposable one-day code in the isolated access workbook: login, matching page/API fingerprint, denial of owner administration, anonymous redirect/401 and rejection of an invalid Origin. The code was disabled through the owner endpoint and a subsequent login returned 401. Full-preload EN/RU owner/viewer replay of fresh November 6 source ranges passed after the precision fix.
+
+## November 8 production access and deployed rollback evidence
+
+The owner explicitly instructed connection of vixale.com. Production account `fvg-sheets-bot@tv-trading-journal.iam.gserviceaccount.com` received reader-only access to the Engine 2 financial workbook. Permission readback and actual Google API reads executed inside the production Render instance verified Public Feed and Equity History access to both Engine 2 and the retained legacy workbook. No production Google credential was moved.
+
+PR #379 merged as `402931e73904e6e2b39de342212dc04a1fc88afa`. Its tree matches the locally tested merge with current main `77c7c3f`; homepage-video changes are preserved. The existing three release CI runs passed. Full-startup owner/viewer EN/RU tests passed in both source modes on the combined tree; homepage regression and app syntax passed.
+
+Actual normal production deployments, all on that same application commit:
+
+| Source | Deployment | Verified Live UTC |
+| --- | --- | --- |
+| Default LEGACY after merge | dep-dbo8d8g473hc73aamg90 | 2026-11-08 14:27:31 |
+| ENGINE2 initial activation | dep-dbo8dtp5efls73d56qe0 | 2026-11-08 14:29:07 |
+| LEGACY rollback rehearsal | dep-dbo8esbm8hqs73frjds0 | 2026-11-08 14:31:22 |
+
+Authenticated production EN/RU HTTP checks verified page/API fingerprint equality, HTTP 200, no-store headers, valid feed/history, and anonymous API 401/page 302. ENGINE2 fingerprint `f393d84333f56905a8e27974`: November 6 10:00 ET, zero active, five candidates, closed CVX/XOM, realized model P&L -1011.37. The connected production browser displayed matching values. Rollback fingerprint `9a5ba0cea451ada958611ec6`: retained October 16 snapshot, one PLTR, 12 historical closed lots. Both domains passed the deployed rollback check; the connected browser also returned to the legacy page. The legacy source is old, not a current strategy review.
+
+The existing writer cron remains unsuspended on its Engine 2 branch with `0-20 12-15 * * 1-5` UTC. Its names still include staging; source activation does not rename infrastructure or change its schedule. No new orders, ledger events, email sends, or customer-access changes occurred. Sunday activation cannot certify Monday's future research cycle.
+
+Final ENGINE2 deployment `dep-dbo8frpsrm7s73b8ip20` reached Live at 2026-11-08 14:32:54 UTC (09:32:54 EST). Final owner-authenticated EN/RU page/API parity passed again with fingerprint `f393d84333f56905a8e27974`. Connected-browser page and screenshot show the same November 6 snapshot and -$1,011.37. Independent external checks: /health 200, anonymous API 401, anonymous canonical page 302. Error-log query from final Live through 14:34:07 UTC returned no errors. Brief 502 responses occurred during the normal restart windows; the final service is healthy.
+
+The rollout is complete. Monday November 9's future market review is not claimed verified. No background monitoring was created by this deployment.
