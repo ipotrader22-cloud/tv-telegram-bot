@@ -10,5 +10,5 @@ test('no universe fails closed, not legacy fallback',()=>assert.throws(()=>parse
 test('duplicate, invalid and excessive candidates blocked',()=>{
  assert.throws(()=>parseV2Universe('AMD,AMD'),/DUPLICATED/);
  assert.throws(()=>parseV2Universe('AMD,$NO'),/INVALID/);
- assert.throws(()=>parseV2Universe(Array(41).fill(0).map((_,i)=>'S'+i).join(',')),/OUT_OF_BOUNDS/);
+ assert.throws(()=>parseV2Universe(Array(651).fill(0).map((_,i)=>'S'+i).join(',')),/OUT_OF_BOUNDS/);
 });

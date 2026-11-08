@@ -6,7 +6,11 @@ const {createHash}=require('node:crypto');
 const {localET}=require('./market-data-adapter.cjs');
 const {previousSession}=require('../scripts/swing-market-calendar');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
+const {boundedMap}=require('./bounded-map.cjs');
+const {indexUniverse,SECTOR_BENCHMARKS}=require('./index-universe.cjs');
 const SYMBOLS=Object.freeze({
+ ...indexUniverse().exchanges,
+ ...Object.fromEntries(SECTOR_BENCHMARKS.map(t=>[t,t==='SMH'?'NASDAQ':'NYSEARCA'])),
  AMD:'NASDAQ',NVDA:'NASDAQ',AVGO:'NASDAQ',MU:'NASDAQ',AMAT:'NASDAQ',
  MSFT:'NASDAQ',AAPL:'NASDAQ',ORCL:'NYSE',XOM:'NYSE',CVX:'NYSE',
  SPY:'NYSEARCA',QQQ:'NASDAQ',SMH:'NASDAQ',XLK:'NYSEARCA',XLE:'NYSEARCA'
@@ -38,7 +42,7 @@ function decode(text){
  }
  throw Error('GOOGLE_CHART_RESPONSE_INVALID');
 }
-function parseSeries(raw,ticker,interval,{fromDate,throughDate}={}){
+function parseSeries(raw,ticker,interval,{fromDate,throughDate,allowShortHistory=false}={}){
  const identity=googleIdentity(ticker);
  if(!Array.isArray(raw?.[0]))throw Error('GOOGLE_CHART_SERIES_MISSING');
  const matches=raw[0].filter(s=>Array.isArray(s?.[0])&&
@@ -77,11 +81,11 @@ function parseSeries(raw,ticker,interval,{fromDate,throughDate}={}){
    session:'REGULAR'});
  }
  rows.sort((a,b)=>a.start.localeCompare(b.start));
- if(interval==='1day'&&rows.length<200)throw Error('GOOGLE_CHART_DAILY_HISTORY_INCOMPLETE');
+ if(interval==='1day'&&rows.length<200&&!allowShortHistory)throw Error('GOOGLE_CHART_DAILY_HISTORY_INCOMPLETE');
  return {ticker,exchange:identity[1],companyName:s[7],rows,sourceHash:digest(s),
   provider:'GOOGLE_FINANCE_CHART',interval};
 }
-function createGoogleChartSource({fetchFn=fetch}={}){
+function createGoogleChartSource({fetchFn=fetch,concurrency=1,allowShortHistory=false,allowUnavailable=false}={}){
  async function query(tickers,{fromDate,throughDate,interval}={}){
   safeDate(fromDate);safeDate(throughDate);
   if(fromDate>throughDate||!['1day','1min'].includes(interval)||
@@ -107,7 +111,14 @@ function createGoogleChartSource({fetchFn=fetch}={}){
    if(!response?.ok)throw Error('GOOGLE_CHART_UPSTREAM_UNAVAILABLE');
    let raw;try{raw=decode(await response.text())}
    catch{throw Error('GOOGLE_CHART_RESPONSE_INVALID')}
-   return tickers.map(t=>parseSeries(raw,t,interval,{fromDate,throughDate}));
+   return tickers.map(t=>{
+    const identity=googleIdentity(t);
+    if(interval==='1day'&&allowUnavailable&&Array.isArray(raw?.[0])&&
+       !raw[0].some(s=>s?.[0]?.[0]===identity[0]&&s?.[0]?.[1]===identity[1]))
+     return {ticker:t,exchange:identity[1],unavailable:true,sourceHash:digest(raw)};
+    try{return parseSeries(raw,t,interval,{fromDate,throughDate,allowShortHistory})}
+    catch(error){error.ticker=t;throw error;}
+   });
   }
   throw Error('GOOGLE_CHART_RPC_REJECTED');
  }
@@ -115,11 +126,12 @@ function createGoogleChartSource({fetchFn=fetch}={}){
   if(!Array.isArray(tickers)||!tickers.length||new Set(tickers).size!==tickers.length)
    throw Error('GOOGLE_CHART_REQUEST_INVALID');
   const sourceDate=previousSession(safeDate(date)),first=new Date(Date.parse(sourceDate+'T00:00:00Z')-440*86400000).toISOString().slice(0,10);
-  const results=[];
-  for(let i=0;i<tickers.length;i+=4)
-   results.push(...await query(tickers.slice(i,i+4),{fromDate:first,throughDate:sourceDate,interval:'1day'}));
+  const chunks=[];for(let i=0;i<tickers.length;i+=4)chunks.push(tickers.slice(i,i+4));
+  const results=(await boundedMap(chunks,concurrency,group=>query(group,{fromDate:first,throughDate:sourceDate,interval:'1day'}))).flat();
   return results.map(s=>{
-   if(s.rows.at(-1)?.date!==sourceDate||s.rows.length<200)
+   if(s.unavailable)return {ticker:s.ticker,exchange:s.exchange,unavailable:true,
+    source:'GOOGLE_FINANCE_CHART_1DAY',rawHash:s.sourceHash};
+   if(s.rows.at(-1)?.date!==sourceDate||(!allowShortHistory&&s.rows.length<200))
     throw Error('GOOGLE_CHART_DAILY_HISTORY_INCOMPLETE');
    const ts=s.rows.map(c=>Date.parse(c.start)/1000);
    const names=s.rows.map(c=>c.date);

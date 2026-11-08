@@ -20,6 +20,7 @@ function createAutonomousResearchProvider({artifactProvider,newsProvider,univers
   if(!artifact.collectedAt||Date.parse(artifact.collectedAt)>Date.parse(runAt)||
      artifact.collectedAt.slice(0,10)!==new Date(runAt).toISOString().slice(0,10))
     throw Error('FUTURE_OR_UNDATED_OHLCV_ARTIFACT');
+  require('./universe-coverage.cjs').validateUniverseCoverage(artifact);
   const news=await newsProvider.collect({date,runAt,candidates});
   const scores=autoAssess({artifact,date,runAt,universe:candidates,sectorByTicker,newsReview:news});
   if(scores.status!=='DETERMINISTIC_NINE_FACTOR_ASSESSMENTS')

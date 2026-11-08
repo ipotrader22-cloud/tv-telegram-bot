@@ -8,6 +8,7 @@ const {CAPS,score}=require('./core.cjs');
 const {createHash}=require('node:crypto');
 const {previousSession}=require('../scripts/swing-market-calendar');
 const {validatedResearchSource}=require('./research-source-identity.cjs');
+const {SECTOR_BENCHMARKS}=require('./index-universe.cjs');
 const BENCHMARKS=['SPY','QQQ','SMH','XLK','XLE'];
 const good=x=>typeof x==='number'&&Number.isFinite(x);
 function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={}){
@@ -21,7 +22,7 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
  try{completedSession=previousSession(date)}catch{return bad('NYSE_RESEARCH_SESSION_UNVERIFIED')}
  if(evidence.items.some(x=>x.lastCompletedSessionDate!==completedSession))
   return bad('CANDIDATE_COMPLETED_SESSION_MISMATCH');
- const requiredBenchmarks=BENCHMARKS;
+ const requiredBenchmarks=[...new Set([...BENCHMARKS,...universe.map(t=>sectorByTicker?.[t])])];
  for(const ticker of requiredBenchmarks){
   const matches=artifact.data.filter(x=>x?.metrics?.symbol===ticker);
   if(matches.length!==1)return bad('BENCHMARK_MISSING_OR_DUPLICATE:'+ticker);
@@ -37,7 +38,7 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
     !newsReview.complete||newsReview.date!==date||!newsReview.sourceId||
     newsReview.tickers?.length!==universe.length||universe.some(t=>!newsReview.tickers.includes(t)))
    return bad('INCOMPLETE_NEWS_COVERAGE');
- const bench=Object.fromEntries(artifact.data.filter(x=>BENCHMARKS.includes(x.metrics?.symbol))
+ const bench=Object.fromEntries(artifact.data.filter(x=>requiredBenchmarks.includes(x.metrics?.symbol))
   .map(x=>[x.metrics.symbol,{...x.metrics,sourceId:validatedResearchSource(x)}]));
  if(!bench.SPY||!bench.QQQ)return bad('MARKET_BENCHMARKS_MISSING');
  const errors=[],assessments=[];
@@ -47,7 +48,7 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
  };
  for(const raw of evidence.items){
   const ticker=raw.ticker,sectorTicker=sectorByTicker?.[ticker],sec=bench[sectorTicker];
-  if(!sec||!['XLK','SMH','XLE'].includes(sectorTicker)){errors.push('SECTOR_BENCHMARK_UNMAPPED:'+ticker);continue}
+  if(!sec||!SECTOR_BENCHMARKS.includes(sectorTicker)){errors.push('SECTOR_BENCHMARK_UNMAPPED:'+ticker);continue}
   if([raw.lastCompletedClose,raw.range5Pct,raw.upDownVolume20,raw.volumeRvol,
     a.lastCompleteClose,a.sma50,a.return20Pct,a.return60Pct,b.lastCompleteClose,b.sma50,b.return20Pct,
     sec.lastCompleteClose,sec.sma50,sec.return20Pct,sec.return60Pct].some(x=>!good(x))||
