@@ -28,6 +28,7 @@ jobs:
       - name: Parser, authorization, source and formatting regression
         run: |
           node tests/test_swing_leaders.js
+          node tests/test_swing_model_pnl_precision.js
           node tests/test_swing_leaders_candidate_feed_compat.js
           node tests/test_engine2_equity_format.js
           node tests/test_swing_source_switch.js
