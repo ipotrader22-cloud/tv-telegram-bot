@@ -80,6 +80,17 @@ so the feature PR targets that deployed branch; merging draft foundation PR329
 into website `main` is outside this change. Verify exact Render live SHA and run
 the read-only probe on Render. Existing cron preopen/10:00 windows remain.
 
+### Index-scale memory correction
+
+The first Render shell probe restarted without a result. A local reproduction
+measured 4,560,380 KiB peak RSS despite a 256 MiB JavaScript heap limit: creating
+an ICU timezone formatter for every candle retained excessive native memory.
+Reuse the two timezone formatters and compact each validated Google batch
+before retaining it. The same source and score rules apply; DST rollover and
+532-symbol date conversion now have a subprocess memory regression test.
+The readiness probe reports peak RSS so server verification includes capacity,
+not merely successful CI. Render's temporary shell has a 256 MiB memory limit.
+
 Rollback: restore prior universe CSV (NVDA,AMD,AVGO,MU,AMAT,MSFT,AAPL,ORCL,XOM,CVX)
 and prior engine revision `0b284e4a959d34e9b942f678aa800b246419bd81`. Original quote
 rows 2:11 and sector env map are preserved. Keep appended quote rows inert and
