@@ -1,3 +1,7 @@
+## 2026-11-08 — Engine 2 Swing production rollout
+
+PR #379 merged; production code `402931e73904e6e2b39de342212dc04a1fc88afa`, final ENGINE2 deployment `dep-dbo8frpsrm7s73b8ip20` Live at 14:32:54 UTC. Authenticated EN/RU page/API parity, actual LEGACY rollback and ENGINE2 restoration passed. November 6 snapshot: zero active, five candidates, model P&L -1011.37. Production data access is read-only. See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-08-ENGINE2.md` and `docs/releases/ENGINE2_SWING_ROLLOUT.md`. Monday market-cycle completion is not asserted.
+
 ## 2026-11-06 — Homepage introductory video (PR #380)
 
 - Merged 55-second Vixale introductory video under hero trading-system preview; added small hero CTA, EN/RU media and copy, responsive layout and no-autoplay controls.

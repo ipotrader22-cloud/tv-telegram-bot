@@ -1,3 +1,9 @@
+## 2026-11-08 — Engine 2 Swing production activation
+
+Owner explicitly authorized production connection after access and rollback verification. PR #379 merged as `402931e73904e6e2b39de342212dc04a1fc88afa`; it preserves the current homepage video and all other main changes. `VIXALE_SWING_SOURCE` on production selects `ENGINE2`. Both financial ranges come from workbook `1Ii20kcegWWhQfz_RUrDe0OhfFG1y9TNjrEI1Xy6mqyA`. Its historical staging name does not determine the active website source. The production account has reader permission only; writers, model strategy, Q/R controls and histories were not changed by cutover.
+
+The default remains LEGACY for unconfigured services. Restore `VIXALE_SWING_SOURCE=LEGACY` and perform a normal deployment to roll back the website source. Render Restart alone retains deployment configuration. The legacy snapshot is October 16 and must not be described as current. The pre-release application baseline is `1668433afb08379b9ba5664bf5d7acbcb56e7f2d` / `dep-dbn6j8lckfvc73ft04a0` (preserves the homepage video). For precise deployment and rollback evidence see `docs/releases/ENGINE2_SWING_ROLLOUT.md`; older inactive-candidate statements below are historical.
+
 ## 2026-11-06 — Homepage introductory video
 
 The public homepage is composed by `website_conversion_home_refinement.js` in the existing website preload stack. A 55-second Three Trading Systems, One Platform introduction sits immediately after the hero trading-system preview and before the three system description cards. A hero text CTA links to `#meet-vixale-video`. The media has a responsive 16:9 container, playback controls, accessible labels and an illustrative-content note. English and Russian content and media are selected by `html[lang="ru"]`; neither navigation nor live data is changed.

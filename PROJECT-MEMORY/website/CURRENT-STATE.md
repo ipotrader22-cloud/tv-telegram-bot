@@ -1,3 +1,7 @@
+## 2026-11-08 — Engine 2 Swing production rollout
+
+PR #379 merged; production code `402931e73904e6e2b39de342212dc04a1fc88afa`, final ENGINE2 deployment `dep-dbo8frpsrm7s73b8ip20` Live at 14:32:54 UTC. Authenticated EN/RU page/API parity, actual LEGACY rollback and ENGINE2 restoration passed. November 6 snapshot: zero active, five candidates, model P&L -1011.37. Production data access is read-only. See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-08-ENGINE2.md` and `docs/releases/ENGINE2_SWING_ROLLOUT.md`. Monday market-cycle completion is not asserted.
+
 ## 2026-11-06 — PR #380 homepage intro video
 
 - Merged homepage video PR #380 to `main` as `1668433afb08379b9ba5664bf5d7acbcb56e7f2d`; Render deploy `dep-dbn6j8lckfvc73ft04a0` directly reported live at 2026-11-06 23:59:14Z.
