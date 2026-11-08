@@ -1,5 +1,8 @@
 ## Engine 2 index universe expansion — 2026-11-08
 
+Capacity correction: reuse timezone formatters and compact validated chart
+batches. Verify the full index probe on Render, including its reported peak RSS.
+
 Handbook update required: YES. Owner requested S&P 500 union Nasdaq 100.
 ADR: use a pinned, source-verified 518-security membership manifest with exact
 exchange and sector identities, plus explicit unscored exclusions for inadequate

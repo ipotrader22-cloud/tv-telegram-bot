@@ -19,7 +19,7 @@ async function probe({clock=()=>new Date(),fetchFn=fetch}={}){
   exclusions:artifact.universeCoverage.exclusions.map(e=>({ticker:e.ticker,reason:e.reason,
    ...(e.completedDailyBars?{completedDailyBars:e.completedDailyBars}:{})})),
   benchmarkCount:artifact.benchmarks.length,seconds:(clock()-started)/1000,
-  writesPerformed:false,marketCycleCertified:false};
+  maxRSSKiB:process.resourceUsage().maxRSS,writesPerformed:false,marketCycleCertified:false};
 }
 module.exports={probe};
 if(require.main===module)probe().then(r=>{console.log(JSON.stringify(r));if(r.status!=='PASS')process.exitCode=1})

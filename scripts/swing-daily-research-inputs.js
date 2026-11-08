@@ -2,7 +2,9 @@
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const { session, previousSession } = require("./swing-market-calendar");
-const nyDay = t => new Intl.DateTimeFormat("en-CA", { timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date(t*1000));
+// One timezone formatter per process avoids native ICU growth at index scale.
+const nyDayFormatter = new Intl.DateTimeFormat("en-CA", { timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit" });
+const nyDay = t => nyDayFormatter.format(new Date(t*1000));
 const mean = values => values.reduce((a,b)=>a+b,0)/values.length;
 const round = x => Math.round(x*1000)/1000;
 function analyze(chart, date, {completedSessionOnly=false}={}) {

@@ -2,8 +2,10 @@
 // Broker-independent typed market data adapter. The provider is injected;
 // this code supplies no fabricated prices and performs no brokerage orders.
 const iso=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(x)&&Number.isFinite(Date.parse(x));
+// Reuse ICU state across the index's hundreds of thousands of candles.
+const etFormatter=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 function localET(timestamp){
- const p=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(timestamp));
+ const p=etFormatter.formatToParts(new Date(timestamp));
  const obj=Object.fromEntries(p.map(x=>[x.type,x.value]));
  return {date:obj.year+'-'+obj.month+'-'+obj.day,minute:Number(obj.hour)*60+Number(obj.minute)};
 }
