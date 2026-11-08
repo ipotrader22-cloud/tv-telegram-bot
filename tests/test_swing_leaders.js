@@ -284,8 +284,8 @@ async function run() {
   assert.strictEqual(parsed.cash_pct, '59.8%');
   assert.strictEqual(parsed.quote_source, 'GOOGLEFINANCE');
   assert.strictEqual(parsed.model_allocation_per_position, MODEL_ALLOCATION_PER_POSITION);
-  assert.strictEqual(parsed.active_unrealized_model_pnl, 505);
-  assert.strictEqual(parsed.closed_realized_model_pnl, 1261);
+  assert.strictEqual(parsed.active_unrealized_model_pnl, 505.04);
+  assert.strictEqual(parsed.closed_realized_model_pnl, 1261.06);
   assert.strictEqual(parsed.active_portfolio[0].entry_price, '$76.66');
   assert.strictEqual(parsed.active_portfolio[0].current_price, '$78.42');
   assert.strictEqual(parsed.active_portfolio[0].return_pct, '2.30%');
@@ -332,8 +332,8 @@ async function run() {
   assert.ok(html.includes('Closed Trades'));
   assert.ok(html.includes('Unrealized Model P&amp;L'));
   assert.ok(html.includes('Realized Model P&amp;L'));
-  assert.ok(html.includes('+$505.00'));
-  assert.ok(html.includes('+$1,261.00'));
+  assert.ok(html.includes('+$505.04'));
+  assert.ok(html.includes('+$1,261.06'));
   assert.ok(html.includes('profit target is +10% from entry and may trigger intraday'));
   assert.ok(html.includes('regular-session 9:30 AM ET opening price is at least 5% below entry'));
   assert.ok(html.includes('model position closes at the market price immediately after confirmation'));

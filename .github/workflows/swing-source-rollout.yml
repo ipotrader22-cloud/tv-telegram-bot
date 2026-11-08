@@ -1,0 +1,42 @@
+name: Swing Source Rollout
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/swing-*.js'
+      - 'website_swing*.js'
+      - 'tests/test_swing*.js'
+      - 'tests/test_engine2_equity_format.js'
+      - 'app.js'
+      - 'package.json'
+      - '.github/workflows/swing-source-rollout.yml'
+  push:
+    branches: [feature/swing-engine2-source-rollout]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  swing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Parser, authorization, source and formatting regression
+        run: |
+          node tests/test_swing_leaders.js
+          node tests/test_swing_model_pnl_precision.js
+          node tests/test_swing_leaders_candidate_feed_compat.js
+          node tests/test_engine2_equity_format.js
+          node tests/test_swing_source_switch.js
+          node tests/test_issue331_swing_auth.js
+          node tests/test_swing_canonical_route_refinement.js
+          node tests/test_swing_equity_live_refresh.js
+          node tests/test_swing_active_model_pnl.js
+      - name: Full startup HTTP with Engine 2 selected
+        run: VIXALE_SWING_SOURCE=ENGINE2 node tests/test_swing_source_http.js
+      - name: Full startup HTTP after legacy rollback
+        run: VIXALE_SWING_SOURCE=LEGACY node tests/test_swing_source_http.js
