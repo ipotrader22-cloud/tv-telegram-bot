@@ -51,6 +51,9 @@ jobs:
           node --test engine-v2/*.test.cjs
           node tests/test_swing_research_inputs.js
 
+      - name: Verify index research with constrained Node heap
+        run: node --max-old-space-size=320 --test engine-v2/index-universe.test.cjs
+
       - name: Probe historical PLTR one-minute evidence (research only)
         if: always()
         continue-on-error: true
