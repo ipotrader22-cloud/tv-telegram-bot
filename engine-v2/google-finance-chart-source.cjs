@@ -127,8 +127,12 @@ function createGoogleChartSource({fetchFn=fetch,concurrency=1,allowShortHistory=
    throw Error('GOOGLE_CHART_REQUEST_INVALID');
   const sourceDate=previousSession(safeDate(date)),first=new Date(Date.parse(sourceDate+'T00:00:00Z')-440*86400000).toISOString().slice(0,10);
   const chunks=[];for(let i=0;i<tickers.length;i+=4)chunks.push(tickers.slice(i,i+4));
-  const results=(await boundedMap(chunks,concurrency,group=>query(group,{fromDate:first,throughDate:sourceDate,interval:'1day'}))).flat();
-  return results.map(s=>{
+  // Convert each bounded response immediately rather than retaining every full
+  // Google daily-row object until all index members have been downloaded.
+  // Output order, strict validation, hashes and source timestamps are unchanged.
+  const results=await boundedMap(chunks,concurrency,async group=>{
+   const series=await query(group,{fromDate:first,throughDate:sourceDate,interval:'1day'});
+   return series.map(s=>{
    if(s.unavailable)return {ticker:s.ticker,exchange:s.exchange,unavailable:true,
     source:'GOOGLE_FINANCE_CHART_1DAY',rawHash:s.sourceHash};
    if(s.rows.at(-1)?.date!==sourceDate||(!allowShortHistory&&s.rows.length<200))
@@ -145,7 +149,9 @@ function createGoogleChartSource({fetchFn=fetch,concurrency=1,allowShortHistory=
       open:s.rows.map(c=>c.open),high:s.rows.map(c=>c.high),
       low:s.rows.map(c=>c.low),close:s.rows.map(c=>c.close),
       volume:s.rows.map(c=>c.volume)}]}}};
+   });
   });
+  return results.flat();
  }
  async function getMinuteHistory({ticker,fromDate,throughDate}={}){
   const [series]=await query([ticker],{fromDate,throughDate,interval:'1min'});
