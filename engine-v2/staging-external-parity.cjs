@@ -102,7 +102,12 @@ async function probe({origin=ORIGIN,fetcher=fetch,pause=ms=>new Promise(resolve=
   if(fresh.length!==feed.active_count&&feed.unrealized_model_pnl!==null)
    throw Error('STAGING_INCOMPLETE_AGGREGATE_PNL');
  }
- return {status:'EXTERNAL_STAGING_API_HTML_PASS',snapshotDate:feed.snapshot_date,snapshotId:feed.snapshot_id,activeCount:feed.active_count,readOnly:true,emailEnabled:false,productionCutover:false};
+ return {status:'EXTERNAL_STAGING_API_HTML_PASS',snapshotDate:feed.snapshot_date,snapshotId:feed.snapshot_id,activeCount:feed.active_count,readOnly:true,emailEnabled:false,productionCutover:false,
+  valuationStatus:feed.valuation_status||'UNVERIFIED',valuationAsOf:feed.valuation_as_of||null,
+  valuations:feed.active_portfolio.map(p=>({ticker:p.ticker,entry:p.entry_price,
+   price:p.current_valuation_price??null,quoteTimeET:p.quote_timestamp_et??null,
+   source:p.quote_source??null,delayMinutes:p.quote_delay_minutes??null,
+   status:p.valuation_status??'UNVERIFIED',modelPnl:p.unrealized_model_pnl??null}))};
 }
 if(require.main===module)probe().then(result=>console.log(JSON.stringify(result))).catch(e=>{console.error(JSON.stringify({status:'BLOCKED',reason:e.message,productionCutover:false}));process.exitCode=1});
 module.exports={probe};
