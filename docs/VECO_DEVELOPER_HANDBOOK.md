@@ -1,3 +1,65 @@
+## Swing Research Note — Google company-news coverage and pending fix (2026-11-11)
+
+Owner supplied a signed-in Swing screenshot showing an AIZ news headline,
+EXR/PSA `No matching ... news`, and VTRS `Checking...`. Read-only
+GitHub-hosted probes against public Google Finance quote pages proved:
+- **EXR** Google Finance News stories had only unrelated broad-market
+  headlines. Rejecting them was correct, but not a sufficient company-news
+  fallback.
+- **PSA** had a relevant Google Finance news card comparing PSA and HST;
+  a large related/news page can place eligible cards beyond the old
+  40,000-character section window.
+- **VTRS** had four directly relevant Google Finance cards; up to eight
+  serial 3.5-second publisher metadata requests previously allowed the
+  authenticated page to show `PENDING` for an extended interval.
+- **AIZ** already had a relevant Google Finance card and was not broken.
+
+Fix: the existing display-only `lib/swing-company-news.js` parser searches
+up to 160,000 characters of the verified Google Finance News stories section
+and validates company/ticker relevance. Publisher metadata lookups are
+bounded to the first four qualifying cards and performed concurrently with
+1.2-second per-page timeouts, not eight serial requests. The reader gives
+the initial page 2.9 seconds for safe news projection, then retains the
+established single-flight cache and 60-second stable rendered projection.
+
+When Google Finance's scoped company page yields no article dated to the
+selected NYSE session, the reader uses that page's verified company name
+to construct a bounded **Google News RSS** query for exact company name,
+ticker and `stock`. Google News RSS is **a secondary source**, not a
+mislabelled Google Finance card. Parse at most the bounded XML response;
+require an HTTPS Google News article link, explicit publisher, relevant
+company/ticker headline, parseable Google News `pubDate`, nonfuture date,
+and <=90-day age. The resulting news item is clearly labelled with
+`(Google News)`, because its timestamp is the *Google News syndication
+timestamp*, not an independently verified original publisher publication
+time. If no article exists for the requested session on either source,
+select the most recent independently dated older company article, labelled
+`Earlier news` and with its true date, never silently presenting it as
+today's article. Keep at most two items, and suppress all unrelated
+market-news headlines.
+
+Actual public-provider verification on November 11:
+EXR returned two earlier Google News stories; PSA returned one same-day
+Google News story (06:02 ET syndication); VTRS returned two relevant same-day
+Google Finance articles; AIZ retained its existing same-day Zacks story.
+The EXR Google News headlines explicitly identified Extra Space Storage;
+the PSA Google News headline named Public Storage (PSA).
+
+No change to frozen Engine 2 Public Feed `brief_note`, nine-factor model,
+518-symbol research universe, 10:00 ET decisions, entry/exit/stop/target,
+broker/TWS, order execution, cash or model P&L, Google quote provider,
+database, authentication, or historical ledger. No secrets, paid data
+feeds, new deployment services or Render tier modifications.
+
+Rollback: revert the narrow news-reader/test/handbook PR and deploy the
+previous main version; do **not** revert the independent Issue #388
+intraday valuation logic. Acceptance requires full Swing Source Rollout
+and EN/RU Browser QA, the exact Render SHA LIVE, and a fresh authenticated
+page/API readback. GitHub-hosted public-source probe alone does not certify
+the signed-in production page.
+
+---
+
 ## Swing Active Portfolio — November 11 same-session news and clean valuation cells (deployed)
 
 Deployment evidence: PR #397 merged as `f54d09831656be8b7fc11e636591e5d92ecfa337`; production Render deployment `dep-dbqc4a1srm7s738a7330` reported LIVE at 2026-11-11T19:30:46Z. Swing Source Rollout and EN/RU CI passed. Authenticated post-deploy news-page readback is UNVERIFIED in this Chat session; refer to `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-TODAY-NEWS.md`.
