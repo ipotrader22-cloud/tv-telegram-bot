@@ -1,3 +1,41 @@
+## Swing Active Portfolio — November 11 same-session news and clean valuation cells
+
+Owner clarification (November 11, 2026, 14:20 ET): Research Note should show
+the latest **today's** company news during a live NYSE session, not
+automatically limit all results to the previous session. If no relevant
+company news is available for the selected session, use the **latest
+available** relevant Google Finance-linked publication, with the source,
+real publication date/time where verified and a conspicuous `Earlier news`
+label. Google Finance relative day/week dates never constitute an exact
+publication timestamp; use an explicitly labelled approximate date and
+indicate when exact time is unavailable. Do not mislabel an older story as
+today's news, invent text/time, or substitute technical research notes.
+
+The view selects today's NYSE date after the regular 09:30 ET open, or the
+last completed session before the open/over weekends/holidays. Company news
+remains display-only; original morning `brief_note` and the immutable
+decision feed are preserved. The reader prioritizes session-matching
+articles, falling back only when none is verifiable for the selected day.
+News remains linked to Google Finance cards and relevant company headlines.
+The two most recent eligible stories are returned, with publisher metadata
+taking precedence over relative Google Finance age.
+
+The technical intraday valuation labels under every Current price, such as
+`FRESH_MINUTE_BAR · GOOGLE_FINANCE_CHART_1M`, are not user-facing copy.
+The HTML and existing 60-second browser refresh retain a hidden valuation
+projection marker while keeping source, timestamp, delay and stale status
+in the existing authenticated JSON API for troubleshooting. The page still
+shows a dash and null P&L when a quote is unavailable; no stale prices are
+silently substituted. No quote validation, $10K P&L calculation, trading
+logic, scorer, order or Render configuration is changed.
+
+Verification: test today/previous-session NYSE dates, older-story fallback,
+publisher/relative dates, safe rendering and auto-refresh, and preserve all
+Swing Source Rollout and EN/RU browser QA gates. Rollback is a narrow revert
+of this display/news PR without reverting Engine 2 intraday valuation.
+
+---
+
 ## Swing Trading Research Note — previous-session Google Finance company news (deployed 2026-11-11)
 
 Production PR #395 merged as `e97c123c2e7fe22a77c008e0d3321ec2cf695fc2`; Render `dep-dbqbtc9srm7s7389nv4g` is LIVE as of 2026-11-11T19:16:10Z. Authenticated post-deploy browser/API news readback is UNVERIFIED because the saved browser tab cannot be refreshed from Chat mode. See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SWING-NEWS.md`. Do not confuse tested public Google Finance parsing with verified live customer display.

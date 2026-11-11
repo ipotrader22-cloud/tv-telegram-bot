@@ -71,7 +71,10 @@ test('collect uses only matching Google Finance sourced previous-trading-day new
  assert.equal(seen.length,2);
  const wrong=async url=>({ok:true,headers:{get:()=>null},
   text:async()=>url.includes('google.com')?html:publisher.replace('2026-11-10','2017-12-05')});
- assert.deepEqual(await news.collect({ticker:'AIZ',exchange:'NYSE',sessionDate:date,now,fetcher:wrong}),[]);
+ const older=await news.collect({ticker:'AIZ',exchange:'NYSE',sessionDate:date,now,fetcher:wrong});
+ assert.equal(older.length,1);
+ assert.equal(older[0].news_is_older,true);
+ assert.match(older[0].published_et,/2017/);
 });
 test('publisher metadata unavailable preserves approximate source label, no fake summary',async()=>{
  const html=page([card('Assurant shares advance Tuesday','20 hours ago',goodUrl)]);
@@ -94,7 +97,7 @@ test('read-only news overlays never mutate frozen data or change between immedia
  assert.equal(calls,1);
  assert.deepEqual(a.data,b.data);
  assert.deepEqual(original,feed());
- assert.equal(a.data.company_news_session_date,date);
+ assert.equal(a.data.company_news_session_date,'2026-11-11');
  assert.equal(a.data.active_portfolio[0].brief_note,original.active_portfolio[0].brief_note);
  const html=core.renderSwingLeadersHtml(a.data);
  assert.match(html,/Assurant reported a new corporate development/);
@@ -118,11 +121,77 @@ test('no verified news never substitutes old score text; legacy renderer is unch
  assert.match(legacy,/Technical nine-factor review/);
  assert.match(legacy,/Reviewed 2026-11-11/);
 });
-test('previous NYSE session respects Friday, Monday and holiday dates',async()=>{
- let observed=null;
- const decorate=news.createCompanyNewsReader({clock:()=>new Date('2026-11-30T17:00:00Z'),
-  load:async params=>{observed=params.sessionDate;return [];}});
- const x=await decorate({available:true,data:feed()});
- assert.equal(observed,'2026-11-27');
- assert.equal(x.data.company_news_session_date,'2026-11-27');
+test('latest NYSE session selects today from 09:30 ET and previous session before opening',()=>{
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T19:20:00Z')),'2026-11-11');
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T14:29:00Z')),'2026-11-10');
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T14:30:00Z')),'2026-11-11');
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T22:00:00Z')),'2026-11-11');
+ assert.equal(news.latestNewsSession(new Date('2026-11-14T17:00:00Z')),'2026-11-13');
+ assert.equal(news.latestNewsSession(new Date('2026-11-27T14:29:00Z')),'2026-11-25');
+ assert.equal(news.latestNewsSession(new Date('2026-11-27T14:30:00Z')),'2026-11-27');
+ assert.equal(news.latestNewsSession(new Date('2026-11-30T17:00:00Z')),'2026-11-30');
+});
+test('today AIZ Google Finance news includes source and posting time',async()=>{
+ const today=new Date('2026-11-11T19:20:00Z'),sessionDate='2026-11-11';
+ const html=page([card('Why Assurant (AIZ) Might be Well Poised for a Surge','1 hour ago',
+  'https://www.zacks.com/stock/news/3027860/why-assurant-aiz-might-be-well-poised-for-a-surge','Zacks')]);
+ const fetcher=async url=>({ok:true,headers:{get:()=>null},text:async()=>url.includes('google.com')?html:
+  '<meta property="article:published_time" content="2026-11-11T13:10:00-05:00"><meta name="description" content="Assurant shares gain attention after a new financial update.">'});
+ const items=await news.collect({ticker:'AIZ',exchange:'NYSE',sessionDate,now:today,fetcher});
+ assert.equal(items.length,1);
+ assert.equal(items[0].published_utc,'2026-11-11T18:10:00.000Z');
+ assert.match(items[0].published_et,/Nov 11, 2026/);
+ assert.match(items[0].summary,/Assurant/);
+ const reader=news.createCompanyNewsReader({clock:()=>today,load:async params=>{
+  assert.equal(params.sessionDate,'2026-11-11');return items;}});
+ const snapshot=await reader({available:true,data:feed()});
+ assert.equal(snapshot.data.company_news_session_date,'2026-11-11');
+ assert.match(core.renderSwingLeadersHtml(snapshot.data),/Nov 11, 2026/);
+});
+
+test('today-first selection excludes older news when matching same-day stories exist',async()=>{
+ const today=new Date('2026-11-11T19:20:00Z');
+ const todayUrl='https://www.marketwatch.com/aiz-today';
+ const oldUrl='https://www.marketwatch.com/aiz-older';
+ const html=page([
+  card('Assurant announces a new business update','2 hours ago',todayUrl),
+  card('Assurant (AIZ) previous news','1 day ago',oldUrl)
+ ]);
+ const fetcher=async url=>({ok:true,headers:{get:()=>null},text:async()=>url.includes('google.com')?html:''});
+ const items=await news.collect({ticker:'AIZ',exchange:'NYSE',sessionDate:'2026-11-11',now:today,fetcher});
+ assert.equal(items.length,1);
+ assert.equal(items[0].url,todayUrl);
+ assert.equal(items[0].news_is_older,false);
+});
+test('when there is no news today, select latest available older article with clear date label',async()=>{
+ const today=new Date('2026-11-11T19:20:00Z');
+ const recent='https://www.marketwatch.com/aiz-yesterday',older='https://www.marketwatch.com/aiz-last-week';
+ const html=page([
+  card('Assurant results from previous session','1 day ago',recent),
+  card('Assurant latest corporate announcement','1 week ago',older)
+ ]);
+ const fetcher=async url=>({ok:true,headers:{get:()=>null},text:async()=>url.includes('google.com')?html:''});
+ const items=await news.collect({ticker:'AIZ',exchange:'NYSE',sessionDate:'2026-11-11',now:today,fetcher});
+ assert.equal(items.length,2);
+ assert.equal(items[0].url,recent);
+ assert.equal(items[0].news_is_older,true);
+ assert.equal(items[1].url,older);
+ assert.match(items[0].published_et,/Google Finance estimate/);
+ assert.match(core.renderSwingLeadersHtml({
+   ...feed(),
+   active_portfolio:[{...feed().active_portfolio[0],
+    company_news_status:'READY',company_news_session_date:'2026-11-11',company_news:items}]
+ }),/Earlier news/);
+});
+test('quote provider technical labels are hidden in server HTML but remain in authenticated data',()=>{
+ const item={...feed().active_portfolio[0],
+   valuation_status:'FRESH_MINUTE_BAR',current_valuation_price:321.74,valuation_return_pct:-0.09,
+   unrealized_model_pnl:-8.70,quote_source:'GOOGLE_FINANCE_CHART_1M',
+   quote_timestamp_et:'2026-11-11 14:20:00 ET',valuation_price_kind:'COMPLETED_MINUTE_BAR_CLOSE'};
+ const html=core.renderSwingLeadersHtml({...feed(),active_portfolio:[item]});
+ assert.match(html,/data-label="Current">\$\s*321\.74/);
+ assert.match(html,/class="vx-valuation-evidence" hidden/);
+ assert.doesNotMatch(html,/FRESH_MINUTE_BAR|GOOGLE_FINANCE_CHART_1M|completed 1-minute close/);
+ const script=ui.buildQuoteRefreshScript?ui.buildQuoteRefreshScript():String(ui);
+ assert.doesNotMatch(script,/note\.textContent=\(quote\.valuation_status/);
 });

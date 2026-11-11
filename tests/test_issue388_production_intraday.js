@@ -60,8 +60,8 @@ test('AIZ and VTRS valuation PnL use $10k normalized, without changing morning r
  assert.ok(Math.abs(valued.active_portfolio[1].unrealized_model_pnl-10000*(20.94/20.82-1))<1e-8);
  assert.equal(core.addDisplayMetrics(valued).active_unrealized_model_pnl,valued.active_unrealized_model_pnl);
  const html=core.renderSwingLeadersHtml(valued);
- assert.match(html,/FRESH_MINUTE_BAR/);
- assert.match(html,/completed 1-minute close/);
+ assert.doesNotMatch(html,/FRESH_MINUTE_BAR|GOOGLE_FINANCE_CHART_1M|completed 1-minute close/);
+ assert.match(html,/vx-valuation-evidence" hidden/);
  assert.match(html,/Morning|morning/);
  assert.match(html,/20\.94/);
 });
@@ -73,7 +73,8 @@ test('stale/missing quote never presents morning zero PnL as fresh',()=>{
  assert.equal(core.addDisplayMetrics(projected).active_unrealized_model_pnl,null);
  const html=core.renderSwingLeadersHtml(projected);
  assert.match(html,/Some quotes are unavailable/);
- assert.match(html,/UNAVAILABLE/);
+ assert.doesNotMatch(html,/UNAVAILABLE ·|FRESH_MINUTE_BAR/);
+ assert.match(html,/data-label="Current">—/);
  assert.match(html,/Unrealized Model P&amp;L<\/small><strong class="flat">—<\/strong>/);
  const enhanced=page.enhanceActivePortfolioTable(html);
  assert.match(enhanced,/data-label="Quantity"/);
@@ -134,7 +135,8 @@ test('stale cached Google quote retains original evidence but never supplies cur
  assert.equal(stale.data.active_portfolio[0].last_known_valuation_price,320.41);
  assert.equal(stale.data.active_portfolio[0].quote_timestamp_et,'2026-11-11 11:59:00 ET');
  const html=page.enhanceActivePortfolioTable(core.renderSwingLeadersHtml(stale.data));
- assert.match(html,/STALE/);
+ assert.doesNotMatch(html,/STALE ·/);
+ assert.match(html,/data-label="Current">—/);
  assert.match(html,/data-label="P&L, \$" class="vx-model-open-pnl flat">—/);
  assert.equal(base.data.active_portfolio[0].current_price,'$322.02');
 });
