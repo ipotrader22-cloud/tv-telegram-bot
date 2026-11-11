@@ -1,5 +1,5 @@
 'use strict';
-const {parseCards,relativeEstimate,collect,relevant,safeUrl}=require('../lib/swing-company-news');
+const {parseCards,relativeEstimate,collect,relevant,safeUrl,collectWithFallback,latestNewsSession}=require('../lib/swing-company-news');
 (async()=>{
  for(const [ticker,exchange] of [['EXR','NYSE'],['PSA','NYSE'],['VTRS','NASDAQ'],['AIZ','NYSE']]){
   try{
@@ -13,6 +13,10 @@ const {parseCards,relativeEstimate,collect,relevant,safeUrl}=require('../lib/swi
    const blocks=[...section.matchAll(/<div class="LIT7If">([\s\S]*?)(?=<div class="LIT7If">|<div class="VfPpkd)/g)];
    const examples=blocks.slice(0,8).map(m=>({title:m[1].match(/<div class="TQWIEd">([\s\S]*?)<\/div>/)?.[1]?.slice(0,110),relative:m[1].match(/<div class="JQ8Czd">([^<]*)<\/div>/)?.[1],publisher:m[1].match(/<div class="WrUjhf">([^<]*)<\/div>/)?.[1]}));
    console.log(JSON.stringify({ticker,status:r.status,bytes:html.length,sectionAt:position,company:parsed.company,error:parsed.error,rawBlocks:blocks.length,cards:parsed.cards?.length,examples,firstDetails:blocks.slice(0,2).map(m=>({title:m[1].split('class="TQWIEd">')[1]?.split('</div>')[0],href:m[1].split('<a href="')[1]?.split('"')[0],valid:safeUrl(m[1].split('<a href="')[1]?.split('"')[0])!=null,related:relevant(m[1].split('class="TQWIEd">')[1]?.split('</div>')[0],ticker,parsed.company||'')})),links:blocks.slice(0,5).map(m=>m[1].match(/<a href="([^"]+)"/)?.[1]?.slice(0,190)),elapsedMs:Date.now()-start}));
+   try{
+    const now=new Date(),stories=await collectWithFallback({ticker,exchange,sessionDate:latestNewsSession(now),now});
+    console.log(JSON.stringify({ticker,finalNewsCount:stories.length,finalNews:stories.map(x=>({headline:x.headline,publisher:x.publisher,source:x.news_provider,time:x.published_et,older:x.news_is_older}))}));
+   }catch(error){console.log(JSON.stringify({ticker,finalNewsError:error?.message||'error'}))}
    if(ticker!=='AIZ'){
     const query=encodeURIComponent('"'+({EXR:'Extra Space Storage',PSA:'Public Storage',VTRS:'Viatris'}[ticker])+'" stock');
     const rss='https://news.google.com/rss/search?q='+query+'&hl=en-US&gl=US&ceid=US:en';
