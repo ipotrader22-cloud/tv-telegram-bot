@@ -33,7 +33,7 @@ function validGoogleQuote(q,{date,runAt}={}){
  catch{return false;}
 }
 function createGoogleQuoteProvider({api,clock=()=>new Date()}={}){
- return {async getQuotes({date,tickers}){
+ return {async getQuotes({date,tickers,allowPartial=false}){
   if(!Array.isArray(tickers)||new Set(tickers).size!==tickers.length)throw Error('GOOGLE_QUOTE_IDENTITY_INVALID');
   if(!tickers.length)return [];
   const r=await api.spreadsheets.get({spreadsheetId:STAGING_ID,ranges:["'"+QUOTE_SHEET+"'!A1:F651"],
@@ -60,9 +60,13 @@ function createGoogleQuoteProvider({api,clock=()=>new Date()}={}){
     dailyVolume:cells[4]?.effectiveValue?.numberValue};
    byTicker.set(ticker,v);
   }
-  return tickers.map(ticker=>{
-   if(!byTicker.has(ticker))throw Error('GOOGLE_QUOTE_MISSING');
-   return normalizeGoogleQuote(byTicker.get(ticker),{date,fetchedAt});
+  // Valuation-only partial mode: keep valid identities and explicitly report
+  // missing ones to the caller. Morning decision defaults remain all-or-nothing.
+  return tickers.flatMap(ticker=>{
+   try{
+    if(!byTicker.has(ticker))throw Error('GOOGLE_QUOTE_MISSING');
+    return [normalizeGoogleQuote(byTicker.get(ticker),{date,fetchedAt})];
+   }catch(error){if(!allowPartial)throw error;return [];}
   });
  }};
 }
