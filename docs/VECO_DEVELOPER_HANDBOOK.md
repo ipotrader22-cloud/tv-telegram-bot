@@ -1,4 +1,6 @@
-## Swing Trading Research Note — previous-session Google Finance company news (2026-11-11)
+## Swing Trading Research Note — previous-session Google Finance company news (deployed 2026-11-11)
+
+Production PR #395 merged as `e97c123c2e7fe22a77c008e0d3321ec2cf695fc2`; Render `dep-dbqbtc9srm7s7389nv4g` is LIVE as of 2026-11-11T19:16:10Z. Authenticated post-deploy browser/API news readback is UNVERIFIED because the saved browser tab cannot be refreshed from Chat mode. See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SWING-NEWS.md`. Do not confuse tested public Google Finance parsing with verified live customer display.
 
 The user-approved Research Note is now a **company news display**, not a score,
 Google quote timestamp, or frozen model-decision explanation. For the ENGINE2
