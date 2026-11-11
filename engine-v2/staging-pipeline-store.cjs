@@ -3,6 +3,7 @@
 const {Client}=require('pg');
 const {dbName}=require('./clean-ledger.cjs');
 const {assertArtifact}=require('./staging-artifact.cjs');
+const {encodeEvidence,decodeEvidence}=require('./evidence-storage.cjs');
 const DDL=`CREATE TABLE IF NOT EXISTS vixale_v2.staging_pipeline (
  session_date date PRIMARY KEY, run_id text UNIQUE NOT NULL, snapshot_id text NOT NULL,
  artifact jsonb NOT NULL, state jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -26,8 +27,8 @@ function createPipelineStore({url,clientFactory=opts=>new Client(opts)}={}){
     const guard=async()=>{if(lost)throw Error('PIPELINE_LOCK_CONNECTION_LOST');await db.query('SELECT 1')};
     const repo={
      guard,
-     async getPrepared(date){await guard();return (await db.query('SELECT artifact FROM vixale_v2.preopen_preparations WHERE session_date=$1',[date])).rows[0]?.artifact||null},
-     async savePrepared(p){const {fingerprint,...payload}=p;const {POLICY,hash}=require('./delayed-model-policy.cjs');if(p.policy!==POLICY||!/^\d{4}-\d{2}-\d{2}$/.test(p.date)||fingerprint!==hash(payload))throw Error('PREOPEN_HASH_MISMATCH');await guard();await db.query('INSERT INTO vixale_v2.preopen_preparations(session_date,artifact) VALUES($1,$2::jsonb) ON CONFLICT(session_date) DO NOTHING',[p.date,JSON.stringify(p)]);const old=await repo.getPrepared(p.date);if(old.fingerprint!==p.fingerprint)throw Error('PREOPEN_IMMUTABLE_CONFLICT');return old},
+     async getPrepared(date){await guard();return decodeEvidence((await db.query('SELECT artifact FROM vixale_v2.preopen_preparations WHERE session_date=$1',[date])).rows[0]?.artifact)||null},
+     async savePrepared(p){const {fingerprint,...payload}=p;const {POLICY,hash}=require('./delayed-model-policy.cjs');if(p.policy!==POLICY||!/^\d{4}-\d{2}-\d{2}$/.test(p.date)||fingerprint!==hash(payload))throw Error('PREOPEN_HASH_MISMATCH');await guard();await db.query('INSERT INTO vixale_v2.preopen_preparations(session_date,artifact) VALUES($1,$2::jsonb) ON CONFLICT(session_date) DO NOTHING',[p.date,JSON.stringify(encodeEvidence(p))]);const old=await repo.getPrepared(p.date);if(old.fingerprint!==p.fingerprint)throw Error('PREOPEN_IMMUTABLE_CONFLICT');return old},
      async get(date){await guard();return (await db.query('SELECT artifact,state FROM vixale_v2.staging_pipeline WHERE session_date=$1',[date])).rows[0]||null},
      async save(artifact){
       assertArtifact(artifact);await guard();const p=artifact.manifest.payload;

@@ -3,6 +3,7 @@
 // Never opens a public API or grants external PostgreSQL network access.
 const {Client}=require('pg');
 const {dbName}=require('./clean-ledger.cjs');
+const {decodeEvidence}=require('./evidence-storage.cjs');
 const EPOCH='2026-10-19';
 const centsEqual=(a,b)=>Number.isFinite(Number(a))&&Number.isFinite(Number(b))&&Math.abs(Number(a)-Number(b))<0.011;
 const fail=reason=>({status:'BLOCKED',reason,writesPerformed:false});
@@ -41,7 +42,8 @@ async function auditStagingDb({url,date,clientFactory=opts=>new Client(opts)}={}
   const run=runRows[0],daily=stateRows[0],pipeline=pipelineRows[0];
   if(run.run_id!==daily.run_id||run.run_id!==pipeline.run_id)return fail('RUN_ID_MISMATCH');
   const events=(await db.query('SELECT event_id,type,ticker,entry_date::text AS entry_date FROM vixale_v2.clean_events WHERE run_id=$1',[run.run_id])).rows;
-  const expectedEvents=run.evidence_manifest?.inputs?.events;
+  const inputs=decodeEvidence(run.evidence_manifest?.inputs)||{};
+  const expectedEvents=inputs.events;
   const expectedIds=Array.isArray(expectedEvents)?expectedEvents.map(e=>e.eventId):[];
   if(!Array.isArray(expectedEvents)||events.length!==expectedIds.length||
      new Set(expectedIds).size!==expectedIds.length||
@@ -50,7 +52,6 @@ async function auditStagingDb({url,date,clientFactory=opts=>new Client(opts)}={}
     return fail('DUPLICATE_OR_MISSING_EVENTS');
   // Independently recheck the immutable current-session opening proof retained
   // with the journal. Older inception-only sessions had no carried lots.
-  const inputs=run.evidence_manifest?.inputs||{};
   const carried=inputs.sourceEvidence?.previous?.active||[];
   if(!Array.isArray(carried))return fail('CURRENT_OPENING_AUDIT_INVALID');
   if(carried.length)try{
