@@ -117,3 +117,24 @@ test('legacy/explicit different source stays unchanged',()=>{
  assert.equal(swing.selectedSpreadsheet({VIXALE_SWING_SOURCE:'LEGACY'}),core.SWING_LEADERS_SPREADSHEET_ID);
  assert.equal(swing.selectedSpreadsheet({VIXALE_SWING_SOURCE:'ENGINE2'}),valuation.ENGINE2_ID);
 });
+
+test('stale cached Google quote retains original evidence but never supplies current valuation or profit',async()=>{
+ let clock=new Date('2026-11-11T17:00:00Z'),reads=0;
+ const sheets={spreadsheets:{get:async()=>{reads++;if(reads>1)throw Error('429');return grid()}}};
+ const base={available:true,stale:false,data:feed()};
+ const decorate=valuation.createIntradayValuation({getSheetsClient:async()=>sheets,clock:()=>clock,chart:async()=>null});
+ const first=await decorate(base);assert.equal(first.data.valuation_coverage,2);
+ clock=new Date('2026-11-11T17:25:00Z');
+ const stale=await decorate(base);
+ assert.equal(stale.data.valuation_coverage,0);
+ assert.equal(stale.data.valuation_status,'UNAVAILABLE_OR_STALE');
+ assert.equal(stale.data.active_unrealized_model_pnl,null);
+ assert.equal(stale.data.active_portfolio[0].valuation_status,'STALE');
+ assert.equal(stale.data.active_portfolio[0].current_valuation_price,null);
+ assert.equal(stale.data.active_portfolio[0].last_known_valuation_price,320.41);
+ assert.equal(stale.data.active_portfolio[0].quote_timestamp_et,'2026-11-11 11:59:00 ET');
+ const html=page.enhanceActivePortfolioTable(core.renderSwingLeadersHtml(stale.data));
+ assert.match(html,/STALE/);
+ assert.match(html,/data-label="P&L, \$" class="vx-model-open-pnl flat">—/);
+ assert.equal(base.data.active_portfolio[0].current_price,'$322.02');
+});
