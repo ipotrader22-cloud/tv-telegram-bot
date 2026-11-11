@@ -54,6 +54,10 @@ jobs:
       - name: Verify index research with constrained Node heap
         run: node --max-old-space-size=320 --test engine-v2/index-universe.test.cjs
 
+      - name: Probe live Google Finance open-position minute chart freshness (read only)
+        if: always()
+        continue-on-error: true
+        run: node engine-v2/intraday-google-chart-probe.cjs
       - name: Probe historical PLTR one-minute evidence (research only)
         if: always()
         continue-on-error: true
