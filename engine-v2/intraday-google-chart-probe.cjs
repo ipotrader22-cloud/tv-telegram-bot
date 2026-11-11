@@ -8,9 +8,9 @@ async function probe({clock=()=>new Date(),symbols=['AIZ','EXR','PSA','VTRS']}={
  for(const ticker of symbols){
   try{
    const data=await source.getMinuteHistory({ticker,fromDate:date,throughDate:date});
-   const bars=data.bars||[],last=bars.at(-1),age=last?now.getTime()-Date.parse(last.end):null;
+   const bars=data.bars||[],future=bars.filter(b=>Date.parse(b.end)>now.getTime()),last=bars.filter(b=>Date.parse(b.end)<=now.getTime()).at(-1),age=last?now.getTime()-Date.parse(last.end):null;
    results.push({ticker,status:last&&age>=0&&age<=20*60000?'FRESH_MINUTE_BAR':'STALE_OR_UNAVAILABLE',
-    source:'GOOGLE_FINANCE_CHART_1M',bars:bars.length,
+    source:'GOOGLE_FINANCE_CHART_1M',bars:bars.length,futureBarsIgnored:future.length,
     lastTimeUtc:last?.end||null,lastTimeET:last?localET(last.end):null,
     lastClose:last?.close??null,ageSeconds:Number.isFinite(age)?Math.round(age/1000):null});
   }catch(error){
