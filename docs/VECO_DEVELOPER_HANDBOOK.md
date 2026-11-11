@@ -1,3 +1,22 @@
+## Issue #388 staging HTML/API parity follow-up — 2026-11-11
+
+The external verifier must not demand byte-for-byte equality between HTML
+rendered at T1 and a distinct JSON API response read at T2. Google valuation
+updates independently in the observer, so such a comparison is a false failure
+even when both responses correctly describe different verified observations.
+The staging HTML now embeds its exact public-only render feed as escaped,
+inert application/json. The external parity gate reconstructs HTML exactly
+from that embedded feed, then separately compares its immutable snapshot
+fingerprint, portfolio membership, entry values and frozen decision marks
+against the API response. For nonempty active holdings, both observations
+must be read-only, within 120 seconds, with valid quote/status coverage,
+provider source, and no stale P&L. An incorrect HTML rendering, changed
+entry, stale profit, missing evidence or cross-session drift still fails closed.
+The source does not change decision, Sheet, model history, email or broker.
+Only the isolated staging observer is redeployed after this change.
+
+---
+
 ## ADR — Engine 2 isolated intraday valuation (Issue #388, 2026-11-11)
 
 Handbook update required: YES. The morning Engine 2 decision mark stored as
