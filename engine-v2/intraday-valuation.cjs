@@ -140,7 +140,7 @@ function createValuationReader({readFeed,api,clock=()=>new Date(),provider,chart
      });
     }
     cache=[...by.values()];
-    retryAt=now.getTime()+Math.min(5*TTL_MS,TTL_MS*2**Math.min(failures,3));
+    retryAt=now.getTime()+Math.min(5*TTL_MS,TTL_MS*2**Math.min(Math.max(0,failures-1),3));
    })().finally(()=>{flight=null});
   }
   if(flight)await flight;
