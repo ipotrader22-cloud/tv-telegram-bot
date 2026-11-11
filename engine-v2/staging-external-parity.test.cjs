@@ -69,3 +69,21 @@ test('wrong host is rejected before network access',async()=>{
  await assert.rejects(probe({...m,origin:'https://tv-telegram-bot-a7t0.onrender.com'}),/UNAPPROVED_STAGING_ORIGIN/);
  assert.equal(m.requests.length,0);
 });
+
+test('separate intraday quote observations can change while exact HTML evidence still passes',async()=>{
+ const a=feed(),b=feed();
+ const same={ticker:'AIZ',entry_date:'2026-10-30',entry_price:322.02,current_model_reference_price:322.02};
+ a.active_portfolio=[{...same,current_valuation_price:330,quote_source:'GOOGLEFINANCE',quote_delay_minutes:15,quote_timestamp_utc:'2026-11-11T17:15:00Z',quote_timestamp_et:'2026-11-11 12:15:00 ET',valuation_status:'FRESH_DELAYED',unrealized_model_pnl:10000*(330/322.02-1)}];
+ b.active_portfolio=[{...same,current_valuation_price:330.2,quote_source:'GOOGLEFINANCE',quote_delay_minutes:15,quote_timestamp_utc:'2026-11-11T17:16:00Z',quote_timestamp_et:'2026-11-11 12:16:00 ET',valuation_status:'FRESH_DELAYED',unrealized_model_pnl:10000*(330.2/322.02-1)}];
+ for(const v of [a,b]){v.active_count=1;v.valuation_coverage=1;v.valuation_read_only=true;v.unrealized_model_pnl=v.active_portfolio[0].unrealized_model_pnl;v.total_valuation_model_pnl=v.unrealized_model_pnl;v.current_valuation_model_equity=100000+v.unrealized_model_pnl;}
+ a.valuation_as_of='2026-11-11T17:25:00Z';b.valuation_as_of='2026-11-11T17:25:10Z';
+ assert.equal((await probe(mock({feedValue:a,htmlValue:renderShadowSwing(b)}))).status,'EXTERNAL_STAGING_API_HTML_PASS');
+ const altered=structuredClone(b);altered.active_portfolio[0].entry_price=300;
+ await assert.rejects(()=>probe(mock({feedValue:a,htmlValue:renderShadowSwing(altered)})),/STAGING_MODEL_IDENTITY_DRIFT/);
+ const stale=structuredClone(b);stale.active_portfolio[0].valuation_status='STALE';
+ await assert.rejects(()=>probe(mock({feedValue:a,htmlValue:renderShadowSwing(stale)})),/STAGING_STALE_PNL_PRESENT/);
+});
+test('tampered embedded public valuation is rejected by exact HTML comparison',async()=>{
+ const f=feed(),html=renderShadowSwing(f);
+ await assert.rejects(()=>probe(mock({htmlValue:html.replace('id="model-snapshot-id"', 'id="model-snapshot-falsified"')})),/EXACT_VISIBLE_HTML_MISMATCH/);
+});
