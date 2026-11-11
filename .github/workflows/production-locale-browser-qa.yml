@@ -171,6 +171,11 @@ jobs:
           node tests/test_swing_active_portfolio_rules.js
           node tests/test_swing_strategy_nav_position.js
 
+      - name: Verify live Swing anonymous access gate (no credentials)
+        env:
+          QA_EN_ORIGIN: https://www.vixale.com
+        run: node scripts/qa-production-swing-parity.js
+
       - name: Owner-requested public copy and PDF regressions
         run: |
           node tests/test_owner_requested_public_copy.js
@@ -219,7 +224,7 @@ jobs:
           QA_OUTPUT_DIR: artifacts/production-locale-qa
         run: node scripts/qa-production-locales.js
 
-      - name: Verify live Swing HTML/API snapshot parity
+      - name: Verify anonymous Swing HTML/API authentication gate (parity requires credentials)
         env:
           QA_EN_ORIGIN: https://www.vixale.com
         run: node scripts/qa-production-swing-parity.js

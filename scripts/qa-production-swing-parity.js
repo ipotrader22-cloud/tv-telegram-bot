@@ -1,77 +1,69 @@
 "use strict";
 
-// Live production contract: HTML and JSON must expose one identical, noncacheable
-// Swing Leaders snapshot. No credentials or portfolio writes are required.
+// Public production smoke check for the private Swing Equity HTML and API.
+// This runner has no viewer credentials. Never treat an anonymous 200 or
+// login redirect as an authenticated snapshot-parity PASS. The authenticated
+// fixture parity is separately checked by Swing Source Rollout CI.
 const assert = require("node:assert/strict");
-const { assertDailyReview } = require("./swing-daily-review-gate");
 
 const ORIGIN = String(process.env.QA_EN_ORIGIN || "https://www.vixale.com").replace(/\/$/, "");
 const PAGE = "/trading-systems/swing-trading";
 const API = "/api/swing-leaders";
+const PRIVATE_FIELDS = /"active_portfolio"|"reporting_equity_history"|"total_model_pnl"/i;
 
-async function fetchFresh(path, accept) {
-  const url = ORIGIN + path + (path.includes("?") ? "&" : "?") + "vx_parity_qa=" + Date.now();
+async function readAnonymous(path, accept) {
+  const url = ORIGIN + path + (path.includes("?") ? "&" : "?") +
+    "vx_access_qa=" + Date.now();
   const response = await fetch(url, {
     cache: "no-store",
-    redirect: "follow",
+    redirect: "manual",
     headers: { Accept: accept, "Cache-Control": "no-cache" },
     signal: AbortSignal.timeout(20000),
   });
-  assert.equal(response.status, 200, path + " must return 200");
-  assert.match(response.headers.get("cache-control") || "", /(?:^|[,\s])no-store(?:[,\s]|$)/i, path + " must not be cacheable");
-  assert.equal(response.headers.get("surrogate-control"), "no-store", path + " must forbid CDN caching");
-  assert.equal(response.headers.get("x-vixale-swing-feed-stale"), "0", path + " must serve a fresh feed");
-  assert.match(response.headers.get("x-vixale-swing-snapshot-id") || "", /^[a-f0-9]{24}$/, path + " must identify its snapshot");
   return { response, body: await response.text() };
 }
 
-async function verifyPair() {
-  const [page, api] = await Promise.all([
-    fetchFresh(PAGE, "text/html"),
-    fetchFresh(API, "application/json"),
-  ]);
-  const a = page.response.headers.get("x-vixale-swing-snapshot-id");
-  const b = api.response.headers.get("x-vixale-swing-snapshot-id");
-  assert.equal(a, b, "Server HTML and JSON API must come from the same exact snapshot");
-  const data = JSON.parse(api.body);
-  assert.equal(page.response.headers.get("x-vixale-swing-snapshot-date"), data.snapshot_date);
-  assert.equal(api.response.headers.get("x-vixale-swing-snapshot-date"), data.snapshot_date);
-  assert.ok(page.body.includes("Snapshot " + data.snapshot_date + " · " + data.snapshot_time_et), "HTML must show current snapshot date/time");
-  assert.equal(data.active_count, data.active_portfolio.length);
-  assert.equal(data.intern_count, data.interns.length);
-  assert.equal(data.stale, false);
-  assert.equal(data.equity_history_stale, false, "Equity chart must not use a failed history refresh");
-  assert.equal(data.equity_history_latest_date, data.snapshot_date, "Equity History must match the published review date");
+function assertProtected(path, result) {
+  const { response, body } = result;
+  const status = response.status;
+  const redirect = [301, 302, 303, 307, 308].includes(status);
+  assert.ok(redirect || status === 401 || status === 403,
+    path + " must require authentication, got HTTP " + status);
+  if (redirect) {
+    const location = response.headers.get("location");
+    assert.ok(location, path + " redirect must include Location");
+    const actual = new URL(location, ORIGIN);
+    assert.equal(actual.origin, new URL(ORIGIN).origin,
+      path + " must not redirect a login to another origin");
+    assert.equal(actual.pathname, "/login",
+      path + " must redirect to the actual dashboard login");
+    assert.equal(actual.searchParams.get("next"), path,
+      path + " must preserve the intended return destination");
+  }
+  assert.doesNotMatch(body, PRIVATE_FIELDS,
+    path + " must not disclose portfolio/equity data anonymously");
+  return { path, status, redirectedToLogin: redirect };
+}
 
-  const anchor = page.body.indexOf('id="active-portfolio"');
-  assert.ok(anchor >= 0, "Active section anchor must exist");
-  const start = page.body.indexOf("<tbody>", anchor);
-  const end = page.body.indexOf("</tbody>", start);
-  assert.ok(start > anchor && end > start, "Active section rows must exist");
-  const activeHtml = page.body.slice(start, end);
-  const htmlTickers = [...activeHtml.matchAll(/data-label="Ticker"[^>]*>\s*<strong>([^<]+)<\/strong>/g)].map(m => m[1]);
-  assert.deepEqual(htmlTickers, data.active_portfolio.map(item => item.ticker), "HTML must show exactly the API Active tickers in order");
-  for (const item of data.active_portfolio) {
-    assert.ok(activeHtml.includes("Reviewed " + item.last_review_date), "HTML must retain Active review dates");
-  }
-  const expected = process.env.QA_SWING_EXPECTED_DATE;
-  if (expected) {
-    assertDailyReview(data, expected);
-  }
+async function verifyAnonymousGate() {
+  const [page, api] = await Promise.all([
+    readAnonymous(PAGE, "text/html"),
+    readAnonymous(API, "application/json"),
+  ]);
+  const result = [
+    assertProtected(PAGE, page),
+    assertProtected(API, api),
+  ];
   console.log(JSON.stringify({
-    result: "PASS",
+    result: "AUTH_GATE_VERIFIED_PARITY_NOT_CHECKED",
     origin: ORIGIN,
-    snapshot_date: data.snapshot_date,
-    snapshot_time_et: data.snapshot_time_et,
-    snapshot_id: a,
-    active_count: data.active_count,
-    candidate_count: data.intern_count,
-    equity_history_latest_date: data.equity_history_latest_date,
+    anonymous: true,
+    protectedRoutes: result,
+    note: "Authenticated HTML/API parity cannot be verified without a viewer session",
   }));
 }
 
-verifyPair().catch(error => {
-  console.error("Swing production HTML/API parity verification failed:", error.message);
+verifyAnonymousGate().catch(error => {
+  console.error("Swing production authentication gate verification failed:", error.message);
   process.exitCode = 1;
 });
-
