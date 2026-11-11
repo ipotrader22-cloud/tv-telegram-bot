@@ -34,31 +34,31 @@ async function probe({origin=ORIGIN,fetcher=fetch,pause=ms=>new Promise(resolve=
  // byte-for-byte equal to the certified renderer for this immutable feed.
  function structural(html){
   return html
-   .replace(/<td data-label="Current" data-valuation-field="price">[\\s\\S]*?<\\/td>/g,
+   .replace(/<td data-label="Current" data-valuation-field="price">[\s\S]*?<\/td>/g,
     '<td data-label="Current" data-valuation-field="price">[VALUATION]</td>')
-   .replace(/<td data-label="P&L, \\$" data-valuation-field="pnl" class="(?:gain|loss)">[\\s\\S]*?<\\/td>/g,
+   .replace(/<td data-label="P&L, \$" data-valuation-field="pnl" class="(?:gain|loss)">[\s\S]*?<\/td>/g,
     '<td data-label="P&L, $" data-valuation-field="pnl" class="neutral">[VALUATION]</td>')
-   .replace(/<td data-label="Return" data-valuation-field="return">[\\s\\S]*?<\\/td>/g,
+   .replace(/<td data-label="Return" data-valuation-field="return">[\s\S]*?<\/td>/g,
     '<td data-label="Return" data-valuation-field="return">[VALUATION]</td>')
-   .replace(/<strong id="valuation-total">[^<]*<\\/strong>/g,
+   .replace(/<strong id="valuation-total">[^<]*<\/strong>/g,
     '<strong id="valuation-total">[VALUATION]</strong>');
  }
  if(structural(html)!==structural(renderShadowSwing(feed)))
   throw Error('EXACT_VISIBLE_HTML_MISMATCH');
- const rows=[...html.matchAll(/<tr data-valuation-ticker="([^"]+)">([\\s\\S]*?)<\\/tr>/g)];
+ const rows=[...html.matchAll(/<tr data-valuation-ticker="([^"]+)">([\s\S]*?)<\/tr>/g)];
  if(rows.length!==feed.active_portfolio.length)throw Error('STAGING_VALUATION_ROWS_MISMATCH');
  const {sourceTime}=require('./google-quote-provider.cjs');
  const parseMoney=s=>{
   if(s==='—')return null;
-  if(!/^[+-]?\\$[\\d,]+\\.\\d{2}$/.test(s))throw Error('STAGING_VISIBLE_PNL_INVALID');
+  if(!/^[+-]?\$[\d,]+\.\d{2}$/.test(s))throw Error('STAGING_VISIBLE_PNL_INVALID');
   return Number(s.replace(/[$,]/g,''));
  };
  for(let i=0;i<rows.length;i++){
   const p=feed.active_portfolio[i],row=rows[i][2];
   if(rows[i][1]!==p.ticker)throw Error('STAGING_VALUATION_ROWS_MISMATCH');
-  const current=row.match(/<td data-label="Current" data-valuation-field="price">([^<]*) <small>([^<]*)<\\/small><\\/td>/);
-  const pnl=row.match(/<td data-label="P&L, \\$" data-valuation-field="pnl" class="(?:gain|loss)">([^<]*)<\\/td>/);
-  const pct=row.match(/<td data-label="Return" data-valuation-field="return">([^<]*)<\\/td>/);
+  const current=row.match(/<td data-label="Current" data-valuation-field="price">([^<]*) <small>([^<]*)<\/small><\/td>/);
+  const pnl=row.match(/<td data-label="P&L, \$" data-valuation-field="pnl" class="(?:gain|loss)">([^<]*)<\/td>/);
+  const pct=row.match(/<td data-label="Return" data-valuation-field="return">([^<]*)<\/td>/);
   if(!current||!pnl||!pct)throw Error('STAGING_VALUATION_FIELDS_MISSING');
   const label=current[2],isFresh=label.startsWith('FRESH_DELAYED · GOOGLEFINANCE delayed ');
   const isStale=label.startsWith('STALE · '),isUnavailable=label.startsWith('UNAVAILABLE · ');
@@ -67,14 +67,14 @@ async function probe({origin=ORIGIN,fetcher=fetch,pause=ms=>new Promise(resolve=
    if(pnl[1]!=='—'||pct[1]!=='—')throw Error('STAGING_STALE_PNL_PRESENT');
    continue;
   }
-  const time=label.match(/^FRESH_DELAYED · GOOGLEFINANCE delayed (\\d{1,2})m · (\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) ET$/);
+  const time=label.match(/^FRESH_DELAYED · GOOGLEFINANCE delayed (\d{1,2})m · (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ET$/);
   if(!time||Number(time[1])>20)throw Error('STAGING_FRESH_QUOTE_EVIDENCE_INVALID');
   const stamp=sourceTime(time[2]),at=Date.parse(feed.valuation_as_of||'');
   if(!Number.isFinite(at)||at-Date.parse(stamp)>22*60000||at-Date.parse(stamp)<-2*60000)
    throw Error('STAGING_VISIBLE_QUOTE_STALE');
   const price=parseMoney(current[1].trim()),profit=parseMoney(pnl[1]),entry=p.entry_price;
   if(!Number.isFinite(price)||price<=0||!Number.isFinite(profit)||
-     !Number.isFinite(entry)||entry<=0||!/[+-]?\\d+\\.\\d{2}%/.test(pct[1]))
+     !Number.isFinite(entry)||entry<=0||!/[+-]?\d+\.\d{2}%/.test(pct[1]))
    throw Error('STAGING_VISIBLE_PNL_INVALID');
   // The source price is rounded to cents for display. Bound its effect on
   // 10k-normalized model P&L rather than falsely requiring exact equality.
