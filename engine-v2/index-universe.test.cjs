@@ -5,7 +5,7 @@ const {parseV2Universe}=require('./research-universe.cjs');
 const {boundedMap}=require('./bounded-map.cjs');
 const {validateUniverseCoverage}=require('./universe-coverage.cjs');
 const {createResearchRuntime}=require('./staging-research-runtime.cjs');
-const {googleIdentity}=require('./google-finance-chart-source.cjs');
+const {googleIdentity,createGoogleChartSource}=require('./google-finance-chart-source.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {session}=require('../scripts/swing-market-calendar');
 const date='2026-11-09',at=date+'T12:00:00Z';
@@ -39,10 +39,22 @@ test('bounded fetch preserves ordering, concurrency and stops admitting work on 
  assert.deepEqual(r,[2,4,6,8,10,12]);assert.equal(peak,2);
  let started=0;await assert.rejects(boundedMap(Array(50).fill(1),4,async()=>{started++;throw Error('DENIED')}),/DENIED/);assert.equal(started,4);
 });
+test('streaming batches preserve all exact validated chart rows and request order',async()=>{
+ const tickers=parseV2Universe(INDEX_POLICY).candidates.slice(0,11);
+ const source=createGoogleChartSource({fetchFn:fixture().fetchFn,concurrency:2,allowShortHistory:true});
+ const ordinary=await source.getDailyMany({tickers,date});
+ const batches=[];
+ const streamed=await source.getDailyMany({tickers,date,onBatch:(batch,index)=>{batches[index]=batch;}});
+ assert.equal(streamed,undefined);
+ assert.deepEqual(batches.flat(),ordinary);
+ assert.deepEqual(ordinary.map(x=>x.ticker),tickers);
+ await assert.rejects(source.getDailyMany({tickers,date,onBatch:()=>{throw Error('CONSUMER_REJECTED');}}),/CONSUMER_REJECTED/);
+});
 test('all-index source pipeline attests every reviewed member or explicit unscored exclusion',async()=>{
  const p=await createResearchRuntime({universeCsv:INDEX_POLICY,sourcePolicy:'GOOGLE',completedSessionOnly:true,
   clock:()=>new Date(at),...fixture()})({date});
  const a=p.collection.artifact;assert.equal(a.data.length,516+14);assert.equal(p.collection.news.tickers.length,516);
+ assert(a.data.every(x=>x.bars.length===200),'index artifacts must retain exactly the last 200 completed bars');
  assert.deepEqual(a.universeCoverage.exclusions.map(e=>e.ticker),['HLT','SPCX']);
  validateUniverseCoverage(a,{required:true});
  const batch=await p.researchProvider.getBatch({date,runAt:at,session:sessionEvidence(date)});
