@@ -42,7 +42,7 @@ const invalidate=section=>{
   const current=item.row.querySelector('td[data-label="Current"]');
   const profit=item.row.querySelector('td[data-label="P&L, $"]');
   const ret=item.row.querySelector('td[data-label="Return"]');
-  if(current){current.textContent="—";const note=document.createElement("span");note.className="vx-valuation-evidence";note.textContent="UNAVAILABLE · Google quote refresh failed";current.appendChild(note)}
+  if(current){current.textContent="—";const note=document.createElement("span");note.className="vx-valuation-evidence";note.hidden=true;current.appendChild(note)}
   if(profit){profit.textContent="—";setState(profit,0)}
   if(ret){ret.textContent="—";setState(ret,0)}
  }
@@ -74,7 +74,7 @@ const refresh=async()=>{
    const pnlCell=item.row.querySelector('td[data-label="P&L, $"]');
    if(currentCell){
     currentCell.textContent=valid?(projected?"$"+current.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):clean(quote.current_price)):"—";
-    if(projected){const note=document.createElement("span");note.className="vx-valuation-evidence";note.textContent=(quote.valuation_status||"UNAVAILABLE")+" · "+(quote.quote_source||"Google quote unavailable")+(quote.valuation_price_kind==="COMPLETED_MINUTE_BAR_CLOSE"?" · completed 1-minute close":Number.isFinite(quote.quote_delay_minutes)?" · "+quote.quote_delay_minutes+"m delay":"")+" · "+(quote.quote_timestamp_et||"No verified timestamp");currentCell.appendChild(note)}
+    if(projected){const note=document.createElement("span");note.className="vx-valuation-evidence";note.hidden=true;currentCell.appendChild(note)}
    }
    if(returnCell){returnCell.textContent=valid?(projected?(ret>0?"+":"")+ret.toFixed(2)+"%":clean(quote.return_pct)):"—";setState(returnCell,valid?ret:0)}
    if(pnlCell){pnlCell.textContent=valid?money(pnl):"—";setState(pnlCell,valid?pnl:0)}
