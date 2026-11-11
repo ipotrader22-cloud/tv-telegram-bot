@@ -1,3 +1,56 @@
+## Swing Trading Research Note — previous-session Google Finance company news (2026-11-11)
+
+The user-approved Research Note is now a **company news display**, not a score,
+Google quote timestamp, or frozen model-decision explanation. For the ENGINE2
+source only, `lib/swing-company-news.js` decorates the authenticated Swing
+`/api/swing-leaders` and HTML snapshot with independent, read-only
+`company_news`, `company_news_status` and `company_news_session_date`
+fields. The immutable Engine 2 Public Feed `brief_note` remains unchanged
+and continues to be validated in the model; it is *not rendered* as Research
+Note when the news overlay is attached. The LEGACY source keeps its prior
+behavior. There are no changes to the 518-universe, nine-factor scoring,
+entries/exits, model calculations, 10:00 ET decisions, history, Sheet writers,
+broker/TWS, Telegram or signal timing.
+
+News reference date is the **previous NYSE trading session** relative to the
+website observation date in America/New_York, using the existing NYSE calendar
+(including weekends/holidays). Per open ticker/exchange, the reader fetches
+the matching public Google Finance quote page, parses its News stories cards,
+checks that the headline names that company or ticker, and ignores unrelated
+cards. For an approved Google Finance-linked external publisher, a valid
+ISO publication datetime from article metadata takes precedence. In its
+absence, Google Finance's relative hour/minute age is permitted only when
+the *whole uncertainty interval* belongs to the previous trading session;
+the visible post time is explicitly marked **approximate**, never presented
+as an exact timestamp. Conflicting publisher dates reject the article.
+
+Each verified news item contains a brief 1–2 sentence display summary drawn
+only from a relevant publisher description or the original news headline,
+source publisher, a safe HTTPS link and ET publication date/time. The two
+most recent distinct items are displayed per ticker. If no matching article
+can be dated reliably to that session, show an explicit no-verified-news
+message; if Google Finance fails, show temporarily unavailable. Do not
+invent headlines, event details, a news date or $0 valuation. The initial
+Google Finance page exposes only a limited recent-card window, which does
+**not** guarantee exhaustive coverage of all news from the previous session.
+
+The reader caches results for 15 minutes (5 minutes on failures), limits
+publisher requests to validated Google Finance card URLs, caps page sizes,
+uses timeouts and a single-flight cache, and holds each visible news projection
+stable for 60 seconds to preserve API/HTML fingerprint parity. The existing
+authenticated 60-second browser refresh updates Research Note links/text
+using safe DOM APIs; no new public endpoint or paid Render tier is used.
+The existing English/Russian authenticated routes remain unchanged; source
+article headlines/summaries retain their original publisher language.
+
+**Rollback:** revert the news-only PR and deploy the previous application SHA.
+Do not roll back frozen Engine 2 trading data or invoke the LEGACY source
+switch merely to remove news display. Validate Engine2+LEGACY full startup,
+news timestamp/relevance/HTML/URL regressions, EN/RU browser auth,
+exact Render deploy SHA, and authenticated live page/API readback.
+
+---
+
 ## Issue #388 — read-only Engine 2 production website valuation (deployed, 2026-11-11)
 
 Deployment record: production PR #393 merged as `c2b8faebcb051d617fe424cf1303d124e1e415eb`; Render `dep-dbqbdo0473hc73cookeg` reached LIVE at 2026-11-11T18:42:11Z. Final authenticated runtime quote/P&L parity is still UNVERIFIED because no refreshed logged-in request was observed; do not mistake the old open browser tab or passing fixture CI for that evidence. See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-ISSUE388.md` for the exact validation boundary.
