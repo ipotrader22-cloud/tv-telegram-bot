@@ -15,17 +15,19 @@ function renderShadowSwing(feed){
  const status=committed?'SHADOW REVIEW — NOT PUBLISHED':'INCEPTION ONLY — REVIEW NOT COMPLETE';
  const quoteTimes=Array.isArray(feed.quote_times)?feed.quote_times:[];
  const active=feed.active_portfolio.map(p=>{
-  const entry=Number(p.entry_price),quote=Number(p.current_model_reference_price);
-  const pnl=Number.isFinite(entry)&&entry>0&&Number.isFinite(quote)?10000*(quote/entry-1):NaN;
-  return '<tr><td data-label="Ticker"><strong>'+esc(p.ticker)+'</strong></td>'+
+  const entry=Number(p.entry_price),fresh=p.valuation_status==='FRESH_DELAYED';
+  const quote=Number.isFinite(p.current_valuation_price)?p.current_valuation_price:NaN;
+  const pnl=fresh&&Number.isFinite(entry)&&entry>0&&Number.isFinite(quote)?10000*(quote/entry-1):NaN;
+  const quoteLabel=fresh?'Delayed · '+(p.quote_timestamp_et||'Time unavailable'):(p.valuation_status||'UNAVAILABLE')+' · '+(p.quote_timestamp_et||'No verified quote');
+  return '<tr data-valuation-ticker="'+esc(p.ticker)+'"><td data-label="Ticker"><strong>'+esc(p.ticker)+'</strong></td>'+
    '<td data-label="Score">'+esc(p.score)+'</td>'+
    '<td data-label="Entry">'+money(entry)+'</td>'+
-   '<td data-label="Current">'+money(quote)+'</td>'+
+   '<td data-label="Current" data-valuation-field="price">'+money(quote)+' <small>'+esc(quoteLabel)+'</small></td>'+
    '<td data-label="Quantity">'+(entry>0?Math.floor(10000/entry):'—')+'</td>'+
    '<td data-label="TP">'+money(entry*1.10)+'</td>'+
    '<td data-label="SL">'+money(entry*.95)+'</td>'+
-   '<td data-label="P&L, $" class="'+(pnl>=0?'gain':'loss')+'">'+signed(pnl)+'</td>'+
-   '<td data-label="Return">'+percent(quote/entry-1)+'</td>'+
+   '<td data-label="P&L, $" data-valuation-field="pnl" class="'+(pnl>=0?'gain':'loss')+'">'+signed(pnl)+'</td>'+
+   '<td data-label="Return" data-valuation-field="return">'+(fresh?percent(quote/entry-1):'—')+'</td>'+
    '<td data-label="Research Note">'+esc((p.note||('Reviewed '+(p.last_full_review_date||'Unverified')))+(quoteTimes.find(q=>q.ticker===p.ticker)?' | Google quote '+quoteTimes.find(q=>q.ticker===p.ticker).timestamp:''))+'</td></tr>';
  }).join('');
  const closed=feed.closed_trades.map(p=>'<tr><td>'+esc(p.ticker)+'</td><td>'+money(p.entry_price)+'</td>'+
@@ -44,7 +46,7 @@ function renderShadowSwing(feed){
   const dots=vals.map((v,i)=>'<circle cx="'+x(i).toFixed(2)+'" cy="'+y(v).toFixed(2)+'" r="2.5" fill="#237b58"><title>'+esc(dated[i].date)+' · '+esc(signed(v))+'</title></circle>').join('');
   chartMarkup='<svg role="img" aria-label="Verified Engine 2 model equity history" class="equity-chart-svg" viewBox="0 0 680 215" width="100%" style="max-height:255px"><line x1="50" x2="650" y1="'+y(0).toFixed(2)+'" y2="'+y(0).toFixed(2)+'" stroke="#a4bfb3" stroke-dasharray="4 4"/><polyline fill="none" stroke="#237b58" stroke-width="3" points="'+points+'"/>'+dots+'<text x="50" y="208" fill="#647c70" font-size="11">'+esc(dated[0].date)+'</text><text x="650" y="208" text-anchor="end" fill="#647c70" font-size="11">'+esc(dated.at(-1).date)+'</text></svg>';
  }
- const modelPnl=committed?Number(feed.realized_model_pnl)+Number(feed.unrealized_model_pnl):NaN;
+ const modelPnl=committed&&Number.isFinite(feed.total_valuation_model_pnl)?feed.total_valuation_model_pnl:NaN;
  const fingerprint=feed.snapshot_id||createHash('sha256').update(JSON.stringify(feed)).digest('hex');
  const table=(headers,rows,empty)=>'<div class="table-wrap"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+
   (rows||'<tr><td class="empty" colspan="'+headers.length+'">'+esc(empty)+'</td></tr>')+'</tbody></table></div>';
@@ -56,7 +58,7 @@ function renderShadowSwing(feed){
  '<div class="hero">'+
  '<div class="intro"><div><div class="eyebrow">SWING TRADING</div><h1>Active Portfolio</h1>'+
  policyNotice+'<p class="intro-copy">Active Portfolio based on Vixale\'s proprietary ranking system.<br>Positions are reviewed daily using nine research factors.<br>Updated every morning around 10:00 am after independent verification.</p><div class="hero-actions"><a href="#active-portfolio">View Active Portfolio</a><a href="#closed-trades">View Swing Results</a></div><div class="snapshot-pill">'+esc(current||'Awaiting first review')+' · '+esc(feed.snapshot_time_et||'Inception')+' · Engine 2.0 staging</div></div></div>'+
- '<section class="section equity-chart-card" id="equity-history"><div class="eyebrow">EQUITY HISTORY</div><div class="section-heading"><h2>Portfolio P&amp;L</h2><div class="pnl-total"><small>Total P&amp;L</small><strong>'+signed(modelPnl)+'</strong></div></div>'+chartMarkup+'</section></div>'+
+ '<section class="section equity-chart-card" id="equity-history"><div class="eyebrow">EQUITY HISTORY</div><div class="section-heading"><h2>Portfolio P&amp;L</h2><div class="pnl-total"><small>Total P&amp;L</small><strong id="valuation-total">'+signed(modelPnl)+'</strong></div></div>'+chartMarkup+'</section></div>'+
  '<div class="notice" id="engine2-state" data-engine2-status="'+esc(feed.status)+'">'+esc(status)+
  ' · No broker orders or live website publication. '+(current?'Latest certified review: '+esc(current):'No certified review date available.')+'</div>'+
  '<div class="metrics"><div class="metric"><small>Active Portfolio</small><strong>'+esc(feed.active_count)+'</strong></div>'+
@@ -71,7 +73,7 @@ function renderShadowSwing(feed){
  '<section class="section" id="market-update"><h2>Market Update</h2>'+
  '<p class="section-sub">'+(committed?'Verified Engine 2.0 model review for '+esc(current)+'.':'Clean-slate inception. No independently verified morning ranking has been published.')+'</p></section>'+
  '<section class="section" id="active-portfolio"><div class="section-heading"><h2>Active Portfolio</h2></div>'+
- '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Prices are indicative where noted.</p>'+
+ '<p class="section-sub">Open model positions. Target +10% · Opening -5% · Score exit below 70. Quotes are delayed. Unrealized model P&amp;L is normalized to $10K per position, not rounded whole shares; morning decision marks remain frozen.</p>'+
  table(['Ticker','Score','Entry','Current','Quantity','TP','SL','P&L, $','Return','Research Note'],active,'No independently verified new positions.')+'</section>'+
  '<section class="section" id="potential-candidates"><h2>Candidates</h2>'+
  '<p class="section-sub">Candidate rankings appear only after complete, dated nine-factor research.</p>'+
@@ -79,7 +81,8 @@ function renderShadowSwing(feed){
  '<section class="section" id="closed-trades"><h2>Closed Trades</h2>'+
  table(['Ticker','Entry','Exit','Return','P&L, $','Entry Date','Exit Date','Last Score','Exit Reason'],closed,'No new-epoch closed trades.')+'</section>'+
  '<footer>Research/model portfolio only. Prices are reference marks, not broker fills. Published VIXALE model performance is separate from this development preview.<br>'+
- 'Preview snapshot SHA-256: <code id="model-snapshot-id">'+esc(fingerprint)+'</code></footer></main></body></html>';
+ 'Preview snapshot SHA-256: <code id="model-snapshot-id">'+esc(fingerprint)+'</code></footer></main>'+
+ '<script>(function(){const money=n=>Number.isFinite(n)?"$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";const signed=n=>Number.isFinite(n)?(n<0?"-":n>0?"+":"")+money(Math.abs(n)):"—";const pct=n=>Number.isFinite(n)?(n>0?"+":"")+(n*100).toFixed(2)+"%":"—";let pending=false;async function refresh(){if(pending||document.hidden)return;pending=true;try{const response=await fetch("/v2/model/snapshot",{cache:"no-store"});if(!response.ok)throw Error("unavailable");const data=await response.json();for(const p of data.active_portfolio||[]){const row=[...document.querySelectorAll("[data-valuation-ticker]")].find(x=>x.getAttribute("data-valuation-ticker")===p.ticker);if(!row)continue;const fresh=p.valuation_status==="FRESH_DELAYED",price=p.current_valuation_price;const put=(field,value)=>{const cell=row.querySelector("[data-valuation-field="+field+"]");if(cell)cell.textContent=value;};put("price",(Number.isFinite(price)?money(price):"—")+" · "+(p.valuation_status||"UNAVAILABLE")+" · "+(p.quote_timestamp_et||"No verified quote"));put("pnl",fresh?signed(p.unrealized_model_pnl):"—");put("return",fresh?pct(price/p.entry_price-1):"—");}const total=document.getElementById("valuation-total");if(total)total.textContent=signed(data.total_valuation_model_pnl);}catch{for(const row of document.querySelectorAll("[data-valuation-ticker]")){for(const field of ["price","pnl","return"]){const cell=row.querySelector("[data-valuation-field="+field+"]");if(cell)cell.textContent=field==="price"?"Quote unavailable · Last refresh failed":"—";}}const total=document.getElementById("valuation-total");if(total)total.textContent="—";}finally{pending=false;}}setInterval(refresh,60000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});})();</script></body></html>';
  return fullHtml;
 }
 module.exports={renderShadowSwing};
