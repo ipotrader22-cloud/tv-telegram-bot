@@ -1,4 +1,6 @@
-## Issue #388 — read-only Engine 2 production website valuation (release candidate, 2026-11-11)
+## Issue #388 — read-only Engine 2 production website valuation (deployed, 2026-11-11)
+
+Deployment record: production PR #393 merged as `c2b8faebcb051d617fe424cf1303d124e1e415eb`; Render `dep-dbqbdo0473hc73cookeg` reached LIVE at 2026-11-11T18:42:11Z. Final authenticated runtime quote/P&L parity is still UNVERIFIED because no refreshed logged-in request was observed; do not mistake the old open browser tab or passing fixture CI for that evidence. See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-ISSUE388.md` for the exact validation boundary.
 
 Production website and staging observer are **different services**. The isolated
 staging observer uses `engine-v2/intraday-valuation.cjs` and does not directly
