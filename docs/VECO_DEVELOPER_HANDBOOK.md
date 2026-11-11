@@ -1,4 +1,6 @@
-## Swing Active Portfolio — November 11 same-session news and clean valuation cells
+## Swing Active Portfolio — November 11 same-session news and clean valuation cells (deployed)
+
+Deployment evidence: PR #397 merged as `f54d09831656be8b7fc11e636591e5d92ecfa337`; production Render deployment `dep-dbqc4a1srm7s738a7330` reported LIVE at 2026-11-11T19:30:46Z. Swing Source Rollout and EN/RU CI passed. Authenticated post-deploy news-page readback is UNVERIFIED in this Chat session; refer to `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-TODAY-NEWS.md`.
 
 Owner clarification (November 11, 2026, 14:20 ET): Research Note should show
 the latest **today's** company news during a live NYSE session, not
