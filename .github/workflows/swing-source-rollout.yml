@@ -32,6 +32,8 @@ jobs:
           node tests/test_swing_model_pnl_precision.js
           node tests/test_swing_leaders_candidate_feed_compat.js
           node tests/test_engine2_equity_format.js
+          node tests/test_swing_reporting_inception.js
+          node --check lib/swing-reporting-equity.js
           node tests/test_swing_source_switch.js
           node tests/test_issue331_swing_auth.js
           node tests/test_swing_canonical_route_refinement.js
