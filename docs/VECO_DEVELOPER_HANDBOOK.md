@@ -1,3 +1,63 @@
+## ADR — Engine 2 Swing official reporting inception: November 11, 2026
+
+**Owner approval:** The owner explicitly selected the reporting-rebase option
+on November 11, 2026: count the normalized Swing Leaders equity curve from
+that date at $0, preserving every source Trading Lab row.
+
+**Confirmed live source:** The native Engine 2 Google Sheet
+`1Ii20kcegWWhQfz_RUrDe0OhfFG1y9TNjrEI1Xy6mqyA`, tab
+`Equity History` (sheet ID `177001100`), range `A1:G100`,
+was read directly and had the exact row:
+`2026-11-11 | 10:01 ET | ($1,011.37) realized | - unrealized |
+($1,011.37) total | $98,988.63 model_equity | 4 active`.
+Earlier rows include the original `2026-10-19 | INCEPTION | $0`,
+and `2026-11-05 | 10:02 ET | -$1,011.37`. These records remain
+immutable and continue to be independently validated by
+`parseEquityHistory`. The historical $1,011.37 drawdown is
+**not erased from the audit/source history**.
+
+**Reporting calculation (read-only):** only on Engine 2's authenticated
+website overlay, `lib/swing-reporting-equity.js` verifies the exact
+November 11, 10:01 ET row, including its frozen -$1,011.37 baseline,
+then publishes `reporting_equity_history` from that row onwards.
+For each subsequent original Trading Lab snapshot:
+`reported_model_pnl = original_total_model_pnl - (-1011.37)`,
+rounded to cents. The verified November 11 row is the original source
+record shown at reporting $0; no synthetic trades, no fabricated historical
+points and no interpolated dates. The original `equity_history` and
+`equity_history_latest_date` fields are untouched in the JSON response.
+The chart is labelled `Since Nov 11, 2026` and its first accessible
+point `2026-11-11 · Reporting inception (10:01 ET)`.
+If the anchor is missing, duplicated or has a different P&L, the chart
+**fails closed** with `BASELINE_UNAVAILABLE` and a visible unavailability
+message; never silently rebaseline to an alternate date or revert to
+the earlier October chart.
+
+The already approved $10K position model, historical P&L writer,
+source chart accounting, current intraday unrealized P&L, Closed Trades,
+research scoring, 518-stock universe, nine-factor selection, stops,
+targets, entry/exit decisions, broker/TWS, alerts, Telegram and trading
+logic are not modified. The `LEGACY` source's chart and feed remain
+unchanged. New JSON fields are additional, presentation-only:
+`reporting_inception_date`, `reporting_inception_time_et`,
+`reporting_baseline_model_pnl`, `reporting_equity_status`,
+`reporting_equity_history`. The date represents the *start of the
+published reporting period*, not the original research inception,
+and the rebasing is not a claim of a new broker account or fresh $100K
+capital allocation. Subsequent points remain original daily Trading
+Lab snapshots, not every-second intraday P&L updates.
+
+**Release gate:** test original inception validation, Nov 11 real source
+baseline, future relative gains/losses, no pre-Nov11 plot, missing/
+changed/duplicate anchor guards, legacy isolation, full Swing Source
+Rollout + production EN/RU browser QA, exact Render deploy SHA and
+authentic post-deploy page/API readback where available.
+Rollback: revert only the reporting projection and chart presentation
+PR through the normal GitHub/Render pipeline; no Sheet/ledger migration.
+**Handbook update required: YES.**
+
+---
+
 ## Swing Research Note — Google company-news coverage and pending fix (deployed 2026-11-11)
 
 Deployment evidence: PR #399 merged as `679dc99203d00f3793f5828f1705ded1057dd093`; production Render `dep-dbqci61srm7s738b18vg` reached LIVE on 2026-11-11T20:00:10Z. Full Swing Source Rollout and EN/RU CI passed, and a separate GitHub-hosted real-public-provider test returned articles for EXR, PSA, VTRS and AIZ. A new authenticated post-deploy EN/RU HTML/API comparison was not available within this Chat; see `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-NEWS-COVERAGE.md` for the exact verification boundary.
