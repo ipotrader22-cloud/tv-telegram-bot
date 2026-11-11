@@ -19,28 +19,38 @@ function createResearchRuntime({universeCsv,sectorByTicker,fetchFn=fetch,clock=(
   const data=[],companies=[],exclusions=[];
   let candidates=[...allCandidates];
   if(sourcePolicy==='GOOGLE'){
-   const sourced=await createGoogleChartSource({fetchFn,concurrency:configured.membership?4:1,
-    allowShortHistory:!!configured.membership,allowUnavailable:!!configured.membership}).getDailyMany({tickers:symbols,date});
-   for(const item of sourced){
-    if(item.unavailable){
-     if(!allCandidates.includes(item.ticker))throw Error('RESEARCH_BENCHMARK_UNAVAILABLE');
-     exclusions.push({ticker:item.ticker,reason:'PROVIDER_SYMBOL_UNAVAILABLE',
-      source:item.source,rawHash:item.rawHash,exchange:item.exchange,checkedAt:clock().toISOString()});
-     continue;
-    }
-    if(configured.membership&&allCandidates.includes(item.ticker)&&item.chart.timestamp.length<200){
-     // A newly listed index member remains in scope but cannot receive a score
-     // until the existing 200-bar rule is met. Source failures never become exclusions.
-     exclusions.push({ticker:item.ticker,reason:'INSUFFICIENT_200_COMPLETED_BARS',
-      completedDailyBars:item.chart.timestamp.length,source:item.source,rawHash:item.rawHash,
-      exchange:item.exchange,companyName:item.companyName,
-      lastCompleteDate:require('../scripts/swing-market-calendar').previousSession(date)});
-     continue;
-    }
-    const scored=analyze(item.chart,date,{completedSessionOnly});
-    data.push({source:item.source,exchange:item.exchange,companyName:item.companyName,
-     rawHash:item.rawHash,...scored});
-   }
+   // Each 4-symbol response is certified then discarded before the next is
+   // admitted. Preserve manifest order even when bounded requests complete
+   // out of order. The raw per-candle source hashes still attest full history.
+   const chunks=[];
+   await createGoogleChartSource({fetchFn,concurrency:configured.membership?4:1,
+    allowShortHistory:!!configured.membership,allowUnavailable:!!configured.membership})
+    .getDailyMany({tickers:symbols,date,onBatch:(sourced,index)=>{
+     const groupData=[],groupExclusions=[];
+     for(const item of sourced){
+      if(item.unavailable){
+       if(!allCandidates.includes(item.ticker))throw Error('RESEARCH_BENCHMARK_UNAVAILABLE');
+       groupExclusions.push({ticker:item.ticker,reason:'PROVIDER_SYMBOL_UNAVAILABLE',
+        source:item.source,rawHash:item.rawHash,exchange:item.exchange,checkedAt:clock().toISOString()});
+       continue;
+      }
+      if(configured.membership&&allCandidates.includes(item.ticker)&&item.chart.timestamp.length<200){
+       groupExclusions.push({ticker:item.ticker,reason:'INSUFFICIENT_200_COMPLETED_BARS',
+        completedDailyBars:item.chart.timestamp.length,source:item.source,rawHash:item.rawHash,
+        exchange:item.exchange,companyName:item.companyName,
+        lastCompleteDate:require('../scripts/swing-market-calendar').previousSession(date)});
+       continue;
+      }
+      const scored=analyze(item.chart,date,{completedSessionOnly});
+      groupData.push({source:item.source,exchange:item.exchange,companyName:item.companyName,
+       rawHash:item.rawHash,...scored,
+       // The nine-factor model and opening/target checks need at most 200
+       // completed daily bars. Earlier bars remain attested by rawHash.
+       ...(configured.membership?{bars:scored.bars.slice(-200)}:{})});
+     }
+     chunks[index]={data:groupData,exclusions:groupExclusions};
+    }});
+   for(const group of chunks){data.push(...group.data);exclusions.push(...group.exclusions);}
    candidates=candidates.filter(t=>!exclusions.some(e=>e.ticker===t));
   }else for(let i=0;i<symbols.length;i+=4){
    const batch=await Promise.all(symbols.slice(i,i+4).map(async ticker=>{
