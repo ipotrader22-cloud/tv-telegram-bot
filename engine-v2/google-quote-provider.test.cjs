@@ -190,3 +190,15 @@ test('expanded quote grid reads row 519 and preserves BATS identity and strict f
  row.values[1].userEnteredValue.formulaValue='=100';
  await assert.rejects(createGoogleQuoteProvider({api,clock}).getQuotes({date,tickers:['CBOE']}),/FORMULA_INVALID/);
 });
+
+test('Issue #388 read-only partial coverage skips unverified tickers but decision default fails closed',async()=>{
+ const data=gridFixture(),api={spreadsheets:{get:async()=>({data})}};
+ const p=createGoogleQuoteProvider({api,clock:()=>new Date(runAt)});
+ const partial=await p.getQuotes({date,tickers:['AMD','AIZ'],allowPartial:true});
+ assert.deepEqual(partial.map(q=>q.ticker),['AMD']);
+ await assert.rejects(()=>p.getQuotes({date,tickers:['AMD','AIZ']}),/GOOGLE_QUOTE_MISSING/);
+ const broken=gridFixture();
+ broken.sheets[0].data[0].rowData[1].values[1].effectiveValue={numberValue:0};
+ assert.deepEqual(await createGoogleQuoteProvider({api:{spreadsheets:{get:async()=>({data:broken})}},clock:()=>new Date(runAt)}).getQuotes({date,tickers:['AMD'],allowPartial:true}),[]);
+ await assert.rejects(()=>createGoogleQuoteProvider({api:{spreadsheets:{get:async()=>({data:broken})}},clock:()=>new Date(runAt)}).getQuotes({date,tickers:['AMD']}),/GOOGLE_QUOTE_STALE_OR_INVALID/);
+});

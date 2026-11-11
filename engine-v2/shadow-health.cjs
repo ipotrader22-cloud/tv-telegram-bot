@@ -12,6 +12,7 @@ const {pollRenderQuoteStatus}=require('./render-quote-observer.cjs');
 const {checkMinuteFeed}=require('./live-quote-probe.cjs');
 const {readShadowPublicFeed}=require('./shadow-public-feed.cjs');
 const {renderShadowSwing}=require('./shadow-swing-page.cjs');
+const {createValuationReader}=require('./intraday-valuation.cjs');
 const {compareStored}=require('./shadow-compare.cjs');
 const {getLiveSnapshot,compareImported}=require('./live-sheet-check.cjs');
 const {saveSummary}=require('./compare-history.cjs');
@@ -29,6 +30,10 @@ let stagingAccess={workbook:'PENDING',writesPerformed:false};
 require('./staging-preflight.cjs').stagingPreflight().then(result=>{stagingAccess=result})
  .catch(()=>{stagingAccess={workbook:'PREFLIGHT_FAILED',writesPerformed:false}});
 const readPreview=async()=>await stagingWorker.store.publishedFeed()||await readShadowPublicFeed({url});
+// This observer is read-only and independent of the immutable 10:00 decision worker.
+const readValuedPreview=createValuationReader({readFeed:readPreview,
+ api:process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON?
+ require('./staging-sheets-publisher.cjs').createSheetsClient(process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON):null});
 async function inspect(){
  const client=new Client({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:5000});
  await client.connect();
@@ -91,7 +96,7 @@ async function googleProbe(){
 const server=http.createServer((req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  if(req.method==='GET'&&path==='/v2/swing-trading'){
-  readPreview().then(snapshot=>{
+  readValuedPreview().then(snapshot=>{
    const html=renderShadowSwing(snapshot);
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff'});
    res.end(html);
@@ -103,7 +108,7 @@ const server=http.createServer((req,res)=>{
  }
 
  if(req.method==='GET'&&path==='/v2/model/snapshot'){
-  readPreview().then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
+  readValuedPreview().then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'SHADOW_LEDGER_READ_UNAVAILABLE',published:false}))});
   return;
  }

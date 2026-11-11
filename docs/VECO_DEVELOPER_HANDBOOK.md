@@ -1,3 +1,63 @@
+## ADR — Engine 2 isolated intraday valuation (Issue #388, 2026-11-11)
+
+Handbook update required: YES. The morning Engine 2 decision mark stored as
+`currentPrice` is an immutable model reference, not a continuing intraday quote.
+`engine-v2/intraday-valuation.cjs` adds read-only valuation to the staging
+observer (`shadow-health.cjs`) and its `/v2/model/snapshot` and
+`/v2/swing-trading` presentation endpoints. It does not mutate the
+`staging_pipeline`, `clean_daily_state`, Open Positions, Public Feed,
+Equity History, or any historical decision. No broker, Telegram, UAM,
+emails or research/scoring paths are involved.
+
+Source: the approved staging `Engine 2 Quotes` A:F formula grid, accessed
+through the existing staging service-account reader and checked against its
+sheet ID, timezone, exact provider formulas, ticker/exchange identity,
+timestamp, delay (0–20 minutes), positive price and volume. An opt-in
+`allowPartial` option returns individual valid quotes without relaxing the
+all-or-nothing default used by morning trading decisions. One bounded grid
+read covers all open positions (maximum ten), cached for 60 seconds per
+observer process. Each request re-assesses quote age (maximum 20 minutes),
+NYSE regular-session status and same-session timestamp. Missing, future,
+invalid, out-of-session or stale quotes never generate fresh model P&L.
+On upstream failure the observer can display the last observed price with
+its original timestamp and STALE status, but the computed current P&L is
+null. An observer restart with no retained observations reports UNAVAILABLE.
+Partial coverage returns per-position status plus null aggregate P&L.
+
+Public staging-only feed fields: `entry_price` and
+`current_model_reference_price` remain immutable morning values;
+`current_valuation_price`, `quote_timestamp_et` (formatted New York time),
+`quote_timestamp_utc` (ISO UTC instant), `quote_source`,
+`quote_delay_minutes`, `valuation_status`,
+`unrealized_model_pnl`, `unrealized_share_pnl`,
+`model_quantity_shares`, `valuation_coverage` and
+`valuation_as_of` are derived read-only. Fresh delayed statuses
+are `FRESH_DELAYED`; otherwise `STALE` or `UNAVAILABLE`.
+The $10,000-normalized model P&L uses
+`10000*(current_valuation_price/entry_price - 1)`, while the
+visible integer share quantity is `floor(10000/entry_price)`;
+share-based P&L is disclosed separately. Aggregate P&L and valuation
+equity are emitted only for complete fresh coverage; immutable
+morning model equity and historical equity series are not overwritten.
+
+The staging page initially renders the same decorated API snapshot, then
+polls `/v2/model/snapshot` every 60 seconds (when visible) without reloading
+the browser. A network failure blanks stale-looking P&L instead of implying
+$0. Testing covers AIZ's 31-share display, $10K normalized amount, rises,
+falls, opening equality, missing/stale/wrong-provider timestamps, partial
+coverage, outage behavior, after-hours, source immutability and DOM polling.
+
+**Deployment boundary:** staging branch
+`engine-v2-shadow-foundation-20261016` only; do not merge to `main`.
+Neither these source changes nor passing CI certify a fresh live Google
+quote. Promotion requires actual staging Render deploy SHA/health and
+timestamped AIZ/all-open quote/API/HTML readback during the NYSE session.
+No new paid tier, environment variable or SQL schema is required.
+Rollback: revert Issue #388 on the staging branch and redeploy the
+previous observed staging SHA. Production remains unchanged.
+
+---
+
 ## Engine 2 PostgreSQL evidence memory — 2026-11-11
 
 Handbook update required: YES. PR386 brought cron RSS below 512 MiB, but
