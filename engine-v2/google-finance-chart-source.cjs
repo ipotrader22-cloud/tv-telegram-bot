@@ -122,7 +122,9 @@ function createGoogleChartSource({fetchFn=fetch,concurrency=1,allowShortHistory=
   }
   throw Error('GOOGLE_CHART_RPC_REJECTED');
  }
- async function getDailyMany({tickers,date}={}){
+ async function getDailyMany({tickers,date,onBatch}={}){
+  // Optional bounded consumer prevents keeping 518 full chart copies in memory.
+  if(onBatch!==undefined&&typeof onBatch!=='function')throw Error('GOOGLE_CHART_CONSUMER_INVALID');
   if(!Array.isArray(tickers)||!tickers.length||new Set(tickers).size!==tickers.length)
    throw Error('GOOGLE_CHART_REQUEST_INVALID');
   const sourceDate=previousSession(safeDate(date)),first=new Date(Date.parse(sourceDate+'T00:00:00Z')-440*86400000).toISOString().slice(0,10);
@@ -130,9 +132,9 @@ function createGoogleChartSource({fetchFn=fetch,concurrency=1,allowShortHistory=
   // Convert each bounded response immediately rather than retaining every full
   // Google daily-row object until all index members have been downloaded.
   // Output order, strict validation, hashes and source timestamps are unchanged.
-  const results=await boundedMap(chunks,concurrency,async group=>{
+  const results=await boundedMap(chunks,concurrency,async(group,index)=>{
    const series=await query(group,{fromDate:first,throughDate:sourceDate,interval:'1day'});
-   return series.map(s=>{
+   const mapped=series.map(s=>{
    if(s.unavailable)return {ticker:s.ticker,exchange:s.exchange,unavailable:true,
     source:'GOOGLE_FINANCE_CHART_1DAY',rawHash:s.sourceHash};
    if(s.rows.at(-1)?.date!==sourceDate||(!allowShortHistory&&s.rows.length<200))
@@ -150,8 +152,12 @@ function createGoogleChartSource({fetchFn=fetch,concurrency=1,allowShortHistory=
       low:s.rows.map(c=>c.low),close:s.rows.map(c=>c.close),
       volume:s.rows.map(c=>c.volume)}]}}};
    });
+   // Await processing before admitting another chunk. The consumer must not
+   // retain raw chart payloads; boundedMap still propagates its failures.
+   if(onBatch){await onBatch(mapped,index);return null;}
+   return mapped;
   });
-  return results.flat();
+  return onBatch?undefined:results.flat();
  }
  async function getMinuteHistory({ticker,fromDate,throughDate}={}){
   const [series]=await query([ticker],{fromDate,throughDate,interval:'1min'});

@@ -1,3 +1,36 @@
+## Engine 2 index research bounded-memory source preparation — 2026-11-11
+
+Handbook update required: YES. After the 518-member Google Finance rollout,
+the isolated 512-MiB Render cron repeatedly exhausted resident memory during
+preopen, including with the November 10 PR #385 raw-object compaction. The
+November 11 live memory chart corroborated RSS reaching the Render limit; a
+passing full-universe unit test was not proof of real-Render memory safety.
+
+The Google daily source supports an optional bounded `onBatch` consumer.
+For the index-universe staging runtime only, each four-symbol response is
+validated and immediately analyzed, then the full source chart is released
+before the next bounded response is admitted. Chunk indexes preserve the exact
+universe/benchmark order under concurrent completion; provider or consumer
+failures remain fail-closed. Only the latest 200 *completed daily bars* are
+retained per certified symbol in the prepared research artifact; the existing
+raw source hash still attests the full validated original series. The existing
+OHLCV metrics, nine-factor scores, all 518 membership/exclusion checks, data
+provider, current-session 09:30 and 09:31+ opening/target evidence, prior
+immutable artifacts, fixed-$10K accounting, Q/R and website publication
+contracts are unchanged. No fallback to unverifiable history is allowed.
+
+Regression: Engine 2 index tests verify full universe coverage, deterministic
+batch order and source equality, 200-bar retained evidence, provider failure
+behavior and scoring. CI includes a constrained 320-MiB Node heap test but
+must also pass full exact-head Engine 2 Shadow Tests including disposable
+PostgreSQL. Stage ONLY into `engine-v2-shadow-foundation-20261016`; after CI
+and an isolated cron/observer deployment, inspect actual Render peak RSS,
+preopen result and one real 10:00 model decision/DB/Sheet/API parity. If OOM
+continues, profile the next memory retention layer instead of claiming
+completion, loosening data gates or backdating a missed review.
+Rollback: redeploy prior staging SHA `5b34c108da497b060aa9b450c543ea117cc7be7c`.
+No main merge, live website source switch or customer email authorization.
+
 ## Engine 2 index universe expansion — 2026-11-08
 
 Handbook update required: YES. Owner requested S&P 500 union Nasdaq 100.
