@@ -1,5 +1,28 @@
 ## ADR — Engine 2 Swing official reporting inception: November 11, 2026
 
+**Production deployment evidence (2026-11-11):** Reporting-curve
+PR #401 merged as `15ef62aae0466565cbb40753c465f7f7644529f4`,
+and Render production deployment `dep-dbqee32vcj2c73eqrcng`
+reached **LIVE**. The exact-head Swing Source Rollout
+`43108814957` and EN/RU locale-contract `43108814456` passed.
+Subsequent nonapplication PRs #402–#405 corrected GitHub Actions
+Ubuntu 26.04 incompatibility with pinned Playwright 1.55,
+anonymous protected-route navigation checks, the incorrect public
+200 assumption for `/api/swing-leaders`, and an owner-copy smoke
+check assuming a publicly accessible Swing hero. Final
+`43112955948` completed **SUCCESS** for both locale-contract
+and actual Playwright browser-qa jobs (EN/RU navigation, guarded
+Swing access, Trading Guide PDF, RU Services).
+The anonymous Swing page redirects HTTP 302 to login and
+`/api/swing-leaders` denies unauthenticated requests with HTTP 401.
+The anonymous check is explicitly
+`AUTH_GATE_VERIFIED_PARITY_NOT_CHECKED`, **not** an authenticated
+HTML/API parity success. A new signed-in viewer session was not
+available for independent production screenshot/API evidence;
+this remains **UNVERIFIED**. See
+`PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-REPORTING-INCEPTION.md`.
+
+
 **Owner approval:** The owner explicitly selected the reporting-rebase option
 on November 11, 2026: count the normalized Swing Leaders equity curve from
 that date at $0, preserving every source Trading Lab row.
