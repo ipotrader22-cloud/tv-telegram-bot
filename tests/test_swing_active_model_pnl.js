@@ -73,14 +73,14 @@ assert(out.includes(`const API_PATH=${JSON.stringify(QUOTE_API_PATH)}`), "client
 assert(out.includes(`const REFRESH_MS=${QUOTE_REFRESH_MS}`), "client refresh cadence must be explicit");
 assert(out.includes('fetch(API_PATH,{credentials:"same-origin",cache:"no-store",headers:{Accept:"application/json","Cache-Control":"no-cache"}})'), "client must poll the existing same-origin Swing endpoint");
 assert(out.includes('rows.length!==active.length||feed.size!==active.length'), "client must not mix quotes across changed portfolio membership");
-assert(out.includes('sameEntry(item.entry,moneyNumber(quote.entry_price))'), "client must not apply quotes to a different entry instance");
+assert(out.includes('sameEntry(item.entry,moneyNumber(q.entry_price))'), "client must not apply quotes to a different entry instance");
 assert(out.includes('td[data-label="Current"]'), "client must update Current cells");
 assert(out.includes('td[data-label="Return"]'), "client must update Return cells");
 assert(out.includes('td[data-label="P&L, $"]'), "client must update row dollar P&L");
 assert(out.includes('section.querySelector(".section-metric strong")'), "client must update aggregate Unrealized Model P&L from the same API snapshot");
-assert(out.includes('const realized=Number(data.closed_realized_model_pnl)'), "client must use the existing realized Model P&L field for the current total");
+assert(out.includes('const realized=data.closed_realized_model_pnl'), "client must use the existing realized Model P&L field for the current total");
 assert(out.includes('document.querySelector(".vx-current-model-pnl")'), "client must update the current Total Model P&L summary");
-assert(out.includes('const total=aggregate+realized'), "current total must be Unrealized plus Realized Model P&L");
+assert(out.includes('amount!==null&&typeof realized==="number"&&Number.isFinite(realized)?amount+realized:null'), "current total must be Unrealized plus Realized Model P&L");
 assert(out.includes('document.visibilityState==="hidden"'), "hidden tabs must not poll continuously");
 assert(out.includes('<h2>Closed Trades</h2>'), "Closed Trades section must remain intact");
 assert.strictEqual(enhanceActivePortfolioTable(out), out, "refinement must be idempotent");

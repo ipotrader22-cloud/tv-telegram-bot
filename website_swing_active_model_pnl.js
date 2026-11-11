@@ -35,7 +35,59 @@ const formatAxisMoney=value=>{const n=Number(value);if(!Number.isFinite(n))retur
 const activeSection=()=>document.getElementById("active-portfolio")?.closest("section.section")||null;
 const displayedRows=section=>Array.from(section.querySelectorAll("tbody tr")).map(row=>{const ticker=clean(row.querySelector('td[data-label="Ticker"] strong')?.textContent).toUpperCase();const entry=Number(row.dataset.vxModelEntryPrice);return{row,ticker,entry}}).filter(item=>item.ticker&&Number.isFinite(item.entry));
 const sameEntry=(left,right)=>Number.isFinite(left)&&Number.isFinite(right)&&Math.abs(left-right)<0.005;
-const refresh=async()=>{if(document.visibilityState==="hidden")return;const section=activeSection();if(!section)return;try{const response=await fetch(API_PATH,{credentials:"same-origin",cache:"no-store",headers:{Accept:"application/json","Cache-Control":"no-cache"}});if(!response.ok)return;const data=await response.json();const active=Array.isArray(data?.active_portfolio)?data.active_portfolio:null;if(!active)return;const rows=displayedRows(section);const feed=new Map(active.map(item=>[clean(item?.ticker).toUpperCase(),item]));if(rows.length!==active.length||feed.size!==active.length)return;for(const item of rows){const quote=feed.get(item.ticker);if(!quote||!sameEntry(item.entry,moneyNumber(quote.entry_price)))return}for(const item of rows){const quote=feed.get(item.ticker);const current=moneyNumber(quote.current_price);const returnPct=percentNumber(quote.return_pct);if(!Number.isFinite(current)||!Number.isFinite(returnPct))continue;const currentCell=item.row.querySelector('td[data-label="Current"]');const returnCell=item.row.querySelector('td[data-label="Return"]');const pnlCell=item.row.querySelector('td[data-label="P&L, $"]');if(currentCell)currentCell.textContent=clean(quote.current_price);if(returnCell){returnCell.textContent=clean(quote.return_pct);setState(returnCell,returnPct)}const shares=ALLOCATION/item.entry;const pnl=(current-item.entry)*shares;if(pnlCell&&Number.isFinite(pnl)){pnlCell.textContent=money(pnl);setState(pnlCell,pnl)}}const aggregate=Number(data.active_unrealized_model_pnl);const metric=section.querySelector(".section-metric strong");if(metric&&Number.isFinite(aggregate)){metric.textContent=money(aggregate);setState(metric,aggregate)}const realized=Number(data.closed_realized_model_pnl);const totalMetric=document.querySelector(".vx-current-model-pnl");const total=aggregate+realized;if(totalMetric&&Number.isFinite(aggregate)&&Number.isFinite(realized)){totalMetric.textContent=money(total);setState(totalMetric,total)}section.dataset.vxQuoteRefreshAt=new Date().toISOString()}catch(_){}};
+const valuationRows=section=>displayedRows(section);
+const invalidate=section=>{
+ if(!section?.querySelector(".vx-valuation-evidence"))return;
+ for(const item of valuationRows(section)){
+  const current=item.row.querySelector('td[data-label="Current"]');
+  const profit=item.row.querySelector('td[data-label="P&L, $"]');
+  const ret=item.row.querySelector('td[data-label="Return"]');
+  if(current){current.textContent="—";const note=document.createElement("span");note.className="vx-valuation-evidence";note.textContent="UNAVAILABLE · Google quote refresh failed";current.appendChild(note)}
+  if(profit){profit.textContent="—";setState(profit,0)}
+  if(ret){ret.textContent="—";setState(ret,0)}
+ }
+ const metric=section.querySelector(".section-metric strong");if(metric){metric.textContent="—";setState(metric,0)}
+ const total=document.querySelector(".vx-current-model-pnl");if(total){total.textContent="—";setState(total,0)}
+};
+const refresh=async()=>{
+ if(document.visibilityState==="hidden")return;
+ const section=activeSection();if(!section)return;
+ try{
+  const response=await fetch(API_PATH,{credentials:"same-origin",cache:"no-store",headers:{Accept:"application/json","Cache-Control":"no-cache"}});
+  if(!response.ok)throw Error("QUOTE_REFRESH_HTTP_FAILED");
+  const data=await response.json(),active=Array.isArray(data?.active_portfolio)?data.active_portfolio:null;
+  if(!active)throw Error("QUOTE_REFRESH_FEED_MISSING");
+  const rows=valuationRows(section),feed=new Map(active.map(item=>[clean(item?.ticker).toUpperCase(),item]));
+  if(rows.length!==active.length||feed.size!==active.length)throw Error("QUOTE_REFRESH_MEMBERSHIP_CHANGED");
+  for(const item of rows){const q=feed.get(item.ticker);if(!q||!sameEntry(item.entry,moneyNumber(q.entry_price)))throw Error("QUOTE_REFRESH_ENTRY_CHANGED")}
+  const projected=data.valuation_read_only===true;
+  if(section.querySelector(".vx-valuation-evidence")&&!projected)throw Error("QUOTE_REFRESH_PROJECTION_MISSING");
+  for(const item of rows){
+   const quote=feed.get(item.ticker);
+   const fresh=projected&&["FRESH_DELAYED","FRESH_MINUTE_BAR"].includes(quote.valuation_status);
+   const current=projected?quote.current_valuation_price:moneyNumber(quote.current_price);
+   const ret=projected?quote.valuation_return_pct:percentNumber(quote.return_pct);
+   const pnl=projected?quote.unrealized_model_pnl:(current-item.entry)*(ALLOCATION/item.entry);
+   const valid=Number.isFinite(current)&&current>0&&Number.isFinite(ret)&&Number.isFinite(pnl)&&(!projected||fresh);
+   const currentCell=item.row.querySelector('td[data-label="Current"]');
+   const returnCell=item.row.querySelector('td[data-label="Return"]');
+   const pnlCell=item.row.querySelector('td[data-label="P&L, $"]');
+   if(currentCell){
+    currentCell.textContent=valid?(projected?"$"+current.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):clean(quote.current_price)):"—";
+    if(projected){const note=document.createElement("span");note.className="vx-valuation-evidence";note.textContent=(quote.valuation_status||"UNAVAILABLE")+" · "+(quote.quote_source||"Google quote unavailable")+(quote.valuation_price_kind==="COMPLETED_MINUTE_BAR_CLOSE"?" · completed 1-minute close":Number.isFinite(quote.quote_delay_minutes)?" · "+quote.quote_delay_minutes+"m delay":"")+" · "+(quote.quote_timestamp_et||"No verified timestamp");currentCell.appendChild(note)}
+   }
+   if(returnCell){returnCell.textContent=valid?(projected?(ret>0?"+":"")+ret.toFixed(2)+"%":clean(quote.return_pct)):"—";setState(returnCell,valid?ret:0)}
+   if(pnlCell){pnlCell.textContent=valid?money(pnl):"—";setState(pnlCell,valid?pnl:0)}
+  }
+  const aggregate=data.active_unrealized_model_pnl;
+  const amount=typeof aggregate==="number"&&Number.isFinite(aggregate)?aggregate:null;
+  const metric=section.querySelector(".section-metric strong");
+  if(metric){metric.textContent=amount===null?"—":money(amount);setState(metric,amount??0)}
+  const realized=data.closed_realized_model_pnl,totalMetric=document.querySelector(".vx-current-model-pnl");
+  if(totalMetric){const total=amount!==null&&typeof realized==="number"&&Number.isFinite(realized)?amount+realized:null;totalMetric.textContent=total===null?"—":money(total);setState(totalMetric,total??0)}
+  section.dataset.vxQuoteRefreshAt=new Date().toISOString();
+ }catch(_){invalidate(section)}
+};
 let timer=null;
 const start=()=>{if(timer!==null)return;enhanceEquityChart();refresh();timer=window.setInterval(()=>{enhanceEquityChart();refresh()},REFRESH_MS)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
@@ -63,6 +115,7 @@ function formatShares(value) {
 }
 
 function formatMoney(value) {
+  if (value === null || value === undefined) return "—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
   const absolute = Math.abs(number).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -117,9 +170,9 @@ function enhanceCurrentModelPnl(html) {
   if (typeof html !== "string" || html.includes('class="vx-current-model-pnl ')) return html;
   const unrealized = sectionMetricValue(html, "Active Portfolio");
   const realized = sectionMetricValue(html, "Closed Trades");
-  if (!Number.isFinite(unrealized) || !Number.isFinite(realized)) return html;
+  if (!Number.isFinite(realized)) return html;
 
-  const total = unrealized + realized;
+  const total = Number.isFinite(unrealized) ? unrealized + realized : null;
   return html.replace(
     /(<div\b[^>]*class=["'][^"']*\bequity-chart-head\b[^"']*["'][^>]*>\s*<div>\s*<small>\s*Equity History\s*<\/small>\s*<strong>\s*Model P&amp;L\s*<\/strong>\s*<\/div>\s*)<span\b[^>]*>[\s\S]*?<\/span>(\s*<\/div>)/i,
     (_match, before, after) => `${before}<div class="vx-current-model-pnl-wrap"><small>Total Model P&L</small><span class="vx-current-model-pnl ${pnlClass(total)}">${formatMoney(total)}</span></div>${after}`
@@ -135,10 +188,10 @@ function enhanceActiveRow(rowHtml) {
   if (!entryCell || !currentCell) return rowHtml;
 
   const entryPrice = parseMoney(entryCell[1]);
-  const currentPrice = parseMoney(currentCell[1]);
+  const currentPrice = /^\s*—/.test(currentCell[1]) ? NaN : parseMoney(currentCell[1]);
   const shares = modelShares(entryPrice);
   const pnl = modelOpenPnl(entryPrice, currentPrice);
-  if (!Number.isFinite(shares) || !Number.isFinite(pnl)) return rowHtml;
+  if (!Number.isFinite(shares)) return rowHtml;
 
   const insertion = `<td data-label="Quantity" class="vx-model-shares">${formatShares(shares)}</td>`
     + `<td data-label="TP" class="vx-model-reference-price">${formatReferencePrice(entryPrice * 1.10)}</td>`

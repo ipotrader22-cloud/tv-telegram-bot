@@ -7,6 +7,7 @@ on:
       - 'website_swing*.js'
       - 'tests/test_swing*.js'
       - 'tests/test_engine2_equity_format.js'
+      - 'tests/test_issue388_production_intraday.js'
       - 'app.js'
       - 'package.json'
       - '.github/workflows/swing-source-rollout.yml'
@@ -36,6 +37,11 @@ jobs:
           node tests/test_swing_canonical_route_refinement.js
           node tests/test_swing_equity_live_refresh.js
           node tests/test_swing_active_model_pnl.js
+          node tests/test_issue388_production_intraday.js
+          node --check lib/swing-intraday-valuation.js
+          node --check lib/swing-leaders-core.js
+          node --check lib/swing-leaders.js
+          node --check website_swing_active_model_pnl.js
       - name: Full startup HTTP with Engine 2 selected
         run: VIXALE_SWING_SOURCE=ENGINE2 node tests/test_swing_source_http.js
       - name: Full startup HTTP after legacy rollback
