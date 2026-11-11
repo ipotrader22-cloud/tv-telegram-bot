@@ -41,6 +41,7 @@ function normalizeCompletedMinute({ticker,bars,sourceHash,now}={}){
   const startEt=localET(b.start);
   return startEt.date===et.date&&startEt.minute>=570;
  });
+ eligible.sort((a,b)=>Date.parse(a.end)-Date.parse(b.end));
  const last=eligible.at(-1);
  if(!last)return null;
  return {ticker,price:last.close,timestamp:last.end,provider:CHART_PROVIDER,
@@ -82,7 +83,7 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
  const unrealized=allFresh?aggregate:null;
  const count=active.filter(p=>p.valuation_status==='FRESH_DELAYED'||p.valuation_status==='FRESH_MINUTE_BAR').length;
  return {...feed,active_portfolio:active,valuation_as_of:instant.toISOString(),
-  valuation_status:active.length===0?'NO_OPEN_POSITIONS':allFresh?'FRESH_GOOGLE_VALUATION':count?'PARTIAL':'UNAVAILABLE_OR_STALE',
+  valuation_status:active.length===0?'NO_OPEN_POSITIONS':allFresh?(active.every(p=>p.valuation_status==='FRESH_DELAYED')?'FRESH_DELAYED':'FRESH_GOOGLE_VALUATION'):count?'PARTIAL':'UNAVAILABLE_OR_STALE',
   valuation_coverage:count,unrealized_model_pnl:unrealized,
   current_valuation_model_equity:unrealized===null?null:100000+feed.realized_model_pnl+unrealized,
   total_valuation_model_pnl:unrealized===null?null:feed.realized_model_pnl+unrealized,
