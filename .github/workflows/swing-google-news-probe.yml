@@ -1,0 +1,19 @@
+name: Swing Google Finance News Diagnostics
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/swing_google_news_probe.cjs'
+      - '.github/workflows/swing-google-news-probe.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node tests/swing_google_news_probe.cjs
