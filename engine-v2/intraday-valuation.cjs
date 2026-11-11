@@ -6,6 +6,7 @@ const {createGoogleQuoteProvider}=require('./google-quote-provider.cjs');
 const {createSheetsClient}=require('./staging-sheets-publisher.cjs');
 const TTL_MS=60000;
 const MAX_AGE_MS=20*60000;
+function etStamp(iso){const d=new Date(iso);if(!Number.isFinite(d.getTime()))return null;const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d);const get=k=>parts.find(x=>x.type===k)?.value;return get('year')+'-'+get('month')+'-'+get('day')+' '+get('hour')+':'+get('minute')+':'+get('second')+' ET';}
 function composeValuation(feed,quotes,{now=new Date()}={}){
  if(!feed||feed.version!==2||!Array.isArray(feed.active_portfolio))throw Error('VALUATION_FEED_INVALID');
  const instant=now instanceof Date?now:new Date(now),at=instant.getTime();
@@ -35,7 +36,7 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
   const sharePnl=fresh&&Number.isFinite(qty)?qty*(price-entry):null;
   if(pnl===null)allFresh=false;else aggregate+=pnl;
   return {...p,model_quantity_shares:qty,current_valuation_price:price,
-   quote_timestamp_et:known?q.timestamp:null,quote_source:known?'GOOGLEFINANCE':null,
+   quote_timestamp_et:known?etStamp(q.timestamp):null,quote_timestamp_utc:known?q.timestamp:null,quote_source:known?'GOOGLEFINANCE':null,
    quote_delay_minutes:known?q.delayMinutes:null,valuation_status:status,
    unrealized_model_pnl:pnl,unrealized_share_pnl:sharePnl};
  });
@@ -56,8 +57,8 @@ function createValuationReader({readFeed,api,clock=()=>new Date(),provider}={}){
   const feed=await readFeed(),now=clock(),tickers=feed.active_portfolio.map(p=>p.ticker);
   const key=tickers.join('|');
   if(identity!==key){cache=null;stamp=0;identity=key;}
-  if(tickers.length&&!quoteProvider)throw Error('VALUATION_PROVIDER_NOT_CONFIGURED');
-  if(tickers.length&&(!cache||now.getTime()-stamp>=TTL_MS)&&!flight){
+  // Missing observer credential is reported as unavailable, never substituted.
+  if(tickers.length&&quoteProvider&&(!cache||now.getTime()-stamp>=TTL_MS)&&!flight){
    flight=(async()=>{
     try{
      // One bounded Sheets grid-read for every open ticker; no 518-stock intraday scan.
