@@ -1,22 +1,23 @@
 ## Issue #388 staging HTML/API parity follow-up — 2026-11-11
 
-The external verifier must not demand byte-for-byte equality between HTML
-rendered at T1 and a distinct JSON API response read at T2. Google valuation
-updates independently in the observer, so such a comparison is a false failure
-even when both responses correctly describe different verified observations.
-The staging HTML now embeds its exact public-only render feed as escaped,
-inert application/json. The external parity gate reconstructs HTML exactly
-from that embedded feed, then separately compares its immutable snapshot
-fingerprint, portfolio membership, entry values and frozen decision marks
-against the API response. For nonempty active holdings, both observations
-must be read-only, within 120 seconds, with valid quote/status coverage,
-provider source, and no stale P&L. An incorrect HTML rendering, changed
-entry, stale profit, missing evidence or cross-session drift still fails closed.
-The source does not change decision, Sheet, model history, email or broker.
-Only the isolated staging observer is redeployed after this change.
+The staging external observer verifier must not demand identical live valuation
+prices from separate HTTP reads at T1 (API) and T2 (HTML): Google quotes may
+update between them. The production-facing renderer and internal immutable
+publication readback contract remain untouched, and private feed properties
+must never be embedded in the public HTML. The external staging-only probe
+still compares every immutable HTML byte against the independently rendered
+API snapshot, except the four explicitly identified valuation-only DOM cells
+(Current, model P&L, Return, and total valuation). Those cells are separately
+validated for correct open-ticker membership, source/delay/time, NYSE freshness,
+$10K model normalized arithmetic with display-rounding tolerance, and no
+stale/unavailable P&L. API valuation source and coverage are separately
+checked for every open position. Changed entries, missing fields, stale profit,
+altered model structure, and invalid provider timestamps fail closed. The
+morning decision/Sheet/ledger and existing exact internal publication parity
+remain identical. Only staging external QA changes; no new Render paid tier,
+database configuration, broker or production website change.
 
 ---
-
 ## ADR — Engine 2 isolated intraday valuation (Issue #388, 2026-11-11)
 
 Handbook update required: YES. The morning Engine 2 decision mark stored as
