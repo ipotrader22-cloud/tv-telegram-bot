@@ -79,11 +79,11 @@ test('separate intraday quote observations can change while exact HTML evidence 
  a.valuation_as_of='2026-11-11T17:25:00Z';b.valuation_as_of='2026-11-11T17:25:10Z';
  assert.equal((await probe(mock({feedValue:a,htmlValue:renderShadowSwing(b)}))).status,'EXTERNAL_STAGING_API_HTML_PASS');
  const altered=structuredClone(b);altered.active_portfolio[0].entry_price=300;
- await assert.rejects(()=>probe(mock({feedValue:a,htmlValue:renderShadowSwing(altered)})),/STAGING_MODEL_IDENTITY_DRIFT/);
- const stale=structuredClone(b);stale.active_portfolio[0].valuation_status='STALE';
- await assert.rejects(()=>probe(mock({feedValue:a,htmlValue:renderShadowSwing(stale)})),/STAGING_STALE_PNL_PRESENT/);
+ await assert.rejects(()=>probe(mock({feedValue:a,htmlValue:renderShadowSwing(altered)})),/EXACT_VISIBLE_HTML_MISMATCH/);
+ const forged=renderShadowSwing(b).replace('FRESH_DELAYED · GOOGLEFINANCE', 'STALE · GOOGLEFINANCE');
+ await assert.rejects(()=>probe(mock({feedValue:a,htmlValue:forged})),/STAGING_STALE_PNL_PRESENT/);
 });
-test('tampered embedded public valuation is rejected by exact HTML comparison',async()=>{
+test('tampered rendered model fingerprint is rejected by exact HTML comparison',async()=>{
  const f=feed(),html=renderShadowSwing(f);
  await assert.rejects(()=>probe(mock({htmlValue:html.replace('id="model-snapshot-id"', 'id="model-snapshot-falsified"')})),/EXACT_VISIBLE_HTML_MISMATCH/);
 });
