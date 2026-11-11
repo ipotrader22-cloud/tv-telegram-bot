@@ -71,7 +71,8 @@ test('read-only API-style response preserves quote metadata and immutable model 
  const payload=JSON.parse(JSON.stringify(v));
  assert.equal(payload.active_portfolio[0].quote_source,'GOOGLEFINANCE');
  assert.equal(payload.active_portfolio[0].quote_delay_minutes,5);
- assert.equal(payload.active_portfolio[0].quote_timestamp_et,'2026-11-11T16:50:00.000Z');
+ assert.equal(payload.active_portfolio[0].quote_timestamp_et,'2026-11-11 11:50:00 ET');
+ assert.equal(payload.active_portfolio[0].quote_timestamp_utc,'2026-11-11T16:50:00.000Z');
  assert.equal(payload.valuation_coverage,2);
  assert.deepEqual(base,feed());
 });
