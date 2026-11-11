@@ -18,6 +18,27 @@ async function open(page, url) {
 async function verifySwing(page, origin, isRu) {
   const url = `${origin}/trading-systems/swing-trading`;
   await open(page, url);
+  // Private Swing content is intentionally gated for anonymous browser QA.
+  // Never require the authenticated hero on the login page or bypass access.
+  if (await page.locator(".hero-copy").count() === 0) {
+    const location = new URL(page.url());
+    const expectedOrigin = new URL(origin);
+    assert.strictEqual(location.origin, expectedOrigin.origin,
+      "Swing login must remain on the requested locale's origin");
+    assert.strictEqual(location.pathname, "/login",
+      "Anonymous Swing must redirect to the dashboard login");
+    assert.strictEqual(location.searchParams.get("next"), "/trading-systems/swing-trading",
+      "Swing login must preserve its return destination");
+    assert(await page.locator("form").count() > 0 &&
+      await page.locator("input").count() > 0,
+      "Swing login must show the access-code form");
+    assert(!/active_portfolio|reporting_equity_history|total_model_pnl/i.test(
+      await page.locator("body").innerText()),
+      "Anonymous Swing login must not expose private portfolio or equity data");
+    console.log((isRu ? "RU" : "EN") +
+      " Swing protected login verified; authenticated hero-copy check not executed");
+    return;
+  }
   const hero = await page.locator(".hero-copy").first().innerText();
   if (isRu) {
     assert(hero.includes("Активный портфель на основе фирменной системы ранжирования Vixale."), "RU Swing owner copy line 1 missing");
