@@ -1,3 +1,23 @@
+## Issue #388 staging HTML/API parity follow-up — 2026-11-11
+
+The staging external observer verifier must not demand identical live valuation
+prices from separate HTTP reads at T1 (API) and T2 (HTML): Google quotes may
+update between them. The production-facing renderer and internal immutable
+publication readback contract remain untouched, and private feed properties
+must never be embedded in the public HTML. The external staging-only probe
+still compares every immutable HTML byte against the independently rendered
+API snapshot, except the four explicitly identified valuation-only DOM cells
+(Current, model P&L, Return, and total valuation). Those cells are separately
+validated for correct open-ticker membership, source/delay/time, NYSE freshness,
+$10K model normalized arithmetic with display-rounding tolerance, and no
+stale/unavailable P&L. API valuation source and coverage are separately
+checked for every open position. Changed entries, missing fields, stale profit,
+altered model structure, and invalid provider timestamps fail closed. The
+morning decision/Sheet/ledger and existing exact internal publication parity
+remain identical. Only staging external QA changes; no new Render paid tier,
+database configuration, broker or production website change.
+
+---
 ## ADR — Engine 2 isolated intraday valuation (Issue #388, 2026-11-11)
 
 Handbook update required: YES. The morning Engine 2 decision mark stored as
