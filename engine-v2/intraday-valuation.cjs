@@ -61,8 +61,8 @@ function createValuationReader({readFeed,api,clock=()=>new Date(),provider}={}){
    flight=(async()=>{
     try{
      // One bounded Sheets grid-read for every open ticker; no 518-stock intraday scan.
-     const quotes=await quoteProvider.getQuotes({date:localET(now.toISOString()).date,tickers});
-     if(quotes.length!==tickers.length||new Set(quotes.map(q=>q.ticker)).size!==tickers.length)
+     const quotes=await quoteProvider.getQuotes({date:localET(now.toISOString()).date,tickers,allowPartial:true});
+     if(quotes.length>tickers.length||new Set(quotes.map(q=>q.ticker)).size!==quotes.length||quotes.some(q=>!tickers.includes(q.ticker)))
       throw Error('VALUATION_COVERAGE_INCOMPLETE');
      cache=quotes;stamp=now.getTime();
     }catch{ // Keep last observed quotes with their ORIGINAL timestamps, never mask outage.
