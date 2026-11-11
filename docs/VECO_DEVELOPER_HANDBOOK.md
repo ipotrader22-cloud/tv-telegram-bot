@@ -1,4 +1,6 @@
-## Swing Research Note — Google company-news coverage and pending fix (2026-11-11)
+## Swing Research Note — Google company-news coverage and pending fix (deployed 2026-11-11)
+
+Deployment evidence: PR #399 merged as `679dc99203d00f3793f5828f1705ded1057dd093`; production Render `dep-dbqci61srm7s738b18vg` reached LIVE on 2026-11-11T20:00:10Z. Full Swing Source Rollout and EN/RU CI passed, and a separate GitHub-hosted real-public-provider test returned articles for EXR, PSA, VTRS and AIZ. A new authenticated post-deploy EN/RU HTML/API comparison was not available within this Chat; see `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-NEWS-COVERAGE.md` for the exact verification boundary.
 
 Owner supplied a signed-in Swing screenshot showing an AIZ news headline,
 EXR/PSA `No matching ... news`, and VTRS `Checking...`. Read-only
