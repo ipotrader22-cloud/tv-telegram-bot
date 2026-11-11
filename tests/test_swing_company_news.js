@@ -195,3 +195,83 @@ test('quote provider technical labels are hidden in server HTML but remain in au
  const script=ui.buildQuoteRefreshScript?ui.buildQuoteRefreshScript():String(ui);
  assert.doesNotMatch(script,/note\.textContent=\(quote\.valuation_status/);
 });
+
+function companyPage(ticker,company,cards,padding=''){
+ return '<html><head><title>'+company+' ('+ticker+') Stock Price &amp; News - Google Finance</title></head>'+
+ '<body><div>News stories</div>'+padding+cards.join('')+
+ '<div class="VfPpkd">Show more</div><c-data id="footer"></c-data></body></html>';
+}
+function rssItem(title,published,publisher='Yahoo Finance'){
+ const url='https://news.google.com/rss/articles/CBMiDemo'+title.replace(/[^A-Za-z]/g,'').slice(0,20)+'?oc=5';
+ return '<item><title>'+title+'</title><link>'+url+'</link>'+
+ '<guid isPermaLink="false">demo</guid><pubDate>'+published+'</pubDate>'+
+ '<source url="https://finance.yahoo.com">'+publisher+'</source></item>';
+}
+test('Google Finance News stories can appear after 40k of related-stock markup',()=>{
+ const url='https://www.zacks.com/stock/news/3027749/hst-vs-psa-which-stock-is-the-better-value-option?cid=CS-SYND-FT-fundamental_analysis|yseop_template_3';
+ const html=companyPage('PSA','Public Storage',[card('HST vs. PSA: Which Stock Is the Better Value Option?','3 hours ago',url,'Zacks')],' '.repeat(55000));
+ const parsed=news.parseCards(html,'PSA');
+ assert.equal(parsed.cards.length,1);
+ assert.equal(parsed.cards[0].url,url);
+});
+test('Google News fallback accepts independently dated company headlines, not unrelated market news',()=>{
+ const today=new Date('2026-11-11T19:20:00Z');
+ const xml='<?xml version="1.0"?><rss version="2.0"><channel>'+
+  rssItem('Extra Space Storage (EXR) adds facilities - Yahoo Finance','Wed, 11 Nov 2026 18:18:00 GMT')+
+  rssItem('Semiconductor stocks rise broadly - Yahoo Finance','Wed, 11 Nov 2026 19:00:00 GMT')+
+  rssItem('Extra Space Storage (EXR) reports earnings - Yahoo Finance','Tue, 10 Nov 2026 16:00:00 GMT')+
+  '</channel></rss>';
+ const records=news.googleNewsRecords(xml,{ticker:'EXR',company:'Extra Space Storage',sessionDate:'2026-11-11',now:today});
+ assert.equal(records.length,1);
+ assert.equal(records[0].news_is_older,false);
+ assert.equal(records[0].publisher,'Yahoo Finance');
+ assert.equal(records[0].news_provider,'GOOGLE_NEWS_RSS');
+ assert.equal(records[0].published_utc,'2026-11-11T18:18:00.000Z');
+ assert.match(records[0].published_et,/Google News/);
+ assert.match(records[0].summary,/Extra Space Storage/);
+});
+test('Google News fallback returns latest older story with truthful publication date when nothing today',()=>{
+ const now=new Date('2026-11-11T19:20:00Z');
+ const xml='<rss>'+rssItem('Public Storage (PSA) investor update - Yahoo Finance','Tue, 10 Nov 2026 20:05:00 GMT')+
+ rssItem('Public Storage (PSA) sector report - Yahoo Finance','Mon, 09 Nov 2026 12:00:00 GMT')+'</rss>';
+ const records=news.googleNewsRecords(xml,{ticker:'PSA',company:'Public Storage',sessionDate:'2026-11-11',now});
+ assert.equal(records.length,2);
+ assert.equal(records[0].news_is_older,true);
+ assert.equal(records[0].published_utc,'2026-11-10T20:05:00.000Z');
+ const enriched=core.renderSwingLeadersHtml({...feed(),active_portfolio:[{...feed().active_portfolio[0],company_news_status:'READY',company_news:records}]});
+ assert.match(enriched,/Earlier news/);
+});
+test('Google Finance generic market headlines trigger focused Google News fallback for EXR',async()=>{
+ const now=new Date('2026-11-11T19:20:00Z');
+ const html=companyPage('EXR','Extra Space Storage',
+ [card('S&P 500 advances as technology names rise','2 hours ago','https://www.reuters.com/markets/tech/market-brief')]);
+ const rss='<rss>'+rssItem('Extra Space Storage EXR portfolio news - Yahoo Finance','Wed, 11 Nov 2026 17:05:00 GMT')+'</rss>';
+ const seen=[];
+ const fetcher=async url=>{
+  seen.push(url);
+  return {ok:true,headers:{get:()=>null},text:async()=>url.includes('news.google.com/rss/search')?rss:html};
+ };
+ const records=await news.collectWithFallback({ticker:'EXR',exchange:'NYSE',sessionDate:'2026-11-11',now,fetcher});
+ assert.equal(records.length,1);
+ assert.equal(records[0].news_provider,'GOOGLE_NEWS_RSS');
+ assert.match(seen.join(' '),/news.google.com\/rss\/search/);
+});
+test('Publisher reads are bounded and concurrent to prevent VTRS pending feedback',async()=>{
+ const now=new Date('2026-11-11T19:20:00Z');
+ const html=companyPage('VTRS','Viatris Inc',[
+  card('Viatris announces investor conference','2 hours ago','https://www.marketwatch.com/viatris-a'),
+  card('Viatris expands global medicines portfolio','3 hours ago','https://www.marketwatch.com/viatris-b'),
+  card('VTRS receives new analyst coverage','4 hours ago','https://www.marketwatch.com/viatris-c')]);
+ let active=0,maxActive=0;
+ const fetcher=async url=>{
+  if(url.includes('google.com/finance'))return {ok:true,headers:{get:()=>null},text:async()=>html};
+  active++;maxActive=Math.max(maxActive,active);
+  await new Promise(resolve=>setTimeout(resolve,70));
+  active--;
+  return {ok:true,headers:{get:()=>null},text:async()=>'<meta property="article:published_time" content="2026-11-11T12:10:00-05:00">'};
+ };
+ const records=await news.collect({ticker:'VTRS',exchange:'NASDAQ',sessionDate:'2026-11-11',now,fetcher});
+ assert.equal(maxActive,3);
+ assert.equal(records.length,2);
+ assert.ok(records.every(x=>x.news_is_older===false));
+});
