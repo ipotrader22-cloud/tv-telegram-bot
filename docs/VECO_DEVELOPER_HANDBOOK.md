@@ -1,3 +1,62 @@
+## Issue #388 — read-only Engine 2 production website valuation (release candidate, 2026-11-11)
+
+Production website and staging observer are **different services**. The isolated
+staging observer uses `engine-v2/intraday-valuation.cjs` and does not directly
+provide the authenticated Swing Trading page. The production website uses
+`lib/swing-leaders.js` and `lib/swing-leaders-core.js` to read Engine 2's
+Public Feed / Equity History and renders the Swing page through its existing
+authenticated page/API handlers. The owner expressly authorized a production
+rollout after staging PRs #389, #390 and #392 passed their verification gates.
+
+The dedicated website read-only module `lib/swing-intraday-valuation.js`
+decorates only ENGINE2 source snapshots; LEGACY source behavior is unchanged.
+It uses the same existing production Google Sheets read-only account to read
+`Engine 2 Quotes` A1:E651 with grid/tab/time-zone, exact formula, exchange,
+price, volume, provider delay (0–20 minutes), source timestamp and freshness
+checks. All active tickers are read in one bounded batch; no research-universe
+intraday scan. For missing/stale quotes, the independently verified Google
+Finance Chart one-minute API can provide a **completed regular-session
+minute close** with exact exchange and candle identity. Current/future
+unfinished candles are excluded. These are indicative valuation marks,
+not broker LAST trades, and their delay is unknown (null). Chart calls
+are limited to open tickers and two simultaneous requests. Refresh is cached
+for 60 seconds and upstream failures use bounded backoff. No writes or new
+paid Render tier are required.
+
+The projection explicitly preserves `current_price` / `return_pct` from
+the frozen morning Public Feed and exposes distinct per-position fields
+`morning_reference_price`, `current_valuation_price`,
+`valuation_return_pct`, `unrealized_model_pnl`,
+`quote_source`, `quote_timestamp_et`, `quote_timestamp_utc`,
+`quote_delay_minutes`, `valuation_price_kind`, `valuation_status`.
+Per-position `UNAVAILABLE` never presents an invented $0 P&L;
+aggregate unrealized P&L is null unless all open positions have valid fresh
+quotes. Fixed normalized model P&L is $10,000 ×
+(current_valuation_price / entry_price − 1); whole-share quantities
+do not affect calculation. Realized P&L, frozen research scores, morning
+decisions, all 518 universe members, nine factors, Q/R controls, historical
+equity rows, broker/TWS/Telegram/email and Sheet writers remain untouched.
+
+The existing authenticated Swing page/API remain protected; no new public
+quote endpoint is introduced. The normal Swing page auto-refresh updates
+both the displayed current mark and normalized P&L; on stale or failed
+readback it clears the displayed current mark and unrealized P&L rather
+than leaving the morning reference marked as current. A rendered source
+label clearly distinguishes delayed GOOGLEFINANCE trades from completed
+Google Chart one-minute close prices. Anonymous access and Russian page
+localization remain on the existing authentication/middleware route.
+
+**Deployment gate:** production deploy requires full Swing Source Rollout
+HTTP/legacy rollback, English/Russian auth, UI and valuation tests, exact
+Render deployment SHA and authenticated live EN/RU page/API readback. A
+GitHub feature commit is not production. Roll back application code by
+reverting the narrowly scoped production PR; the existing
+`VIXALE_SWING_SOURCE=LEGACY` emergency rollback retains the older
+portfolio and must be labelled with its actual snapshot date. No strategy
+or broker activation is implied.
+
+---
+
 ## 2026-11-08 — Engine 2 Swing production activation
 
 Owner explicitly authorized production connection after access and rollback verification. PR #379 merged as `402931e73904e6e2b39de342212dc04a1fc88afa`; it preserves the current homepage video and all other main changes. `VIXALE_SWING_SOURCE` on production selects `ENGINE2`. Both financial ranges come from workbook `1Ii20kcegWWhQfz_RUrDe0OhfFG1y9TNjrEI1Xy6mqyA`. Its historical staging name does not determine the active website source. The production account has reader permission only; writers, model strategy, Q/R controls and histories were not changed by cutover.
