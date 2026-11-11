@@ -219,7 +219,7 @@ jobs:
           QA_OUTPUT_DIR: artifacts/production-locale-qa
         run: node scripts/qa-production-locales.js
 
-      - name: Verify live Swing HTML/API snapshot parity
+      - name: Verify anonymous Swing HTML/API authentication gate (parity requires credentials)
         env:
           QA_EN_ORIGIN: https://www.vixale.com
         run: node scripts/qa-production-swing-parity.js
