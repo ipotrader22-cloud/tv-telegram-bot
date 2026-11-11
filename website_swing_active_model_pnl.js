@@ -92,7 +92,7 @@ const refresh=async()=>{
      const link=document.createElement("a");link.href=target.href;link.target="_blank";
      link.rel="noopener noreferrer";link.textContent=story.summary;
      const posted=document.createElement("span");
-     posted.textContent=story.publisher+" · "+story.published_et;
+     posted.textContent=(story.news_is_older?"Earlier news · ":"")+story.publisher+" · "+story.published_et;
      entry.appendChild(link);entry.appendChild(posted);newsCell.appendChild(entry);appended++;
     }
     if(!appended){
