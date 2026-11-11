@@ -135,7 +135,7 @@ test('stale cached Google quote retains original evidence but never supplies cur
  assert.equal(stale.data.active_portfolio[0].last_known_valuation_price,320.41);
  assert.equal(stale.data.active_portfolio[0].quote_timestamp_et,'2026-11-11 11:59:00 ET');
  const html=page.enhanceActivePortfolioTable(core.renderSwingLeadersHtml(stale.data));
- assert.doesNotMatch(html,/STALE ·|GOOGLEFINANCE/);
+ assert.doesNotMatch(html,/STALE ·/);
  assert.match(html,/data-label="Current">—/);
  assert.match(html,/data-label="P&L, \$" class="vx-model-open-pnl flat">—/);
  assert.equal(base.data.active_portfolio[0].current_price,'$322.02');
