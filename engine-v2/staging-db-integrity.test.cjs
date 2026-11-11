@@ -55,6 +55,15 @@ test('duplicate event or missing daily journal fails closed',async()=>{
  const missing=harness({daily:[]});
  assert.equal((await auditStagingDb({url,date,clientFactory:missing.clientFactory})).reason,'SESSION_JOURNAL_CARDINALITY_MISMATCH');
 });
+test('private audit decodes compressed inputs and rejects damaged evidence',async()=>{
+ const {encodeEvidence}=require('./evidence-storage.cjs');
+ const inputs=encodeEvidence({events:expectedEvents,privateEvidence:'retained'.repeat(50000)});
+ const run={run_id:runId,model,evidence_manifest:{inputs}};
+ const good=harness({runs:[run]});
+ assert.equal((await auditStagingDb({url,date,clientFactory:good.clientFactory})).status,'PASS');
+ const bad=harness({runs:[{...run,evidence_manifest:{inputs:{...inputs,sha256:'0'.repeat(64)}}}]});
+ assert.equal((await auditStagingDb({url,date,clientFactory:bad.clientFactory})).reason,'STAGING_READ_ONLY_AUDIT_UNAVAILABLE');
+});
 test('altered P&L and missing publication fail closed',async()=>{
  const pnl=harness({runs:[{run_id:runId,model:{...model,unrealized:0,total:0,equity:100000},evidence_manifest:{inputs:{events:expectedEvents}}}]});
  assert.equal((await auditStagingDb({url,date,clientFactory:pnl.clientFactory})).reason,'NORMALIZED_ACCOUNTING_MISMATCH');

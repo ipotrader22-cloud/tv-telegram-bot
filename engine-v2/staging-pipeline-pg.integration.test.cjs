@@ -14,8 +14,9 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   const store=createPipelineStore({url}),competitor=createPipelineStore({url});
   await store.withLock(async()=>assert.equal((await competitor.withLock(()=>{throw Error('Second writer entered')})).status,'BUSY'));
   const {POLICY,hash}=require('./delayed-model-policy.cjs');
-  const prep={policy:POLICY,date,preparedAt:date+'T12:00:00Z',items:[{ticker:'AMD',score:90}]};prep.fingerprint=hash(prep);
+  const prep={policy:POLICY,date,preparedAt:date+'T12:00:00Z',items:[{ticker:'AMD',score:90}],privateEvidence:'retained'.repeat(50000)};prep.fingerprint=hash(prep);
   await store.withLock(j=>j.savePrepared(prep));
+  assert.equal((await db.query('SELECT artifact FROM vixale_v2.preopen_preparations WHERE session_date=$1',[date])).rows[0].artifact.__vixaleEvidenceEncoding,'gzip-json-v1');
   await competitor.withLock(async j=>{
    assert.deepEqual(await j.getPrepared(date),prep);
    await j.savePrepared(prep);
@@ -65,6 +66,7 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   const googlePrevious=await require('./clean-ledger.cjs').readLastCleanState({url});
   const googleDate='2026-10-26',googleAt=googleDate+'T14:00:00.000Z';
   const googleBatch=JSON.parse(JSON.stringify(batch).replace(/2026-10-(22|23)/g,x=>({'2026-10-22':'2026-10-23','2026-10-23':'2026-10-26'}[x])));
+  googleBatch.sourceEvidence.artifact.privateEvidence='retained'.repeat(50000);
   const googleFrozen={policy:POLICY,date:googleDate,sourceSession:next,preparedAt:googleDate+'T12:59:00Z',priorHash:hash(priorIdentity(googlePrevious)),batch:googleBatch,exits:[],checkedThrough:next+'T20:00:00.000Z'};
   googleFrozen.fingerprint=hash(googleFrozen);
   const {normalizeGoogleQuote,GOOGLE_POLICY}=require('./google-quote-provider.cjs');
@@ -75,6 +77,8 @@ test('real PostgreSQL pipeline: JSONB roundtrip, lock competition, durable resta
   assert.equal((await commitShadowRun({url,inputs:googleInputs})).status,'SHADOW_COMMITTED');
   assert.equal((await commitShadowRun({url,inputs:googleInputs})).status,'IDEMPOTENT_REPLAY');
   const googleSaved=await readCleanRun({url,date:googleDate});
+  assert.equal((await db.query('SELECT evidence_manifest FROM vixale_v2.clean_runs WHERE session_date=$1',[googleDate])).rows[0].evidence_manifest.inputs.__vixaleEvidenceEncoding,'gzip-json-v1');
+  assert.deepEqual(googleSaved.evidence_manifest.inputs,googleInputs);
   assert.equal(googleSaved.evidence_manifest.inputs.pricePolicy,GOOGLE_POLICY);
   assert.equal(googleSaved.evidence_manifest.inputs.priceAsOf,googleDate+'T13:51:00.000Z');
   const googleArtifact=require('./staging-artifact.cjs').buildStagingArtifact(googleSaved);

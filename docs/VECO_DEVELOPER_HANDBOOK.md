@@ -1,3 +1,28 @@
+## Engine 2 PostgreSQL evidence memory — 2026-11-11
+
+Handbook update required: YES. PR386 brought cron RSS below 512 MiB, but
+PostgreSQL logs showed its backend killed by signal 9 on each INSERT into
+preopen_preparations. The free database has a separate 256 MiB limit; parsing
+the full 518-stock document into JSONB exhausted that backend. This was not
+a failed research score or a successfully prepared market session.
+
+ADR: encode large private preopen documents and clean_runs manifest inputs
+as versioned gzip/base64 JSONB envelopes before the SQL boundary. Decode in
+Node before every existing hash, prior-state, replay and independent audit
+check. Preserve all 518 members, bars, news, source hashes and model hashes.
+Use SHA256 and declared-length validation, bounded decompression, and reject
+malformed/unknown envelopes. Existing plain JSONB remains readable; no old
+rows are migrated, deleted or rewritten. Public candidate summaries remain
+plain JSONB, so prior-state reads do not decompress historical research.
+
+Deploy readers and writer together on the isolated Engine 2 branch after
+full CI including real PostgreSQL roundtrip, durable-preparation comparison
+and idempotent model replay tests. Verify actual cron preopen success and DB
+stability; do not infer a 10:00 publication from memory metrics alone. No plan
+upgrade, reduced universe, new cron, strategy change or main deployment.
+Rollback must retain the envelope decoder once new evidence is written;
+do not deploy an old reader against encoded documents or rewrite the journal.
+
 ## Engine 2 index research bounded-memory source preparation — 2026-11-11
 
 Handbook update required: YES. After the 518-member Google Finance rollout,

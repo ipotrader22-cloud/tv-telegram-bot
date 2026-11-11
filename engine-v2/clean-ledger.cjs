@@ -2,6 +2,7 @@
 const {Client}=require('pg');
 const {createHash}=require('node:crypto');
 const {stableStringify}=require('./stable-json.cjs');
+const {encodeEvidence,decodeEvidence}=require('./evidence-storage.cjs');
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {validateResearchBatch}=require('./research-attestation.cjs');
 const {planMorningRun}=require('./morning-run-plan.cjs');
@@ -59,7 +60,7 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
   const priorState=await db.query('SELECT session_date::text AS date,active,closed FROM vixale_v2.clean_daily_state WHERE epoch=$1 AND session_date<$2 ORDER BY session_date DESC LIMIT 1',[EPOCH,inputs.date]);
   if([require('./delayed-model-policy.cjs').POLICY,require('./google-quote-provider.cjs').GOOGLE_POLICY].includes(inputs.pricePolicy)){
    const frozen=await db.query('SELECT artifact FROM vixale_v2.preopen_preparations WHERE session_date=$1',[inputs.date]);
-   if(frozen.rowCount!==1||stableStringify(frozen.rows[0].artifact)!==stableStringify(inputs.sourceEvidence.prepared))throw Error('PREOPEN_DURABLE_ARTIFACT_MISMATCH');
+   if(frozen.rowCount!==1||stableStringify(decodeEvidence(frozen.rows[0].artifact))!==stableStringify(inputs.sourceEvidence.prepared))throw Error('PREOPEN_DURABLE_ARTIFACT_MISMATCH');
    const prior=priorState.rows[0];
    const identity=prior?{epoch:EPOCH,date:prior.date,active:prior.active,closed:prior.closed}:null;
    if(require('./delayed-model-policy.cjs').hash(identity)!==inputs.sourceEvidence.prepared.priorHash)throw Error('PREOPEN_PRIOR_STATE_CHANGED');
@@ -90,7 +91,7 @@ async function commitShadowRun({url,inputs,clientFactory=opts=>new Client(opts)}
   const prev=await db.query('SELECT payload_hash FROM vixale_v2.clean_runs WHERE epoch=$1 AND session_date=$2',[EPOCH,inputs.date]);
   if(prev.rowCount){await db.query('COMMIT');return {status:prev.rows[0].payload_hash===hash?'IDEMPOTENT_REPLAY':'CONFLICTING_DATE_RUN',runId:check.plan.runId,published:false}}
   await db.query('INSERT INTO vixale_v2.clean_runs(run_id,epoch,session_date,payload_hash,model,evidence_manifest) VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)',
-    [check.plan.runId,EPOCH,inputs.date,hash,JSON.stringify(check.plan.model),JSON.stringify(manifest)]);
+    [check.plan.runId,EPOCH,inputs.date,hash,JSON.stringify(check.plan.model),JSON.stringify({...manifest,inputs:encodeEvidence(inputs)})]);
   for(const e of check.events)await db.query('INSERT INTO vixale_v2.clean_events(event_id,run_id,type,ticker,entry_date,event_at,source_id,payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',
     [e.eventId,check.plan.runId,e.type,e.ticker,e.entryDate,e.timestamp,e.sourceId,JSON.stringify(e)]);
   await db.query('INSERT INTO vixale_v2.clean_daily_state(run_id,epoch,session_date,active,closed) VALUES($1,$2,$3,$4::jsonb,$5::jsonb)',[check.plan.runId,EPOCH,inputs.date,JSON.stringify(inputs.positions),JSON.stringify(inputs.closed)]);
@@ -129,7 +130,9 @@ async function readCleanRun({url,date,clientFactory=opts=>new Client(opts)}){
   if(!exists.rows[0].table_name){await db.query('COMMIT');return null}
   const q=await db.query('SELECT run_id,payload_hash,model,evidence_manifest FROM vixale_v2.clean_runs WHERE epoch=$1 AND session_date=$2',[EPOCH,date]);
   await db.query('COMMIT');
-  return q.rows[0]||null;
+  const record=q.rows[0];
+  if(record?.evidence_manifest)record.evidence_manifest.inputs=decodeEvidence(record.evidence_manifest.inputs);
+  return record||null;
  }finally{await db.end()}
 }
 module.exports={ddl,dbName,validateMorningCommit,commitShadowRun,readLastCleanState,readCleanRun};
