@@ -89,3 +89,70 @@ test('NYSE session gates HTTP reads and rate-limit errors back off without fake 
  clock=new Date('2026-11-11T15:02:05Z');await read();assert.equal(calls,2); // exponential 2-minute retry
  clock=new Date('2026-11-11T22:00:00Z');await read();assert.equal(calls,2); // NYSE closed
 });
+
+const {normalizeCompletedMinute}=require('./intraday-valuation.cjs');
+function minute(ticker,start,close,volume=2000){
+ const time=Date.parse(start);
+ return {ticker,date:'2026-11-11',start,end:new Date(time+60000).toISOString(),close,
+  open:close,high:close,low:close,volume,provider:'GOOGLE_FINANCE_CHART',
+  priceKind:'MINUTE_BAR_OHLCV',session:'REGULAR',sourceId:'GOOGLE_CHART_1M:'+ticker+':'+start+':'+'f'.repeat(64)};
+}
+test('completed 1-minute Google Chart bar never uses future or unfinished candles',()=>{
+ const bars=[minute('AMD','2026-11-11T16:53:00Z',102),minute('AMD','2026-11-11T16:56:00Z',999)];
+ const q=normalizeCompletedMinute({ticker:'AMD',bars,sourceHash:'a'.repeat(64),now});
+ assert.equal(q.price,102);assert.equal(q.timestamp,'2026-11-11T16:54:00.000Z');
+ assert.equal(q.provider,'GOOGLE_FINANCE_CHART_1M');
+ assert.equal(q.priceKind,'COMPLETED_MINUTE_BAR_CLOSE');
+ assert.equal(q.delayMinutes,null);
+ assert.equal(normalizeCompletedMinute({ticker:'AMD',bars:[bars[1]],sourceHash:'a'.repeat(64),now}),null);
+ assert.throws(()=>normalizeCompletedMinute({ticker:'AMD',bars,sourceHash:'fake',now}),/VALUATION_CHART_EVIDENCE_INVALID/);
+});
+test('stale Google Sheet quote is replaced only by explicitly labelled fresh completed Chart evidence',async()=>{
+ const base=feed(),original=structuredClone(base);
+ let calls=0,requests=[];
+ const sheet={async getQuotes(){return [quote('AIZ',320),{...quote('AMD',100),timestamp:'2026-11-11T15:00:00Z'}]}};
+ const chart={async getMinuteHistory(opts){requests.push(opts);calls++;
+  return {ticker:opts.ticker,sourceHash:'a'.repeat(64),bars:[
+   minute(opts.ticker,'2026-11-11T16:53:00Z',101.1),
+   minute(opts.ticker,'2026-11-11T16:56:00Z',999)
+  ]};}};
+ const reader=createValuationReader({readFeed:async()=>base,provider:sheet,chartProvider:chart,clock:()=>now});
+ const value=await reader();
+ assert.equal(value.active_portfolio[0].quote_source,'GOOGLEFINANCE');
+ assert.equal(value.active_portfolio[1].quote_source,'GOOGLE_FINANCE_CHART_1M');
+ assert.equal(value.active_portfolio[1].valuation_status,'FRESH_MINUTE_BAR');
+ assert.equal(value.active_portfolio[1].current_valuation_price,101.1);
+ assert.equal(value.active_portfolio[1].quote_delay_minutes,null);
+ assert.equal(value.active_portfolio[1].valuation_price_kind,'COMPLETED_MINUTE_BAR_CLOSE');
+ assert.equal(value.valuation_status,'FRESH_GOOGLE_VALUATION');
+ assert.equal(value.valuation_coverage,2);
+ assert.ok(Math.abs(value.unrealized_model_pnl-(10000*(320/322.02-1)+110))<1e-8);
+ assert.equal(calls,1);assert.deepEqual(requests,[{ticker:'AMD',fromDate:'2026-11-11',throughDate:'2026-11-11'}]);
+ assert.deepEqual(base,original);
+ const html=renderShadowSwing(value);
+ assert.match(html,/FRESH_MINUTE_BAR/);
+ assert.match(html,/completed 1-minute close/);
+});
+test('invalid, old, wrong-ticker or absent Chart evidence never fabricates fresh P&L',()=>{
+ for(const bad of [
+  [minute('BAD','2026-11-11T16:53:00Z',99)],
+  [minute('AMD','2026-11-11T16:10:00Z',99)],
+  [minute('AMD','2026-11-11T16:56:00Z',99)]
+ ]){
+  const q=normalizeCompletedMinute({ticker:'AMD',bars:bad,sourceHash:'a'.repeat(64),now});
+  const x=composeValuation(feed(),q?[q]:[],{now});
+  assert.notEqual(x.active_portfolio[1].valuation_status,'FRESH_MINUTE_BAR');
+  assert.equal(x.active_portfolio[1].unrealized_model_pnl,null);
+  assert.equal(x.unrealized_model_pnl,null);
+ }
+});
+test('Chart outage leaves missing quote unavailable, with bounded retries',async()=>{
+ let calls=0,nowValue=new Date(now);
+ const reader=createValuationReader({readFeed:async()=>feed(),provider:{getQuotes:async()=>[]},
+  chartProvider:{async getMinuteHistory(){calls++;throw Error('GOOGLE_CHART_ACCESS_RESTRICTED')}},
+  clock:()=>nowValue});
+ const a=await reader();assert.equal(a.valuation_coverage,0);assert.equal(calls,2);
+ nowValue=new Date('2026-11-11T16:55:30Z');await reader();assert.equal(calls,2);
+ nowValue=new Date('2026-11-11T16:56:10Z');await reader();assert.equal(calls,4);
+ nowValue=new Date('2026-11-11T16:57:20Z');await reader();assert.equal(calls,4);
+});
