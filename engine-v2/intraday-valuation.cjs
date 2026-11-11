@@ -3,7 +3,6 @@
 const {localET}=require('./market-data-adapter.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {createGoogleQuoteProvider}=require('./google-quote-provider.cjs');
-const {createSheetsClient}=require('./staging-sheets-publisher.cjs');
 const TTL_MS=60000;
 const MAX_AGE_MS=20*60000;
 function etStamp(iso){const d=new Date(iso);if(!Number.isFinite(d.getTime()))return null;const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d);const get=k=>parts.find(x=>x.type===k)?.value;return get('year')+'-'+get('month')+'-'+get('day')+' '+get('hour')+':'+get('minute')+':'+get('second')+' ET';}
@@ -54,23 +53,27 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
 function createValuationReader({readFeed,api,clock=()=>new Date(),provider}={}){
  if(typeof readFeed!=='function')throw Error('VALUATION_FEED_READER_REQUIRED');
  const quoteProvider=provider||(api?createGoogleQuoteProvider({api,clock}):null);
- let cache=null,stamp=0,flight=null,identity='';
+ let cache=null,retryAt=0,failures=0,flight=null,identity='';
  return async function readValued(){
   const feed=await readFeed(),now=clock(),tickers=feed.active_portfolio.map(p=>p.ticker);
   const key=tickers.join('|');
-  if(identity!==key){cache=null;stamp=0;identity=key;}
+  if(identity!==key){cache=null;retryAt=0;failures=0;identity=key;}
+  const et=localET(now.toISOString()),session=sessionEvidence(et.date);
+  const [closeH,closeM]=String(session.closeEt||'16:00').split(':').map(Number);
+  const sessionOpen=!!session.isTradingDay&&et.minute>=570&&et.minute<closeH*60+closeM;
   // Missing observer credential is reported as unavailable, never substituted.
-  if(tickers.length&&quoteProvider&&(!cache||now.getTime()-stamp>=TTL_MS)&&!flight){
+  if(tickers.length&&quoteProvider&&sessionOpen&&now.getTime()>=retryAt&&!flight){
    flight=(async()=>{
     try{
      // One bounded Sheets grid-read for every open ticker; no 518-stock intraday scan.
      const quotes=await quoteProvider.getQuotes({date:localET(now.toISOString()).date,tickers,allowPartial:true});
      if(quotes.length>tickers.length||new Set(quotes.map(q=>q.ticker)).size!==quotes.length||quotes.some(q=>!tickers.includes(q.ticker)))
       throw Error('VALUATION_COVERAGE_INCOMPLETE');
-     cache=quotes;stamp=now.getTime();
+     cache=quotes;failures=0;retryAt=now.getTime()+TTL_MS;
     }catch{ // Keep last observed quotes with their ORIGINAL timestamps, never mask outage.
-     if(!cache){cache=[];stamp=now.getTime();}
-     else stamp=now.getTime();
+     if(!cache)cache=[];
+     failures++;
+     retryAt=now.getTime()+Math.min(5*TTL_MS,TTL_MS*2**Math.min(failures-1,3));
     }
    })().finally(()=>{flight=null});
   }
