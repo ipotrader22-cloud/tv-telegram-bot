@@ -76,3 +76,16 @@ test('read-only API-style response preserves quote metadata and immutable model 
  assert.equal(payload.valuation_coverage,2);
  assert.deepEqual(base,feed());
 });
+
+test('NYSE session gates HTTP reads and rate-limit errors back off without fake prices',async()=>{
+ let clock=new Date('2026-11-11T13:00:00Z'),calls=0;
+ const provider={async getQuotes(){calls++;throw Error('GOOGLE_CHART_ACCESS_RESTRICTED:429')}};
+ const read=createValuationReader({readFeed:async()=>feed(),provider,clock:()=>clock});
+ await read();assert.equal(calls,0);
+ clock=new Date('2026-11-11T15:00:00Z'); // 10:00 EST
+ let x=await read();assert.equal(calls,1);assert.equal(x.valuation_status,'UNAVAILABLE_OR_STALE');
+ clock=new Date('2026-11-11T15:00:30Z');await read();assert.equal(calls,1);
+ clock=new Date('2026-11-11T15:01:01Z');await read();assert.equal(calls,2);
+ clock=new Date('2026-11-11T15:02:05Z');await read();assert.equal(calls,2); // exponential 2-minute retry
+ clock=new Date('2026-11-11T22:00:00Z');await read();assert.equal(calls,2); // NYSE closed
+});
