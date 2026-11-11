@@ -189,7 +189,9 @@ jobs:
   browser-qa:
     if: github.event_name != 'pull_request'
     needs: locale-contract
-    runs-on: ubuntu-latest
+    # Playwright 1.55.0 cannot install Chromium on ubuntu-latest's 26.04 image.
+    # Pin only the browser job to the supported 24.04 runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out repository
