@@ -251,8 +251,32 @@ async function run() {
             addFailure(report, `${viewportName} ${route.path}: EN/RU stylesheet URLs differ`);
           }
 
-          verifyNavigation(report, viewportName, route.path, en, EXPECTED_EN_NAV, "EN");
-          verifyNavigation(report, viewportName, route.path, ru, EXPECTED_RU_NAV, "RU");
+          if (route.path === "/trading-systems/swing-trading") {
+            // This route is intentionally gated for anonymous users. Verify
+            // both login redirects and the preserved requested destination
+            // instead of treating the login form as an unprotected public page.
+            for (const [locale, page, origin, snapshot] of [
+              ["EN", enPage, EN_ORIGIN, en],
+              ["RU", ruPage, RU_ORIGIN, ru],
+            ]) {
+              const destination = new URL(page.url());
+              const expectedOrigin = new URL(origin);
+              const validRedirect = destination.origin === expectedOrigin.origin &&
+                destination.pathname === "/login" &&
+                destination.searchParams.get("next") === route.path;
+              const hasLoginForm = await page.locator("input").count() > 0 &&
+                await page.locator("form").count() > 0;
+              if (!validRedirect || !hasLoginForm) {
+                addFailure(report, `${viewportName} ${route.path}: ${locale} protected login redirect invalid: ${destination.origin}${destination.pathname}${destination.search}`);
+              }
+              if (snapshot.primaryNav.length || snapshot.navActions.length) {
+                addFailure(report, `${viewportName} ${route.path}: ${locale} login unexpectedly contains public nav`);
+              }
+            }
+          } else {
+            verifyNavigation(report, viewportName, route.path, en, EXPECTED_EN_NAV, "EN");
+            verifyNavigation(report, viewportName, route.path, ru, EXPECTED_RU_NAV, "RU");
+          }
 
           if (viewportName === "desktop") {
             const ruText = normalizeText(ru.text);
