@@ -12,7 +12,9 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
  const instant=now instanceof Date?now:new Date(now),at=instant.getTime();
  if(!Number.isFinite(at))throw Error('VALUATION_CLOCK_INVALID');
  const et=localET(instant.toISOString()),session=sessionEvidence(et.date);
- const open=!!session.isTradingDay&&et.minute>=570&&et.minute<960;
+ const [closeHour,closeMinute]=String(session.closeEt||'16:00').split(':').map(Number);
+ const close=closeHour*60+closeMinute;
+ const open=!!session.isTradingDay&&et.minute>=570&&et.minute<close;
  const by=new Map();
  for(const q of quotes||[]){
   if(!q||typeof q.ticker!=='string'||by.has(q.ticker))continue;
@@ -27,7 +29,7 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
    q?.priceKind==='DELAYED_LAST_QUOTE'&&q?.session==='REGULAR';
   const fresh=open&&sourceOk&&Number.isFinite(q.price)&&q.price>0&&
    Number.isFinite(ts)&&age>=0&&age<=MAX_AGE_MS&&
-   localET(q.timestamp).date===et.date&&
+   localET(q.timestamp).date===et.date&&localET(q.timestamp).minute>=570&&localET(q.timestamp).minute<close&&
    Number.isFinite(q.delayMinutes)&&q.delayMinutes>=0&&q.delayMinutes<=20;
   const known=sourceOk&&Number.isFinite(q.price)&&q.price>0&&Number.isFinite(ts)&&ts<=at;
   const status=fresh?'FRESH_DELAYED':known?'STALE':'UNAVAILABLE';
