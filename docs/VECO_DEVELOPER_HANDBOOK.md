@@ -26,8 +26,8 @@ Partial coverage returns per-position status plus null aggregate P&L.
 
 Public staging-only feed fields: `entry_price` and
 `current_model_reference_price` remain immutable morning values;
-`current_valuation_price`, `quote_timestamp_et` (ISO UTC instant;
-convert to America/New_York for label), `quote_source`,
+`current_valuation_price`, `quote_timestamp_et` (formatted New York time),
+`quote_timestamp_utc` (ISO UTC instant), `quote_source`,
 `quote_delay_minutes`, `valuation_status`,
 `unrealized_model_pnl`, `unrealized_share_pnl`,
 `model_quantity_shares`, `valuation_coverage` and
