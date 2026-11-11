@@ -38,6 +38,8 @@ jobs:
           node tests/test_swing_equity_live_refresh.js
           node tests/test_swing_active_model_pnl.js
           node tests/test_issue388_production_intraday.js
+          node tests/test_swing_company_news.js
+          node --check lib/swing-company-news.js
           node --check lib/swing-intraday-valuation.js
           node --check lib/swing-leaders-core.js
           node --check lib/swing-leaders.js

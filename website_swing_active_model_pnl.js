@@ -78,6 +78,31 @@ const refresh=async()=>{
    }
    if(returnCell){returnCell.textContent=valid?(projected?(ret>0?"+":"")+ret.toFixed(2)+"%":clean(quote.return_pct)):"—";setState(returnCell,valid?ret:0)}
    if(pnlCell){pnlCell.textContent=valid?money(pnl):"—";setState(pnlCell,valid?pnl:0)}
+   // News is a separate public display overlay; never use morning brief_note.
+   const newsCell=item.row.querySelector('td[data-label="Research Note"]');
+   if(newsCell&&typeof quote.company_news_status==="string"){
+    const items=Array.isArray(quote.company_news)?quote.company_news.slice(0,2):[];
+    newsCell.textContent="";
+    let appended=0;
+    for(const story of items){
+     let target;try{target=new URL(story.url)}catch{continue}
+     if(target.protocol!=="https:"||target.username||target.password||target.port||
+        !story.summary||!story.published_et||!story.publisher)continue;
+     const entry=document.createElement("div");entry.className="vx-company-news-entry";
+     const link=document.createElement("a");link.href=target.href;link.target="_blank";
+     link.rel="noopener noreferrer";link.textContent=story.summary;
+     const posted=document.createElement("span");
+     posted.textContent=story.publisher+" · "+story.published_et;
+     entry.appendChild(link);entry.appendChild(posted);newsCell.appendChild(entry);appended++;
+    }
+    if(!appended){
+     const unavailable=quote.company_news_status==="PENDING"?"Checking Google Finance company news…":
+      quote.company_news_status==="UNAVAILABLE"?"Google Finance company news temporarily unavailable.":
+      "No matching Google Finance company news verified for "+(quote.company_news_session_date||"previous trading session")+".";
+     const status=document.createElement("span");status.className="vx-company-news-status";
+     status.textContent=unavailable;newsCell.appendChild(status);
+    }
+   }
   }
   const aggregate=data.active_unrealized_model_pnl;
   const amount=typeof aggregate==="number"&&Number.isFinite(aggregate)?aggregate:null;
