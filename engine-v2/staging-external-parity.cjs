@@ -60,17 +60,19 @@ async function probe({origin=ORIGIN,fetcher=fetch,pause=ms=>new Promise(resolve=
   const pnl=row.match(/<td data-label="P&L, \$" data-valuation-field="pnl" class="(?:gain|loss)">([^<]*)<\/td>/);
   const pct=row.match(/<td data-label="Return" data-valuation-field="return">([^<]*)<\/td>/);
   if(!current||!pnl||!pct)throw Error('STAGING_VALUATION_FIELDS_MISSING');
-  const label=current[2],isFresh=label.startsWith('FRESH_DELAYED · GOOGLEFINANCE delayed ');
+  const label=current[2],isMinute=label.startsWith('FRESH_MINUTE_BAR · GOOGLE_FINANCE_CHART_1M · completed 1-minute close · ');
+  const isFresh=isMinute||label.startsWith('FRESH_DELAYED · GOOGLEFINANCE delayed ');
   const isStale=label.startsWith('STALE · '),isUnavailable=label.startsWith('UNAVAILABLE · ');
   if(!isFresh&&!isStale&&!isUnavailable)throw Error('STAGING_VALUATION_STATUS_INVALID');
   if(!isFresh){
    if(pnl[1]!=='—'||pct[1]!=='—')throw Error('STAGING_STALE_PNL_PRESENT');
    continue;
   }
-  const time=label.match(/^FRESH_DELAYED · GOOGLEFINANCE delayed (\d{1,2})m · (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ET$/);
-  if(!time||Number(time[1])>20)throw Error('STAGING_FRESH_QUOTE_EVIDENCE_INVALID');
-  const stamp=sourceTime(time[2]),at=Date.parse(feed.valuation_as_of||'');
-  if(!Number.isFinite(at)||at-Date.parse(stamp)>22*60000||at-Date.parse(stamp)<-2*60000)
+  const time=isMinute?label.match(/^FRESH_MINUTE_BAR · GOOGLE_FINANCE_CHART_1M · completed 1-minute close · (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ET$/):
+   label.match(/^FRESH_DELAYED · GOOGLEFINANCE delayed (\d{1,2})m · (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ET$/);
+  if(!time||(!isMinute&&Number(time[1])>20))throw Error('STAGING_FRESH_QUOTE_EVIDENCE_INVALID');
+  const stamp=sourceTime(time[isMinute?1:2]),at=Date.parse(feed.valuation_as_of||'');
+  if(!Number.isFinite(at)||at-Date.parse(stamp)>(isMinute?7:22)*60000||at-Date.parse(stamp)<-2*60000)
    throw Error('STAGING_VISIBLE_QUOTE_STALE');
   const price=parseMoney(current[1].trim()),profit=parseMoney(pnl[1]),entry=p.entry_price;
   if(!Number.isFinite(price)||price<=0||!Number.isFinite(profit)||
@@ -86,17 +88,21 @@ async function probe({origin=ORIGIN,fetcher=fetch,pause=ms=>new Promise(resolve=
  if(feed.active_count){
   if(feed.valuation_read_only!==true||!Number.isFinite(Date.parse(feed.valuation_as_of||'')))
    throw Error('STAGING_VALUATION_CONTRACT_MISSING');
-  const fresh=feed.active_portfolio.filter(q=>q.valuation_status==='FRESH_DELAYED');
+  const fresh=feed.active_portfolio.filter(q=>['FRESH_DELAYED','FRESH_MINUTE_BAR'].includes(q.valuation_status));
   if(feed.valuation_coverage!==fresh.length)throw Error('STAGING_VALUATION_COVERAGE_INVALID');
   for(const q of feed.active_portfolio){
-   if(!['FRESH_DELAYED','STALE','UNAVAILABLE'].includes(q.valuation_status))
+   if(!['FRESH_DELAYED','FRESH_MINUTE_BAR','STALE','UNAVAILABLE'].includes(q.valuation_status))
     throw Error('STAGING_VALUATION_STATUS_INVALID');
-   if(q.valuation_status!=='FRESH_DELAYED'&&q.unrealized_model_pnl!==null)
+   if(!['FRESH_DELAYED','FRESH_MINUTE_BAR'].includes(q.valuation_status)&&q.unrealized_model_pnl!==null)
     throw Error('STAGING_STALE_PNL_PRESENT');
-   if(q.valuation_status==='FRESH_DELAYED'&&
-      (q.quote_source!=='GOOGLEFINANCE'||!Number.isFinite(q.current_valuation_price)||
-       q.current_valuation_price<=0||!Number.isFinite(Date.parse(q.quote_timestamp_utc||''))||
-       !Number.isFinite(q.quote_delay_minutes)))
+   if(['FRESH_DELAYED','FRESH_MINUTE_BAR'].includes(q.valuation_status)&&
+      (!Number.isFinite(q.current_valuation_price)||q.current_valuation_price<=0||
+       !Number.isFinite(Date.parse(q.quote_timestamp_utc||''))||
+       (q.valuation_status==='FRESH_DELAYED'&&(q.quote_source!=='GOOGLEFINANCE'||
+        !Number.isFinite(q.quote_delay_minutes)))||
+       (q.valuation_status==='FRESH_MINUTE_BAR'&&
+        (q.quote_source!=='GOOGLE_FINANCE_CHART_1M'||q.quote_delay_minutes!==null||
+         q.valuation_price_kind!=='COMPLETED_MINUTE_BAR_CLOSE'))))
     throw Error('STAGING_FRESH_QUOTE_EVIDENCE_INVALID');
   }
   if(fresh.length!==feed.active_count&&feed.unrealized_model_pnl!==null)

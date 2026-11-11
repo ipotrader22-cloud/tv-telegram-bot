@@ -87,3 +87,20 @@ test('tampered rendered model fingerprint is rejected by exact HTML comparison',
  const f=feed(),html=renderShadowSwing(f);
  await assert.rejects(()=>probe(mock({htmlValue:html.replace('id="model-snapshot-id"', 'id="model-snapshot-falsified"')})),/EXACT_VISIBLE_HTML_MISMATCH/);
 });
+
+test('Google completed minute bar is transparently labelled and valued in external HTML/API',async()=>{
+ const {composeValuation}=require('./intraday-valuation.cjs');
+ const now=new Date('2026-11-11T16:55:00Z'),f=feed();
+ f.active_portfolio=[{ticker:'VTRS',entry_date:'2026-11-11',entry_price:20.82,current_model_reference_price:20.82}];
+ f.active_count=1;
+ const quote={ticker:'VTRS',price:20.9351,timestamp:'2026-11-11T16:54:00Z',
+  provider:'GOOGLE_FINANCE_CHART_1M',priceKind:'COMPLETED_MINUTE_BAR_CLOSE',
+  verified:true,session:'REGULAR',sourceHash:'a'.repeat(64),
+  sourceId:'GOOGLE_CHART_1M:VTRS:2026-11-11T16:53:00Z:'+'b'.repeat(64),
+  delayMinutes:null};
+ const valued=composeValuation(f,[quote],{now});
+ assert.equal(valued.active_portfolio[0].valuation_status,'FRESH_MINUTE_BAR');
+ assert.equal((await probe(mock({feedValue:valued}))).valuationStatus,'FRESH_GOOGLE_VALUATION');
+ const forged=renderShadowSwing(valued).replace('FRESH_MINUTE_BAR · GOOGLE_FINANCE_CHART_1M','FRESH_DELAYED · GOOGLE_FINANCE_CHART_1M');
+ await assert.rejects(()=>probe(mock({feedValue:valued,htmlValue:forged})),/STAGING_VALUATION_STATUS_INVALID/);
+});

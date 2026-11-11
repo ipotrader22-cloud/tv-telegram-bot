@@ -1,3 +1,48 @@
+## ADR — Issue #388 completed Google minute valuation evidence — 2026-11-11
+
+The approved Google Sheets `GOOGLEFINANCE(price)` cell can change while
+`GOOGLEFINANCE(tradetime)` remains old for individual stocks. On November 11
+the staging quote grid showed this for VTRS, and its price-only change was
+correctly refused as a fresh valuation. External read-only CI established
+the existing Google Finance Chart 1-minute source returned recent completed
+regular-session bars for AIZ, EXR, PSA and VTRS; the response can also contain
+future/in-progress bars, which must never be used.
+
+For the isolated staging *observer only*, the intraday valuation reader
+therefore retains fresh timestamped `GOOGLEFINANCE` Sheets quotes as the
+primary source. On a missing/stale ticker, at most two concurrent requests
+query the existing `createGoogleChartSource().getMinuteHistory` source for
+that ticker and the same NYSE trading date. Source hash, per-bar symbol,
+session identity, source ID, time ordering, strictly completed 60-second
+interval, positive OHLCV and causality are checked. Future/in-progress bars
+are discarded. Only a completed close within five minutes of observation
+is marked `FRESH_MINUTE_BAR`; otherwise the prior marked price remains
+STALE or UNAVAILABLE with NULL P&L. Chart failures use a 1-to-5-minute
+bounded backoff. There is no Yahoo/broker substitution.
+
+New public projection fields explicitly identify
+`quote_source: GOOGLE_FINANCE_CHART_1M`,
+`valuation_price_kind: COMPLETED_MINUTE_BAR_CLOSE`,
+`quote_delay_minutes: null` (provider delay is not claimed), source time ET
+and UTC, and `valuation_status: FRESH_MINUTE_BAR`. The displayed price
+is a **completed indicative Google one-minute close, not a live LAST trade
+nor an execution**. A mix of independently fresh Google Sheet quotes and
+completed minute-bar closes is reported as `FRESH_GOOGLE_VALUATION` with
+complete ticker coverage and the unchanged $10K normalized model accounting.
+The previous `FRESH_DELAYED` classification remains for all-Sheets data.
+External parity checks the status-specific source, time and arithmetic.
+No ledger, 10:00 decision, 518-stock research, nine-factor scoring, Q/R,
+stop/target, order, staging financial Sheet or production website changes.
+
+Deployment remains isolated to `vixale-engine-v2-shadow-observer` with
+no Render tier increase. Require staging CI and real observer/API/HTML quote
+readback to establish whether this source actually resolves all open
+positions under real Render network conditions. If Google Chart is blocked
+there, fail closed without claiming acceptance. Roll back by reverting this
+staging PR and redeploying the prior observer SHA.
+
+---
+
 ## Issue #388 staging HTML/API parity follow-up — 2026-11-11
 
 The staging external observer verifier must not demand identical live valuation
