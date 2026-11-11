@@ -118,11 +118,30 @@ test('no verified news never substitutes old score text; legacy renderer is unch
  assert.match(legacy,/Technical nine-factor review/);
  assert.match(legacy,/Reviewed 2026-11-11/);
 });
-test('previous NYSE session respects Friday, Monday and holiday dates',async()=>{
- let observed=null;
- const decorate=news.createCompanyNewsReader({clock:()=>new Date('2026-11-30T17:00:00Z'),
-  load:async params=>{observed=params.sessionDate;return [];}});
- const x=await decorate({available:true,data:feed()});
- assert.equal(observed,'2026-11-27');
- assert.equal(x.data.company_news_session_date,'2026-11-27');
+test('latest NYSE session selects today from 09:30 ET and previous session before opening',()=>{
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T19:20:00Z')),'2026-11-11');
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T14:29:00Z')),'2026-11-10');
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T14:30:00Z')),'2026-11-11');
+ assert.equal(news.latestNewsSession(new Date('2026-11-11T22:00:00Z')),'2026-11-11');
+ assert.equal(news.latestNewsSession(new Date('2026-11-14T17:00:00Z')),'2026-11-13');
+ assert.equal(news.latestNewsSession(new Date('2026-11-27T14:29:00Z')),'2026-11-25');
+ assert.equal(news.latestNewsSession(new Date('2026-11-27T14:30:00Z')),'2026-11-27');
+ assert.equal(news.latestNewsSession(new Date('2026-11-30T17:00:00Z')),'2026-11-30');
+});
+test('today AIZ Google Finance news includes source and posting time',async()=>{
+ const today=new Date('2026-11-11T19:20:00Z'),sessionDate='2026-11-11';
+ const html=page([card('Why Assurant (AIZ) Might be Well Poised for a Surge','1 hour ago',
+  'https://www.zacks.com/stock/news/3027860/why-assurant-aiz-might-be-well-poised-for-a-surge','Zacks')]);
+ const fetcher=async url=>({ok:true,headers:{get:()=>null},text:async()=>url.includes('google.com')?html:
+  '<meta property="article:published_time" content="2026-11-11T13:10:00-05:00"><meta name="description" content="Assurant shares gain attention after a new financial update.">'});
+ const items=await news.collect({ticker:'AIZ',exchange:'NYSE',sessionDate,now:today,fetcher});
+ assert.equal(items.length,1);
+ assert.equal(items[0].published_utc,'2026-11-11T18:10:00.000Z');
+ assert.match(items[0].published_et,/Nov 11, 2026/);
+ assert.match(items[0].summary,/Assurant/);
+ const reader=news.createCompanyNewsReader({clock:()=>today,load:async params=>{
+  assert.equal(params.sessionDate,'2026-11-11');return items;}});
+ const snapshot=await reader({available:true,data:feed()});
+ assert.equal(snapshot.data.company_news_session_date,'2026-11-11');
+ assert.match(core.renderSwingLeadersHtml(snapshot.data),/Nov 11, 2026/);
 });
