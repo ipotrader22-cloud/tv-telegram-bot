@@ -104,7 +104,7 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
     state=await journal.update(targetDate,{messageId:sent.messageId,delivery:'ACCEPTED_NOT_DELIVERED'});
    }
    return await checkAcceptedDelivery(plan);
-  }catch(e){return blocked('STAGING_'+stage+'_EXCEPTION')}
+  }catch(e){return blocked(stage==='RESEARCH'&&e?.message==='PREOPEN_PREPARATION_MISSING'?'PREOPEN_PREPARATION_MISSING':'STAGING_'+stage+'_EXCEPTION')}
  });
 }
 module.exports={runStagingPipeline,SHADOW_ORIGIN};

@@ -4454,3 +4454,34 @@ Handbook update required: YES.
 ## Engine 2 staging — November 5 delivery receipt isolation
 
 Once the private Sheet and shadow publication are verified and Resend has returned a durable message ID, retries check only that ID. A restricted send-only key can send the allowlisted test but cannot retrieve its receipt. A persisted SEND_ONLY receipt flag prevents repeat denied lookups for that message. An explicit provider restricted_api_key reply is reported as STAGING_PUBLICATION_VERIFIED_DELIVERY_LOOKUP_RESTRICTED. The journal keeps ACCEPTED_NOT_DELIVERED until a matching provider receipt is obtained. Invalid credentials, provider identity mismatches, and transient lookup failures remain errors. Verify external delivery against the exact provider ID without resending or granting broad key access. A prior verified publication with an accepted ID cannot consume a newer financial decision window. Unfinished publication and ambiguous sends retain their existing recovery priority. No schema migration or financial replay is required.
+
+## 2026-11-12 — Completed daily negative-target proof for carried lots
+
+Handbook update required: YES. Isolated Engine 2 staging only; no production
+cutover, trading-rule change, historical replay, or decision-window extension.
+The Nov 12 preopen was blocked by missing Google 1m bars for AIZ, EXR and PSA.
+No prepared journal then surfaced as generic STAGING_RESEARCH_EXCEPTION at
+10:00, followed by the correctly enforced expired decision window.
+
+A certified Google completed 1d session HIGH strictly below the original
+entry × 1.10 (including the existing comparison tolerance) proves no target
+touch anywhere in that session. Preopen now uses this negative evidence
+without requesting or inventing missing minute candles. Proof requires matching
+symbol, source, raw hash, daily bars, completed-session date, valid OHLCV and
+session close no later than the scan cutoff. Every session is checked separately.
+If the daily high can reach the target, the original complete 09:31+ minute
+history is still required to establish a real post-entry touch and its time.
+Missing or invalid proof cannot relax that requirement. Opening STOP continues
+to use the independent daily session OPEN, never the intraday low.
+
+The proof is part of the existing immutable research artifact/fingerprint.
+Raw historical minute quality audits remain strict and unchanged. Known
+PREOPEN_PREPARATION_MISSING is now returned explicitly; unrecognized research
+errors remain redacted. Universe (518), nine-factor scoring, ledger, Q/R,
+fixed-$10K accounting, native outbox and all schedules are unchanged.
+Tests cover target equality/tolerance, bad provenance, incomplete/short sessions,
+DST, entry-day timing, missing per-day evidence, conflicting minute highs,
+opening STOP and zero publication/email on absent preparation. A missed Nov 12
+10:00 review must not be backdated or represented as delivered. Rollback: revert
+this PR on the isolated staging branch and redeploy the staging cron; no schema
+or financial data migration is involved.

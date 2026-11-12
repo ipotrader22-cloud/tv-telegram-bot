@@ -130,3 +130,13 @@ test('unexpected lookup denial remains an error and a later matching receipt can
  assert.equal(h.sends,1);
  assert.equal(h.sheets.writes,1);
 });
+
+test('missing preopen is explicit and redacted; research cannot publish or send',async t=>{
+ const h=await harness(t);
+ for(const [message,reason] of [['PREOPEN_PREPARATION_MISSING','PREOPEN_PREPARATION_MISSING'],
+  ['private-research-secret','STAGING_RESEARCH_EXCEPTION']]){
+  h.args.prepareProviders=async()=>{throw Error(message)};
+  assert.equal((await h.run()).reason,reason);
+  assert.equal(h.sheets.writes,0);assert.equal(h.sends,0);
+ }
+});
