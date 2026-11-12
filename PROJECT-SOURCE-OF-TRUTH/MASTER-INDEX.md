@@ -9,7 +9,7 @@ Before stating that any website state is **CURRENT, LATEST, PRODUCTION, DEPLOYED
 ## Mandatory read order
 
 1. `PROJECT-SOURCE-OF-TRUTH/MASTER-INDEX.md`
-2. `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-REPORTING-INCEPTION.md`
+2. `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SESSION-VALUATION.md`
 3. The live authoritative source relevant to the claim:
    - GitHub repository/branch/commit for code state
    - deployment provider/runtime for deployed state
@@ -18,7 +18,8 @@ Before stating that any website state is **CURRENT, LATEST, PRODUCTION, DEPLOYED
 
 ## Current-State manifest
 
-- **Website / Design / Copy:** `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-REPORTING-INCEPTION.md`
+- **Website / Design / Copy:** `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SESSION-VALUATION.md`
+- Historical November 11 reporting inception manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-REPORTING-INCEPTION.md`
 - Historical November 11 news coverage manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-NEWS-COVERAGE.md`
 - Historical November 11 same-day news manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-TODAY-NEWS.md`
 - Historical November 11 prior-session news manifest: `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SWING-NEWS.md`
