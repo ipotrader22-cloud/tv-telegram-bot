@@ -54,6 +54,9 @@ signed-in reporting-inception acceptance limitation.
 
 Final PR head `95a39c94572712863de3d6146b2233e90ced48af` passed Swing Source
 Rollout run `43126543397` and EN/RU locale-contract run `43126543419`.
+Main push run `43126894614` completed **SUCCESS** for both locale-contract
+and actual production EN/RU browser-qa, including public route/mobile checks,
+anonymous Swing authentication gate, favicon, owner copy/PDF and RU Services.
 The PR browser job is intentionally skipped; authenticated production evidence
 above was collected directly after exact-SHA deployment. Full local Swing
 checks include 15 valuation regressions, two emitted-script execution tests,

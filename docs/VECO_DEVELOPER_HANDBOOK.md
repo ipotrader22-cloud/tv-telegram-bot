@@ -8,6 +8,8 @@ minute closes and +$207.89 unrealized P&L. The browser refresh marker advanced
 from 00:24:38.946Z to 00:25:38.614Z without reload; no new application script
 errors. Original history and November 11 $0 reporting anchor independently
 verified in authenticated API/page. Final-head Swing and locale CI passed.
+Main push `43126894614` completed SUCCESS for locale-contract and actual
+production EN/RU browser-qa, including the anonymous Swing access gate.
 See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SESSION-VALUATION.md`
 for exact values, test evidence and bounded claims. This supersedes the older
 reporting-inception ADR's unavailable signed-in acceptance evidence.
