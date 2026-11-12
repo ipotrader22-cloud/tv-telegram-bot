@@ -1,5 +1,17 @@
 ## ADR — Swing refresh execution and closed-session valuation (2026-11-11)
 
+**Production acceptance (November 11, 19:24–19:26 ET):** PR #407 merged as
+`4a1935b334621f5d8bedb0408ab2460f990d3b3e`; Render deployment
+`dep-dbqgds9srm7s738gvqp0` reached LIVE at 2026-11-12T00:24:12.331109Z.
+Fresh signed-in page/API and Render logs agree on all four 16:00 ET Google
+minute closes and +$207.89 unrealized P&L. The browser refresh marker advanced
+from 00:24:38.946Z to 00:25:38.614Z without reload; no new application script
+errors. Original history and November 11 $0 reporting anchor independently
+verified in authenticated API/page. Final-head Swing and locale CI passed.
+See `PROJECT-SOURCE-OF-TRUTH/VIXALE-WEBSITE-CURRENT-STATE-2026-11-11-SESSION-VALUATION.md`
+for exact values, test evidence and bounded claims. This supersedes the older
+reporting-inception ADR's unavailable signed-in acceptance evidence.
+
 **Handbook update required: YES.** Owner requested both fixes after a signed-in
 production audit. This change is a read-only website valuation/presentation
 repair; Engine 2 research, 518-symbol universe, nine-factor scores, morning
