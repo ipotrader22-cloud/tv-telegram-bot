@@ -140,3 +140,114 @@ test('stale cached Google quote retains original evidence but never supplies cur
  assert.match(html,/data-label="P&L, \$" class="vx-model-open-pnl flat">—/);
  assert.equal(base.data.active_portfolio[0].current_price,'$322.02');
 });
+
+test('closed-session reader recovers final quotes on cold start without sheet writes',async()=>{
+ const evening=new Date('2026-11-12T00:10:00Z'),d=grid();
+ const rows=d.data.sheets[0].data[0].rowData;
+ rows[1].values[2].effectiveValue.stringValue='2026-11-11 16:00:00';
+ rows[2].values[2].effectiveValue.stringValue='2026-11-11 15:59:30';
+ let reads=0;
+ const sheets={spreadsheets:{get:async()=>{reads++;return d}}};
+ const decorate=valuation.createIntradayValuation({getSheetsClient:async()=>sheets,clock:()=>evening,
+  chart:async()=>{throw Error('unexpected chart call')},logger:{info(){}}});
+ const base={available:true,data:feed()},original=JSON.stringify(base);
+ const out=(await decorate(base)).data;
+ assert.equal(out.valuation_status,'LAST_SESSION_VALUATION');
+ assert.equal(out.valuation_coverage,2);
+ assert.equal(out.active_unrealized_model_pnl,7.64);
+ assert.equal(out.active_portfolio[0].valuation_status,'LAST_SESSION_QUOTE');
+ assert.equal(out.active_portfolio[0].quote_timestamp_et,'2026-11-11 16:00:00 ET');
+ assert.equal(core.addDisplayMetrics(out).active_unrealized_model_pnl,7.64);
+ const html=page.enhanceActivePortfolioTable(core.renderSwingLeadersHtml(out));
+ assert.match(html,/Market closed\. Last regular-session valuation:/);
+ assert.match(html,/2026-11-11 16:00:00 ET/);
+ assert.match(html,/data-label="Current">\$320\.41/);
+ assert.match(html,/\+\$7\.64/);
+ const ru=require('../website_russian_localization').localizeRussianHtml(html,'/trading-systems/swing-trading');
+ assert.match(ru,/Рынок закрыт\. Последняя оценка основной сессии:/);
+ await decorate(base);assert.equal(reads,1);
+ assert.equal(JSON.stringify(base),original);
+});
+test('closed-session admission rejects old, midday, future and extended-hours marks',()=>{
+ const evening=new Date('2026-11-12T00:10:00Z');
+ for(const ts of ['2026-11-10T21:00:00Z','2026-11-11T18:00:00Z','2026-11-11T21:01:00Z','2026-11-12T21:00:00Z']){
+  assert.equal(valuation.quoteUsable(quote('AIZ',323,ts),evening),false,ts);
+ }
+ assert.equal(valuation.quoteUsable(quote('AIZ',323,'2026-11-11T21:00:00Z'),evening),true);
+ assert.equal(valuation.quoteUsable(quote('AIZ',323,'2026-11-11T20:40:00Z'),evening),true);
+ assert.equal(valuation.quoteUsable(quote('AIZ',323,'2026-11-11T20:39:59Z'),evening),false);
+ const partial=valuation.project(feed(),[quote('AIZ',323,'2026-11-11T21:00:00Z')],evening);
+ assert.equal(partial.valuation_coverage,1);assert.equal(partial.active_unrealized_model_pnl,null);
+ const newerLot=feed();newerLot.active_portfolio[0].entry_date='2026-11-12';
+ assert.equal(valuation.project(newerLot,[quote('AIZ',323,'2026-11-11T21:00:00Z')],evening).valuation_coverage,0);
+});
+test('previous session handles overnight, weekends, holidays, DST and early close',()=>{
+ for(const [now,day,close] of [
+  ['2026-11-12T13:00:00Z','2026-11-11',960],
+  ['2026-11-14T17:00:00Z','2026-11-13',960],
+  ['2026-11-26T17:00:00Z','2026-11-25',960],
+  ['2026-11-27T18:00:00Z','2026-11-27',780],
+  ['2026-11-30T13:00:00Z','2026-11-27',780],
+  ['2026-11-01T17:00:00Z','2026-10-30',960]]){
+  const context=valuation.valuationSession(new Date(now));
+  assert.equal(context.day,day);assert.equal(context.close,close);assert.equal(context.open,false);
+ }
+ assert.equal(new Date(valuation.valuationSession(new Date('2026-11-01T17:00:00Z')).closeTime).toISOString(),'2026-10-30T20:00:00.000Z');
+ const final=quote('AIZ',323,'2026-11-11T21:00:00Z');
+ assert.equal(valuation.quoteUsable(final,new Date('2026-11-12T14:29:59Z')),true);
+ assert.equal(valuation.quoteUsable(final,new Date('2026-11-12T14:30:00Z')),false);
+});
+test('chart recovery selects final completed RTH minute, excludes after hours and earlier session',async()=>{
+ const series=[];series[0]=['AIZ','NYSE'];series[8]=60;
+ series[3]=[[null,null,[
+  [320,321,322,319,'2026-11-10T20:59:00Z',100],
+  [320,323,324,319,'2026-11-11T20:59:00Z',100],
+  [320,999,999,319,'2026-11-11T21:00:00Z',100]
+ ]]];
+ const raw=JSON.stringify([['wrb.fr',null,JSON.stringify([[series]])]]);
+ let requestBody;
+ const fetcher=async(_url,options)=>{requestBody=options.body.toString();return {ok:true,status:200,text:async()=>raw}};
+ const q=await valuation.chartMinuteQuote({ticker:'AIZ',exchange:'NYSE',now:new Date('2026-11-12T00:10:00Z'),fetcher});
+ assert.equal(q.price,323);assert.equal(q.timestamp,'2026-11-11T21:00:00.000Z');
+ assert.match(decodeURIComponent(requestBody),/2026,11,11/);
+ const early=structuredClone(series);early[3][0][2]=[
+  [320,325,326,319,'2026-11-27T17:59:00Z',100],
+  [320,999,999,319,'2026-11-27T18:00:00Z',100]];
+ const q2=await valuation.chartMinuteQuote({ticker:'AIZ',exchange:'NYSE',now:new Date('2026-11-27T23:00:00Z'),
+  fetcher:async()=>({ok:true,status:200,text:async()=>JSON.stringify([['wrb.fr',null,JSON.stringify([[early]])]])})});
+ assert.equal(q2.price,325);assert.equal(q2.timestamp,'2026-11-27T18:00:00.000Z');
+});
+test('cold restart uses chart when Sheets fails; next opening never reuses prior close',async()=>{
+ let now=new Date('2026-11-12T00:10:00Z'),calls=0;
+ const decorate=valuation.createIntradayValuation({getSheetsClient:async()=>{throw Error('Sheets unavailable')},
+  clock:()=>now,logger:{info(){}},chart:async({ticker})=>{calls++;return quote(ticker,330,'2026-11-11T21:00:00Z','COMPLETED_MINUTE_BAR_CLOSE')}});
+ const base={available:true,data:feed()};
+ const out=(await decorate(base)).data;
+ assert.equal(out.valuation_coverage,2);assert.equal(calls,2);
+ now=new Date('2026-11-12T14:30:00Z');
+ const reopened=(await decorate(base)).data;
+ assert.equal(reopened.valuation_coverage,0);assert.equal(reopened.active_unrealized_model_pnl,null);
+ assert.equal(reopened.valuation_market_open,true);
+});
+test('server row dollars keep sub-cent source precision and equal API after refresh',()=>{
+ const valued=valuation.project(feed(),[quote('AIZ',323.265,'2026-11-11T21:00:00Z')],new Date('2026-11-12T00:10:00Z'));
+ const html=page.enhanceActivePortfolioTable(core.renderSwingLeadersHtml(valued));
+ const expected=(10000*(323.265/322.02-1)).toFixed(2);
+ assert.match(html,new RegExp('class="vx-model-open-pnl gain">\\+\\$'+expected.replace('.','\\.')+'<'));
+});
+test('closing bell retains eligible confirmed marks if both providers temporarily fail',async()=>{
+ let now=new Date('2026-11-11T20:59:30Z'),fail=false;
+ const d=grid();for(const row of d.data.sheets[0].data[0].rowData.slice(1))
+  row.values[2].effectiveValue.stringValue='2026-11-11 15:59:00';
+ const decorate=valuation.createIntradayValuation({clock:()=>now,logger:{info(){}},
+  getSheetsClient:async()=>{if(fail)throw Error('temporary');return {spreadsheets:{get:async()=>d}}},
+  chart:async()=>null});
+ const base={available:true,data:feed()};
+ assert.equal((await decorate(base)).data.valuation_coverage,2);
+ fail=true;now=new Date('2026-11-11T21:00:00Z');
+ const out=(await decorate(base)).data;
+ assert.equal(out.valuation_coverage,2);assert.equal(out.valuation_status,'LAST_SESSION_VALUATION');
+ assert.equal(out.active_unrealized_model_pnl,7.64);
+ now=new Date('2026-11-12T14:30:00Z');
+ assert.equal((await decorate(base)).data.valuation_coverage,0);
+});

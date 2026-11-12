@@ -105,6 +105,10 @@ async function request(url,host,cookie='',body) {
    assert.match(cookie,/vixale_dashboard_session=/);
    const page=await request(SWING,host,cookie), api=await request('/api/swing-leaders',host,cookie);
    assert.equal(page.status,200);assert.equal(api.status,200);
+   for (const match of page.body.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
+    if (/type=["']application\/(?:ld\+)?json/.test(match[1])) continue;
+    assert.doesNotThrow(()=>new vm.Script(match[2]), host+' '+role+' rendered inline script syntax');
+   }
    const payload=JSON.parse(api.body);
    assert.equal(payload.snapshot_date,expected.snapshot_date);
    assert.equal(payload.active_count,expected.active_count);
