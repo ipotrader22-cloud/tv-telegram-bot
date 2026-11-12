@@ -17,7 +17,7 @@ const dayDates=()=>{
  }
  return days;
 };
-function fake({badMinute=false}={}){
+function fake({badMinute=false,belowTarget=false}={}){
  const calls={googleDaily:0,googleMinute:0,news:0,yahoo:0};
  const daily=dayDates();
  const fetchFn=async (url,opt)=>{
@@ -53,7 +53,7 @@ function fake({badMinute=false}={}){
  const previous={epoch:'2026-10-19',date:'2026-11-03',closed:[],history:[],
   active:['CVX','XOM'].map(ticker=>({ticker,entryDate:'2026-11-03',
    entryTime:'2026-11-03T15:00:00Z',lastTargetCheckedAt:'2026-11-03T15:00:00Z',
-   entryPrice:100,exchange:'NYSE'}))};
+   entryPrice:belowTarget?200:100,exchange:'NYSE'}))};
  const env={VIXALE_V2_STAGING_PRICE_POLICY:'GOOGLE_LATEST_1000_MODEL_V1',
   VIXALE_V2_RESEARCH_UNIVERSE:'CVX,XOM',
   VIXALE_V2_RESEARCH_SECTORS_JSON:JSON.stringify({CVX:'XLE',XOM:'XLE'})};
@@ -79,4 +79,14 @@ test('Google-only preopen blocks missing required 09:31–15:59 minute instead o
  const f=fake({badMinute:true});
  await assert.rejects(()=>preparePreopen(f.params),/GOOGLE_MINUTE_COVERAGE_GAP/);
  assert.equal(f.calls.yahoo,0);
+});
+
+test('certified below-target daily highs finish nine-factor preopen without a minute request',async()=>{
+ const f=fake({belowTarget:true,badMinute:true});
+ const p=await preparePreopen(f.params);
+ validatePrepared(p,{date,previous:f.previous,now:at});
+ assert.equal(p.batch.items.length,2);
+ assert.equal(Object.keys(p.batch.items[0].factors).length,9);
+ assert.equal(f.calls.googleMinute,0);assert.equal(f.calls.yahoo,0);
+ assert.ok(p.exits.every(x=>x.reason!=='TARGET'));
 });

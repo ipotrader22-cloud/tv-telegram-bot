@@ -62,10 +62,16 @@ async function preparePreopen({date,url,clock=()=>new Date(),env,fetchFn=fetch,g
     const daily=batch.sourceEvidence?.artifact?.data?.find(x=>x.metrics?.symbol===position.ticker);
     if(!Array.isArray(daily?.bars)||daily.source!=='GOOGLE_FINANCE_CHART_1DAY')
      throw Error('GOOGLE_HISTORICAL_OPEN_MISSING');
+    // A completed daily high below target proves no touch even when an
+    // illiquid stock has no reported trades in some minutes. All other days
+    // still require the original complete minute scan and exact trigger time.
+    const request={position,through,dailyBars:daily.bars,dailyEvidence:daily};
+    try{return googleHistoricalExit({...request,bars:[]})}
+    catch(error){if(error.message!=='GOOGLE_MINUTE_COVERAGE_GAP')throw error}
     const minutes=await createGoogleChartSource({fetchFn}).getMinuteHistory({
      ticker:position.ticker,fromDate:localET(from).date,throughDate:sourceSession
     });
-    return googleHistoricalExit({position,through,bars:minutes.bars,dailyBars:daily.bars});
+    return googleHistoricalExit({...request,bars:minutes.bars});
    }
    // Legacy Yahoo path remains isolated; only Google policy avoids it.
    const requestStart=Date.parse(from)-60000;

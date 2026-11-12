@@ -43,3 +43,45 @@ test('future or orphaned position and absent daily opening are blocked safely',(
  assert.throws(()=>googleHistoricalExit({position:{...position,entryTime:'bad'},through:end,bars:bars(),dailyBars:daily}),/TARGET_POSITION/);
  assert.throws(()=>googleHistoricalExit({position,through:end,bars:bars(),dailyBars:[]}),/GOOGLE_HISTORICAL_OPEN_MISSING/);
 });
+function proof(ds=[{...daily[0],high:105}]){
+ return {source:'GOOGLE_FINANCE_CHART_1DAY',rawHash:'a'.repeat(64),
+  metrics:{symbol:'CVX',lastCompleteDate:date},bars:ds};
+}
+function scan(p,opts={}){return googleHistoricalExit({position,through:end,bars:[],dailyBars:p.bars,dailyEvidence:p,...opts})}
+test('certified completed high below target proves no touch without fabricated minutes',()=>{
+ assert.equal(scan(proof()),null);
+ const p=proof([{...daily[0],open:94,high:105}]);
+ assert.equal(scan(p).reason,'STOP LOSS');
+ assert.equal(scan(p).triggerAt,first);
+});
+test('touching target, including numerical tolerance, still requires exact minute history',()=>{
+ for(const high of [110,111,110-5e-10])
+  assert.throws(()=>scan(proof([{...daily[0],high}])),/GOOGLE_MINUTE_COVERAGE_GAP/);
+});
+test('missing, mismatched or malformed daily provenance cannot bypass minute coverage',()=>{
+ for(const change of [p=>p.source='YAHOO',p=>p.rawHash='unknown',
+  p=>p.metrics.symbol='XOM',p=>p.metrics.lastCompleteDate='2026-11-02',
+  p=>p.bars[0].high=NaN,p=>p.bars[0].low=106,p=>p.bars[0].volume=-1]){
+  const p=proof();change(p);assert.throws(()=>scan(p),/GOOGLE_MINUTE_COVERAGE_GAP/);
+ }
+ const p=proof();assert.throws(()=>scan(p,{dailyBars:[{...p.bars[0],high:104}]}),/GOOGLE_MINUTE_COVERAGE_GAP/);
+});
+test('unfinished daily session and contradictory minute high fail closed',()=>{
+ assert.throws(()=>scan(proof(),{through:etTime(date,959)}),/GOOGLE_MINUTE_COVERAGE_GAP/);
+ assert.throws(()=>scan(proof(),{bars:[minute(1,111)]}),/GOOGLE_DAILY_MINUTE_EVIDENCE_CONFLICT/);
+});
+test('entry-day daily high below target is sufficient, pre-entry touch is not a timed exit',()=>{
+ const sameDay={...position,entryDate:date,entryTime:etTime(date,600),lastTargetCheckedAt:etTime(date,600)};
+ assert.equal(scan(proof(),{position:sameDay}),null);
+ assert.throws(()=>scan(proof([{...daily[0],high:111}]),{position:sameDay}),/GOOGLE_MINUTE_COVERAGE_GAP/);
+});
+test('each session needs its own negative proof; calendar honors early close and DST',()=>{
+ for(const [d,close] of [['2026-11-27',780],['2026-10-30',960]]){
+  const p=proof([{...daily[0],date:d,high:105}]);p.metrics.lastCompleteDate=d;
+  const lot={...position,entryDate:d,entryTime:etTime(d,600),lastTargetCheckedAt:etTime(d,600)};
+  assert.equal(scan(p,{position:lot,through:etTime(d,close)}),null);
+  assert.throws(()=>scan(p,{position:lot,through:etTime(d,close-1)}),/GOOGLE_MINUTE_COVERAGE_GAP/);
+ }
+ const p=proof();p.metrics.lastCompleteDate='2026-11-04';
+ assert.throws(()=>scan(p,{through:etTime('2026-11-04',960)}),/GOOGLE_HISTORICAL_OPEN_MISSING/);
+});

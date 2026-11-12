@@ -7,7 +7,7 @@ const {localET}=require('./market-data-adapter.cjs');
 const {sessionEvidence}=require('./nyse-session-adapter.cjs');
 const {etTime}=require('./delayed-model-policy.cjs');
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
-function googleHistoricalExit({position,through,bars,dailyBars}={}){
+function googleHistoricalExit({position,through,bars,dailyBars,dailyEvidence}={}){
  const from=position?.lastTargetCheckedAt||position?.entryTime;
  const start=Date.parse(from||''),end=Date.parse(through||''),entry=Date.parse(position?.entryTime||'');
  if(!position||!/^[A-Z][A-Z0-9.-]{0,14}$/.test(position.ticker||'')||
@@ -17,6 +17,13 @@ function googleHistoricalExit({position,through,bars,dailyBars}={}){
  if(start<entry||end<=entry||start>end||end-start>7*86400000)
   throw Error('TARGET_WINDOW_OUTSIDE_AVAILABLE_MINUTE_HISTORY');
  if(!Array.isArray(bars)||!Array.isArray(dailyBars))throw Error('GOOGLE_TARGET_EVIDENCE_INVALID');
+ // Only a certified, completed Google daily series may prove that a target
+ // was impossible. It never supplies the time of a positive target touch.
+ const certified=dailyEvidence?.source==='GOOGLE_FINANCE_CHART_1DAY'&&
+  dailyEvidence.metrics?.symbol===position.ticker&&
+  /^20\d\d-\d\d-\d\d$/.test(dailyEvidence.metrics?.lastCompleteDate||'')&&
+  /^[a-f0-9]{64}$/.test(dailyEvidence.rawHash||'')&&
+  hash(dailyEvidence.bars)===hash(dailyBars);
  const index=new Map(),daily=new Map();
  for(const d of dailyBars){
   if(!d||!/^20\d\d-\d\d-\d\d$/.test(d.date||'')||daily.has(d.date)||
@@ -58,7 +65,16 @@ function googleHistoricalExit({position,through,bars,dailyBars}={}){
    }
    continue;
   }
-  const b=index.get(t);
+  const b=index.get(t),d=daily.get(et.date);
+  const completeClose=Date.parse(etTime(et.date,close));
+  const negativeDaily=certified&&d&&et.date<=dailyEvidence.metrics.lastCompleteDate&&
+   completeClose<=end&&[d.open,d.high,d.low,d.close,d.volume].every(Number.isFinite)&&
+   d.low>0&&d.volume>=0&&d.high>=Math.max(d.open,d.close,d.low)&&
+   d.low<=Math.min(d.open,d.close)&&d.high+1e-9<position.entryPrice*1.1;
+  if(negativeDaily){
+   if(b&&b.high>d.high+1e-9)throw Error('GOOGLE_DAILY_MINUTE_EVIDENCE_CONFLICT');
+   minuteCoverage++;continue;
+  }
   if(!b)throw Error('GOOGLE_MINUTE_COVERAGE_GAP');
   minuteCoverage++;
   if(b.high+1e-9>=position.entryPrice*1.1)
