@@ -1,6 +1,7 @@
 "use strict";
 const copy = require("./lib/swing-risk-copy");
 module.exports = Object.freeze([
+  ...require('./lib/swing-valuation-copy').valuationTranslations,
   ["Open model positions monitored for targets, the 9:30 AM ET opening stop, and daily research rankings.", "Открытые модельные позиции: цели прибыли, стоп на открытии в 9:30 по Нью-Йорку и ежедневные исследовательские рейтинги."],
   ["Completed model positions. A holding below the required score of 70 closes at market immediately after new rankings are established.", "Закрытые модельные позиции. При рейтинге ниже обязательных 70 позиция закрывается по рыночной цене сразу после обновления рейтингов."],
   [copy.opening, "Если цена открытия основной сессии в 9:30 по Нью-Йорку минимум на 5% ниже цены входа, модельная позиция закрывается по рыночной цене сразу после подтверждения."],

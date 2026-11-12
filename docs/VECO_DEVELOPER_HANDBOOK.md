@@ -1,3 +1,60 @@
+## ADR — Swing refresh execution and closed-session valuation (2026-11-11)
+
+**Handbook update required: YES.** Owner requested both fixes after a signed-in
+production audit. This change is a read-only website valuation/presentation
+repair; Engine 2 research, 518-symbol universe, nine-factor scores, morning
+model decisions, stops/targets, ledger/Sheets writers, Q/R, historical/rebased
+Equity History, authentication, broker/bridge and delivery are unchanged.
+
+The actual rendered `vx-swing-active-quote-refresh-script` previously failed
+JavaScript parsing because an outer template literal converted a newline escape
+inside a quoted string to an actual newline; two chart regexes also lost their
+backslashes. Correct the three emitted escapes. Compile every inline script in
+full-preload EN/RU owner/viewer HTTP tests, and execute the emitted quote script
+against mocked DOM/fetch/timers to verify startup, the 60-second interval,
+closed/open state changes, failure clearing and hidden-tab suppression.
+
+`lib/swing-intraday-valuation.js` now selects the current RTH session while open,
+or the most recently completed NYSE session after close, premarket, weekends and
+holidays, using the existing DST/early-close calendar. Outside RTH it recovers
+quotes from the existing strict read-only Sheets source and completed Google
+Finance one-minute bars even after a process restart. Only that session's
+near-close evidence is eligible: at most 20 minutes before close for timestamped
+Sheets quotes, five minutes for completed minute-bar ends. Quotes after the
+regular close, from a different session, in the future or before a lot's entry
+date cannot value the lot. The final 15:59 bar ends at 16:00 (12:59/13:00 on early
+close). Neither morning reference marks nor arbitrary stale intraday marks are
+used as close prices. During RTH, original freshness limits remain in force.
+
+After close the per-row status is `LAST_SESSION_QUOTE`, aggregate status
+`LAST_SESSION_VALUATION`; added `valuation_market_open` and
+`valuation_session_date` fields support the shared EN/RU notice with actual
+source-time range. These are indicative last-session valuations, not a claim of
+an official closing auction price or live after-hours quote. Missing coverage
+still withholds aggregate P&L. The source timestamp is never relabelled as the
+observation time. Cache identity includes session, open/closed mode and lot date;
+next open requires new session quotes. Cold starts re-read evidence; no new disk,
+secret, database, spreadsheet write, service or paid plan is introduced.
+Off-hours upstream reads are bounded to a five-minute cache and two chart calls
+at once. The existing browser polls the protected API each 60 seconds.
+
+Server HTML, JSON and browser updates recognize the same last-session status.
+Server row P&L uses the exact projected value so sub-cent minute closes do not
+produce a different value when the browser refreshes the rounded price display.
+The $10,000-per-position model is unchanged. The November 11 $0 reporting anchor
+and immutable history remain separate from the open-position valuation.
+
+Validation: strict source/timestamp and $10K accounting tests, cold-start provider
+fallback, partial failures, old/future/after-hours rejection, overnight/weekend/
+holiday/DST/early close and next-open expiry; emitted-script execution in EN/RU;
+full production-preload HTTP and existing Swing regression gates. A live public
+Google chart read returned final-session bars for AIZ/EXR/PSA/VTRS on November 11.
+Source/fixture success is not deployment evidence: verify exact Render SHA LIVE,
+fresh signed-in page/API values and a real 60-second refresh after deployment.
+Rollback: revert this narrow PR and allow normal main auto-deploy; no data rollback.
+
+---
+
 ## ADR — Engine 2 Swing official reporting inception: November 11, 2026
 
 **Production deployment evidence (2026-11-11):** Reporting-curve
