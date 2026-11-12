@@ -235,3 +235,19 @@ test('server row dollars keep sub-cent source precision and equal API after refr
  const expected=(10000*(323.265/322.02-1)).toFixed(2);
  assert.match(html,new RegExp('class="vx-model-open-pnl gain">\\+\\$'+expected.replace('.','\\.')+'<'));
 });
+test('closing bell retains eligible confirmed marks if both providers temporarily fail',async()=>{
+ let now=new Date('2026-11-11T20:59:30Z'),fail=false;
+ const d=grid();for(const row of d.data.sheets[0].data[0].rowData.slice(1))
+  row.values[2].effectiveValue.stringValue='2026-11-11 15:59:00';
+ const decorate=valuation.createIntradayValuation({clock:()=>now,logger:{info(){}},
+  getSheetsClient:async()=>{if(fail)throw Error('temporary');return {spreadsheets:{get:async()=>d}}},
+  chart:async()=>null});
+ const base={available:true,data:feed()};
+ assert.equal((await decorate(base)).data.valuation_coverage,2);
+ fail=true;now=new Date('2026-11-11T21:00:00Z');
+ const out=(await decorate(base)).data;
+ assert.equal(out.valuation_coverage,2);assert.equal(out.valuation_status,'LAST_SESSION_VALUATION');
+ assert.equal(out.active_unrealized_model_pnl,7.64);
+ now=new Date('2026-11-12T14:30:00Z');
+ assert.equal((await decorate(base)).data.valuation_coverage,0);
+});
