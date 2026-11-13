@@ -1,3 +1,30 @@
+## November 12, 2026 — SMIO stalled-close recovery repair
+
+**Handbook update required: YES.** Owner authorized repair of partial-close
+and missed-EOD recovery. The affected setup retained a position with two retired
+closes and CLOSE_PENDING; exact last-order cancellation cause is not proven. The adapter now uses each current order's own first partial fill
+for cancellation timing and leaves the final working partial order intact when
+ordinary retries are exhausted. Existing two ordinary replacements are preserved;
+two additional replacements are available only inside the enabled IB-verified EOD
+window. The setup's persisted retired-order history bounds all attempts across
+restarts. EOD resumes existing close intents under fresh ownership, account,
+execution-history, position, all-client order and session proofs rather than
+skipping them or creating a competing intent. Missing/unknown orders stay reserved.
+Original close reasons and execution-first publication remain intact.
+
+Status gains version `20261112.1` and unresolved-close summaries; failed EOD
+recovery is visible. No strategy/Pine, target/stop, sizing, Render, Sheets or
+foreign-strategy changes. The new offline regression covers partial quantities and
+failure/race boundaries. GitHub/Render do not install the Windows bridge: local
+source comparison, controlled worker/reloader stop, adapter-only installation,
+original-environment restart and broker-backed acceptance remain required.
+See [SMIO_STALLED_CLOSE_RECOVERY_2026-11-12.md](SMIO_STALLED_CLOSE_RECOVERY_2026-11-12.md)
+for implementation, bounded guarantees, checks, local rollout and code-only rollback.
+This supersedes the unconditional two-replacement description for the EOD window;
+it does not waive ownership/session/history gates or authorize after-hours orders.
+
+---
+
 ## ADR — Swing refresh execution and closed-session valuation (2026-11-11)
 
 **Production acceptance (November 11, 19:24–19:26 ET):** PR #407 merged as
