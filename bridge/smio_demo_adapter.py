@@ -14,6 +14,12 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 from decimal import Decimal
 
+# Ordinary recovery retains its existing budget. Two additional replacements
+# are reserved for the enabled, broker-verified five-minute EOD window.
+CLOSE_RECOVERY_VERSION = "20261112.1"
+CLOSE_REPLACEMENTS = 2
+EOD_CLOSE_REPLACEMENTS = 4
+
 try:
     from .smio_demo_contract import CONTRACT, validate
     from .smio_rsi_gate import is_smio_rsi_payload
@@ -141,6 +147,20 @@ class DemoLifecycle:
         if end is None or not end.replace(hour=9, minute=30, second=0, microsecond=0) <= now < end:
             raise ValueError("SMIO broker RTH session not permitted")
         return contract, end
+
+    def close_retry_window(self, row, session_end):
+        """Persisted order history, not a process counter, owns the retry budget."""
+        try:
+            from .smio_eod_policy import eod_due
+        except ImportError:
+            from smio_eod_policy import eod_due
+        replacements = len(row.get("retired_closes", []))
+        if replacements > EOD_CLOSE_REPLACEMENTS:
+            raise ValueError("SMIO EOD close replacement limit reached; operator review required")
+        if replacements > CLOSE_REPLACEMENTS and not eod_due(
+            datetime.now(timezone.utc), os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", ""), session_end
+        ):
+            raise ValueError("SMIO additional close replacement requires verified EOD window")
 
     def load(self):
         if not self.journal_path.exists():
@@ -436,7 +456,8 @@ class DemoLifecycle:
         self.save(state)
         # Demo close orders must respect RTH even when the shared legacy
         # bridge's optional market-close block is disabled.
-        await self.permitted_close_session(data)
+        _, session_end = await self.permitted_close_session(data)
+        self.close_retry_window(row, session_end)
         self.note(state, row, "close_session_permitted")
         if owned and owned.orderStatus.status not in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
             row["last_broker_action_at"] = self.timestamp()
@@ -460,6 +481,7 @@ class DemoLifecycle:
         if self.working(symbol):
             raise ValueError("working order remains after target cancellation")
         target_qty, _ = self.total(self.executions(row, "target"))
+        closed_qty, _ = self.total(self.executions(row, "close"))
         remaining = known_qty - target_qty - closed_qty
         if remaining < 0 or int(remaining) != remaining:
             raise ValueError("remaining broker quantity is not exact whole shares")
@@ -469,6 +491,7 @@ class DemoLifecycle:
             return
         if abs(position) != remaining or (position > 0) != (side == "LONG"):
             raise ValueError("partial target / position synchronization unconfirmed")
+        self.close_retry_window(row, session_end)
         action = "SELL" if side == "LONG" else "BUY"
         order = self.core.MarketOrder(action, remaining, tif="DAY", account=row["account"])
         order.orderId = self.core.ib.client.getReqId()
@@ -490,6 +513,34 @@ class DemoLifecycle:
         row.pop("recovery_blocker", None)
         self.note(state, row, "close_submitted")
         self.save(state)
+
+    async def recover_eod_close(self, setup_id):
+        """Resume the original close under fresh proof, without a second intent."""
+        try:
+            from .smio_eod_policy import eod_due
+        except ImportError:
+            from smio_eod_policy import eod_due
+        async with self.routing_lock, self.core.ib_lock:
+            config = await self.environment()
+            if self.core.DRY_RUN:
+                return {"status": "smio_dry_run"}
+            await self.refreshed()
+            state = self.load()  # never write the EOD scanner's stale snapshot
+            row = state["setups"].get(setup_id)
+            if not row or row.get("state") == "CLOSED":
+                return {"status": "smio_duplicate"}
+            if row.get("state") not in ("OPEN", "TARGET_CANCEL_PENDING", "CLOSE_SUBMITTING", "CLOSE_PENDING"):
+                raise ValueError("SMIO EOD close state requires operator review")
+            _, end = await self.permitted_close_session(row["payload"])
+            if not eod_due(datetime.now(timezone.utc), os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", ""), end):
+                raise ValueError("SMIO outside verified EOD recovery window")
+            await self.reconcile_row(state, row, config, eod_recovery=True)
+            # An evaluation is not a successful flatten. Surface unresolved
+            # ownership, missing evidence and exhausted budgets to status/logs.
+            if abs(await self.core.get_position_size(row["payload"]["symbol"])) > 0.000001:
+                return {"status": "smio_demo_recovery_required",
+                        "reason": row.get("recovery_blocker", "close pending broker-flat confirmation")}
+            return {"status": "smio_demo_accepted"}
 
     def enqueue(self, state, row, payload, role):
         key = role + "_delivery_id"
@@ -584,7 +635,7 @@ class DemoLifecycle:
         state = self.load()
         self.health["eod_result"] = "evaluating"
         for row in list(state["setups"].values()):
-            if row.get("state") != "OPEN" or row.get("close_signal") or row.get("close"):
+            if row.get("state") not in ("OPEN", "TARGET_CANCEL_PENDING", "CLOSE_SUBMITTING", "CLOSE_PENDING"):
                 continue
             payload = row.get("payload")
             if not isinstance(payload, dict) or payload.get("sec_type") != "STK" or not row.get("filled_qty"):
@@ -609,8 +660,11 @@ class DemoLifecycle:
                     raise ValueError("IB stock session schedule missing or ambiguous")
                 if not eod_due(now, enabled, close_time):
                     continue
-                close = eod_close_payload(payload, now, close_time)
-                result = await self.handle(close)
+                if row.get("close_signal") or row.get("close"):
+                    result = await self.recover_eod_close(payload["setup_id"])
+                else:
+                    close = eod_close_payload(payload, now, close_time)
+                    result = await self.handle(close)
                 if result.get("status") not in ("smio_demo_accepted", "smio_duplicate"):
                     self.health["eod_result"] = "blocked"
                     print("[SMIO DEMO EOD BLOCKED]", symbol,
@@ -652,7 +706,7 @@ class DemoLifecycle:
                 except Exception as error:
                     self.note(state, row, "reconcile_row_failed", type(error).__name__)
 
-    async def reconcile_row(self, state, row, config):
+    async def reconcile_row(self, state, row, config, eod_recovery=False):
         """One ambiguous setup must not suppress the other owned positions."""
         if row["state"] == "CLOSED":
             return
@@ -758,15 +812,39 @@ class DemoLifecycle:
             target_qty, _ = self.total(target_fills)
             if close_trade and closed_qty < qty - target_qty:
                 close_terminal = close_trade.orderStatus.status in ("Cancelled", "ApiCancelled", "Inactive")
-                if not close_terminal and closed_qty and time.time() - row.get("close_submitted_at", time.time()) >= max(getattr(self.core, "PARTIAL_FILL_GRACE_SECONDS", 2), 0):
-                    await self.cancel_exact(close_trade)
-                    return
-                if close_terminal and len(row.get("retired_closes", [])) < 2:
+                limit = EOD_CLOSE_REPLACEMENTS if eod_recovery else CLOSE_REPLACEMENTS
+                can_replace = len(row.get("retired_closes", [])) < limit
+                current_qty, _ = self.total(self.order_executions(row, close_order))
+                # Earlier orders' fills must never cancel an unfilled replacement.
+                # Give each order its own grace period starting at its first fill.
+                if not close_terminal and current_qty:
+                    close_order.setdefault("partial_seen_at", time.time())
+                    self.save(state)
+                    if can_replace and time.time() - close_order["partial_seen_at"] >= max(getattr(self.core, "PARTIAL_FILL_GRACE_SECONDS", 2), 0):
+                        await self.permitted_close_session(data)
+                        self.note(state, row, "close_cancel_intent")
+                        if not await self.cancel_exact(close_trade):
+                            self.note(state, row, "close_recovery", "close cancellation unconfirmed")
+                        return
+                if close_terminal and can_replace:
+                    # Exact terminal evidence is mandatory; missing or working
+                    # orders are never interpreted as permission to resubmit.
+                    close_order["terminal_status"] = close_trade.orderStatus.status
+                    close_order["retired_at"] = self.timestamp()
                     row.setdefault("retired_closes", []).append(row.pop("close"))
                     row["state"] = "TARGET_CANCEL_PENDING"
-                    self.save(state)
-                    # Next iteration repeats ownership/position proofs.
+                    self.note(state, row, "close_retired")
+                    if eod_recovery:
+                        event = state["events"][row["close_signal"]["event_id"]]
+                        await self.close(state, row, row["close_signal"], event["hash"])
+                    # Ordinary recovery re-proves ownership on the next pass.
                     return
+                if close_terminal:
+                    reason = ("EOD close replacement limit reached; operator review required" if eod_recovery
+                              else "close replacement limit reached; EOD recovery or operator review required")
+                    self.note(state, row, "close_recovery", reason)
+            elif not close_trade:
+                self.note(state, row, "close_recovery", "exact close order unconfirmed; no resubmission")
         all_exits = {**target_fills, **close_fills}
         exit_qty, exit_price = self.total(all_exits)
         if abs(position) <= 0.000001 and exit_qty == qty:
@@ -894,11 +972,19 @@ def install_smio_demo_adapter(core):
 
     async def demo_status():
         result = {"experimental_contract": CONTRACT, "demo_only": True, "ready": False,
+                  "close_recovery_version": CLOSE_RECOVERY_VERSION,
                   "maintenance": {**lifecycle.health,
                       "eod_enabled": os.getenv("SMIO_DEMO_EOD_FAILSAFE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"),
                       "task_running": bool(getattr(core, "_smio_demo_task", None)) and not core._smio_demo_task.done()}}
         try:
             result["ingress"] = lifecycle.ingress.summary()
+            result["unresolved_closes"] = [
+                {"symbol": row.get("payload", {}).get("symbol"), "state": row.get("state"),
+                 "replacements": len(row.get("retired_closes", [])),
+                 "blocker": row.get("recovery_blocker")}
+                for row in lifecycle.load()["setups"].values()
+                if row.get("state") != "CLOSED" and (row.get("close") or row.get("close_signal"))
+            ]
             await lifecycle.environment()
             result["ready"] = not core.DRY_RUN and bool(callback_key(core))
         except Exception:
