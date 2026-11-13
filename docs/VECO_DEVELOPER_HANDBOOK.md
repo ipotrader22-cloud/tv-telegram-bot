@@ -4485,3 +4485,30 @@ opening STOP and zero publication/email on absent preparation. A missed Nov 12
 10:00 review must not be backdated or represented as delivered. Rollback: revert
 this PR on the isolated staging branch and redeploy the staging cron; no schema
 or financial data migration is involved.
+
+## ADR — Engine 2 exact publication with read-only valuation — 2026-11-13
+
+Handbook update required: YES. The observer decorates its immutable morning
+feed with current quotes. Comparing that entire response against the undecorated
+manifest caused STAGING_WEBSITE_PARITY_FAILED after a valid financial commit.
+Direct readback now recomputes the complete valuation from the saved manifest
+and an allowlisted valuation_quotes evidence array, at the observed timestamp
+(maximum 60 seconds old, five seconds future tolerance). Exact whole-object
+comparison still rejects altered entries, scores, history, P&L, totals, coverage,
+unknown properties and snapshot identity. Stale quote P&L remains null.
+This validates deterministic valuation arithmetic and provenance fields; it does
+not independently certify a provider's prices or replace DATA verification.
+
+API and HTML requests share one UUID nonce per verification attempt. The
+observer pins the real valued response for that pair for 45 seconds, at most
+32 pairs per process. Ordinary visitors retain the live read path. Exact HTML
+bytes must match the verified valued API response. Retries use a fresh nonce;
+no special unvalued publication endpoint bypasses the visible page.
+
+Deploy observer first, then cron, only on the isolated Engine 2 staging branch.
+The native journal, financial artifact, protected Sheets formulas, trading
+rules and shared Resend outbox/idempotency key are unchanged. Resume only an
+existing committed artifact for a missed publication; never recreate or backdate
+a 10:00 decision. Confirm real DB/Sheet/publication gates and check the accepted
+provider ID before any resend. Rollback: revert this PR and redeploy both staging
+services, preserving all financial and delivery journals. No main cutover.

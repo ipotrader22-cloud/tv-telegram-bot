@@ -34,6 +34,7 @@ const readPreview=async()=>await stagingWorker.store.publishedFeed()||await read
 const readValuedPreview=createValuationReader({readFeed:readPreview,
  api:process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON?
  require('./staging-sheets-publisher.cjs').createSheetsClient(process.env.VIXALE_V2_STAGING_SERVICE_ACCOUNT_JSON):null});
+const readHttpPreview=require('./readback-snapshot-reader.cjs').createReadbackSnapshotReader({read:readValuedPreview});
 async function inspect(){
  const client=new Client({connectionString:url,connectionTimeoutMillis:5000,statement_timeout:5000});
  await client.connect();
@@ -94,9 +95,10 @@ async function googleProbe(){
  return googleProbeFlight;
 }
 const server=http.createServer((req,res)=>{
- const path=new URL(req.url,'http://localhost').pathname;
+ const requestUrl=new URL(req.url,'http://localhost'),path=requestUrl.pathname;
+ const readHttp=()=>readHttpPreview(requestUrl.searchParams.get('engine2_readback'));
  if(req.method==='GET'&&path==='/v2/swing-trading'){
-  readValuedPreview().then(snapshot=>{
+  readHttp().then(snapshot=>{
    const html=renderShadowSwing(snapshot);
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff'});
    res.end(html);
@@ -108,7 +110,7 @@ const server=http.createServer((req,res)=>{
  }
 
  if(req.method==='GET'&&path==='/v2/model/snapshot'){
-  readValuedPreview().then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
+  readHttp().then(payload=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(payload))})
    .catch(()=>{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'BLOCKED',reason:'SHADOW_LEDGER_READ_UNAVAILABLE',published:false}))});
   return;
  }
