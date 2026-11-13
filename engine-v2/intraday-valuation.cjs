@@ -54,7 +54,12 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
  const instant=now instanceof Date?now:new Date(now),at=instant.getTime();
  if(!Number.isFinite(at))throw Error('VALUATION_CLOCK_INVALID');
  const {et,close,open}=isSessionOpen(instant),by=new Map();
- for(const q of quotes||[])if(q&&typeof q.ticker==='string'&&!by.has(q.ticker))by.set(q.ticker,q);
+ // Publish only calculation evidence for held symbols, never raw provider data.
+ const fields=['ticker','price','timestamp','provider','priceKind','session','verified','sourceId','sourceHash','delayMinutes'];
+ const held=new Set(feed.active_portfolio.map(p=>p.ticker));
+ for(const q of quotes||[])if(q&&held.has(q.ticker)&&!by.has(q.ticker))
+  by.set(q.ticker,Object.fromEntries(fields.filter(k=>Object.hasOwn(q,k)).map(k=>[k,q[k]])));
+ const evidence=[...by.values()];
  let aggregate=0,allFresh=true;
  const active=feed.active_portfolio.map(p=>{
   const entry=p.entry_price,qty=Number.isFinite(entry)&&entry>0?Math.floor(10000/entry):null;
@@ -87,7 +92,7 @@ function composeValuation(feed,quotes,{now=new Date()}={}){
   valuation_coverage:count,unrealized_model_pnl:unrealized,
   current_valuation_model_equity:unrealized===null?null:100000+feed.realized_model_pnl+unrealized,
   total_valuation_model_pnl:unrealized===null?null:feed.realized_model_pnl+unrealized,
-  valuation_read_only:true};
+  valuation_read_only:true,valuation_quotes:evidence};
 }
 function createValuationReader({readFeed,api,clock=()=>new Date(),provider,chartProvider}={}){
  if(typeof readFeed!=='function')throw Error('VALUATION_FEED_READER_REQUIRED');
