@@ -1,3 +1,42 @@
+## ADR - Score-only Active Portfolio allocation - November 13, 2026
+
+Handbook update required: YES. Owner explicitly replaced the Engine 2 entry
+policy: verified score strictly above 70 enters automatically into free slots,
+up to ten fixed $10K model positions. Effective November 16, the first new
+regular-session decision after the instruction. No >=80 gate, technical setup,
+near-high, relative-volume or compelling-entry exception remains. The nine
+factors and their weights still determine the unchanged research score.
+
+`entry-allocation-policy.cjs` centralizes ranking, the date boundary, and
+duplicate protection across assessment/compiler and all entry coordinators.
+Historical dates keep their original behavior because delayed commits are
+recomputed during ledger/publication readback. Changing past selection rules
+would invalidate immutable evidence and block the observer. Preserve old lots,
+events and fingerprints. Fresh eligible previously closed tickers may form new
+dated lots; same-day exit/reused-lot churn remains blocked. Existing holdings
+are retained unless their existing independent exit rules apply.
+
+The $100K gross model allocation is ten normalized slots, independent of
+cumulative realized gains/losses. Prior losses no longer leave slot ten empty.
+Original cash/equity formulas and every realized loss remain intact; full gross
+allocation can therefore show negative derived model cash after realized losses.
+This is not a broker order, financing instruction or reset of capital/history.
+Only selected new entries plus all carried holdings need quotes; unused reserve
+candidate quotes cannot block the decision. Missing selected quote or incomplete
+research still fails closed. Preserve the 518-stock universe and TP/SL/dropout.
+
+Current research is prepared before open and committed once at the existing
+10:00 ET review. Qualifying candidates are promoted in that same transaction,
+without another signal. No intraday rescoring or off-window/after-hours fill is
+introduced. The active financial writer remains the Render cron on
+`engine-v2-shadow-foundation-20261016`; production main reads its existing Engine 2
+workbook. Merge this narrow PR into that branch and deploy observer then cron.
+Do not merge the whole development branch into main or modify production secrets.
+See `docs/VIXALE_Active_Portfolio_Source_of_Truth.md` for the operating amendment.
+Rollback by reverting this PR/redeploying both services; preserve resulting lots.
+
+---
+
 ## November 12, 2026 — SMIO stalled-close recovery repair
 
 **Handbook update required: YES.** Owner authorized repair of partial-close
