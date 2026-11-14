@@ -106,15 +106,16 @@ function autoAssess({artifact,date,runAt,universe,sectorByTicker,newsReview}={})
      (specific||'Required source observations checked; no positive subcriterion passed.')};
   }
   const total=score(factors);
-  const entryEligible=total>=80&&mark>=raw.high20*.97&&mark>raw.ma20&&raw.volumeRvol>=1;
+  const entryEligible=require('./entry-allocation-policy.cjs').scoreOnly(date)?total>70:
+   total>=80&&mark>=raw.high20*.97&&mark>raw.ma20&&raw.volumeRvol>=1;
   const entryEvidenceId=entryEligible?'ENGINE2_ENTRY:'+raw.sourceHash:null;
   assessments.push({ticker,reviewDate:date,reviewTime:runAt,complete:true,
    factors:factorProof,score:total,entryEligible,entryEvidenceId,
    publicNote:date+' '+ticker+' nine-factor quantitative review scored '+total+'.'});
  }
  if(errors.length)return bad('INSUFFICIENT_DETERMINISTIC_FACTOR_SOURCES',errors);
- return {status:'DETERMINISTIC_NINE_FACTOR_ASSESSMENTS',complete:true,policyVersion:'ENGINE2_RULES_2026_10_22',
-  assumptions:['Catalyst points always zero until independently vetted material-event evidence exists.','Entry model technical setup requires score >=80 and near-high confirmation.'],
+ return {status:'DETERMINISTIC_NINE_FACTOR_ASSESSMENTS',complete:true,policyVersion:require('./entry-allocation-policy.cjs').scoreOnly(date)?'ENGINE2_RULES_2026_11_16':'ENGINE2_RULES_2026_10_22',
+  assumptions:['Catalyst points always zero until independently vetted material-event evidence exists.',require('./entry-allocation-policy.cjs').scoreOnly(date)?'Verified score above 70 is the sole entry signal; fill up to ten fixed $10K model slots.':'Entry model technical setup requires score >=80 and near-high confirmation.'],
   assessments};
 }
 module.exports={autoAssess};
