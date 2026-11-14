@@ -12,6 +12,23 @@ const artifact={gate:'RESEARCH_INPUTS',result:'PASS',date,data:symbols.map(s=>({
  source:'https://query1.finance.yahoo.com/v8/finance/chart/'+s,metrics:m(s)
 }))};
 const news={date,complete:true,status:'COVERAGE_COMPLETE_SCORING_PENDING',sourceId:'source:news',tickers:['AMD']};
+
+test('prospective score above 70 qualifies even below the old relative-volume entry trigger',()=>{
+ const next='2026-11-16',a=structuredClone(artifact);
+ a.date=next;
+ for(const row of a.data){
+  row.metrics.quoteDate=next;row.metrics.lastCompleteDate='2026-11-13';
+  row.metrics.return20Pct=row.metrics.symbol==='AMD'?12:row.metrics.symbol==='SPY'?0:6;
+  row.metrics.return60Pct=row.metrics.symbol==='AMD'?30:row.metrics.symbol==='SPY'?0:10;
+ }
+ a.data[0].metrics.lastCompleteRelativeVolume=.8;
+ a.data[0].metrics.range5Pct=11;
+ const x=autoAssess({artifact:a,date:next,runAt:next+'T15:00:00Z',universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:{...news,date:next}});
+ assert.equal(x.status,'DETERMINISTIC_NINE_FACTOR_ASSESSMENTS');
+ const r=x.assessments[0];assert.ok(r.score>70&&r.score<80);
+ assert.equal(r.entryEligible,true);assert.ok(r.entryEvidenceId);
+ assert.equal(x.policyVersion,'ENGINE2_RULES_2026_11_16');
+});
 test('all nine factors supported, catalyst conservatively zero without substantive verification',()=>{
  const x=autoAssess({artifact,date,runAt,universe:['AMD'],sectorByTicker:{AMD:'SMH'},newsReview:news});
  assert.equal(x.status,'DETERMINISTIC_NINE_FACTOR_ASSESSMENTS');

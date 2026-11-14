@@ -5,6 +5,7 @@ const {validateMorningTrigger}=require('./nyse-morning-clock.cjs');
 
 const {EPOCH}=require('./clean-slate-portfolio.cjs');
 const {score,pnl}=require('./core.cjs');
+const allocation=require('./entry-allocation-policy.cjs');
 function proposeDelayed({date,runAt,prepared,previous,quotes,openings=[],pricePolicy=POLICY}){
  const {GOOGLE_POLICY,validGoogleQuote}=require('./google-quote-provider.cjs');
  if(![POLICY,GOOGLE_POLICY].includes(pricePolicy))throw Error('INVALID_REVIEW_PRICE_POLICY');
@@ -45,12 +46,13 @@ function proposeDelayed({date,runAt,prepared,previous,quotes,openings=[],pricePo
    events.push(event(old,'KEEP',q));
   }
  }
- const excluded=new Set([...active,...closed].map(p=>p.ticker));
  let realized=closed.reduce((n,p)=>n+(p.includePublic==='NO'?0:pnl(p.entryPrice,p.exitPrice)),0);
  let cash=100000+realized-active.length*10000;
- const eligible=prepared.batch.items.filter(x=>x.score>=70&&x.entryEligible===true&&x.entryEvidenceId&&(x.score>=80||x.compellingEntryEvidenceId)&&!excluded.has(x.ticker)).sort((a,b)=>b.score-a.score||a.ticker.localeCompare(b.ticker));
+ const eligible=allocation.candidates(prepared.batch.items,{date,active,closed});
  for(const r of eligible){
-  if(active.length>=10||cash<10000)break;
+  // Fixed model allocation is ten slots, independent of cumulative realized P&L.
+  // Retain the original derived cash formula and every historical loss.
+  if(active.length>=10||(!allocation.scoreOnly(date)&&cash<10000))break;
   const q=qm.get(r.ticker);if(!q)throw Error(google?'GOOGLE_QUOTE_MISSING':'ENTRY_0940_QUOTE_MISSING');
   const lot={ticker:r.ticker,exchange:r.exchange,entryDate:date,entryTime:q.timestamp,entryPrice:q.price,currentPrice:q.price,shares:Math.floor(10000/q.price),entryScore:r.score,currentScore:r.score,factors:r.factors,fullReviewDate:date,publicNote:r.publicNote,quoteSourceId:q.sourceId,lastTargetCheckedAt:q.timestamp,modelEntryPriceKind:q.priceKind,modelEntryIndicative:true,pricePolicy,decisionAt:runAt,priceAsOf:q.timestamp};
   active.push(lot);events.push(event(lot,'OPEN',q,{price:q.price}));cash-=10000;
@@ -61,12 +63,21 @@ async function runDelayedCycle({url,date,runAt,clock,prepared,quoteProvider,open
  try{
   const previous=await getPrior({url});
   if(previous&&previous.date>=date)throw Error('ALREADY_REVIEWED_OR_OUT_OF_ORDER');
-  const tickers=[...new Set([...(previous?.active||[]).map(p=>p.ticker),...prepared.batch.items.filter(p=>p.entryEligible).map(p=>p.ticker)])];
   // The open is not inferred from Google's delayed latest quote or yesterday's
   // low. Missing Yahoo 09:30 evidence blocks the whole immutable model commit.
   if(previous?.active?.length&&!openingProvider?.getOpenings)
    throw Error('CURRENT_SESSION_OPENING_PROVIDER_REQUIRED');
   const openings=previous?.active?.length?await openingProvider.getOpenings({date,runAt:clock().toISOString(),positions:previous.active}):[];
+  let entries=prepared.batch.items.filter(p=>allocation.eligible(p,date));
+  if(allocation.scoreOnly(date)){
+   const carried=previous?.active||[];
+   const verifiedOpenings=require('./same-session-opening.cjs').verifyCurrentOpenings({date,runAt:clock().toISOString(),positions:carried,openings});
+   const retained=carried.filter(p=>!prepared.exits.some(e=>e.ticker===p.ticker&&e.entryDate===p.entryDate)&&verifiedOpenings.get(p.ticker).open>p.entryPrice*.95);
+   entries=allocation.candidates(prepared.batch.items,{date,active:carried,closed:previous?.closed||[]}).slice(0,Math.max(0,10-retained.length));
+  }
+  // Only selected entries need a price. Unused reserve candidates must not
+  // block the portfolio through an irrelevant missing quote or extra scan.
+  const tickers=[...new Set([...(previous?.active||[]).map(p=>p.ticker),...entries.map(p=>p.ticker)])];
   const quotes=await quoteProvider.getQuotes({date,runAt,tickers});
   const completedAt=clock().toISOString();
   const inputs=proposeDelayed({date,runAt:completedAt,prepared,previous,quotes,openings,pricePolicy});

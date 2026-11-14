@@ -17,6 +17,17 @@ const assessment={ticker:'AMD',reviewDate:date,reviewTime:'2026-10-22T09:58:00-0
 const newsReview={date,complete:true,checkedAt:'2026-10-22T09:59:00-04:00',
  sourceId:'archived-news-review-20261022',tickers:['AMD']};
 const args={artifact,date,runAt,session:{date,isTradingDay:true,providerVerified:true},universe:['AMD'],assessments:[assessment],newsReview};
+
+test('prospective compiler derives eligibility from verified score, without setup or compelling-entry proof',()=>{
+ const next=JSON.parse(JSON.stringify(args).replaceAll('2026-10-22','2026-11-16').replaceAll('2026-10-21','2026-11-13'));
+ const a=next.assessments[0];a.factors.volume.points=0;a.factors.catalyst.points=0;a.score=75;
+ a.entryEligible=false;delete a.entryEvidenceId;delete a.compellingEntryEvidenceId;
+ const r=compileFullResearch(next);assert.equal(r.status,'PASS');
+ assert.equal(r.batch.items[0].entryEligible,true);
+ assert.match(r.batch.items[0].entryEvidenceId,/^ENGINE2_SCORE_ENTRY:/);
+ a.factors.resistance.points=0;a.score=70;
+ const low=compileFullResearch(next);assert.equal(low.status,'PASS');assert.equal(low.batch.items[0].entryEligible,false);
+});
 test('nine complete dated weighted assessments produce a certified batch without invented points',()=>{
  const r=compileFullResearch(args);assert.equal(r.status,'PASS');assert.equal(r.batch.items[0].score,100);
  assert.equal(r.batch.items[0].entryEligible,true);

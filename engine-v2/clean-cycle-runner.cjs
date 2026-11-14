@@ -28,7 +28,7 @@ async function runCleanCycle({
   researchBatch=await researchProvider.getBatch({date,runAt,session,previous});
   if(!Array.isArray(researchBatch?.items)||researchBatch.date!==date)return fail('RESEARCH_BATCH_MISSING');
   // Existing holdings need a fresh quote even if today's ranking drops below 70.
-  const requested=[...new Set([...(previous?.active||[]).map(x=>x.ticker),...researchBatch.items.filter(x=>x.score>=70&&x.entryEligible===true).map(x=>x.ticker)])];
+  const requested=[...new Set([...(previous?.active||[]).map(x=>x.ticker),...researchBatch.items.filter(x=>require('./entry-allocation-policy.cjs').eligible(x,date)).map(x=>x.ticker)])];
   quotes=await quoteProvider.getQuotes({date,runAt,tickers:requested});
   if(!Array.isArray(quotes))return fail('QUOTE_PROVIDER_MISSING');
   if(previous?.active.length){

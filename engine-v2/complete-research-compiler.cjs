@@ -43,10 +43,11 @@ function compileFullResearch({artifact,date,runAt,universe,session,assessments,n
   if(!valid)continue;
   const total=score(f);
   if(a.score!==total){errors.push('SCORE_SUM_MISMATCH:'+raw.ticker);continue}
-  // An eligible model entry needs independent documented setup authorization.
-  const entryEligible=a.entryEligible===true&&typeof a.entryEvidenceId==='string'&&a.entryEvidenceId.length>0;
-  if(a.entryEligible===true&&!entryEligible){errors.push('ENTRY_SETUP_EVIDENCE_MISSING:'+raw.ticker);continue}
-  if(total>=70&&total<80&&entryEligible&&!a.compellingEntryEvidenceId){
+  const scoreOnly=require('./entry-allocation-policy.cjs').scoreOnly(date);
+  // Fresh, fully evidenced factor scores are the entry signal under the new rule.
+  const entryEligible=scoreOnly?total>70:a.entryEligible===true&&typeof a.entryEvidenceId==='string'&&a.entryEvidenceId.length>0;
+  if(!scoreOnly&&a.entryEligible===true&&!entryEligible){errors.push('ENTRY_SETUP_EVIDENCE_MISSING:'+raw.ticker);continue}
+  if(!scoreOnly&&total>=70&&total<80&&entryEligible&&!a.compellingEntryEvidenceId){
    errors.push('LOW_SCORE_ENTRY_EXCEPTION_UNVERIFIED:'+raw.ticker);continue
   }
   const sourceHash=createHash('sha256').update(JSON.stringify({raw,assessment:a,newsReviewId:newsReview.sourceId})).digest('hex');
@@ -58,7 +59,7 @@ function compileFullResearch({artifact,date,runAt,universe,session,assessments,n
    marketEvidenceId:facts.market.sourceId,sectorEvidenceId:facts.sector.sourceId,
    volumeRvol:raw.volumeRvol,exchangeVolumeVerified:true,
    ma20:raw.ma20,ma50:raw.ma50,ma200:raw.ma200,entryEligible,
-   entryEvidenceId:entryEligible?a.entryEvidenceId:null,
+   entryEvidenceId:entryEligible?(scoreOnly?'ENGINE2_SCORE_ENTRY:'+sourceHash:a.entryEvidenceId):null,
    compellingEntryEvidenceId:a.compellingEntryEvidenceId||null,
    assessmentSourceHash:sourceHash,
    technicalFacts:{range20Pct:raw.range20Pct,high20:raw.high20,high60:raw.high60,
