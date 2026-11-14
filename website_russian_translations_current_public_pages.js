@@ -4,6 +4,11 @@
 // Keep source strings as complete visible text nodes. The RU runtime localizer
 // also reuses this catalog for text inserted later by client-side page scripts.
 module.exports = Object.freeze([
+  ["ES Straddle Monitor", "Монитор стрэддла ES"],
+  ["Open full chart", "Открыть полный график"],
+  ["Reload chart", "Обновить график"],
+  ["If the chart asks you to sign in or appears blank, open the full chart, sign in to the monitor, then return here and reload the chart.", "Если график запрашивает вход или не отображается, откройте полный график, войдите в монитор, затем вернитесь сюда и обновите график."],
+
   ["Vixale | Day Trading", "Vixale | Дейтрейдинг"],
   ["Vixale | Options", "Vixale | Опционы"],
   ["Vixale | Results", "Vixale | Результаты"],
