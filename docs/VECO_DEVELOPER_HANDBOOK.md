@@ -1,3 +1,29 @@
+## ADR — ES Straddle Monitor in the Options viewer (November 13, 2026)
+
+Handbook update required: YES. The authenticated Options viewer now embeds
+`https://es-straddle-monitor.onrender.com/` above the existing realized-equity
+curve and Option Journal. `website_options_canonical_refinement.js` owns the
+section; EN/RU chrome uses the existing localization dictionary. The external
+monitor retains its own language, data, controls and HTTP Basic authentication.
+A direct full-chart link and iframe reload button support separate monitor login.
+
+The iframe remains cross-origin, sandboxed to scripts and its own origin, with
+no referrer. No passwords, tokens, Vixale cookies or query credentials are
+embedded, proxied or copied. No new route, public feed, server dependency,
+secret/environment change, chart-data calculation or trading action is added.
+Existing Options authorization, journal/proof records and P&L remain unchanged.
+An upstream login, outage or empty dataset cannot block the journal response.
+
+Observed before implementation: anonymous monitor HTTP 401 with Basic challenge;
+existing browser login opens monitor UI, initially Waiting for data / No
+observations yet. Do not describe an iframe load as evidence of fresh quotes.
+Acceptance requires checking the embedded frame in the signed-in production
+viewer. Browser credential partitioning may require the monitor's separate login;
+never remove its authentication to make embedding work. Rollback: revert this
+narrow PR and use normal main auto-deployment; no data rollback is required.
+
+---
+
 ## ADR - Score-only Active Portfolio allocation - November 13, 2026
 
 Handbook update required: YES. Owner explicitly replaced the Engine 2 entry

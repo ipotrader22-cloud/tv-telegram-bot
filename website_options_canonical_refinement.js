@@ -134,6 +134,25 @@ function formatMoney(value) {
   return `${sign}$${Math.abs(number).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Keep the monitor on its own origin: no credentials or Vixale session data
+// are forwarded, and its existing authentication remains authoritative.
+function straddleMonitorSection() {
+  const url = "https://es-straddle-monitor.onrender.com/";
+  return `<section class="section" id="options-straddle-monitor" aria-labelledby="options-straddle-title">
+<style>
+#options-straddle-monitor .straddle-monitor-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+#options-straddle-monitor .straddle-monitor-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#options-straddle-monitor .straddle-monitor-frame{display:block;width:100%;height:840px;border:0;background:#0b1220}
+#options-straddle-monitor .straddle-monitor-note{margin:0;padding:14px 20px;color:var(--muted,#68736f);font-size:13px;line-height:1.6}
+@media(max-width:720px){#options-straddle-monitor .straddle-monitor-frame{height:900px}#options-straddle-monitor .straddle-monitor-note{padding:12px 16px}}
+</style>
+<div class="section-header straddle-monitor-header"><div><h2 id="options-straddle-title">ES Straddle Monitor</h2></div><div class="straddle-monitor-actions"><a class="dash-btn" href="${url}" target="_blank" rel="noopener noreferrer">Open full chart</a><button class="dash-btn" id="options-straddle-reload" type="button">Reload chart</button></div></div>
+<p class="straddle-monitor-note">If the chart asks you to sign in or appears blank, open the full chart, sign in to the monitor, then return here and reload the chart.</p>
+<iframe class="straddle-monitor-frame" id="options-straddle-frame" src="${url}" title="ES Straddle Monitor" loading="eager" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" allowfullscreen></iframe>
+</section>
+<script>(()=>{const button=document.getElementById('options-straddle-reload'),frame=document.getElementById('options-straddle-frame');if(button&&frame)button.addEventListener('click',()=>{frame.src=${JSON.stringify(url)};});})();</script>`;
+}
+
 function optionsEquitySection(curve, error = false) {
   const points = Array.isArray(curve?.points) ? curve.points : [];
   const total = Number.isFinite(Number(curve?.total_realized_pnl)) ? Number(curve.total_realized_pnl) : 0;
@@ -202,7 +221,7 @@ function refineOptionsPageFromDashboard(html, curve = { points: [], total_realiz
   const optionSection = moveIbkrExplanationBelowJournal(extractOptionJournalSection(html));
   if (!optionSection) return html;
   let out = removeMetaRefresh(setCanonical(setTitle(html, "Vixale | Options Trading"), OPTIONS_CANONICAL_URL));
-  const body = `<div class="wrap" ${OPTIONS_PAGE_MARKER}="page"><div class="top-actions"><div class="left-links"><a class="home-link" href="/">← Back to Home</a><a class="home-link" href="/dashboard">Day Trading Dashboard</a><a class="home-link" href="/trading-systems/swing-trading">Swing Trading</a><a class="home-link" href="/trading-systems">Trading Systems</a></div><div class="dashboard-links"><a class="dash-btn primary" href="/#password-access">Watch Systems for Free</a><a class="dash-btn" href="/logout">Log Out</a></div></div><div class="hero"><div class="topline"><div class="brand"><h1>Vixale Options</h1><div class="subtitle">Owner-entered Option Journal · open and closed trades · realized P&amp;L</div><div class="updated">Options are recorded manually through the existing owner journal. This page is read-only.</div></div><div class="badge"><span class="dot"></span> OPTIONS JOURNAL</div></div><div class="strategy-notes"><div class="strategy-note"><strong>Manual journal</strong>Trades continue to be entered and updated by the owner through the existing Options admin workflow.</div><div class="strategy-note"><strong>Closed-only equity</strong>The curve changes only when an Option Journal trade is Closed with a valid Exit Date and derived realized P&amp;L.</div><div class="strategy-note"><strong>One viewer access</strong>The same Vixale viewer session used for the Day Trading dashboard opens this Options page and protected brokerage proofs.</div></div></div>${optionsEquitySection(curve, equityError)}${optionSection}<div class="footer"><strong>Options disclosure:</strong> Option Journal entries are owner-entered records. Realized P&amp;L is derived from the recorded Credit/Debit, entry price, exit price, contracts, multiplier, and fees; it is not entered manually. Brokerage screenshots, when present, are owner-provided and may be cropped or redacted. Trading options involves substantial risk and results are not guaranteed.</div></div>${optionsChartScript(curve)}`;
+  const body = `<div class="wrap" ${OPTIONS_PAGE_MARKER}="page"><div class="top-actions"><div class="left-links"><a class="home-link" href="/">← Back to Home</a><a class="home-link" href="/dashboard">Day Trading Dashboard</a><a class="home-link" href="/trading-systems/swing-trading">Swing Trading</a><a class="home-link" href="/trading-systems">Trading Systems</a></div><div class="dashboard-links"><a class="dash-btn primary" href="/#password-access">Watch Systems for Free</a><a class="dash-btn" href="/logout">Log Out</a></div></div><div class="hero"><div class="topline"><div class="brand"><h1>Vixale Options</h1><div class="subtitle">Owner-entered Option Journal · open and closed trades · realized P&amp;L</div><div class="updated">Options are recorded manually through the existing owner journal. This page is read-only.</div></div><div class="badge"><span class="dot"></span> OPTIONS JOURNAL</div></div><div class="strategy-notes"><div class="strategy-note"><strong>Manual journal</strong>Trades continue to be entered and updated by the owner through the existing Options admin workflow.</div><div class="strategy-note"><strong>Closed-only equity</strong>The curve changes only when an Option Journal trade is Closed with a valid Exit Date and derived realized P&amp;L.</div><div class="strategy-note"><strong>One viewer access</strong>The same Vixale viewer session used for the Day Trading dashboard opens this Options page and protected brokerage proofs.</div></div></div>${straddleMonitorSection()}${optionsEquitySection(curve, equityError)}${optionSection}<div class="footer"><strong>Options disclosure:</strong> Option Journal entries are owner-entered records. Realized P&amp;L is derived from the recorded Credit/Debit, entry price, exit price, contracts, multiplier, and fees; it is not entered manually. Brokerage screenshots, when present, are owner-provided and may be cropped or redacted. Trading options involves substantial risk and results are not guaranteed.</div></div>${optionsChartScript(curve)}`;
   return replaceBody(out, body);
 }
 
