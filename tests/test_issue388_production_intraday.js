@@ -101,7 +101,7 @@ test('chart parser validates exact exchange, ignores future candle, uses complet
 test('reader batches quotes and caches bounded access; unknown/failing evidence stays unavailable',async()=>{
  let reads=0,clock=new Date(at),fail=false;
  const sheets={spreadsheets:{get:async()=>{reads++;if(fail)throw Error('429');return grid()}}};
- const deco=valuation.createIntradayValuation({getSheetsClient:async()=>sheets,clock:()=>clock,chart:async()=>null});
+ const deco=valuation.createIntradayValuation({getSheetsClient:async()=>sheets,clock:()=>clock,chart:async()=>null,fallback:async()=>null});
  const base={available:true,stale:false,data:feed()};
  const one=await deco(base),two=await deco(base);
  assert.equal(reads,1);assert.equal(one.data.valuation_coverage,2);
@@ -123,7 +123,7 @@ test('stale cached Google quote retains original evidence but never supplies cur
  let clock=new Date('2026-11-11T17:00:00Z'),reads=0;
  const sheets={spreadsheets:{get:async()=>{reads++;if(reads>1)throw Error('429');return grid()}}};
  const base={available:true,stale:false,data:feed()};
- const decorate=valuation.createIntradayValuation({getSheetsClient:async()=>sheets,clock:()=>clock,chart:async()=>null});
+ const decorate=valuation.createIntradayValuation({getSheetsClient:async()=>sheets,clock:()=>clock,chart:async()=>null,fallback:async()=>null});
  const first=await decorate(base);assert.equal(first.data.valuation_coverage,2);
  clock=new Date('2026-11-11T17:25:00Z');
  const stale=await decorate(base);
