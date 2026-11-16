@@ -1,3 +1,31 @@
+## ADR — ES Straddle Machine isolated TWS paper candidate (November 16, 2026)
+
+Handbook update required: YES. Owner specified ten ATM ES short straddles at
+20:20 ET, unchanged initial midpoint, next listed verified 16:00 ET PM expiry,
+13.5% premium capture rounded UP to .25, Mayday at 1.65 times actual entry
+credit, and expiry-day 15:55 close. Standalone es_straddle is an opt-in paper
+candidate, isolated from stock bridge, Render, chart, ledgers and publication.
+No live-account override, startup import or ChatGPT trading task is added.
+Default CLI is read-only preflight.
+
+The coordinator durably reserves submissions before effects. Partial entry
+cancels its remainder before target placement. Mayday/EOD share cancellation
+confirmation, exact execution evidence and both-leg position reconciliation;
+one close is outstanding, with capped residual replacements. A touch or
+submission is never described as a fill. Mayday uses fresh real-time call
+ask plus put ask and is local; process/network continuity is required.
+Unknown acknowledgments never blindly resubmit.
+
+Source/CI does NOT establish Windows installation or TWS acceptance. Active
+restart recovery and post-disconnect history proof are not implemented:
+unresolved journals/continuity gaps block instead of guessing. Supervised
+paper acceptance and resilient recovery remain unattended-live promotion
+gates. See docs/ES_STRADDLE_TWS_PAPER.md for commands, bounds and rollback.
+Rollback stops only this isolated process, reconciles owned broker orders,
+preserves journals and reverts the narrow PR; stock bridge stays untouched.
+
+---
+
 ## ADR — ES Straddle Monitor in the Options viewer (November 13, 2026)
 
 Handbook update required: YES. The authenticated Options viewer now embeds

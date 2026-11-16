@@ -1,0 +1,36 @@
+name: ES Straddle Paper Regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "es_straddle/**"
+      - "tests/test_es_straddle.py"
+      - ".github/workflows/es-straddle-paper-regression.yml"
+  push:
+    branches: ["feature/es-straddle-tws-paper-20261116"]
+    paths:
+      - "es_straddle/**"
+      - "tests/test_es_straddle.py"
+      - ".github/workflows/es-straddle-paper-regression.yml"
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ matrix.python }}"
+      - name: Compile isolated candidate
+        run: python -m compileall -q es_straddle tests/test_es_straddle.py
+      - name: Run offline pricing, execution and race regressions
+        run: python -B -m unittest discover -s tests -p test_es_straddle.py -v
+      - name: Install paper adapter and check CLI without broker access
+        run: |
+          python -m pip install -r es_straddle/requirements.txt
+          python -m es_straddle --help
