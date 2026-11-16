@@ -6,7 +6,7 @@ from decimal import Decimal as D
 from types import SimpleNamespace as N
 from es_straddle.core import (ET, Plan, Quote, Order, Snapshot, Engine,
                               midpoint, target_price)
-from es_straddle.tws import intervals, expiry_time, prove_fill
+from es_straddle.tws import intervals, expiry_time, prove_fill, TWS, save
 
 ENTRY = datetime(2026, 11, 16, 20, 20, tzinfo=ET)
 EXPIRY = datetime(2026, 11, 17, 16, tzinfo=ET)
@@ -297,6 +297,89 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertFalse(prove_fill(
             self.trade([self.fill(101), self.fill(101, price=26),
                         self.fill(102, eid="b")]), 101, 102)[2])
+
+class AdapterTests(unittest.TestCase):
+    def test_live_accounts_and_ports_rejected_before_broker_import(self):
+        for args in (N(account="U_REAL", client_id=1820, port=7497),
+                     N(account="DU_TEST", client_id=0, port=7497),
+                     N(account="DU_TEST", client_id=1820, port=7496)):
+            with self.assertRaises(ValueError):
+                TWS(args)
+
+    def adapter(self):
+        adapter = TWS.__new__(TWS)
+        adapter.account, adapter.client_id = "DU_TEST", 1820
+        adapter.bag = N(secType="BAG")
+        adapter.LimitOrder = lambda action, qty, price: N(
+            action=action, totalQuantity=qty, lmtPrice=price, orderType="LMT")
+        adapter.MarketOrder = lambda action, qty: N(
+            action=action, totalQuantity=qty, orderType="MKT")
+        adapter.sent, adapter.canceled, adapter.trades = [], [], []
+        adapter.ib = N(trades=lambda: adapter.trades,
+                       placeOrder=lambda bag, order: adapter.sent.append((bag, order)),
+                       cancelOrder=lambda order: adapter.canceled.append(order))
+        return adapter
+
+    def test_real_command_adapter_fields_without_network(self):
+        a = self.adapter()
+        e = Engine(plan())
+        cmd = e.step(Snapshot(ENTRY))[0]
+        a.execute(cmd)
+        bag, order = a.sent[0]
+        self.assertEqual((bag.secType, order.action, order.totalQuantity,
+                          order.lmtPrice, order.orderType, order.tif),
+                         ("BAG", "SELL", 10, 50.5, "LMT", "DAY"))
+        self.assertTrue(order.outsideRth)
+        self.assertEqual(order.account, "DU_TEST")
+        self.assertEqual(order.orderRef, e.entry_ref)
+
+    def test_target_gtc_and_close_market_fields(self):
+        from es_straddle.core import Command
+        a = self.adapter()
+        a.execute(Command("SUBMIT", "ESSTR:TARGET", "BUY", 4, "LMT", "43.75", "TARGET"))
+        a.execute(Command("SUBMIT", "ESSTR:CLOSE", "BUY", 3, "MKT", reason="MAYDAY"))
+        self.assertEqual((a.sent[0][1].tif, a.sent[0][1].totalQuantity), ("GTC", 4))
+        self.assertEqual((a.sent[1][1].orderType, a.sent[1][1].tif,
+                          a.sent[1][1].totalQuantity), ("MKT", "DAY", 3))
+
+    def test_exact_cancel_never_touches_foreign_account_or_client(self):
+        from es_straddle.core import Command
+        a = self.adapter()
+        a.trades = [N(order=N(orderRef="TARGET", account="DU_OTHER", clientId=1820),
+                      orderStatus=N(status="Submitted"))]
+        with self.assertRaises(RuntimeError):
+            a.execute(Command("CANCEL", "TARGET"))
+        self.assertEqual(a.canceled, [])
+        a.trades = [N(order=N(orderRef="TARGET", account="DU_TEST", clientId=77),
+                      orderStatus=N(status="Submitted"))]
+        with self.assertRaises(RuntimeError):
+            a.execute(Command("CANCEL", "TARGET"))
+        a.trades[0].order.clientId = 1820
+        a.execute(Command("CANCEL", "TARGET"))
+        self.assertEqual(len(a.canceled), 1)
+
+    def test_duplicate_submit_refused(self):
+        from es_straddle.core import Command
+        a = self.adapter()
+        a.trades = [N(order=N(orderRef="ENTRY"))]
+        with self.assertRaises(RuntimeError):
+            a.execute(Command("SUBMIT", "ENTRY", "SELL", 10, "LMT", "50.50"))
+        self.assertEqual(a.sent, [])
+
+    def test_atomic_journal_roundtrip_and_failed_replace(self):
+        import tempfile
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            save(path, {"started": False})
+            with patch("es_straddle.tws.os.replace", side_effect=OSError("disk failed")):
+                with self.assertRaises(OSError):
+                    save(path, {"started": True})
+            self.assertFalse(json.loads(path.read_text())["started"])
+            save(path, {"started": True})
+            self.assertTrue(json.loads(path.read_text())["started"])
 
 from zoneinfo import ZoneInfo
 

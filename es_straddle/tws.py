@@ -84,13 +84,14 @@ def prove_fill(trade, call_id, put_id):
 
 class TWS:
     def __init__(self, args):
-        from ib_insync import IB, Contract, ComboLeg, LimitOrder, MarketOrder
-        self.Contract, self.ComboLeg = Contract, ComboLeg
-        self.LimitOrder, self.MarketOrder = LimitOrder, MarketOrder
         if not args.account.startswith("DU") or args.client_id <= 0:
             raise ValueError("Only an explicit DU paper account and nonzero client ID are allowed")
         if args.port not in (7497, 4002):
             raise ValueError("Only standard paper TWS/Gateway ports are allowed")
+        from ib_insync import IB, Contract, ComboLeg, LimitOrder, MarketOrder
+        self.Contract, self.ComboLeg = Contract, ComboLeg
+        self.LimitOrder, self.MarketOrder = LimitOrder, MarketOrder
+        self.foreign_execution_seen = False
         self.account, self.client_id = args.account, args.client_id
         self.ib = IB()
         self.ib.RequestTimeout = 10
@@ -238,16 +239,31 @@ class TWS:
         if not self.ib.isConnected() or not self.continuous:
             return Snapshot(now(), synchronized=False, continuity=False)
         self.ib.reqAllOpenOrders()
+        fills = self.ib.reqExecutions()
         positions = self.ib.reqPositions()
-        orders, foreign = {}, False
+        orders = {}
         ids = {self.call.conId, self.put.conId}
+        allowed = {engine.entry_ref, *engine.state["close_refs"]}
+        if engine.state["target_ref"]:
+            allowed.add(engine.state["target_ref"])
+        for fill in fills:
+            e = fill.execution
+            if (fill.contract.conId in ids and e.acctNumber == self.account
+                    and (e.clientId != self.client_id or e.orderRef not in allowed)):
+                self.foreign_execution_seen = True
+        foreign = self.foreign_execution_seen
         for trade in self.ib.trades():
             contract, order = trade.contract, trade.order
             involved = contract.conId in ids or any(
                 leg.conId in ids for leg in (contract.comboLegs or []))
-            if not involved or order.account != self.account:
+            if not involved:
                 continue
-            if (not order.orderRef.startswith(engine.prefix + ":")
+            if not order.account:
+                foreign = True
+                continue
+            if order.account != self.account:
+                continue
+            if (order.orderRef not in allowed
                     or order.clientId != self.client_id):
                 # A foreign filled/canceled trade is an ownership conflict too.
                 foreign = True
