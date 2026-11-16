@@ -4145,3 +4145,23 @@ An isolated release branch adds explicit VIXALE_SWING_SOURCE selection to the sh
 November 6 follow-up: source rollout now includes full-preload HTTP EN/RU owner/viewer regression and a dedicated CI path. Engine 2 accounting dashes are normalized only for its workbook; exact unused template rows are excluded and malformed historical rows remain rejected. A normal Render deploy, not Restart, is required after changing the source environment value. Live credentialed staging and production activation remain gated.
 
 November 7: dedicated website staging now has the owner-approved Engine 2 staging Google credential, separate owner credential, isolated auth/operational workbook and staging SITE_BASE_URL. The shared app requires empty operational tabs in that separate workbook; using the financial workbook as GOOGLE_SHEET_ID would violate the isolation boundary. Live owner page/API and browser login verified the November 6 feed. A rendered aggregate-cent discrepancy led to price-based fixed-$10K P&L summation rather than rounded percentage summation; row/accounting semantics are unchanged. Environment updates through the Render connector can initiate a deployment even with Git auto-deploy off. Exact deployment/evidence and remaining production gates are in docs/releases/ENGINE2_SWING_ROLLOUT.md. Handbook update required: YES.
+
+
+## November 16, 2026 — Swing valuation missing-symbol quote fallback
+
+**Handbook update required: YES.** A production Render observation at 10:31 ET
+showed AVY unavailable while seven other active tickers had fresh Google Finance
+minute closes (coverage 7/8); aggregate unrealized model P&L was correctly withheld.
+The read-only `lib/swing-intraday-valuation.js` valuation path now attempts
+Yahoo Finance chart v8 one-minute closes only when the existing Google Sheet and
+Google chart sources have no admissible fresh quote for a position. It requires
+an exact ticker, mapped exchange, USD currency, positive volume and price,
+completed minute, current regular-session date and existing freshness threshold.
+A rejected, stale or unavailable fallback remains UNAVAILABLE and does not
+invent P&L. The original GOOGLEFINANCE morning reference, lot entries, fixed-$10K
+accounting, Q/R controls, model history and trading decisions are unchanged.
+No provider secrets, new service or paid data subscription are required.
+Rollback: revert the narrow PR and allow normal Render main auto-deployment.
+Production acceptance requires a successful CI run and fresh authenticated
+API/page readback demonstrating AVY coverage and matching timestamps; a code
+change alone does not establish availability of Yahoo from Render.
