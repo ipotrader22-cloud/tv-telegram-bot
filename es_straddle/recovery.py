@@ -126,7 +126,56 @@ def observe_order(saved, trade, account, client_id):
     saved['status'], saved['filled'] = status, str(quantity)
 
 
-def observe_fill(record, fill, plan, account, client_id):
+def combo_contract_ids(contract):
+    legs = getattr(contract, 'comboLegs', None)
+    if not legs or any(not isinstance(leg.conId, int) or leg.conId <= 0 for leg in legs):
+        return None
+    return frozenset(leg.conId for leg in legs)
+
+
+def execution_combo_ids(record, fill, known_trades):
+    """Resolve membership, never ownership, from exact permanent-ID evidence.
+
+    Some BAG execution callbacks omit legs. Retain independently observed legs
+    so a completed manual combo remains distinguishable after a night restart.
+    Unknown membership stays ambiguous instead of treating every ES BAG as ours.
+    """
+    e = fill.execution
+    candidates = []
+    direct = combo_contract_ids(fill.contract)
+    if direct is not None:
+        candidates.append(direct)
+    for trade in known_trades:
+        order = trade.order
+        if (e.permId and order.permId == e.permId and order.account == e.acctNumber
+                and getattr(order, 'orderRef', '') == e.orderRef):
+            contract = trade.contract
+            if contract.secType != 'BAG' or contract.symbol != 'ES':
+                raise RecoveryError('Execution and permanent-ID contract types disagree')
+            ids = combo_contract_ids(contract)
+            if ids is not None:
+                candidates.append(ids)
+    key = str(e.permId)
+    cached = record.get('observed_combo_contracts', {}).get(key) if e.permId else None
+    if cached:
+        if cached['order_ref'] != e.orderRef:
+            raise RecoveryError('Observed combo permanent-ID reference changed')
+        if (not isinstance(cached['leg_ids'], list) or not cached['leg_ids']
+                or any(not isinstance(cid, int) or cid <= 0 for cid in cached['leg_ids'])):
+            raise RecoveryError('Invalid observed combo contract evidence')
+        candidates.append(frozenset(cached['leg_ids']))
+    if not candidates:
+        return None
+    if any(ids != candidates[0] for ids in candidates):
+        raise RecoveryError('Conflicting combo contract evidence')
+    ids = candidates[0]
+    if e.permId:
+        record.setdefault('observed_combo_contracts', {})[key] = {
+            'order_ref': e.orderRef, 'leg_ids': sorted(ids)}
+    return ids
+
+
+def observe_fill(record, fill, plan, account, client_id, known_trades=()):
     e, c = fill.execution, fill.contract
     involved = c.conId in (plan.call_id, plan.put_id) or (
         c.secType == 'BAG' and c.symbol == 'ES')
@@ -137,6 +186,15 @@ def observe_fill(record, fill, plan, account, client_id):
     if e.time < plan.entry_at:
         return
     saved = record['orders'].get(e.orderRef)
+    if c.secType == 'BAG':
+        ids = execution_combo_ids(record, fill, known_trades)
+        selected = {plan.call_id, plan.put_id}
+        if ids is not None:
+            if saved is not None and e.clientId == client_id:
+                if ids != selected:
+                    raise RecoveryError('Owned execution combo contracts changed')
+            elif ids.isdisjoint(selected):
+                return  # Proven separate contracts; never adopt manual executions.
     if (saved is None or e.clientId != client_id or e.orderId != saved['order_id']
             or (saved['perm_id'] and e.permId != saved['perm_id'])
             or e.side != ('SLD' if saved['action'] == 'SELL' else 'BOT')):

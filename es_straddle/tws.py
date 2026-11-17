@@ -13,7 +13,7 @@ from .core import (D, ET, Engine, Order, Plan, Quote, Snapshot, midpoint,
                    TERMINAL, decimal)
 from .recovery import (RecoveryError, process_lock, new_record, load_record,
                        history_covers, reserve, observe_order, observe_fill,
-                       recovered_order, matches_order)
+                       recovered_order, matches_order, combo_contract_ids)
 from .runtime import (training_enabled, history_policy_allowed, validate_execution_mode,
                       StatusPublisher, configure_logging, paused)
 
@@ -352,16 +352,20 @@ class TWS:
         ids = {self.call.conId, self.put.conId}
         # Retained callbacks cover the midnight boundary only on the very same
         # continuously connected process/generation. A restart never inherits it.
+        known_trades = [*working, *completed]
         for fill in [*self.ib.fills(), *fills]:
-            observe_fill(candidate, fill, engine.plan, self.account, self.client_id)
+            observe_fill(candidate, fill, engine.plan, self.account, self.client_id,
+                         known_trades)
         self.working = {}
         for trade in working:
             c, o = trade.contract, trade.order
             if o.account and o.account != self.account:
                 continue
             involved = c.conId in ids or any(l.conId in ids for l in (c.comboLegs or []))
-            # A fresh entry must not stack onto another manually managed ES trade.
-            involved |= not engine.state['started'] and c.symbol == 'ES'
+            # Separate expiries/strikes may coexist. Missing BAG legs cannot
+            # establish separation, so an ambiguous ES combo still blocks.
+            involved |= (c.symbol == 'ES' and getattr(c, 'secType', '') == 'BAG'
+                         and combo_contract_ids(c) is None)
             if not involved:
                 continue
             saved = candidate['orders'].get(o.orderRef)
@@ -405,9 +409,6 @@ class TWS:
         for p in positions:
             if p.account == self.account and p.contract.conId in ids:
                 pos[p.contract.conId] += decimal(p.position)
-            if (not engine.state['started'] and p.account == self.account
-                    and p.contract.symbol == 'ES' and p.position):
-                candidate['foreign_activity'] = True
         integral = all(q == q.to_integral_value() for q in pos.values())
         clock = now()
         session_open = all(any(a <= clock < b for a, b in

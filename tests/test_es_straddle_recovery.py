@@ -374,6 +374,134 @@ class RecoveryTests(unittest.TestCase):
         cmd=restarted.step(s)[0]
         self.assertEqual((cmd.quantity,cmd.reason),(7,'EOD_1555_ET'))
 
+    def manual_combo(self, ids=(201,202), **kw):
+        trade=self.trade(clientId=0,orderId=19,permId=190,**kw)
+        trade.order.orderRef='MANUAL'
+        trade.contract=N(conId=0,secType='BAG',symbol='ES',currency='USD',
+                         comboLegs=[N(conId=cid,ratio=1,action='BUY',exchange='CME') for cid in ids])
+        return trade
+
+    def manual_bag_fill(self, ids=(), **kw):
+        fill=self.fill(0,clientId=0,orderId=19,permId=190,orderRef='MANUAL',**kw)
+        fill.contract=N(conId=0,secType='BAG',symbol='ES',
+                        comboLegs=[N(conId=cid) for cid in ids])
+        return fill
+
+    def test_separate_manual_es_positions_and_orders_allow_scheduled_entry(self):
+        fresh=Engine(self.p)
+        self.record=new_record(self.p,fresh,self.args,ENTRY)
+        manual=self.manual_combo()
+        future=self.manual_combo(); future.contract=N(conId=100,secType='FUT',symbol='ES',comboLegs=[])
+        before=copy.deepcopy([manual,future])
+        a=self.adapter(working=[manual,future],position=0)
+        a.ib.reqPositions=lambda:[N(account='DU_TEST',contract=N(conId=cid,symbol='ES'),position=-2)
+                                  for cid in (100,201,202)]
+        with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+            snap=a.snapshot(fresh)
+        self.assertFalse(snap.foreign_activity)
+        command=fresh.step(snap)[0]
+        self.assertEqual((command.action,command.quantity,command.price),('SELL',10,str(self.p.entry_limit)))
+        self.assertEqual(a.working,{})
+        self.assertEqual([manual,future],before)
+
+    def test_manual_position_in_selected_contract_still_blocks_entry(self):
+        fresh=Engine(self.p)
+        self.record=new_record(self.p,fresh,self.args,ENTRY)
+        a=self.adapter(position=-2)
+        with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+            snap=a.snapshot(fresh)
+        self.assertEqual(fresh.step(snap),[])
+        self.assertEqual(fresh.state['blocked'],'CONTRACTS_NOT_EXCLUSIVE')
+
+    def test_overlapping_or_unidentified_manual_combo_order_still_blocks(self):
+        for ids in ((101,202),()):
+            with self.subTest(ids=ids):
+                fresh=Engine(self.p)
+                self.record=new_record(self.p,fresh,self.args,ENTRY)
+                a=self.adapter(working=[self.manual_combo(ids)],position=0)
+                with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+                    snap=a.snapshot(fresh)
+                self.assertTrue(snap.foreign_activity)
+                self.assertEqual(fresh.step(snap),[])
+                self.assertEqual(a.working,{})
+
+    def test_separate_manual_combo_fills_do_not_interrupt_owned_target(self):
+        self.filled()
+        manual=self.manual_combo()
+        fills=[self.manual_bag_fill(),self.fill(201,clientId=0,orderRef='MANUAL'),
+               self.fill(202,clientId=0,orderRef='MANUAL')]
+        a=self.adapter(completed=[manual],fills=fills)
+        with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+            snap=a.snapshot(self.engine)
+        self.assertFalse(snap.foreign_activity)
+        command=self.engine.step(snap)[0]
+        self.assertEqual((command.reason,command.quantity,command.price),('TARGET',10,'43.75'))
+        self.assertEqual(len(self.saved['executions']),2)
+        self.assertNotIn('MANUAL',self.record['orders'])
+
+    def test_manual_combo_membership_survives_journal_reload_without_completed_history(self):
+        fill=self.manual_bag_fill()
+        observe_fill(self.record,fill,self.p,'DU_TEST',1820,[self.manual_combo()])
+        self.assertFalse(self.record['foreign_activity'])
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'session.json'; save(path,self.record)
+            restored,p=load_record(path,self.args)
+        observe_fill(restored,fill,p,'DU_TEST',1820)
+        self.assertFalse(restored['foreign_activity'])
+        self.assertEqual(restored['orders'][self.ref]['executions'],{})
+        self.assertEqual(restored['observed_combo_contracts']['190']['leg_ids'],[201,202])
+
+    def test_unknown_or_overlapping_manual_bag_fill_remains_foreign(self):
+        for ids in ((),(101,202)):
+            with self.subTest(ids=ids):
+                record=copy.deepcopy(self.record)
+                observe_fill(record,self.manual_bag_fill(ids),self.p,'DU_TEST',1820)
+                self.assertTrue(record['foreign_activity'])
+
+    def test_unrelated_order_identity_cannot_resolve_manual_combo(self):
+        for field,value in (('permId',191),('account','DU_OTHER'),('orderRef','OTHER')):
+            with self.subTest(field=field):
+                record=copy.deepcopy(self.record)
+                trade=self.manual_combo(); setattr(trade.order,field,value)
+                observe_fill(record,self.manual_bag_fill(),self.p,'DU_TEST',1820,[trade])
+                self.assertTrue(record['foreign_activity'])
+                self.assertNotIn('observed_combo_contracts',record)
+
+    def test_conflicting_direct_and_permanent_id_combo_legs_block(self):
+        with self.assertRaisesRegex(RecoveryError,'Conflicting combo'):
+            observe_fill(self.record,self.manual_bag_fill((101,102)),self.p,'DU_TEST',1820,
+                         [self.manual_combo()])
+
+    def test_cached_combo_membership_cannot_change_or_be_empty(self):
+        fill=self.manual_bag_fill()
+        observe_fill(self.record,fill,self.p,'DU_TEST',1820,[self.manual_combo()])
+        with self.assertRaisesRegex(RecoveryError,'Conflicting combo'):
+            observe_fill(self.record,fill,self.p,'DU_TEST',1820,[self.manual_combo((101,102))])
+        self.record['observed_combo_contracts']['190']['leg_ids']=[]
+        with self.assertRaisesRegex(RecoveryError,'Invalid observed combo'):
+            observe_fill(self.record,fill,self.p,'DU_TEST',1820)
+
+    def test_owned_bag_execution_still_requires_exact_contracts_and_quantity(self):
+        fill=self.fill(0,price=50.5)
+        fill.contract=N(conId=0,secType='BAG',symbol='ES',comboLegs=[])
+        self.observe(fill)
+        recovered=recovered_order(self.ref,self.saved,self.p)
+        self.assertEqual((recovered.proven,recovered.filled,recovered.average),(True,10,50.5))
+        fill.contract.comboLegs=[N(conId=201),N(conId=202)]
+        with self.assertRaisesRegex(RecoveryError,'Owned execution combo'):
+            self.observe(fill)
+
+    def test_eod_with_separate_manual_positions_closes_only_owned_ten(self):
+        self.filled()
+        a=self.adapter(completed=[self.manual_combo()],fills=[self.manual_bag_fill()])
+        a.args.history_days=7
+        a.ib.reqPositions=lambda:[N(account='DU_TEST',contract=N(conId=cid,symbol='ES'),position=qty)
+                                  for cid,qty in ((101,-10),(102,-10),(201,-3),(202,-3))]
+        with patch('es_straddle.tws.now',return_value=self.p.close_at):
+            snap=a.snapshot(self.engine)
+        command=self.engine.step(snap)[0]
+        self.assertEqual((command.action,command.quantity,command.reason),('BUY',10,'EOD_1555_ET'))
+
     def test_recovered_full_target_fill_never_reverses(self):
         self.filled()
         entry=recovered_order(self.ref,self.saved,self.p)

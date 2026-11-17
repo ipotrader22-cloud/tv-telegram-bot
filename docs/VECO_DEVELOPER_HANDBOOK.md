@@ -94,6 +94,20 @@ the Windows task; pause/resume and timestamped phase logging were verified by
 submitted during activation. This is idle-supervision evidence, not completion
 of the pending overnight/active-coordinator acceptance scenarios.
 
+Owner clarification: manual ES trades will be later-dated (2DTE/3DTE and beyond).
+The adapter now scopes conflicts to the two exact selected option conIds, removing
+the earlier all-ES entry exclusion. Separate futures/options positions, working
+orders and proven separate combo executions may coexist without becoming owned
+by this executor. The bot still selects next eligible 16:00 ET expiry, so DTE
+labels alone are not an isolation guarantee. Shared option legs or unidentified
+ES combo membership retain the hold. Membership comes from actual BAG legs or
+an exact account/permanent-ID/order-ref broker-order match and is durably retained
+in optional observed_combo_contracts journal evidence for restart. It never
+establishes ownership, clears prior holds or changes target/close quantities.
+102 offline regressions pass. A 22:37 ET read-only broker audit resolved all 21
+current-day BAG callbacks; older unavailable identities predate this session.
+No manual trade/order or shared bridge/watchdog setting was changed.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

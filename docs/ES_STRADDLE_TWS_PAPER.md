@@ -320,6 +320,37 @@ This activation submitted no orders. Stock source/config hashes were unchanged;
 the existing TWS watchdog was left intact. This proves idle process supervision,
 not recovery of a ten-lot position through the upcoming natural night outage.
 
+### Manual ES positions in separate contracts
+
+The owner clarified that manual trades will use later expiries such as 2DTE and
+3DTE. Remove the earlier symbol-wide ES exclusion: unrelated ES futures/options
+positions and working orders no longer block the scheduled entry merely because
+their symbol is ES. Isolation uses the selected call/put conIds, not a DTE label.
+The automated entry remains next eligible 16:00 ET expiry (normally tomorrow at
+the 20:20 entry), so later-dated manual trades must not include either selected
+option contract. Different expiry or strike can establish separate contracts.
+
+Manual positions, targets and exits are never adopted or managed. Exact-contract
+positions still prevent entry; foreign orders/fills involving either selected
+leg still hold the session. An ES BAG with unavailable leg identity also holds
+until separation can be proved. A generic ES BAG execution is classified using
+its actual legs or an exact account/permanent-ID/order-ref matching broker
+order. Proven combo membership is saved in the optional version-2 journal field
+observed_combo_contracts so a known separate manual combo stays distinguishable
+after reconnect when older completed-order details disappear. This is contract
+membership evidence only; ownership and full-fill proof are unchanged. Conflicting
+or malformed evidence blocks; an old foreign-activity hold is never cleared.
+
+102 offline tests cover coexistence before entry and during target/EOD management,
+exact overlap and unidentified BAG holds, permanent-ID/account/ref mismatches,
+contradictory evidence, durable combo membership and owned-quantity-only exits.
+A read-only actual TWS audit at 22:37 ET resolved all 21 current-day ES BAG
+execution callbacks, including manual activity. The 43 unavailable older BAG
+identities were dated November 10–15, before this session; pre-entry executions
+are not treated as new session interference. No manual position/order was created,
+changed or canceled to test coexistence; active coexistence remains covered by
+offline tests rather than a new broker trading experiment.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders
