@@ -30,10 +30,16 @@ live quotes, PM expiry and read-only disconnect/restart restoration were verifie
 81 offline tests passed locally. No order effects or unattended startup were
 enabled. Stock bridge source/config hashes were preserved. The owner separately
 stopped its process and confirmed this; the ES task left it stopped.
-TWS Today history and an externally managed ten-lot ES position/order block
-unattended readiness. Full manual/all-client history acceptance and supervised
+Initial TWS Today history and an externally managed ten-lot ES position/order
+blocked readiness. Authorized follow-up at 21:32 ET saved Last 7 Days in Trade
+History and verified 827 API executions dated November 10–16, including clients
+0 and 77, across API reconnect and Trade History window close/reopen. The isolated
+config now uses history_days=7. Order/position fingerprints and stock source/env
+hashes were unchanged; no Master Client ID or routing change. Actual cross-midnight
+outage/TWS-restart and continuous all-client coverage remain unverified. Supervised
 active-order crash/disconnect/partial/cancel/Mayday/EOD acceptance remain gates.
-No shared TWS setting was changed, no live activation or production merge.
+Only the authorized Trade History period/save-selection setting changed in TWS;
+no live activation or production merge.
 
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,

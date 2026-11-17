@@ -174,7 +174,7 @@ and fresh-adapter journal restore using an unopened fixture outside operational
 state. Exact leg IDs were preserved; foreign orders were unchanged; persisted
 foreign activity blocked restart. This does NOT prove recovery of active orders.
 
-Readiness remains **BLOCKED**. TWS Trade Log currently shows Today, although
+At the initial inspection, readiness was **BLOCKED** and TWS Trade Log showed Today, although
 execution download is All Available; sampled history includes manual client 0
 and stock client 77. Master Client ID is blank. Do not change shared routing
 without assessing stock-bridge impact. Before unattended use, establish and
@@ -187,6 +187,26 @@ offline regressions on Python 3.12; CI also exercises Python 3.11 and 3.12.
 Broker references: [IB execution history and corrections](https://www.interactivebrokers.com/docs/tws-api/doc/order-management/execution-details),
 [IB master-client visibility](https://www.interactivebrokers.com/docs/tws-api/doc/order-management/master-client-id),
 [CME premium-band change notice](https://www.cmegroup.com/content/dam/cmegroup/notices/clearing/2025/chadv25-390r.pdf).
+
+### Authorized history follow-up — November 16, 21:32 ET
+
+The owner authorized configuring history and technical checks. On reopening
+Trade History the period was already Last 5 Days; read-only API returned 543
+executions from November 12 onward. Set Last 7 Days and checked Save this
+selection. Reopening the Trades window retained Last 7 Days. A new client-1820
+connection returned 827 executions dated November 10–16 ET, including manual
+client 0 and stock client 77. The same history remained available after closing
+the Trades window and reconnecting the API. Order and ES-position fingerprints
+were identical before and after. No orders were submitted, canceled or modified.
+
+Updated only the isolated private config's history_days from 1 to 7. No Master
+Client ID, routing, API security or stock bridge setting changed; stock source
+and .env hashes remain unchanged. This supersedes the initial Today-history
+blocker, but does not certify an actual cross-midnight outage or TWS restart.
+Continuous all-client visibility and owned active-order recovery acceptance
+remain unverified. The external ES trade still blocks new entry. Execution,
+history attestation and unattended startup remain disabled. Recheck history
+after a TWS restart before relying on the saved seven-day window.
 
 ## Rollback
 
