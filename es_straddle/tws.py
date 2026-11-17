@@ -162,6 +162,9 @@ class TWS:
 
     def restore(self, plan, record):
         """Requalify the journal's exact legs; never select a new ATM on restart."""
+        generation = self.generation
+        self.continuous = False
+        self.quotes.clear()
         self.record = record
         self._coverage_generation = None
         pair = []
@@ -186,6 +189,9 @@ class TWS:
         self.quotes.clear()
         for c in (self.call, self.put):
             self.ib.reqMktData(c)
+        if generation != self.generation or not self.ib.isConnected():
+            raise RecoveryError('Connection changed while restoring exact contracts')
+        self.continuous = True
 
     def load_market_rules(self):
         rule_ids = set()

@@ -181,7 +181,7 @@ without assessing stock-bridge impact. Before unattended use, establish and
 verify a history window covering overnight outages plus continuous/manual/all-
 client visibility, reconcile the external ES position, then supervise actual
 owned combo/target/partial/cancel/Mayday/EOD and active-order restart acceptance.
-The local history attestation is deliberately unset. Local tests: 80 passing
+The local history attestation is deliberately unset. Local tests: 81 passing
 offline regressions on Python 3.12; CI also exercises Python 3.11 and 3.12.
 
 Broker references: [IB execution history and corrections](https://www.interactivebrokers.com/docs/tws-api/doc/order-management/execution-details),

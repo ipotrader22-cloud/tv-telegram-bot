@@ -215,6 +215,17 @@ class RecoveryTests(unittest.TestCase):
         a.disconnected()
         self.assertFalse(a.continuous); self.assertEqual(a.generation,1); self.assertEqual(a.quotes,{})
 
+    def test_failed_contract_restore_cannot_resume_stale_connection_state(self):
+        a=TWS.__new__(TWS)
+        a.continuous=True; a.generation=1; a.quotes={101:{'ask_at':ENTRY}}
+        a.Contract=lambda **kw:N(**kw)
+        a.ib=N(reqContractDetails=lambda c:[])
+        with self.assertRaisesRegex(RecoveryError,'unavailable or ambiguous'):
+            a.restore(self.p,self.record)
+        self.assertFalse(a.continuous)
+        self.assertEqual(a.quotes,{})
+        self.assertIsNone(a._coverage_generation)
+
     def test_pinned_ib_insync_connection_signature(self):
         from ib_insync import IB
         args=N(**vars(self.args),paper_execute=False,expiry_timezone='America/New_York',
