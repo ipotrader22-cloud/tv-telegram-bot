@@ -60,9 +60,16 @@ current ES future conId (not continuous/MES), real-time options permissions,
 clock, and combo minimum price increment. Never commit account values.
 
 Read-only preflight, substituting verified local values:
-  python -m es_straddle --account DU_PAPER_ACCOUNT --underlying-id ES_CONID --combo-tick VERIFIED_TICK --state-dir C:\es_straddle_state
+  python -m es_straddle --account DU_PAPER_ACCOUNT --underlying-id ES_CONID --combo-tick VERIFIED_TICK --expiry-timezone America/New_York --history-timezone America/New_York --history-days 1 --state-dir C:\es_straddle_state
 
-After supervised paper authorization, add --paper-execute to that command.
+The timezone values above are examples, not defaults: verify TWS API timestamp
+settings and expiry-day trading hours. Private JSON defaults can instead be
+loaded with --config PATH. Execution flags are not accepted in that file.
+
+After supervised acceptance establishes manual/all-client execution visibility,
+--history-all-clients-verified attests that evidence. Only then can explicit
+--paper-execute enable paper effects. Neither flag is installed in the local
+launcher. Do not attest coverage from an empty response or a single day's sample.
 Start before 20:20 ET; keep running through exit and subsequent eligible nights.
 The local process owns timing; no ChatGPT scheduled trading task is installed.
 Friday/Saturday entries are skipped. Review the explicit underlying conId on
@@ -90,14 +97,29 @@ copy with a different state directory to evade locks or ownership checks.
   this process/network/TWS/data connection. A GTC target may remain broker-held
   after failure; no emergency execution guarantee applies during outages.
   Market orders can slip or be rejected.
-- Active-session restart recovery and automatic reconnect/history proof are
-  NOT implemented. Connection continuity loss blocks effects. Unresolved
-  journals block restart pending broker reconciliation; never delete them
-  to retry. No prior-day execution coverage is inferred from today's history.
+- Version-2 recovery journals retain exact contracts, frozen entry price,
+  state, broker order IDs reserved before submission, bound permanent IDs,
+  execution IDs/components, terminal observations and a history checkpoint.
+  An OS-owned lock releases on process death. Restart requalifies the saved
+  legs; it never selects a new ATM or replays saved commands. Version-1 active
+  journals, identity mismatches and persisted foreign activity require review.
+- Disconnects invalidate quotes and connection generation. Bounded reconnect
+  uses only this client's socket. Every recovery pass requires fresh own/all
+  open orders, completed orders, executions and positions. Missing acknowledgments
+  remain UNKNOWN; full exact fills can prove completion. Partial fills need
+  terminal-status evidence before a replacement. Completed callbacks omit API
+  IDs: adopt only a previously bound permId and use order.filledQuantity.
+- The checkpoint advances only after all snapshot requests finish. Same-process
+  continuous callbacks cover midnight; reconnect/restart requires the checkpoint
+  inside the explicitly verified TWS history window. Today's history cannot
+  heal an overnight gap. TWS can expose up to seven days when its Trade Log is
+  configured accordingly; Gateway is current-day only. Unprovable gaps, corrections,
+  timeouts and ownership/position mismatches block effects instead of guessing.
 - Supervised TWS paper acceptance must verify actual combo support, expiry/time
   metadata, tick grids, fill shapes, target acceptance, partial fills,
   cancellation race, Mayday, EOD, interference and restart/disconnect behavior.
-  Resilient recovery remains required before unattended live promotion.
+  These active-order recovery acceptance checks remain required before any
+  unattended paper use. Live trading is outside this candidate's scope.
 - Entry tolerance is the 20:20 minute. Slow preflight or missing real-time data
   skips rather than submitting late. IB metadata can conservatively skip
   entries when it cannot prove a session/PM contract.
@@ -107,7 +129,7 @@ copy with a different state directory to evade locks or ownership checks.
 ## Offline verification
 
   python -m compileall -q es_straddle tests/test_es_straddle.py
-  python -B -m unittest discover -s tests -p test_es_straddle.py -v
+  python -B -m unittest discover -s tests -p 'test_es_straddle*.py' -v
 
 CI runs these on Python 3.11/3.12, installs the pinned adapter dependencies and
 checks --help without broker access. Fixtures test pricing, PM expiry/DST,
@@ -115,6 +137,56 @@ no chase/no fill, partial entries, Mayday threshold/stale data, EOD,
 target-cancel races, residual sizing, unknown acknowledgments, ownership,
 continuity, retry caps and exact execution evidence. Offline success is not
 broker acceptance or proof of Windows installation.
+
+## Windows installation and read-only evidence — November 16, 2026
+
+Installed under the task's `outputs/es-executor`, with its own Python 3.12 venv,
+private local-config.json, state directory and Preflight.ps1. No service, startup
+task or execution loop was enabled. No broker orders were placed, canceled or
+changed. The deployed stock bridge source matched the repository, its .env hash
+was unchanged. The owner later stopped the stock bridge independently and
+confirmed that action; this task left it stopped. Shared TWS settings were
+inspected without changing them.
+
+Read-only API evidence: standard paper port 7497, verified DU account, separate
+client 1820, server 176, ESZ6 underlying conId 515416632, live future and option
+quotes. One preflight selected the November 17 16:00 ET 7440 pair and exact
+70.00 midpoint. This is a dated observation, never an entry instruction.
+The account already held an externally managed ten-lot ES straddle with a
+working combo order. Fresh entry correctly failed the foreign-activity gate;
+no adoption or modification of that trade occurred.
+
+Local discoveries fixed in the adapter:
+- Pinned ib_insync 0.9.86 does not accept raiseSyncErrors on IB.connect.
+- Option-chain underlyingConId arrives as a string. Selection now normalizes it
+  and searches subsequent dates when the first listed date is not valid PM expiry.
+- This TWS emits lastTradeTime in operator time while tradingHours remains in
+  the instrument timezone. Explicit expiry timezone must agree with the final
+  expiry-day hours endpoint; an early close fails the required 16:00 ET proof.
+- CME market rule 235 is premium-dependent (.05/.10/.25/.50 bands). Entry
+  checks the configured tick against the returned band and skips an off-grid
+  exact midpoint. The target formula stays rounded UP to .25. If its exact
+  result is not exchange-valid, the coordinator follows the existing unprotected
+  target failure exit path; it never silently changes that target price.
+
+The installed adapter passed a real read-only disconnect, same-client reconnect
+and fresh-adapter journal restore using an unopened fixture outside operational
+state. Exact leg IDs were preserved; foreign orders were unchanged; persisted
+foreign activity blocked restart. This does NOT prove recovery of active orders.
+
+Readiness remains **BLOCKED**. TWS Trade Log currently shows Today, although
+execution download is All Available; sampled history includes manual client 0
+and stock client 77. Master Client ID is blank. Do not change shared routing
+without assessing stock-bridge impact. Before unattended use, establish and
+verify a history window covering overnight outages plus continuous/manual/all-
+client visibility, reconcile the external ES position, then supervise actual
+owned combo/target/partial/cancel/Mayday/EOD and active-order restart acceptance.
+The local history attestation is deliberately unset. Local tests: 80 passing
+offline regressions on Python 3.12; CI also exercises Python 3.11 and 3.12.
+
+Broker references: [IB execution history and corrections](https://www.interactivebrokers.com/docs/tws-api/doc/order-management/execution-details),
+[IB master-client visibility](https://www.interactivebrokers.com/docs/tws-api/doc/order-management/master-client-id),
+[CME premium-band change notice](https://www.cmegroup.com/content/dam/cmegroup/notices/clearing/2025/chadv25-390r.pdf).
 
 ## Rollback
 

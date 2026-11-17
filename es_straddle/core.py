@@ -103,6 +103,7 @@ class Snapshot:
     foreign_activity: bool = False
     continuity: bool = True
     session_open: bool = True
+    target_price_valid: bool = True
 
 @dataclass(frozen=True)
 class Command:
@@ -201,12 +202,18 @@ class Engine:
             s["outcome"] = s["reason"] or ("TARGET" if closed else "NO_FILL")
             return []
         if not s["reason"]:
-            if s["target_ref"] is None:
+            if not snap.target_price_valid:
+                s['reason'] = 'TARGET_TICK_INVALID'
+                # A working target must still be canceled and confirmed on a
+                # subsequent pass before a close can be reserved.
+                if s['target_ref'] and snap.orders[s['target_ref']].status not in TERMINAL:
+                    return [Command('CANCEL', s['target_ref'])]
+            elif s["target_ref"] is None:
                 ref = self.prefix + ":TARGET"
                 s["target_ref"] = ref
                 return [Command("SUBMIT", ref, "BUY", remaining, "LMT",
                                 str(target_price(entry.average)), "TARGET")]
-            if snap.orders[s["target_ref"]].status in TERMINAL:
+            elif snap.orders[s["target_ref"]].status in TERMINAL:
                 # Rejected/canceled target: flatten owned residual, never leave
                 # it silently unprotected and never re-enter.
                 s["reason"] = "TARGET_TERMINATED_WITH_POSITION"

@@ -3,12 +3,17 @@ import argparse
 import json
 import os
 import sys
+import copy
+import logging
 from datetime import datetime, timedelta, time, timezone
 from pathlib import Path
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from .core import (D, ET, Engine, Order, Plan, Quote, Snapshot, midpoint,
                    TERMINAL, decimal)
+from .recovery import (RecoveryError, process_lock, new_record, load_record,
+                       history_covers, reserve, observe_order, observe_fill,
+                       recovered_order, matches_order)
 
 def now():
     return datetime.now(timezone.utc)
@@ -36,17 +41,32 @@ def intervals(text, zone):
             result.append((parse(start), parse(end)))
     return result
 
-def expiry_time(detail):
+def expiry_time(detail, expiry_zone=None):
     # Refuse missing PM-expiry evidence; never infer daily vs quarterly from name.
     value = detail.lastTradeTime
     if not value:
         raise ValueError("IB lastTradeTime unavailable: PM expiry unverified")
-    zone = ZoneInfo(detail.timeZoneId)
+    zone = expiry_zone or ZoneInfo(detail.timeZoneId)
     day = detail.realExpirationDate
     expiry = datetime.strptime(day + " " + value, "%Y%m%d %H:%M:%S").replace(tzinfo=zone)
     if expiry.astimezone(ET).time() != time(16):
         raise ValueError("Not a 16:00 ET expiration")
+    if expiry_zone is not None:
+        # The expiry clock can be operator-local while tradingHours remains
+        # exchange-local. Require an independent expiry-day session endpoint.
+        hours = intervals(detail.tradingHours, ZoneInfo(detail.timeZoneId))
+        ends = [b for a, b in hours if b.astimezone(ET).date() == expiry.astimezone(ET).date()]
+        if not ends or max(ends) != expiry:
+            raise ValueError("Expiry clock and final trading-hours endpoint disagree")
     return expiry
+
+
+def market_increment(price, rules):
+    levels = sorted((decimal(r.lowEdge), decimal(r.increment)) for r in rules)
+    eligible = [tick for edge, tick in levels if edge <= abs(decimal(price))]
+    if not eligible or eligible[-1] <= 0:
+        raise ValueError('Broker market-rule increment unavailable')
+    return eligible[-1]
 
 def prove_fill(trade, call_id, put_id):
     """Require exact execIds, account and side; BAG or equal paired leg fills."""
@@ -92,16 +112,22 @@ class TWS:
         self.Contract, self.ComboLeg = Contract, ComboLeg
         self.LimitOrder, self.MarketOrder = LimitOrder, MarketOrder
         self.foreign_execution_seen = False
+        self.args = args
+        self.record = None
+        self.paper_execute = args.paper_execute
+        self.expiry_zone = ZoneInfo(args.expiry_timezone) if args.expiry_timezone else None
+        self.history_zone = ZoneInfo(args.history_timezone) if args.history_timezone else None
         self.account, self.client_id = args.account, args.client_id
         self.ib = IB()
         self.ib.RequestTimeout = 10
         self.ib.RaiseRequestErrors = True
         self.ib.connect("127.0.0.1", args.port, clientId=args.client_id,
                         readonly=not args.paper_execute, account=args.account,
-                        raiseSyncErrors=True)
+                        timeout=10)
         if args.account not in self.ib.managedAccounts():
             raise ValueError("Exact paper account not present")
         self.continuous = True
+        self.generation = 0
         self.ib.disconnectedEvent += self.disconnected
         self.ib.errorEvent += self.error
         self.quotes = {}
@@ -114,10 +140,63 @@ class TWS:
 
     def disconnected(self):
         self.continuous = False
+        self.generation += 1
+        self.quotes.clear()
 
     def error(self, request_id, code, message, contract):
         if code in (1100, 1101, 1102, 1300):
-            self.continuous = False
+            self.disconnected()
+
+    def reconnect(self):
+        # Rebuild only this API connection. Never restart TWS or the stock bridge.
+        if self.ib.isConnected():
+            self.ib.disconnect()
+        self.ib.connect('127.0.0.1', self.args.port, clientId=self.client_id,
+                        readonly=not self.paper_execute, account=self.account,
+                        timeout=10)
+        if self.account not in self.ib.managedAccounts():
+            raise RecoveryError('Paper account changed after reconnect')
+        self.quotes.clear()
+        self.ib.reqMarketDataType(1)
+        self.continuous = True
+
+    def restore(self, plan, record):
+        """Requalify the journal's exact legs; never select a new ATM on restart."""
+        self.record = record
+        self._coverage_generation = None
+        pair = []
+        for cid, right in ((plan.call_id, 'C'), (plan.put_id, 'P')):
+            found = self.ib.reqContractDetails(self.Contract(conId=cid, exchange='CME'))
+            if len(found) != 1:
+                raise RecoveryError('Recovered contract unavailable or ambiguous')
+            d, c = found[0], found[0].contract
+            if (c.conId != cid or c.secType != 'FOP' or c.symbol != 'ES'
+                    or c.currency != 'USD' or c.multiplier != '50' or c.right != right
+                    or decimal(c.strike) != plan.strike or d.underConId != plan.underlying_id
+                    or expiry_time(d, self.expiry_zone) != plan.expiry_at):
+                raise RecoveryError('Recovered exact contract/expiry mismatch')
+            pair.append(d)
+        self.details = pair
+        self.load_market_rules()
+        self.call, self.put = [d.contract for d in pair]
+        self.expiry = plan.expiry_at
+        self.bag = self.Contract(symbol='ES', secType='BAG', exchange='CME', currency='USD')
+        self.bag.comboLegs = [self.ComboLeg(conId=c.conId, ratio=1, action='BUY', exchange='CME')
+                              for c in (self.call, self.put)]
+        self.quotes.clear()
+        for c in (self.call, self.put):
+            self.ib.reqMktData(c)
+
+    def load_market_rules(self):
+        rule_ids = set()
+        for detail in self.details:
+            pairs = dict(zip(detail.validExchanges.split(','), detail.marketRuleIds.split(',')))
+            rule_ids.add(pairs.get('CME'))
+        if len(rule_ids) != 1 or None in rule_ids or '' in rule_ids:
+            raise ValueError('CME price-rule identity unavailable or inconsistent between legs')
+        self.market_rules = self.ib.reqMarketRule(int(next(iter(rule_ids))))
+        if not self.market_rules:
+            raise ValueError('CME price-rule response empty')
 
     def ticks(self, tickers):
         observed = now()
@@ -164,7 +243,7 @@ class TWS:
         entry = clock.astimezone(ET).replace(hour=20, minute=20, second=0, microsecond=0)
         choices = []
         for chain in chains:
-            if chain.underlyingConId != future.conId or chain.multiplier != "50":
+            if int(chain.underlyingConId) != future.conId or chain.multiplier != "50":
                 continue
             for expiry in chain.expirations:
                 day = datetime.strptime(expiry, "%Y%m%d").date()
@@ -174,10 +253,11 @@ class TWS:
                                     decimal(strike), chain.tradingClass))
         if not choices:
             raise ValueError("No upcoming ES option expiry")
-        first_expiry = min(x[0] for x in choices)
-        candidates = sorted(set(x for x in choices if x[0] == first_expiry))
+        candidates = sorted(set(choices))
         valid = []
         for expiry, distance, strike, trading_class in candidates:
+            if valid and expiry != valid[0][1][0][0].realExpirationDate:
+                break
             details = []
             for right in ("C", "P"):
                 spec = Contract(symbol="ES", secType="FOP", exchange="CME",
@@ -193,7 +273,7 @@ class TWS:
                         detail.contract.secType != "FOP"):
                     break
                 try:
-                    expiry_at = expiry_time(detail)
+                    expiry_at = expiry_time(detail, self.expiry_zone)
                     hours = intervals(detail.tradingHours, ZoneInfo(detail.timeZoneId))
                     if not any(a <= clock < b for a, b in hours):
                         break
@@ -210,6 +290,7 @@ class TWS:
         strike, pair = valid[0]
         self.call, self.put = (x[0].contract for x in pair)
         self.details = [x[0] for x in pair]
+        self.load_market_rules()
         self.expiry = pair[0][1]
         self.bag = Contract(symbol="ES", secType="BAG", exchange="CME", currency="USD")
         self.bag.comboLegs = [
@@ -229,6 +310,13 @@ class TWS:
         # Exact midpoint only. The combo tick is a locally verified instrument
         # setting, not a strategy reprice or assumed individual-leg tick.
         entry_tick = self.combo_tick
+        raw_midpoint = (sum(q.bid for q in quotes) + sum(q.ask for q in quotes)) / 2
+        self.selection_report = {'strike': str(strike), 'call_id': self.call.conId,
+                                 'put_id': self.put.conId, 'expiry': self.expiry.isoformat(),
+                                 'exact_midpoint': str(raw_midpoint), 'real_time_quotes': True,
+                                 'configured_combo_tick': str(entry_tick)}
+        if market_increment(raw_midpoint, self.market_rules) != entry_tick:
+            raise ValueError('Configured combo tick differs from current CME premium band')
         price = midpoint(sum(q.bid for q in quotes), sum(q.ask for q in quotes), entry_tick)
         plan = Plan(entry.date().isoformat(), entry, self.expiry,
                     self.call.conId, self.put.conId, future.conId, strike, price, entry_tick)
@@ -238,69 +326,113 @@ class TWS:
     def snapshot(self, engine):
         if not self.ib.isConnected() or not self.continuous:
             return Snapshot(now(), synchronized=False, continuity=False)
-        self.ib.reqAllOpenOrders()
-        fills = self.ib.reqExecutions()
+        from ib_insync import ExecutionFilter
+        started, generation = now(), self.generation
+        candidate = copy.deepcopy(self.record)
+        retained = (getattr(self, '_coverage_generation', None) == generation
+                    and getattr(self, '_coverage_checkpoint', None) == candidate['coverage_through'])
+        if not retained and not history_covers(candidate, started, self.history_zone, self.args.history_days):
+            raise RecoveryError('HISTORY_COVERAGE_UNPROVEN: checkpoint outside verified TWS history')
+        # Successful end callbacks are mandatory; timeouts never advance coverage.
+        self.ib.reqOpenOrders()
+        working = self.ib.reqAllOpenOrders()
+        completed = self.ib.reqCompletedOrders(apiOnly=False)
+        fills = self.ib.reqExecutions(ExecutionFilter(acctCode=self.account))
         positions = self.ib.reqPositions()
-        orders = {}
+        if generation != self.generation or not self.ib.isConnected() or not self.continuous:
+            return Snapshot(now(), synchronized=False, continuity=False)
         ids = {self.call.conId, self.put.conId}
-        allowed = {engine.entry_ref, *engine.state["close_refs"]}
-        if engine.state["target_ref"]:
-            allowed.add(engine.state["target_ref"])
-        for fill in fills:
-            e = fill.execution
-            if (fill.contract.conId in ids and e.acctNumber == self.account
-                    and (e.clientId != self.client_id or e.orderRef not in allowed)):
-                self.foreign_execution_seen = True
-        foreign = self.foreign_execution_seen
-        for trade in self.ib.trades():
-            contract, order = trade.contract, trade.order
-            involved = contract.conId in ids or any(
-                leg.conId in ids for leg in (contract.comboLegs or []))
+        # Retained callbacks cover the midnight boundary only on the very same
+        # continuously connected process/generation. A restart never inherits it.
+        for fill in [*self.ib.fills(), *fills]:
+            observe_fill(candidate, fill, engine.plan, self.account, self.client_id)
+        self.working = {}
+        for trade in working:
+            c, o = trade.contract, trade.order
+            if o.account and o.account != self.account:
+                continue
+            involved = c.conId in ids or any(l.conId in ids for l in (c.comboLegs or []))
+            # A fresh entry must not stack onto another manually managed ES trade.
+            involved |= not engine.state['started'] and c.symbol == 'ES'
             if not involved:
                 continue
-            if not order.account:
-                foreign = True
+            saved = candidate['orders'].get(o.orderRef)
+            if saved is None or o.orderRef in self.working:
+                candidate['foreign_activity'] = True
                 continue
-            if order.account != self.account:
+            expected = sorted((cid, 1, 'BUY', 'CME') for cid in ids)
+            actual = sorted((l.conId, l.ratio, l.action, l.exchange) for l in (c.comboLegs or []))
+            if c.secType != 'BAG' or c.symbol != 'ES' or c.currency != 'USD' or actual != expected:
+                raise RecoveryError('Owned order combo legs changed')
+            observe_order(saved, trade, self.account, self.client_id)
+            self.working[o.orderRef] = trade
+        for ref, saved in candidate['orders'].items():
+            if ref in self.working:
                 continue
-            if (order.orderRef not in allowed
-                    or order.clientId != self.client_id):
-                # A foreign filled/canceled trade is an ownership conflict too.
-                foreign = True
-                continue
-            if order.orderRef in orders:
-                foreign = True
-                continue
-            quantity, price, proven = prove_fill(trade, self.call.conId, self.put.conId)
-            orders[order.orderRef] = Order(order.orderRef, trade.orderStatus.status,
-                                          quantity, price, proven)
+            exact = [t for t in completed if saved['perm_id']
+                     and t.order.permId == saved['perm_id'] and t.order.orderRef == ref]
+            if len(exact) > 1:
+                raise RecoveryError('Duplicate completed order identity')
+            if exact:
+                # Completed-order callbacks omit API client/order IDs. Only an
+                # already bound permanent ID permits restoring those fields.
+                t = copy.deepcopy(exact[0])
+                t.order.orderId, t.order.clientId = saved['order_id'], self.client_id
+                t.orderStatus.filled = t.order.filledQuantity
+                observe_order(saved, t, self.account, self.client_id)
+            elif saved['status'] not in TERMINAL:
+                saved['status'] = 'UNKNOWN'
+        orders = {ref: o for ref, saved in candidate['orders'].items()
+                  if (o := recovered_order(ref, saved, engine.plan)) is not None}
         pos = {c: D("0") for c in ids}
         for p in positions:
             if p.account == self.account and p.contract.conId in ids:
                 pos[p.contract.conId] += decimal(p.position)
+            if (not engine.state['started'] and p.account == self.account
+                    and p.contract.symbol == 'ES' and p.position):
+                candidate['foreign_activity'] = True
         integral = all(q == q.to_integral_value() for q in pos.values())
         clock = now()
         session_open = all(any(a <= clock < b for a, b in
                                intervals(d.tradingHours, ZoneInfo(d.timeZoneId)))
                            for d in self.details)
+        candidate['coverage_through'] = started.isoformat()
+        self.record.clear()
+        self.record.update(candidate)
+        self._coverage_generation = generation
+        self._coverage_checkpoint = candidate['coverage_through']
+        from .core import target_price
+        entry = orders.get(engine.entry_ref)
+        target_valid = True
+        if entry and entry.proven and entry.filled:
+            target = target_price(entry.average)
+            target_valid = target % market_increment(target, self.market_rules) == 0
         return Snapshot(clock, orders, int(pos[self.call.conId]), int(pos[self.put.conId]),
                         self.quote(self.call), self.quote(self.put),
-                        synchronized=integral, foreign_activity=foreign,
-                        continuity=self.continuous, session_open=session_open)
+                        synchronized=integral, foreign_activity=candidate['foreign_activity'],
+                        continuity=self.continuous and self.args.history_all_clients_verified,
+                        session_open=session_open, target_price_valid=target_valid)
 
     def execute(self, command):
+        if not self.paper_execute:
+            raise RecoveryError('Read-only adapter cannot mutate broker orders')
+        if not self.ib.isConnected() or not self.continuous:
+            raise RecoveryError('Connection changed before broker effect')
+        if self.record is None or command.ref not in self.record['orders']:
+            raise RecoveryError('Durable order reservation required')
+        saved = self.record['orders'][command.ref]
         if command.kind == "CANCEL":
-            trades = [t for t in self.ib.trades()
-                      if t.order.orderRef == command.ref
-                      and t.order.account == self.account
-                      and t.order.clientId == self.client_id]
-            if len(trades) != 1:
+            trade = self.working.get(command.ref)
+            if trade is None or not matches_order(saved, trade.order, self.account, self.client_id):
                 raise RuntimeError("Exact cancellation identity unavailable")
-            if trades[0].orderStatus.status not in TERMINAL:
-                self.ib.cancelOrder(trades[0].order)
+            if trade.orderStatus.status not in TERMINAL:
+                self.ib.cancelOrder(trade.order)
             return
         if command.kind != "SUBMIT":
             raise ValueError("Unknown command")
+        if (command.action != saved['action'] or command.quantity != saved['quantity']
+                or command.order_type != saved['order_type'] or command.price != saved['price']):
+            raise RecoveryError('Command differs from durable reservation')
         if any(t.order.orderRef == command.ref for t in self.ib.trades()):
             raise RuntimeError("Duplicate submission refused")
         if command.order_type == "LMT":
@@ -308,80 +440,172 @@ class TWS:
         else:
             order = self.MarketOrder(command.action, command.quantity)
         order.account = self.account
+        order.orderId = saved['order_id']
         order.orderRef = command.ref
         order.tif = "GTC" if command.reason == "TARGET" else "DAY"
         order.outsideRth = True
         self.ib.placeOrder(self.bag, order)
 
+def drive_session(broker, engine, record, path):
+    """One reconciliation pass; disk errors escape before any broker effect."""
+    snapshot = broker.snapshot(engine)
+    commands = engine.step(snapshot)
+    record['state'] = copy.deepcopy(engine.state)
+    record['last_observed_at'] = snapshot.now.isoformat()
+    record.pop('recovery_block', None)
+    record['commands'] = [c.__dict__ for c in commands]
+    for command in commands:
+        if command.kind == 'SUBMIT':
+            reserve(record, command, broker.ib.client.getReqId())
+    save(path, record)
+    for command in commands:
+        broker.execute(command)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--account", required=True, help="Exact DU paper account; never committed")
-    parser.add_argument("--underlying-id", required=True, type=int, help="Verified current ES futures conId")
-    parser.add_argument("--combo-tick", required=True, help="Verified ES combo minimum price increment")
+    parser.add_argument('--config', type=Path, help='Private local JSON defaults; never committed')
+    parser.add_argument("--account", help="Exact DU paper account; never committed")
+    parser.add_argument("--underlying-id", type=int, help="Verified current ES futures conId")
+    parser.add_argument("--combo-tick", help="Verified ES combo minimum price increment")
     parser.add_argument("--port", type=int, default=7497)
     parser.add_argument("--client-id", type=int, default=1820)
-    parser.add_argument("--state-dir", type=Path, required=True)
+    parser.add_argument("--state-dir", type=Path)
+    parser.add_argument('--expiry-timezone', help='Verified TWS expiry attribute timezone (IANA)')
+    parser.add_argument('--history-timezone', help='Verified TWS execution-history midnight timezone (IANA)')
+    parser.add_argument('--history-days', type=int, choices=range(1, 8), default=1,
+                        help='Verified TWS Trade Log history days; default current day only')
+    parser.add_argument('--history-all-clients-verified', action='store_true',
+                        help='Paper acceptance attestation: API history includes manual and all-client executions')
     parser.add_argument("--paper-execute", action="store_true",
                         help="Explicit opt-in; otherwise read-only immediate preflight")
+    initial, _ = parser.parse_known_args()
+    if initial.config:
+        defaults = json.loads(initial.config.read_text(encoding='utf-8'))
+        allowed = {'account', 'underlying_id', 'combo_tick', 'port', 'client_id',
+                   'state_dir', 'expiry_timezone', 'history_timezone', 'history_days'}
+        if set(defaults) - allowed:
+            parser.error('Unknown config field; paper execution must be an explicit CLI flag')
+        parser.set_defaults(**defaults)
     args = parser.parse_args()
+    if any(getattr(args, k) is None for k in ('account', 'underlying_id', 'combo_tick', 'state_dir')):
+        parser.error('account, underlying-id, verified combo-tick and state-dir are required')
+    args.state_dir = Path(args.state_dir)
+    if not args.expiry_timezone or not args.history_timezone:
+        parser.error('Verified expiry-timezone and history-timezone are required')
+    if args.history_days not in range(1, 8) or (args.port == 4002 and args.history_days != 1):
+        parser.error('Gateway supports only current-day execution history')
+    if args.paper_execute and not args.history_all_clients_verified:
+        parser.error('Paper execution requires verified manual/all-client execution-history visibility')
+    # ib_insync INFO includes account/order fields; keep private runtime output bounded.
+    logging.getLogger('ib_insync').setLevel(logging.CRITICAL)
     args.state_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = args.state_dir / "executor.lock"
-    lock = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    os.write(lock, str(os.getpid()).encode())
+    with process_lock(args.state_dir / 'executor.lock'):
+        while True:
+            try:
+                run(args)
+                break
+            except (ConnectionError, TimeoutError):
+                if not args.paper_execute:
+                    raise
+                print('CONNECTIVITY HOLD: retrying paper connection in 10 seconds', flush=True)
+                import time as time_module
+                time_module.sleep(10)
+
+
+def run(args):
     broker = None
     try:
-        for path in args.state_dir.glob("session-*.json"):
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if not record["state"]["done"]:
-                raise RuntimeError("Unresolved prior journal: reconcile broker orders/positions; do not delete it")
+        active = []
+        for candidate in args.state_dir.glob('session-*.json'):
+            saved = json.loads(candidate.read_text(encoding='utf-8'))
+            if not saved['state']['done']:
+                record, plan = load_record(candidate, args)
+                active.append((candidate, record, plan))
+        if len(active) > 1:
+            raise RecoveryError('Multiple unresolved sessions; no broker actions allowed')
         broker = TWS(args)
+        engine, record, path = None, None, None
+        if active:
+            path, record, plan = active[0]
+            engine = Engine(plan, copy.deepcopy(record['state']))
+            broker.restore(plan, record)
         if not args.paper_execute:
-            plan = broker.select(now())
+            if engine is None:
+                try:
+                    plan = broker.select(now())
+                except ValueError as exc:
+                    print(json.dumps({'preflight_only': True, 'paper_ready': False,
+                                      'reason': str(exc), 'orders_submitted': 0,
+                                      **getattr(broker, 'selection_report', {})}), flush=True)
+                    return
+                engine = Engine(plan)
+                record = new_record(plan, engine, args, now())
+                broker.record = record
+            snapshot = broker.snapshot(engine)
             print(json.dumps({"preflight_only": True, "strike": str(plan.strike),
                               "call_id": plan.call_id, "put_id": plan.put_id,
                               "expiry": plan.expiry_at.isoformat(),
-                              "midpoint": str(plan.entry_limit)}))
+                              "midpoint": str(plan.entry_limit),
+                              'foreign_activity': snapshot.foreign_activity,
+                              'history_visibility_verified': args.history_all_clients_verified,
+                              'paper_ready': snapshot.continuity and not snapshot.foreign_activity
+                                             and snapshot.synchronized,
+                              'call_position': snapshot.call_position,
+                              'put_position': snapshot.put_position,
+                              'recovered_session': bool(active),
+                              'orders_submitted': 0}))
             return
-        while broker.ib.isConnected() and broker.continuous:
-            clock = now().astimezone(ET)
-            path = args.state_dir / ("session-" + clock.date().isoformat() + ".json")
-            if (clock.weekday() in (4, 5) or clock.time() < time(20, 20)
-                    or clock.time() >= time(20, 21) or path.exists()):
-                broker.ib.sleep(1)
-                continue
+        retry_delay = 1
+        while True:
             try:
-                plan = broker.select(now())
-            except (ValueError, TimeoutError) as error:
-                save(path, {"state": {"done": True, "outcome": "SKIPPED_PREFLIGHT"},
-                            "error": type(error).__name__})
-                print("Entry skipped: " + str(error), flush=True)
-                continue
-            engine = Engine(plan)
-            record = {"plan": {k: (v.isoformat() if isinstance(v, datetime) else str(v))
-                               for k, v in plan.__dict__.items()}, "state": engine.state}
-            while not engine.state["done"]:
-                snapshot = broker.snapshot(engine)
-                commands = engine.step(snapshot)
-                # Write-ahead reservation precedes EVERY possible mutation.
-                record["state"] = engine.state
-                record["last_observed_at"] = snapshot.now.isoformat()
-                record["commands"] = [c.__dict__ for c in commands]
-                save(path, record)
-                for command in commands:
-                    broker.execute(command)
-                if engine.state["blocked"]:
-                    print("BLOCKED: " + engine.state["blocked"], flush=True)
                 if not broker.continuous or not broker.ib.isConnected():
-                    raise RuntimeError("Connection continuity lost; Mayday/EOD watchdog inactive; inspect TWS")
-                broker.ib.sleep(.5)
-            print(json.dumps({"session": plan.session, "outcome": engine.state["outcome"]}), flush=True)
-            for contract in (broker.call, broker.put):
-                broker.ib.cancelMktData(contract)
+                    broker.reconnect()
+                    if engine is not None:
+                        broker.restore(engine.plan, record)
+                if engine is None:
+                    clock = now().astimezone(ET)
+                    path = args.state_dir / ('session-' + clock.date().isoformat() + '.json')
+                    if (clock.weekday() in (4, 5) or clock.time() < time(20, 20)
+                            or clock.time() >= time(20, 21) or path.exists()):
+                        broker.ib.sleep(1)
+                        continue
+                    try:
+                        plan = broker.select(now())
+                    except (ValueError, TimeoutError) as exc:
+                        save(path, {'state': {'done': True, 'outcome': 'SKIPPED_PREFLIGHT'},
+                                    'error': type(exc).__name__})
+                        print('Entry skipped: ' + type(exc).__name__, flush=True)
+                        continue
+                    engine = Engine(plan)
+                    record = new_record(plan, engine, args, now())
+                    broker.record = record
+                drive_session(broker, engine, record, path)
+                retry_delay = 1
+                if engine.state['done']:
+                    print(json.dumps({'session': engine.plan.session,
+                                      'outcome': engine.state['outcome']}), flush=True)
+                    for c in (broker.call, broker.put):
+                        broker.ib.cancelMktData(c)
+                    engine, record = None, None
+                elif engine.state['blocked']:
+                    print('BLOCKED: ' + engine.state['blocked'], flush=True)
+                    broker.ib.sleep(5)
+                broker.ib.sleep(1)
+            except (ConnectionError, TimeoutError, RecoveryError) as exc:
+                # Reservations remain intact, including the unknown-ack crash window.
+                # No replay of record['commands']; the next pass reconciles from TWS.
+                if record is not None:
+                    record['recovery_block'] = str(exc)
+                    save(path, record)
+                print('RECOVERY HOLD: ' + type(exc).__name__ + ': ' + str(exc), flush=True)
+                if isinstance(exc, (ConnectionError, TimeoutError)):
+                    broker.disconnected()
+                broker.ib.sleep(retry_delay)
+                retry_delay = min(30, retry_delay * 2)
     finally:
         if broker and broker.ib.isConnected():
             broker.ib.disconnect()
-        os.close(lock)
-        lock_path.unlink(missing_ok=True)
 
 if __name__ == "__main__":
     main()

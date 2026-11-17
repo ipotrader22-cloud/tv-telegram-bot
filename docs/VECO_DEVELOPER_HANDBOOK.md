@@ -16,11 +16,30 @@ submission is never described as a fill. Mayday uses fresh real-time call
 ask plus put ask and is local; process/network continuity is required.
 Unknown acknowledgments never blindly resubmit.
 
-Source/CI does NOT establish Windows installation or TWS acceptance. Active
-restart recovery and post-disconnect history proof are not implemented:
-unresolved journals/continuity gaps block instead of guessing. Supervised
-paper acceptance and resilient recovery remain unattended-live promotion
-gates. See docs/ES_STRADDLE_TWS_PAPER.md for commands, bounds and rollback.
+Recovery now uses version-2 journals, OS-owned process locking, broker order IDs
+reserved before effects, exact-contract restoration, permanent-ID binding and
+deduplicated execution evidence. Reconnect rebuilds only the isolated API socket.
+Fresh broker snapshots and a verified history window must cover the saved
+checkpoint; missing acknowledgments, overnight gaps and foreign activity block
+instead of replaying commands. Continuous callbacks can span midnight only in
+the same connection generation. No deletion of unresolved journals to retry.
+
+Installed November 16 in the Codex task's outputs/es-executor with a separate
+Python 3.12 environment, private config/state and read-only launcher. Paper API,
+live quotes, PM expiry and read-only disconnect/restart restoration were verified;
+80 offline tests passed locally. No order effects or unattended startup were
+enabled. Stock bridge source/config hashes were preserved. The owner separately
+stopped its process and confirmed this; the ES task left it stopped.
+TWS Today history and an externally managed ten-lot ES position/order block
+unattended readiness. Full manual/all-client history acceptance and supervised
+active-order crash/disconnect/partial/cancel/Mayday/EOD acceptance remain gates.
+No shared TWS setting was changed, no live activation or production merge.
+
+Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
+underlying IDs, explicit operator expiry timezone versus exchange trading hours,
+and premium-dependent CME tick rules. The exact .25-rounded target is never
+repriced; an invalid exchange tick uses the unprotected-target exit path.
+See docs/ES_STRADDLE_TWS_PAPER.md for commands, evidence, bounds and rollback.
 Rollback stops only this isolated process, reconciles owned broker orders,
 preserves journals and reverts the narrow PR; stock bridge stays untouched.
 

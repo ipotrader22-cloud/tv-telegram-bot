@@ -309,6 +309,9 @@ class AdapterTests(unittest.TestCase):
     def adapter(self):
         adapter = TWS.__new__(TWS)
         adapter.account, adapter.client_id = "DU_TEST", 1820
+        adapter.paper_execute, adapter.continuous = True, True
+        adapter.record = {'orders': {}}
+        adapter.working = {}
         adapter.bag = N(secType="BAG")
         adapter.LimitOrder = lambda action, qty, price: N(
             action=action, totalQuantity=qty, lmtPrice=price, orderType="LMT")
@@ -316,15 +319,21 @@ class AdapterTests(unittest.TestCase):
             action=action, totalQuantity=qty, orderType="MKT")
         adapter.sent, adapter.canceled, adapter.trades = [], [], []
         adapter.ib = N(trades=lambda: adapter.trades,
+                       isConnected=lambda: True,
                        placeOrder=lambda bag, order: adapter.sent.append((bag, order)),
                        cancelOrder=lambda order: adapter.canceled.append(order))
         return adapter
+
+    def execute(self, adapter, command):
+        from es_straddle.recovery import reserve
+        reserve(adapter.record, command, 9 + len(adapter.record['orders']))
+        adapter.execute(command)
 
     def test_real_command_adapter_fields_without_network(self):
         a = self.adapter()
         e = Engine(plan())
         cmd = e.step(Snapshot(ENTRY))[0]
-        a.execute(cmd)
+        self.execute(a, cmd)
         bag, order = a.sent[0]
         self.assertEqual((bag.secType, order.action, order.totalQuantity,
                           order.lmtPrice, order.orderType, order.tif),
@@ -336,8 +345,8 @@ class AdapterTests(unittest.TestCase):
     def test_target_gtc_and_close_market_fields(self):
         from es_straddle.core import Command
         a = self.adapter()
-        a.execute(Command("SUBMIT", "ESSTR:TARGET", "BUY", 4, "LMT", "43.75", "TARGET"))
-        a.execute(Command("SUBMIT", "ESSTR:CLOSE", "BUY", 3, "MKT", reason="MAYDAY"))
+        self.execute(a, Command("SUBMIT", "ESSTR:TARGET", "BUY", 4, "LMT", "43.75", "TARGET"))
+        self.execute(a, Command("SUBMIT", "ESSTR:CLOSE", "BUY", 3, "MKT", reason="MAYDAY"))
         self.assertEqual((a.sent[0][1].tif, a.sent[0][1].totalQuantity), ("GTC", 4))
         self.assertEqual((a.sent[1][1].orderType, a.sent[1][1].tif,
                           a.sent[1][1].totalQuantity), ("MKT", "DAY", 3))
@@ -345,13 +354,18 @@ class AdapterTests(unittest.TestCase):
     def test_exact_cancel_never_touches_foreign_account_or_client(self):
         from es_straddle.core import Command
         a = self.adapter()
-        a.trades = [N(order=N(orderRef="TARGET", account="DU_OTHER", clientId=1820),
+        from es_straddle.recovery import reserve
+        reserve(a.record, Command('SUBMIT', 'TARGET', 'BUY', 10, 'LMT', '43.75', 'TARGET'), 9)
+        a.trades = [N(order=N(orderRef="TARGET", account="DU_OTHER", clientId=1820,
+                             orderId=9, permId=10, action='BUY', totalQuantity=10,
+                             orderType='LMT', lmtPrice=43.75, tif='GTC', outsideRth=True),
                       orderStatus=N(status="Submitted"))]
+        a.working = {'TARGET': a.trades[0]}
         with self.assertRaises(RuntimeError):
             a.execute(Command("CANCEL", "TARGET"))
         self.assertEqual(a.canceled, [])
-        a.trades = [N(order=N(orderRef="TARGET", account="DU_TEST", clientId=77),
-                      orderStatus=N(status="Submitted"))]
+        a.trades[0].order.account = 'DU_TEST'
+        a.trades[0].order.clientId = 77
         with self.assertRaises(RuntimeError):
             a.execute(Command("CANCEL", "TARGET"))
         a.trades[0].order.clientId = 1820
@@ -363,7 +377,7 @@ class AdapterTests(unittest.TestCase):
         a = self.adapter()
         a.trades = [N(order=N(orderRef="ENTRY"))]
         with self.assertRaises(RuntimeError):
-            a.execute(Command("SUBMIT", "ENTRY", "SELL", 10, "LMT", "50.50"))
+            self.execute(a, Command("SUBMIT", "ENTRY", "SELL", 10, "LMT", "50.50"))
         self.assertEqual(a.sent, [])
 
     def test_atomic_journal_roundtrip_and_failed_replace(self):
