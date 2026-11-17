@@ -49,7 +49,10 @@ There is no live-account override in this candidate.
 
 Both BAG legs are BUY oriented. SELL of this BAG shorts both for positive
 credit; BUY closes both. ENTRY is DAY, TARGET GTC, closing MKT is DAY.
-outsideRth is enabled for the futures-options session. Actual exchange
+outsideRth is requested for the futures-options session, but TWS can normalize
+that attribute to false for a CME combo. It is not an order-identity field;
+account/client/order/permanent IDs, exact legs, action, quantity, type, price
+and TIF remain checked independently, as do contract trading hours. Actual exchange
 acceptance must be observed in TWS; Python types alone do not prove support.
 
 Use Python 3.11+ on the TWS computer in a separate checkout/environment:
@@ -181,7 +184,7 @@ without assessing stock-bridge impact. Before unattended use, establish and
 verify a history window covering overnight outages plus continuous/manual/all-
 client visibility, reconcile the external ES position, then supervise actual
 owned combo/target/partial/cancel/Mayday/EOD and active-order restart acceptance.
-The local history attestation is deliberately unset. Local tests: 81 passing
+The local history attestation is deliberately unset. Local tests: 83 passing
 offline regressions on Python 3.12; CI also exercises Python 3.11 and 3.12.
 
 Broker references: [IB execution history and corrections](https://www.interactivebrokers.com/docs/tws-api/doc/order-management/execution-details),
@@ -223,6 +226,45 @@ This establishes actual prior overnight TWS recovery. The remaining overnight
 acceptance is the new executor's reconnect, history revalidation and exact
 owned-order reconciliation across that existing recovery cycle. No second TWS
 restart mechanism was installed, and no watchdog/IBC settings were changed.
+
+### Controlled one-lot paper acceptance — November 16, 21:52–21:59 ET
+
+The owner reported the external straddle closed; API verified both old legs at
+zero and no working ES order, with final closing executions at 21:45:07 ET.
+Because the 20:20 window had passed, the owner explicitly approved a separate
+one-straddle technical test now, including immediate cleanup after recovery
+checks. The normal ten-lot strategy, schedule and exit rules were not changed.
+
+An isolated fixture used the installed adapter/recovery primitives, a separate
+private journal and unique ESTEST order refs; it did not enable the unattended
+coordinator or attest all-client continuity. A 7440 November 17 16:00 ET combo
+was submitted SELL 1 at exact initial midpoint 67.75. Abrupt test-process exit
+exposed a TWS normalization: outsideRth returned false after reconnect while
+all identity/price/quantity fields matched. Exact targeted cancellation confirmed
+zero fill and flat positions before further testing. The fix treats that flag
+as normalized metadata, retaining exact IDs/legs/price/quantity/type/TIF checks.
+IB documents this behavior under [warning 2109](https://interactivebrokers.github.io/tws-api/message_codes.html).
+
+The bounded repeat retained the same 67.75 limit (no chasing). Its working
+entry survived abrupt process death and reconnect with the same broker IDs;
+it subsequently filled one combo at 67.75. The completed callback reported
+totalQuantity=0 and filledQuantity=1. Recovery now normalizes this zero remaining
+quantity only when exact full-quantity executions independently prove Filled;
+missing/unpaired executions still fail closed. The test covers that boundary.
+
+Calculated BUY 1 GTC target 58.75 was accepted and restored after another abrupt
+process exit and API reconnect, with unchanged IDs and price and no duplicate.
+After cancellation confirmation, authorized technical cleanup bought back the
+proven one-combo residual at 68.50. At 21:59:27 both legs were flat, no test orders
+were working, and non-ES positions were unchanged. A new read-only connection
+independently confirmed completed entry/close fills and canceled target.
+
+Scope of acceptance: real working-order and filled-order recovery, target
+acceptance/restoration, exact cancellation and one-lot residual market close.
+This does not certify the complete ten-lot coordinator, natural partial fills,
+Mayday, the actual 15:55 deadline, continuous all-client visibility, or the new
+executor across the 02:45 TWS/IBC cycle. Those gates remain; live trading and
+unattended startup remain disabled. No test journal was put in operational state.
 
 ## Rollback
 

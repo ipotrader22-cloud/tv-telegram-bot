@@ -142,10 +142,17 @@ class RecoveryTests(unittest.TestCase):
 
     def test_order_field_mutation_rejected(self):
         for changed in ({'lmtPrice':51},{'totalQuantity':11},{'clientId':77},
-                        {'orderId':10},{'outsideRth':False},{'action':'BUY'}):
+                        {'orderId':10},{'action':'BUY'}):
             with self.subTest(changed=changed):
                 with self.assertRaises(RecoveryError):
                     observe_order(self.saved,self.trade(**changed),'DU_TEST',1820)
+
+    def test_broker_normalized_outside_rth_preserves_exact_order_recovery(self):
+        observe_order(self.saved,self.trade(outsideRth=False),'DU_TEST',1820)
+        self.assertEqual(self.saved['perm_id'],90)
+        self.assertEqual(self.saved['status'],'Submitted')
+        with self.assertRaises(RecoveryError):
+            observe_order(self.saved,self.trade(outsideRth=False,lmtPrice=51),'DU_TEST',1820)
 
     def test_unpaired_leg_never_proves_fill(self):
         self.observe(self.fill())
@@ -284,6 +291,22 @@ class RecoveryTests(unittest.TestCase):
             s=a.snapshot(self.engine)
         self.assertEqual(s.orders[self.ref].filled,4)
         self.assertEqual(self.engine.step(s)[0].quantity,4)
+
+    def test_completed_zero_remaining_quantity_requires_full_execution_proof(self):
+        t=self.trade(orderId=0,clientId=0,totalQuantity=0,outsideRth=False)
+        t.order.orderRef=self.ref; t.order.filledQuantity=10
+        t.orderStatus=N(status='Filled',filled=0)
+        fills=[self.fill(),self.fill(102,eid='put',price=25.5)]
+        a=self.adapter(completed=[t],fills=fills)
+        with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+            s=a.snapshot(self.engine)
+        self.assertTrue(s.orders[self.ref].proven)
+        self.assertEqual(s.orders[self.ref].filled,10)
+        current=self.record['orders'][self.ref]
+        current['executions'].clear(); current.update(status='Submitted',filled='0')
+        a=self.adapter(completed=[t],fills=[self.fill()])
+        with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+            with self.assertRaises(RecoveryError): a.snapshot(self.engine)
 
     def test_timeout_does_not_advance_durable_coverage(self):
         a=self.adapter()

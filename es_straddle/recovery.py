@@ -100,13 +100,15 @@ def reserve(record, command, order_id):
 
 
 def matches_order(saved, order, account, client_id):
+    # TWS can normalize/ignore outsideRth for CME combos (warning 2109), and
+    # fresh open/completed callbacks then return False. It is not an identity
+    # field. The adapter independently validates exact ES BAG legs and session.
     return (order.account == account and order.clientId == client_id
             and order.orderId == saved['order_id']
             and (not saved['perm_id'] or order.permId == saved['perm_id'])
             and order.action == saved['action']
             and decimal(order.totalQuantity) == saved['quantity']
             and order.orderType == saved['order_type'] and order.tif == saved['tif']
-            and bool(order.outsideRth)
             and (saved['order_type'] != 'LMT' or decimal(order.lmtPrice) == decimal(saved['price'])))
 
 

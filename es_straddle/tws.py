@@ -385,6 +385,15 @@ class TWS:
                 t = copy.deepcopy(exact[0])
                 t.order.orderId, t.order.clientId = saved['order_id'], self.client_id
                 t.orderStatus.filled = t.order.filledQuantity
+                # A filled CME combo's completed callback can report remaining
+                # quantity (zero) in totalQuantity. Restore its reserved total
+                # only when exact executions independently prove the full fill.
+                proof = recovered_order(ref, saved, engine.plan)
+                if (t.orderStatus.status == 'Filled' and decimal(t.order.totalQuantity) == 0
+                        and decimal(t.order.filledQuantity) == saved['quantity']
+                        and proof is not None and proof.proven and proof.status == 'Filled'
+                        and proof.filled == saved['quantity']):
+                    t.order.totalQuantity = saved['quantity']
                 observe_order(saved, t, self.account, self.client_id)
             elif saved['status'] not in TERMINAL:
                 saved['status'] = 'UNKNOWN'

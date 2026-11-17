@@ -27,7 +27,7 @@ the same connection generation. No deletion of unresolved journals to retry.
 Installed November 16 in the Codex task's outputs/es-executor with a separate
 Python 3.12 environment, private config/state and read-only launcher. Paper API,
 live quotes, PM expiry and read-only disconnect/restart restoration were verified;
-81 offline tests passed locally. No order effects or unattended startup were
+81 offline tests passed at installation. No order effects or unattended startup were
 enabled. Stock bridge source/config hashes were preserved. The owner separately
 stopped its process and confirmed this; the ES task left it stopped.
 Initial TWS Today history and an externally managed ten-lot ES position/order
@@ -49,6 +49,24 @@ The November 16 watchdog log records API loss at 02:45:03, restart at 02:45:42,
 API recovery at 02:46:01 and healthy Excel RTD at 02:47:51 ET. This proves an
 actual prior TWS/Excel night recovery, not recovery of the newly installed ES
 executor's orders. No watchdog/IBC configuration or scheduling was changed.
+
+At 21:46 ET the prior external straddle was verified flat with no ES orders.
+The owner explicitly authorized a one-lot off-schedule technical paper test
+with immediate cleanup. From 21:52–21:59, real working entry and GTC target
+orders survived abrupt test-process exits and API reconnect with unchanged
+IDs, prices and quantities. Entry filled at 67.75; target 58.75 was accepted,
+restored and canceled; the exact one-lot residual closed at 68.50. Final broker
+positions were flat, no test orders remained, non-ES positions and stock files
+were unchanged. Normal ten-lot rules and unattended activation stayed unchanged.
+
+Actual TWS replies exposed two recovery compatibility fixes: outsideRth can
+normalize to false for the CME BAG; completed full fills can report zero
+totalQuantity with filledQuantity equal to the reservation. The latter is
+normalized only with independent exact full-fill execution proof. All other
+identity/frozen-price/quantity/contract gates remain. 83 offline regressions
+cover these cases. See the ES paper document for acceptance scope and remaining
+coordinator/partial/Mayday/15:55/overnight gates; the fixture is not unattended
+acceptance and did not set the history attestation.
 
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
