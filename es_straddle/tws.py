@@ -14,6 +14,8 @@ from .core import (D, ET, Engine, Order, Plan, Quote, Snapshot, midpoint,
 from .recovery import (RecoveryError, process_lock, new_record, load_record,
                        history_covers, reserve, observe_order, observe_fill,
                        recovered_order, matches_order)
+from .runtime import (training_enabled, history_policy_allowed, validate_execution_mode,
+                      StatusPublisher, configure_logging, paused)
 
 def now():
     return datetime.now(timezone.utc)
@@ -425,7 +427,7 @@ class TWS:
         return Snapshot(clock, orders, int(pos[self.call.conId]), int(pos[self.put.conId]),
                         self.quote(self.call), self.quote(self.put),
                         synchronized=integral, foreign_activity=candidate['foreign_activity'],
-                        continuity=self.continuous and self.args.history_all_clients_verified,
+                        continuity=self.continuous and history_policy_allowed(self.args),
                         session_open=session_open, target_price_valid=target_valid)
 
     def execute(self, command):
@@ -492,6 +494,8 @@ def main():
                         help='Verified TWS Trade Log history days; default current day only')
     parser.add_argument('--history-all-clients-verified', action='store_true',
                         help='Paper acceptance attestation: API history includes manual and all-client executions')
+    parser.add_argument('--paper-training', action='store_true',
+                        help='Explicit owner acceptance of pending paper validation; never attests history or allows live accounts')
     parser.add_argument("--paper-execute", action="store_true",
                         help="Explicit opt-in; otherwise read-only immediate preflight")
     initial, _ = parser.parse_known_args()
@@ -510,27 +514,35 @@ def main():
         parser.error('Verified expiry-timezone and history-timezone are required')
     if args.history_days not in range(1, 8) or (args.port == 4002 and args.history_days != 1):
         parser.error('Gateway supports only current-day execution history')
-    if args.paper_execute and not args.history_all_clients_verified:
-        parser.error('Paper execution requires verified manual/all-client execution-history visibility')
+    try:
+        validate_execution_mode(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     # ib_insync INFO includes account/order fields; keep private runtime output bounded.
     logging.getLogger('ib_insync').setLevel(logging.CRITICAL)
     args.state_dir.mkdir(parents=True, exist_ok=True)
     with process_lock(args.state_dir / 'executor.lock'):
+        if args.paper_execute:
+            configure_logging(args)
+        status = StatusPublisher(args)
         while True:
             try:
-                run(args)
+                run(args, status)
                 break
             except (ConnectionError, TimeoutError):
                 if not args.paper_execute:
                     raise
+                status.publish('CONNECTIVITY_HOLD', reason='TWS connection unavailable', force=True)
                 print('CONNECTIVITY HOLD: retrying paper connection in 10 seconds', flush=True)
                 import time as time_module
                 time_module.sleep(10)
 
 
-def run(args):
+def run(args, status=None):
+    status = status or StatusPublisher(args)
     broker = None
     try:
+        if args.paper_execute: status.publish('STARTING', force=True)
         active = []
         for candidate in args.state_dir.glob('session-*.json'):
             saved = json.loads(candidate.read_text(encoding='utf-8'))
@@ -539,6 +551,9 @@ def run(args):
                 active.append((candidate, record, plan))
         if len(active) > 1:
             raise RecoveryError('Multiple unresolved sessions; no broker actions allowed')
+        if args.paper_execute and paused(args) and not active:
+            status.publish('PAUSED', force=True)
+            return
         broker = TWS(args)
         engine, record, path = None, None, None
         if active:
@@ -564,7 +579,7 @@ def run(args):
                               "midpoint": str(plan.entry_limit),
                               'foreign_activity': snapshot.foreign_activity,
                               'history_visibility_verified': args.history_all_clients_verified,
-                              'paper_ready': snapshot.continuity and not snapshot.foreign_activity
+                              'paper_ready': args.history_all_clients_verified and snapshot.continuity and not snapshot.foreign_activity
                                              and snapshot.synchronized,
                               'call_position': snapshot.call_position,
                               'put_position': snapshot.put_position,
@@ -574,11 +589,17 @@ def run(args):
         retry_delay = 1
         while True:
             try:
+                if engine is None and paused(args):
+                    broker.ib.disconnect()
+                    status.publish('PAUSED', force=True)
+                    return
                 if not broker.continuous or not broker.ib.isConnected():
+                    status.publish('RECONNECTING', broker, engine, force=True)
                     broker.reconnect()
                     if engine is not None:
                         broker.restore(engine.plan, record)
                 if engine is None:
+                    status.publish('WAITING_FOR_ENTRY', broker)
                     clock = now().astimezone(ET)
                     path = args.state_dir / ('session-' + clock.date().isoformat() + '.json')
                     if (clock.weekday() in (4, 5) or clock.time() < time(20, 20)
@@ -589,13 +610,26 @@ def run(args):
                         plan = broker.select(now())
                     except (ValueError, TimeoutError) as exc:
                         save(path, {'state': {'done': True, 'outcome': 'SKIPPED_PREFLIGHT'},
-                                    'error': type(exc).__name__})
-                        print('Entry skipped: ' + type(exc).__name__, flush=True)
+                                    'error': type(exc).__name__,
+                                    'reason': str(exc).replace(args.account, '<paper-account>')})
+                        print('Entry skipped: ' + str(exc), flush=True)
+                        status.publish('ENTRY_SKIPPED', broker, reason=str(exc), force=True)
                         continue
                     engine = Engine(plan)
                     record = new_record(plan, engine, args, now())
+                    record['execution_mode'] = 'PAPER_TRAINING' if training_enabled(args) else 'PAPER_EXECUTION'
                     broker.record = record
+                if paused(args) and not engine.state['started']:
+                    engine.state.update(done=True, outcome='PAUSED_BEFORE_ENTRY')
+                    record['state'] = copy.deepcopy(engine.state)
+                    save(path, record)
+                    broker.ib.disconnect()
+                    status.publish('PAUSED', force=True)
+                    return
                 drive_session(broker, engine, record, path)
+                status.publish('BLOCKED' if engine.state['blocked'] else
+                               'DRAINING' if paused(args) else 'MANAGING_SESSION',
+                               broker, engine, engine.state['blocked'])
                 retry_delay = 1
                 if engine.state['done']:
                     print(json.dumps({'session': engine.plan.session,
@@ -614,10 +648,14 @@ def run(args):
                     record['recovery_block'] = str(exc)
                     save(path, record)
                 print('RECOVERY HOLD: ' + type(exc).__name__ + ': ' + str(exc), flush=True)
+                status.publish('RECOVERY_HOLD', broker, engine, str(exc), force=True)
                 if isinstance(exc, (ConnectionError, TimeoutError)):
                     broker.disconnected()
                 broker.ib.sleep(retry_delay)
                 retry_delay = min(30, retry_delay * 2)
+    except Exception as exc:
+        if args.paper_execute: status.publish('ERROR', broker, reason=type(exc).__name__+': '+str(exc), force=True)
+        raise
     finally:
         if broker and broker.ib.isConnected():
             broker.ib.disconnect()

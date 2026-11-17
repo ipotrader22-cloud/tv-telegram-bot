@@ -68,6 +68,32 @@ cover these cases. See the ES paper document for acceptance scope and remaining
 coordinator/partial/Mayday/15:55/overnight gates; the fixture is not unattended
 acceptance and did not set the history attestation.
 
+Owner-directed paper training supersession: after the one-lot acceptance, the
+owner explicitly requested enabling demo autotrading as a training ground while
+the remaining scenarios are validated. The explicit --paper-execute
+--paper-training combination permits that local paper rollout without claiming
+history/all-client acceptance. The history attestation stays false; DU account,
+paper port, exact ownership, bounded history coverage and fixed strategy rules
+remain enforced. Default execution still requires the original attestation.
+No live activation, production merge or Render rollout is authorized here.
+
+The isolated runtime now publishes atomic status.json heartbeats, bounded local
+logs and an execution-mode marker in new journals. pause-new-entries.flag stops
+new entries while an already-started session continues its exits/recovery. A
+separate Windows task, ES Straddle Paper Training, supervises only this Python
+process at logon and every minute, ignoring duplicate instances. Do not disable
+its supervision to pause entries with an unresolved position. It does not replace
+or modify the existing TWS/IBC watchdog. The local Start/Pause/Status-Paper.ps1
+controls belong to outputs/es-executor. 91 offline regressions pass locally;
+actual night recovery, partial fills, Mayday and 15:55 remain acceptance-pending.
+This supersedes the prior unattended-startup-off decision only for paper training.
+Activated November 16 at 22:19 ET; independent API checks were ES-flat with no
+working ES orders. An exact idle-worker crash recovered automatically through
+the Windows task; pause/resume and timestamped phase logging were verified by
+22:24 ET. The resumed worker waits for November 17 at 20:20 ET. No order was
+submitted during activation. This is idle-supervision evidence, not completion
+of the pending overnight/active-coordinator acceptance scenarios.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

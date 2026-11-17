@@ -266,6 +266,60 @@ Mayday, the actual 15:55 deadline, continuous all-client visibility, or the new
 executor across the 02:45 TWS/IBC cycle. Those gates remain; live trading and
 unattended startup remain disabled. No test journal was put in operational state.
 
+### Owner-authorized paper training supersession
+
+After the controlled acceptance, the owner explicitly authorized turning demo
+autotrading on and using the paper account as a training ground while resolving
+remaining issues. This supersedes the earlier decision to keep unattended
+startup disabled. It does not certify the pending tests or authorize live trading.
+
+Use both `--paper-execute --paper-training` for this explicit opt-in. Training
+permits execution while all-client history acceptance remains pending; it does
+not set `--history-all-clients-verified` or claim `paper_ready`. DU account and
+paper-port restrictions, history checkpoint coverage, foreign-activity blocks,
+exact ownership, cancellation confirmation and frozen prices remain enforced.
+No size/schedule/expiry/target/Mayday/EOD parameter changes are made. Starting
+outside the 20:20 minute waits for the next eligible scheduled opportunity.
+
+`state/status.json` contains a throttled atomic heartbeat, actual connection,
+mode, phase, pending-acceptance flag and next scheduled opportunity. It is not
+broker fill evidence. `state/logs/runtime.log` rotates at 2 MB with five backups.
+Phase transitions are timestamped in the log for later overnight-recovery audit.
+The private account is redacted from these status/log messages. Exact broker
+evidence remains in private session journals; do not publish those journals.
+
+The local Windows task **ES Straddle Paper Training** launches the isolated venv
+with these two explicit flags, at user logon and every minute. IgnoreNew plus the
+OS process lock prevent duplicate workers. The task has no execution time limit
+and restarts failures. It requires this Windows user to remain logged in; the
+computer must stay awake, and TWS must be connected to paper. The existing TWS
+watchdog continues to own TWS/IBC recovery; this task only supervises ES Python.
+
+Local controls in `outputs/es-executor`: `Start-Paper.ps1` resumes new entries,
+`Status-Paper.ps1` reports heartbeat age and task/runtime state, and
+`Pause-Paper.ps1` creates `state/pause-new-entries.flag`. Pausing prevents new
+entries; a started session continues target/Mayday/EOD/recovery until resolved.
+It does not immediately close a position. Keep task supervision enabled while
+paused so unresolved sessions recover after process failure. Never delete a
+journal to clear a hold. Runtime error recovery does not automatically edit code.
+
+91 offline regressions cover the new opt-in, honest acceptance status, schedule
+and pause-before-submission boundary in addition to earlier recovery checks.
+Natural 02:45 recovery, retained history, full coordinator/partial/Mayday/15:55
+acceptance remain pending and must be recorded from actual paper evidence.
+
+Observed November 16 at 22:19–22:24 ET: the local task was activated and reported
+PAPER_TRAINING / WAITING_FOR_ENTRY, connected to the exact paper account with
+history attestation false. A separate read-only client verified no ES position
+or working ES order. Forced termination of only the verified idle ES worker was
+followed by an automatic Windows-task restart and fresh connected heartbeat,
+without a manual start command. The pause control produced PAUSED/disconnected;
+resume restored the waiting worker. Phase-change logs were verified. The next
+scheduled opportunity was November 17 at 20:20 ET, subject to normal preflight.
+This activation submitted no orders. Stock source/config hashes were unchanged;
+the existing TWS watchdog was left intact. This proves idle process supervision,
+not recovery of a ten-lot position through the upcoming natural night outage.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders
