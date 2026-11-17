@@ -208,6 +208,22 @@ remain unverified. The external ES trade still blocks new entry. Execution,
 history attestation and unattended startup remain disabled. Recheck history
 after a TWS restart before relying on the saved seven-day window.
 
+### Existing overnight watchdog confirmed
+
+The owner's TWS Intraday Watchdog is scheduled every minute. It waits 30 seconds
+for TWS self-recovery, then starts C:\IBC\StartTWS.bat if necessary and waits
+up to 180 seconds for API availability. The launcher points to
+%USERPROFILE%\Documents\IBC\config.ini, whose active mode is paper. Do not infer
+the active mode from the unused C:\IBC\config.ini. The watchdog also repairs
+Excel RTD; it does not manage the new es_straddle process or its order journal.
+
+Read-only log evidence on November 16: API unavailable 02:45:03, IBC start
+02:45:42, API recovered 02:46:01, TWS/API and Excel RTD healthy 02:47:51 ET.
+This establishes actual prior overnight TWS recovery. The remaining overnight
+acceptance is the new executor's reconnect, history revalidation and exact
+owned-order reconciliation across that existing recovery cycle. No second TWS
+restart mechanism was installed, and no watchdog/IBC settings were changed.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders

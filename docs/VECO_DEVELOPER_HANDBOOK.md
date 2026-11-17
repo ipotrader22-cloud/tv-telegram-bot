@@ -41,6 +41,15 @@ active-order crash/disconnect/partial/cancel/Mayday/EOD acceptance remain gates.
 Only the authorized Trade History period/save-selection setting changed in TWS;
 no live activation or production merge.
 
+Existing recovery was subsequently verified read-only: TWS Intraday Watchdog
+runs every minute, waits 30 seconds for self-recovery, then starts TWS through
+C:\IBC\StartTWS.bat when needed. That launcher uses the owner's Documents/IBC
+config.ini with TradingMode=paper; C:\IBC\config.ini is not its active config.
+The November 16 watchdog log records API loss at 02:45:03, restart at 02:45:42,
+API recovery at 02:46:01 and healthy Excel RTD at 02:47:51 ET. This proves an
+actual prior TWS/Excel night recovery, not recovery of the newly installed ES
+executor's orders. No watchdog/IBC configuration or scheduling was changed.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never
