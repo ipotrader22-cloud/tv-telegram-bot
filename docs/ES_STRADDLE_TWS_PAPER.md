@@ -14,9 +14,11 @@ an IB trading-hours interval open at entry. Never infer PM expiry from a symbol
 or use a stock-market holiday calendar for ES. Missing/ambiguous PM metadata,
 closed sessions and early expiries skip entry.
 
-Sell at the initial combined bid/ask midpoint. Freeze that limit; never chase
-or use a market entry. The exact midpoint must lie on the locally verified combo
-tick grid; otherwise skip instead of silently repricing.
+Sell at the initial combined bid/ask midpoint rounded once to the nearest
+verified combo tick, with halfway ties toward the higher credit. Freeze that
+limit; never chase or use a market entry. This November 17 owner-approved
+amendment supersedes the original off-grid-midpoint skip rule. The resulting
+limit must also be valid in its applicable CME premium band.
 
 Profit BUY LMT = ceil(actual weighted entry credit * .865 / .25) * .25.
 50.50 credit -> raw 43.6825 -> 43.75. Exact quarters stay unchanged.
@@ -350,6 +352,47 @@ identities were dated November 10–15, before this session; pre-entry execution
 are not treated as new session interference. No manual position/order was created,
 changed or canceled to test coexistence; active coexistence remains covered by
 offline tests rather than a new broker trading experiment.
+
+### November 17 missed entry and approved rounding amendment
+
+At 20:20:04 ET, the connected executor skipped before any order submission:
+the exact combined midpoint was off the configured/confirmed .25 grid. The
+terminal journal says SKIPPED_PREFLIGHT / Midpoint is not on the confirmed combo
+tick grid. Independent TWS checks at 21:12 ET found zero current-session owned
+open/completed orders and zero bot executions that day. Manual-position checks
+were not reached. The old journal did not retain quotes, so the exact 20:20
+midpoint cannot be reconstructed from this evidence; do not invent one.
+
+The owner explicitly chose: round once, then freeze the price. midpoint now
+rounds to the nearest verified increment, ties higher (for example 50.125 ->
+50.25 on a .25 grid). A restored plan keeps that rounded limit; new quotes never
+modify it. Today's skipped journal remains terminal and is not retried late.
+New session journals preserve combined bid/ask, exact midpoint, rounded limit,
+increment, contract/expiry selection and timestamp when available. status.json
+retains last_session outcome/reason/selection even after returning to WAITING.
+
+107 offline regressions pass, including rounding boundaries, frozen rounded
+restart, preserved skip evidence and missing downloaded-history detection. A
+21:18 read-only current-quote probe passed selection at raw/rounded 88.50 for
+November 18 PM expiry; this was a new quote observation, not a replay of 20:20.
+The external manual ES position and order fingerprints were unchanged.
+
+Actual natural-night evidence: same ES process observed the 02:45:00 socket
+loss and returned to connected waiting at 02:47:00 ET. There was no owned session,
+so this proves idle reconnect, not active-order overnight acceptance. A separate
+history issue was found: API initially returned 151 current-day executions even
+though the saved Trade History period was still Last 7 Days. Opening that window
+loaded the history; a fresh API client then returned 764 executions dating back
+to November 11. The window was left open. No trade/order, Master Client ID,
+security/routing, stock bridge or TWS watchdog setting changed.
+
+After reconnect across a calendar-day checkpoint, recovery now also requires
+fresh downloaded executions for the exact account reaching that saved checkpoint.
+The configured history_days value alone is insufficient. If data has not loaded,
+HISTORY_DOWNLOAD_INCOMPLETE holds actions and tells the operator to open Last 7
+Days. Same-generation continuous callbacks retain their prior coverage behavior.
+This guard does not certify complete all-client visibility or eliminate the need
+to verify history loading after future TWS restarts. Keep that acceptance pending.
 
 ## Rollback
 

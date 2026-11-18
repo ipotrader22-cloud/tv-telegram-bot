@@ -8,7 +8,7 @@ from types import SimpleNamespace as N
 from datetime import timedelta
 from unittest.mock import patch
 from test_es_straddle import plan, ENTRY, EXPIRY
-from es_straddle.core import Engine, Command, Snapshot, ET
+from es_straddle.core import Engine, Command, Snapshot, ET, midpoint, D
 from es_straddle.recovery import (RecoveryError, new_record, load_record, reserve,
     observe_fill, observe_order, recovered_order, history_covers, process_lock)
 from es_straddle.tws import drive_session, expiry_time, market_increment, TWS, save
@@ -495,12 +495,53 @@ class RecoveryTests(unittest.TestCase):
         self.filled()
         a=self.adapter(completed=[self.manual_combo()],fills=[self.manual_bag_fill()])
         a.args.history_days=7
+        self.record['coverage_through']=(ENTRY+timedelta(seconds=2)).isoformat()
         a.ib.reqPositions=lambda:[N(account='DU_TEST',contract=N(conId=cid,symbol='ES'),position=qty)
                                   for cid,qty in ((101,-10),(102,-10),(201,-3),(202,-3))]
         with patch('es_straddle.tws.now',return_value=self.p.close_at):
             snap=a.snapshot(self.engine)
         command=self.engine.step(snap)[0]
         self.assertEqual((command.action,command.quantity,command.reason),('BUY',10,'EOD_1555_ET'))
+
+    def test_rounded_entry_limit_stays_frozen_after_restart_and_quote_change(self):
+        p=plan(entry_limit=midpoint('50','50.25','.25'),entry_tick=D('.25'))
+        engine=Engine(p)
+        command=engine.step(Snapshot(ENTRY))[0]
+        record=new_record(p,engine,self.args,ENTRY)
+        reserve(record,command,99)
+        saved=record['orders'][command.ref]; saved.update(status='Submitted',perm_id=900)
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'session.json'; save(path,record)
+            record,p=load_record(path,self.args)
+        restarted=Engine(p,record['state'])
+        pending=recovered_order(command.ref,record['orders'][command.ref],p)
+        self.assertEqual(restarted.step(Snapshot(ENTRY+timedelta(hours=2),orders={command.ref:pending})),[])
+        self.assertEqual(restarted.state['entry_limit'],'50.25')
+        self.assertNotEqual(midpoint('55','55.25','.25'),p.entry_limit)
+        self.assertEqual(record['orders'][command.ref]['price'],'50.25')
+
+    def test_seven_day_setting_does_not_prove_prior_day_history_was_downloaded(self):
+        self.filled()
+        self.record['coverage_through']=(ENTRY+timedelta(seconds=2)).isoformat()
+        recent=self.fill(201,eid='recent',time=self.p.close_at-timedelta(seconds=2))
+        a=self.adapter(fills=[recent]); a.args.history_days=7
+        before=copy.deepcopy(self.record)
+        with patch('es_straddle.tws.now',return_value=self.p.close_at):
+            with self.assertRaisesRegex(RecoveryError,'HISTORY_DOWNLOAD_INCOMPLETE'):
+                a.snapshot(self.engine)
+        self.assertEqual(self.record,before)
+        prior=self.fill(201,eid='prior',time=ENTRY-timedelta(minutes=1))
+        a.ib.reqExecutions=lambda f:[prior,recent]
+        with patch('es_straddle.tws.now',return_value=self.p.close_at):
+            snapshot=a.snapshot(self.engine)
+        self.assertEqual(self.engine.step(snapshot)[0].quantity,10)
+
+    def test_another_accounts_old_execution_cannot_prove_history_download(self):
+        a=self.adapter(fills=[self.fill(time=ENTRY-timedelta(minutes=1),acctNumber='DU_OTHER')])
+        a.args.history_days=7
+        with patch('es_straddle.tws.now',return_value=self.p.close_at):
+            with self.assertRaisesRegex(RecoveryError,'HISTORY_DOWNLOAD_INCOMPLETE'):
+                a.snapshot(self.engine)
 
     def test_recovered_full_target_fill_never_reverses(self):
         self.filled()

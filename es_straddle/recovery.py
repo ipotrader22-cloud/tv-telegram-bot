@@ -87,6 +87,17 @@ def history_covers(record, clock, zone, days):
     return start <= checkpoint <= clock
 
 
+def require_downloaded_history(record, fills, clock, zone, account):
+    """A configured seven-day window is not proof TWS loaded prior-day data."""
+    checkpoint = datetime.fromisoformat(record['coverage_through'])
+    if checkpoint.astimezone(zone).date() >= clock.astimezone(zone).date():
+        return
+    if not any(f.execution.acctNumber == account and f.execution.time.tzinfo is not None
+               and f.execution.time <= checkpoint for f in fills):
+        raise RecoveryError('HISTORY_DOWNLOAD_INCOMPLETE: open TWS Trade History with Last 7 Days; '
+                            'downloaded executions do not reach the saved checkpoint')
+
+
 def reserve(record, command, order_id):
     if command.kind != 'SUBMIT':
         return

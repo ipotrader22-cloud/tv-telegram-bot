@@ -108,6 +108,28 @@ establishes ownership, clears prior holds or changes target/close quantities.
 current-day BAG callbacks; older unavailable identities predate this session.
 No manual trade/order or shared bridge/watchdog setting was changed.
 
+November 17 amendment: the 20:20:04 entry was skipped because exact midpoint was
+off tick. Independent broker evidence showed zero owned orders/fills that day;
+manual ES checks had not been reached. The owner explicitly authorized rounding
+the initial midpoint once to nearest valid tick, ties to higher credit, then
+freezing it. This supersedes earlier exact-midpoint/off-grid-skip descriptions.
+The skipped journal is retained; no late replacement entry. New journals retain
+quote/rounding selection evidence, and heartbeat status retains last_session
+outcome/reason while waiting. 107 offline regressions pass, including unchanged
+rounded limits after restart. A current-quote read-only probe passed and preserved
+the separate manual ES position/order fingerprints.
+
+The actual 02:45:00–02:47:00 TWS outage/reconnect was observed by the same idle
+executor. Active-order night recovery remains unproven. Last 7 Days was still
+saved, but the API returned only 151 current-day executions until Trade History
+was opened; then a fresh client returned 764 records from November 11 onward.
+Do not equate configured history_days=7 with downloaded prior-day history. A
+reconnect across a day boundary now requires fresh exact-account executions
+reaching the saved checkpoint, otherwise HISTORY_DOWNLOAD_INCOMPLETE holds
+broker actions. The Trade History window was left open; stock bridge/watchdog
+settings were unchanged. Future restart loading/all-client coverage still needs
+acceptance; the history attestation stays false.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

@@ -227,10 +227,16 @@ class PricingCalendarTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 target_price(entry)
 
-    def test_midpoint_exact_no_rounding_or_chase(self):
-        self.assertEqual(midpoint("50", "51", ".05"), D("50.50"))
-        with self.assertRaises(ValueError):
-            midpoint("50", "50.25", ".05")
+    def test_midpoint_rounds_once_to_nearest_tick_with_higher_credit_ties(self):
+        for bid,ask,tick,expected in [('50','51','.05','50.50'),
+                                     ('50','50.25','.05','50.15'),
+                                     ('50','50.25','.25','50.25'),
+                                     ('50','50.20','.25','50.00'),
+                                     ('50','50.30','.25','50.25'),
+                                     ('50.25','50.50','.25','50.50')]:
+            with self.subTest(bid=bid,ask=ask,tick=tick):
+                self.assertEqual(midpoint(bid,ask,tick),D(expected))
+        with self.assertRaises(ValueError): midpoint('.01','.02','1')
 
     def test_crossed_invalid_or_nonfinite_spread(self):
         for args in [("51", "50", ".25"), ("0", "1", ".25"),

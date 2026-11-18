@@ -25,11 +25,13 @@ def midpoint(bid, ask, tick):
     bid, ask, tick = map(decimal, (bid, ask, tick))
     if not 0 < bid <= ask or tick <= 0:
         raise ValueError("Invalid bid/ask/tick")
-    # Preserve the exact initial midpoint; skip an unrepresentable midpoint.
+    # Owner-approved: round once to the nearest tick, ties to higher credit.
+    # The resulting Plan freezes this price; subsequent quotes never reprice it.
     value = (bid + ask) / 2
-    if value % tick:
-        raise ValueError("Midpoint is not on the confirmed combo tick grid")
-    return value
+    rounded = (value / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
+    if rounded <= 0:
+        raise ValueError('Rounded midpoint is not positive')
+    return rounded
 
 @dataclass(frozen=True)
 class Quote:

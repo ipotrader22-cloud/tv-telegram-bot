@@ -13,7 +13,7 @@ from .core import (D, ET, Engine, Order, Plan, Quote, Snapshot, midpoint,
                    TERMINAL, decimal)
 from .recovery import (RecoveryError, process_lock, new_record, load_record,
                        history_covers, reserve, observe_order, observe_fill,
-                       recovered_order, matches_order, combo_contract_ids)
+                       recovered_order, matches_order, combo_contract_ids, require_downloaded_history)
 from .runtime import (training_enabled, history_policy_allowed, validate_execution_mode,
                       StatusPublisher, configure_logging, paused)
 
@@ -229,6 +229,7 @@ class TWS:
             return None
 
     def select(self, clock):
+        self.selection_report = {}
         Contract = self.Contract
         under = self.ib.reqContractDetails(Contract(conId=self.underlying_id, exchange="CME"))
         if len(under) != 1:
@@ -315,17 +316,23 @@ class TWS:
                 break
         else:
             raise ValueError("Fresh two-sided real-time option quotes unavailable")
-        # Exact midpoint only. The combo tick is a locally verified instrument
-        # setting, not a strategy reprice or assumed individual-leg tick.
+        # Round the initial midpoint once on the verified combo grid; no chasing.
         entry_tick = self.combo_tick
         raw_midpoint = (sum(q.bid for q in quotes) + sum(q.ask for q in quotes)) / 2
         self.selection_report = {'strike': str(strike), 'call_id': self.call.conId,
                                  'put_id': self.put.conId, 'expiry': self.expiry.isoformat(),
                                  'exact_midpoint': str(raw_midpoint), 'real_time_quotes': True,
-                                 'configured_combo_tick': str(entry_tick)}
+                                 'configured_combo_tick': str(entry_tick),
+                                 'combined_bid': str(sum(q.bid for q in quotes)),
+                                 'combined_ask': str(sum(q.ask for q in quotes)),
+                                 'observed_at_utc': now().isoformat()}
         if market_increment(raw_midpoint, self.market_rules) != entry_tick:
             raise ValueError('Configured combo tick differs from current CME premium band')
         price = midpoint(sum(q.bid for q in quotes), sum(q.ask for q in quotes), entry_tick)
+        self.selection_report.update(entry_limit=str(price),
+                                     entry_rounding='NEAREST_TICK_TIES_HIGHER_CREDIT')
+        if price % market_increment(price, self.market_rules):
+            raise ValueError('Rounded midpoint is invalid at the resulting CME premium band')
         plan = Plan(entry.date().isoformat(), entry, self.expiry,
                     self.call.conId, self.put.conId, future.conId, strike, price, entry_tick)
         plan.validate(now())
@@ -349,6 +356,8 @@ class TWS:
         positions = self.ib.reqPositions()
         if generation != self.generation or not self.ib.isConnected() or not self.continuous:
             return Snapshot(now(), synchronized=False, continuity=False)
+        if not retained:
+            require_downloaded_history(candidate, fills, started, self.history_zone, self.account)
         ids = {self.call.conId, self.put.conId}
         # Retained callbacks cover the midnight boundary only on the very same
         # continuously connected process/generation. A restart never inherits it.
@@ -612,13 +621,16 @@ def run(args, status=None):
                     except (ValueError, TimeoutError) as exc:
                         save(path, {'state': {'done': True, 'outcome': 'SKIPPED_PREFLIGHT'},
                                     'error': type(exc).__name__,
-                                    'reason': str(exc).replace(args.account, '<paper-account>')})
+                                    'reason': str(exc).replace(args.account, '<paper-account>'),
+                                    'observed_at_utc': now().isoformat(),
+                                    'entry_selection': copy.deepcopy(getattr(broker, 'selection_report', {}))})
                         print('Entry skipped: ' + str(exc), flush=True)
                         status.publish('ENTRY_SKIPPED', broker, reason=str(exc), force=True)
                         continue
                     engine = Engine(plan)
                     record = new_record(plan, engine, args, now())
                     record['execution_mode'] = 'PAPER_TRAINING' if training_enabled(args) else 'PAPER_EXECUTION'
+                    record['entry_selection'] = copy.deepcopy(getattr(broker, 'selection_report', {}))
                     broker.record = record
                 if paused(args) and not engine.state['started']:
                     engine.state.update(done=True, outcome='PAUSED_BEFORE_ENTRY')

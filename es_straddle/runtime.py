@@ -41,6 +41,24 @@ def paused(args):
     return (Path(args.state_dir) / 'pause-new-entries.flag').exists()
 
 
+def last_session_summary(args):
+    paths = sorted(Path(args.state_dir).glob('session-*.json'))
+    if not paths:
+        return None
+    path = paths[-1]
+    summary = {'session': path.stem.removeprefix('session-')}
+    try:
+        record = json.loads(path.read_text(encoding='utf-8'))
+        state = record.get('state', {})
+        reason = record.get('reason') or record.get('recovery_block') or state.get('blocked')
+        summary.update(outcome=state.get('outcome'), done=state.get('done', False),
+                       reason=str(reason).replace(args.account, '<paper-account>')[:500] if reason else None,
+                       entry_selection=record.get('entry_selection', {}))
+    except (OSError, ValueError, AttributeError):
+        summary.update(outcome='JOURNAL_UNREADABLE', reason='Inspect the retained session journal')
+    return summary
+
+
 class StatusPublisher:
     def __init__(self, args):
         self.args, self.last_at, self.last_key = args, 0, None
@@ -61,6 +79,7 @@ class StatusPublisher:
                  'connected': bool(broker and broker.ib.isConnected() and broker.continuous),
                  'pause_new_entries': paused(args),
                  'session': engine.plan.session if engine else None,
+                 'last_session': last_session_summary(args),
                  'next_scheduled_entry_et': None if engine or paused(args) else next_entry(clock, Path(args.state_dir)),
                  'reason': str(reason).replace(args.account, '<paper-account>')[:500] if reason else None}
         path = Path(args.state_dir) / 'status.json'

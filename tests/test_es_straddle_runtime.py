@@ -84,5 +84,35 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(record['state']['outcome'],'PAUSED_BEFORE_ENTRY')
             self.assertEqual(record['orders'],{})
 
+    def test_waiting_status_retains_last_skipped_session_and_selection_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            args=self.args(state_dir=Path(d),paper_execute=True,paper_training=True)
+            record={'state':{'done':True,'outcome':'SKIPPED_PREFLIGHT'},'reason':'DU_PRIVATE quote error',
+                    'entry_selection':{'exact_midpoint':'50.125','entry_limit':'50.25'}}
+            (args.state_dir/'session-2026-11-17.json').write_text(json.dumps(record))
+            status=StatusPublisher(args)
+            status.publish('ENTRY_SKIPPED',force=True)
+            status.publish('WAITING_FOR_ENTRY',force=True)
+            raw=(args.state_dir/'status.json').read_text(); value=json.loads(raw)
+            self.assertNotIn('DU_PRIVATE',raw)
+            self.assertEqual(value['last_session']['outcome'],'SKIPPED_PREFLIGHT')
+            self.assertEqual(value['last_session']['entry_selection']['entry_limit'],'50.25')
+
+    def test_selection_failure_preserves_quote_evidence_without_entry(self):
+        with tempfile.TemporaryDirectory() as d:
+            args=self.args(state_dir=Path(d),paper_execute=True,paper_training=True)
+            def select(clock):
+                (args.state_dir/'pause-new-entries.flag').touch()
+                raise ValueError('fixture quote failure')
+            broker=N(continuous=True,select=select,selection_report={'exact_midpoint':'50.125'},
+                     ib=N(isConnected=lambda:True,disconnect=Mock()))
+            with patch('es_straddle.tws.TWS',return_value=broker), patch('es_straddle.tws.now',return_value=ENTRY), \
+                 patch('es_straddle.tws.drive_session') as drive:
+                run(args)
+                drive.assert_not_called()
+            record=json.loads(next(args.state_dir.glob('session-*.json')).read_text())
+            self.assertEqual(record['entry_selection']['exact_midpoint'],'50.125')
+            self.assertEqual(record['observed_at_utc'],ENTRY.isoformat())
+
 
 if __name__=='__main__': unittest.main()
