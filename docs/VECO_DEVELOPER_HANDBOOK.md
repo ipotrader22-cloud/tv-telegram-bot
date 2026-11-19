@@ -2075,6 +2075,9 @@ The dashboard reads from Google Sheets. TWS is the execution source of truth; Sh
 In the dashboard’s Open Positions table, running P&L sits between Trade ID and
 Symbol. Open Time appears between Qty and Event on both desktop and mobile.
 Recent Closed Trades shows the closing timestamp after a position closes.
+Its realized P&L is the third column, immediately after Trade ID; Open Time
+appears between Qty and Event on desktop and mobile. This display order does
+not change the Closed Trades worksheet schema or historical trade records.
 
 The authenticated `GET /dashboard/live-pnl.json` route supplies presentation-only
 running Open P&L updates to the public dashboard. It accepts the same active owner
