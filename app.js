@@ -9732,7 +9732,6 @@ function renderDashboardHtml(data, locale = 'en') {
       <td>${escapeHtml(row.system)}</td>
       <td class="ticker">${escapeHtml(displayTradeId(row))}</td>
       <td class="js-public-pnl ${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl) || '—'}</td>
-      <td class="muted-dash">—</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
@@ -10547,7 +10546,6 @@ function renderDashboardHtml(data, locale = 'en') {
               <th>System</th>
               <th>Trade ID</th>
               <th>P&amp;L</th>
-              <th>Close Time</th>
               <th>Symbol</th>
               <th>Side</th>
               <th>Entry</th>
