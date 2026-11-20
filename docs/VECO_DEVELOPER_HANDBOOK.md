@@ -1,3 +1,164 @@
+## ADR — ES Straddle Machine isolated TWS paper candidate (November 16, 2026)
+
+Handbook update required: YES. Owner specified ten ATM ES short straddles at
+20:20 ET, unchanged initial midpoint, next listed verified 16:00 ET PM expiry,
+13.5% premium capture rounded UP to .25, Mayday at 1.65 times actual entry
+credit, and expiry-day 15:55 close. Standalone es_straddle is an opt-in paper
+candidate, isolated from stock bridge, Render, chart, ledgers and publication.
+No live-account override, startup import or ChatGPT trading task is added.
+Default CLI is read-only preflight.
+
+The coordinator durably reserves submissions before effects. Partial entry
+cancels its remainder before target placement. Mayday/EOD share cancellation
+confirmation, exact execution evidence and both-leg position reconciliation;
+one close is outstanding, with capped residual replacements. A touch or
+submission is never described as a fill. Mayday uses fresh real-time call
+ask plus put ask and is local; process/network continuity is required.
+Unknown acknowledgments never blindly resubmit.
+
+Recovery now uses version-2 journals, OS-owned process locking, broker order IDs
+reserved before effects, exact-contract restoration, permanent-ID binding and
+deduplicated execution evidence. Reconnect rebuilds only the isolated API socket.
+Fresh broker snapshots and a verified history window must cover the saved
+checkpoint; missing acknowledgments, overnight gaps and foreign activity block
+instead of replaying commands. Continuous callbacks can span midnight only in
+the same connection generation. No deletion of unresolved journals to retry.
+
+Installed November 16 in the Codex task's outputs/es-executor with a separate
+Python 3.12 environment, private config/state and read-only launcher. Paper API,
+live quotes, PM expiry and read-only disconnect/restart restoration were verified;
+81 offline tests passed at installation. No order effects or unattended startup were
+enabled. Stock bridge source/config hashes were preserved. The owner separately
+stopped its process and confirmed this; the ES task left it stopped.
+Initial TWS Today history and an externally managed ten-lot ES position/order
+blocked readiness. Authorized follow-up at 21:32 ET saved Last 7 Days in Trade
+History and verified 827 API executions dated November 10–16, including clients
+0 and 77, across API reconnect and Trade History window close/reopen. The isolated
+config now uses history_days=7. Order/position fingerprints and stock source/env
+hashes were unchanged; no Master Client ID or routing change. Actual cross-midnight
+outage/TWS-restart and continuous all-client coverage remain unverified. Supervised
+active-order crash/disconnect/partial/cancel/Mayday/EOD acceptance remain gates.
+Only the authorized Trade History period/save-selection setting changed in TWS;
+no live activation or production merge.
+
+Existing recovery was subsequently verified read-only: TWS Intraday Watchdog
+runs every minute, waits 30 seconds for self-recovery, then starts TWS through
+C:\IBC\StartTWS.bat when needed. That launcher uses the owner's Documents/IBC
+config.ini with TradingMode=paper; C:\IBC\config.ini is not its active config.
+The November 16 watchdog log records API loss at 02:45:03, restart at 02:45:42,
+API recovery at 02:46:01 and healthy Excel RTD at 02:47:51 ET. This proves an
+actual prior TWS/Excel night recovery, not recovery of the newly installed ES
+executor's orders. No watchdog/IBC configuration or scheduling was changed.
+
+At 21:46 ET the prior external straddle was verified flat with no ES orders.
+The owner explicitly authorized a one-lot off-schedule technical paper test
+with immediate cleanup. From 21:52–21:59, real working entry and GTC target
+orders survived abrupt test-process exits and API reconnect with unchanged
+IDs, prices and quantities. Entry filled at 67.75; target 58.75 was accepted,
+restored and canceled; the exact one-lot residual closed at 68.50. Final broker
+positions were flat, no test orders remained, non-ES positions and stock files
+were unchanged. Normal ten-lot rules and unattended activation stayed unchanged.
+
+Actual TWS replies exposed two recovery compatibility fixes: outsideRth can
+normalize to false for the CME BAG; completed full fills can report zero
+totalQuantity with filledQuantity equal to the reservation. The latter is
+normalized only with independent exact full-fill execution proof. All other
+identity/frozen-price/quantity/contract gates remain. 83 offline regressions
+cover these cases. See the ES paper document for acceptance scope and remaining
+coordinator/partial/Mayday/15:55/overnight gates; the fixture is not unattended
+acceptance and did not set the history attestation.
+
+Owner-directed paper training supersession: after the one-lot acceptance, the
+owner explicitly requested enabling demo autotrading as a training ground while
+the remaining scenarios are validated. The explicit --paper-execute
+--paper-training combination permits that local paper rollout without claiming
+history/all-client acceptance. The history attestation stays false; DU account,
+paper port, exact ownership, bounded history coverage and fixed strategy rules
+remain enforced. Default execution still requires the original attestation.
+No live activation, production merge or Render rollout is authorized here.
+
+The isolated runtime now publishes atomic status.json heartbeats, bounded local
+logs and an execution-mode marker in new journals. pause-new-entries.flag stops
+new entries while an already-started session continues its exits/recovery. A
+separate Windows task, ES Straddle Paper Training, supervises only this Python
+process at logon and every minute, ignoring duplicate instances. Do not disable
+its supervision to pause entries with an unresolved position. It does not replace
+or modify the existing TWS/IBC watchdog. The local Start/Pause/Status-Paper.ps1
+controls belong to outputs/es-executor. 91 offline regressions pass locally;
+actual night recovery, partial fills, Mayday and 15:55 remain acceptance-pending.
+This supersedes the prior unattended-startup-off decision only for paper training.
+Activated November 16 at 22:19 ET; independent API checks were ES-flat with no
+working ES orders. An exact idle-worker crash recovered automatically through
+the Windows task; pause/resume and timestamped phase logging were verified by
+22:24 ET. The resumed worker waits for November 17 at 20:20 ET. No order was
+submitted during activation. This is idle-supervision evidence, not completion
+of the pending overnight/active-coordinator acceptance scenarios.
+
+Owner clarification: manual ES trades will be later-dated (2DTE/3DTE and beyond).
+The adapter now scopes conflicts to the two exact selected option conIds, removing
+the earlier all-ES entry exclusion. Separate futures/options positions, working
+orders and proven separate combo executions may coexist without becoming owned
+by this executor. The bot still selects next eligible 16:00 ET expiry, so DTE
+labels alone are not an isolation guarantee. Shared option legs or unidentified
+ES combo membership retain the hold. Membership comes from actual BAG legs or
+an exact account/permanent-ID/order-ref broker-order match and is durably retained
+in optional observed_combo_contracts journal evidence for restart. It never
+establishes ownership, clears prior holds or changes target/close quantities.
+102 offline regressions pass. A 22:37 ET read-only broker audit resolved all 21
+current-day BAG callbacks; older unavailable identities predate this session.
+No manual trade/order or shared bridge/watchdog setting was changed.
+
+November 17 amendment: the 20:20:04 entry was skipped because exact midpoint was
+off tick. Independent broker evidence showed zero owned orders/fills that day;
+manual ES checks had not been reached. The owner explicitly authorized rounding
+the initial midpoint once to nearest valid tick, ties to higher credit, then
+freezing it. This supersedes earlier exact-midpoint/off-grid-skip descriptions.
+The skipped journal is retained; no late replacement entry. New journals retain
+quote/rounding selection evidence, and heartbeat status retains last_session
+outcome/reason while waiting. 107 offline regressions pass, including unchanged
+rounded limits after restart. A current-quote read-only probe passed and preserved
+the separate manual ES position/order fingerprints.
+
+The actual 02:45:00–02:47:00 TWS outage/reconnect was observed by the same idle
+executor. Active-order night recovery remains unproven. Last 7 Days was still
+saved, but the API returned only 151 current-day executions until Trade History
+was opened; then a fresh client returned 764 records from November 11 onward.
+Do not equate configured history_days=7 with downloaded prior-day history. A
+reconnect across a day boundary now requires fresh exact-account executions
+reaching the saved checkpoint, otherwise HISTORY_DOWNLOAD_INCOMPLETE holds
+broker actions. The Trade History window was left open; stock bridge/watchdog
+settings were unchanged. Future restart loading/all-client coverage still needs
+acceptance; the history attestation stays false.
+
+November 20 correction: November 19's 20:20:02 entry incorrectly rejected a valid
+102.00 midpoint because configured combo_tick=.25 differed from the broker's .50
+premium band. No order was submitted. Entry now uses the downloaded broker rule
+for the initial midpoint, rounds once, validates the resulting band and freezes
+price/tick; legacy config is diagnostic only. Rule-table evidence is journaled;
+missing/invalid rules still block. Target rounding to .25 and all other strategy
+rules remain unchanged. 111 offline tests include the full recorded selection,
+all four band boundaries and frozen .50-grid restart. Preserve the skipped journal;
+no late replay. See the ES paper document for the CME source and exact evidence.
+
+Fresh November 20 broker executions match both completed ten-lot sessions:
+November 17 owner-authorized late entry 86.25 / target 74.75, and November 18
+scheduled entry 73.75 / target 64.00. Both exact leg pairs are flat. The latter
+session survived the actual November 19 02:45:00 outage, resumed management at
+02:46:12 and reconciled target fills at 09:46:45-50 ET without duplicate closes.
+This supersedes the earlier absence of active-night evidence for that observed
+cycle. Complete all-client history, other partial-entry cases, Mayday and actual
+15:55 close remain acceptance-pending; paper-training authorization is unchanged.
+
+Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
+underlying IDs, explicit operator expiry timezone versus exchange trading hours,
+and premium-dependent CME tick rules. The exact .25-rounded target is never
+repriced; an invalid exchange tick uses the unprotected-target exit path.
+See docs/ES_STRADDLE_TWS_PAPER.md for commands, evidence, bounds and rollback.
+Rollback stops only this isolated process, reconciles owned broker orders,
+preserves journals and reverts the narrow PR; stock bridge stays untouched.
+
+---
+
 ## ADR — ES Straddle Monitor in the Options viewer (November 13, 2026)
 
 Handbook update required: YES. The authenticated Options viewer now embeds
