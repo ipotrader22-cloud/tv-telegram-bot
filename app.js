@@ -9731,15 +9731,14 @@ function renderDashboardHtml(data, locale = 'en') {
     <tr class="public-pnl-row" data-trade-id="${escapeHtml(String(row.trade_id || ''))}">
       <td>${escapeHtml(row.system)}</td>
       <td class="ticker">${escapeHtml(displayTradeId(row))}</td>
-      <td>${escapeHtml(safeDateText(row.open_time))}</td>
-      <td class="muted-dash">—</td>
+      <td class="js-public-pnl ${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl) || '—'}</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
       <td>${num(row.target) || '—'}</td>
       <td>${num(row.stop) || '—'}</td>
       <td>${num(row.size, 0)}</td>
-      <td class="js-public-pnl ${moneyClass(row.open_pnl)}">${renderMoney(row.open_pnl) || '—'}</td>
+      <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td><span class="open-position-label">LIVE POSITION</span></td>
     </tr>
   `).join('');
@@ -9763,14 +9762,14 @@ function renderDashboardHtml(data, locale = 'en') {
     <tr>
       <td>${escapeHtml(row.system || inferClosedTradeSystemLabel(row) || '—')}</td>
       <td class="ticker">${escapeHtml(displayTradeId(row))}</td>
-      <td>${escapeHtml(safeDateText(row.open_time))}</td>
+      <td class="${moneyClass(row.result)}">${renderMoney(row.result)}</td>
       <td>${escapeHtml(safeDateText(row.close_time))}</td>
       <td class="ticker">${escapeHtml(row.symbol)}</td>
       <td class="${sideClass(row.side)}">${escapeHtml(row.side)}</td>
       <td>${num(row.entry)}</td>
       <td>${escapeHtml(closedTradeExitDisplay(row))}</td>
       <td>${num(row.size, 0)}</td>
-      <td class="${moneyClass(row.result)}">${renderMoney(row.result)}</td>
+      <td>${escapeHtml(safeDateText(row.open_time))}</td>
       <td>${escapeHtml(publicExitLabel(row.event))}</td>
     </tr>
   `).join('');
@@ -10546,15 +10545,14 @@ function renderDashboardHtml(data, locale = 'en') {
             <tr>
               <th>System</th>
               <th>Trade ID</th>
-              <th>Open Time</th>
-              <th>Close Time</th>
+              <th>P&amp;L</th>
               <th>Symbol</th>
               <th>Side</th>
               <th>Entry</th>
               <th>Target</th>
               <th>Stop Ref</th>
               <th>Qty</th>
-              <th>P&amp;L</th>
+              <th>Open Time</th>
               <th>Event</th>
             </tr>
           </thead>
@@ -10604,14 +10602,14 @@ function renderDashboardHtml(data, locale = 'en') {
             <tr>
               <th>System</th>
               <th>Trade ID</th>
-              <th>Open Time</th>
+              <th>P&L</th>
               <th>Close Time</th>
               <th>Symbol</th>
               <th>Side</th>
               <th>Entry</th>
               <th>Exit</th>
               <th>Qty</th>
-              <th>P&L</th>
+              <th>Open Time</th>
               <th>Event</th>
             </tr>
           </thead>
