@@ -394,6 +394,44 @@ Days. Same-generation continuous callbacks retain their prior coverage behavior.
 This guard does not certify complete all-client visibility or eliminate the need
 to verify history loading after future TWS restarts. Keep that acceptance pending.
 
+### November 19 missed entry: broker premium-band selection (fixed November 20)
+
+At 20:20:02 ET, selection found the 7185 November 20 16:00 ET pair with combined
+bid 101.25, ask 102.75 and midpoint 102.00. It incorrectly required the configured
+.25 hint to equal the broker's current increment (.50), rejecting an already
+valid price before submission. Independent November 20 paper API evidence found
+no November 19 bot executions or working/completed orders. This was a pricing
+validation bug, not a manual-position conflict or an entry-time disconnection.
+
+Entry now derives its increment from the downloaded IBKR/CME market-rule table,
+rounds the initial midpoint once (ties higher), validates the resulting price's
+band, and freezes both price and increment in the plan. The old combo_tick config
+is retained for compatibility and diagnostics, not as an equality gate. Missing
+or inconsistent broker rules still reject selection. Quotes, rule table and chosen
+increment are retained. The captured November 19 quotes now select 102.00/.50.
+This follows the premium bands in the [CME Globex notice effective February 9,
+2026](https://www.cmegroup.com/content/dam/cmegroup/notices/clearing/2025/chadv25-390r.pdf).
+The target remains entry x .865 rounded UP to .25; its existing broker-validity
+check and unprotected-target exit behavior are unchanged. No chasing or late
+replay is added; the November 19 skipped journal remains terminal.
+
+111 offline tests pass locally, including full selection with those recorded
+quotes, all four premium bands/boundaries, invalid rules, and frozen .50-grid
+restart. Local paper installation must retain completed journals and preserve
+stock bridge source/configuration. Normal Friday/Saturday entries remain excluded.
+
+Fresh November 20 API execution IDs, permanent IDs and order refs matched all
+saved fill components for two completed ten-lot sessions: owner-authorized
+November 17 late entry 86.25 / target 74.75 (November 18 03:58:54 ET), and scheduled
+November 18 entry 73.75 at 20:20:19 ET / target 64.00 on November 19 09:46:45-50 ET.
+Both sessions' exact legs were flat. The latter active session survived the real
+November 19 02:45:00 outage and resumed management at 02:46:12 with the same
+process, later reconciling multiple target fills without duplicate closes.
+This supplies active overnight recovery evidence for that observed cycle; it
+does not certify every partial-entry, Mayday or 15:55-close scenario, or complete
+all-client history coverage. The history attestation remains false and execution
+remains explicitly authorized paper training only.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders

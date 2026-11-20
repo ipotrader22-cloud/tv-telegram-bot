@@ -130,6 +130,25 @@ broker actions. The Trade History window was left open; stock bridge/watchdog
 settings were unchanged. Future restart loading/all-client coverage still needs
 acceptance; the history attestation stays false.
 
+November 20 correction: November 19's 20:20:02 entry incorrectly rejected a valid
+102.00 midpoint because configured combo_tick=.25 differed from the broker's .50
+premium band. No order was submitted. Entry now uses the downloaded broker rule
+for the initial midpoint, rounds once, validates the resulting band and freezes
+price/tick; legacy config is diagnostic only. Rule-table evidence is journaled;
+missing/invalid rules still block. Target rounding to .25 and all other strategy
+rules remain unchanged. 111 offline tests include the full recorded selection,
+all four band boundaries and frozen .50-grid restart. Preserve the skipped journal;
+no late replay. See the ES paper document for the CME source and exact evidence.
+
+Fresh November 20 broker executions match both completed ten-lot sessions:
+November 17 owner-authorized late entry 86.25 / target 74.75, and November 18
+scheduled entry 73.75 / target 64.00. Both exact leg pairs are flat. The latter
+session survived the actual November 19 02:45:00 outage, resumed management at
+02:46:12 and reconciled target fills at 09:46:45-50 ET without duplicate closes.
+This supersedes the earlier absence of active-night evidence for that observed
+cycle. Complete all-client history, other partial-entry cases, Mayday and actual
+15:55 close remain acceptance-pending; paper-training authorization is unchanged.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

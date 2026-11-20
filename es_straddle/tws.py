@@ -70,6 +70,18 @@ def market_increment(price, rules):
         raise ValueError('Broker market-rule increment unavailable')
     return eligible[-1]
 
+def market_midpoint(bid, ask, rules):
+    """Round once using the broker's premium band, then freeze price and tick."""
+    bid, ask = decimal(bid), decimal(ask)
+    raw = (bid + ask) / 2
+    price = midpoint(bid, ask, market_increment(raw, rules))
+    # Rounding can land on a band boundary: use the final price's increment.
+    tick = market_increment(price, rules)
+    if price % tick:
+        raise ValueError('Rounded midpoint is invalid at the resulting CME premium band')
+    return price, tick
+
+
 def prove_fill(trade, call_id, put_id):
     """Require exact execIds, account and side; BAG or equal paired leg fills."""
     status = trade.orderStatus
@@ -317,22 +329,23 @@ class TWS:
         else:
             raise ValueError("Fresh two-sided real-time option quotes unavailable")
         # Round the initial midpoint once on the verified combo grid; no chasing.
-        entry_tick = self.combo_tick
         raw_midpoint = (sum(q.bid for q in quotes) + sum(q.ask for q in quotes)) / 2
         self.selection_report = {'strike': str(strike), 'call_id': self.call.conId,
                                  'put_id': self.put.conId, 'expiry': self.expiry.isoformat(),
                                  'exact_midpoint': str(raw_midpoint), 'real_time_quotes': True,
-                                 'configured_combo_tick': str(entry_tick),
+                                 'configured_combo_tick': str(self.combo_tick),
+                                 'entry_tick_source': 'IBKR_CME_MARKET_RULE',
+                                 'market_rules': [{'low_edge': str(decimal(r.lowEdge)),
+                                                   'increment': str(decimal(r.increment))}
+                                                  for r in self.market_rules],
                                  'combined_bid': str(sum(q.bid for q in quotes)),
                                  'combined_ask': str(sum(q.ask for q in quotes)),
                                  'observed_at_utc': now().isoformat()}
-        if market_increment(raw_midpoint, self.market_rules) != entry_tick:
-            raise ValueError('Configured combo tick differs from current CME premium band')
-        price = midpoint(sum(q.bid for q in quotes), sum(q.ask for q in quotes), entry_tick)
-        self.selection_report.update(entry_limit=str(price),
+        price, entry_tick = market_midpoint(sum(q.bid for q in quotes), sum(q.ask for q in quotes),
+                                          self.market_rules)
+        self.selection_report.update(entry_limit=str(price), entry_tick=str(entry_tick),
+                                     raw_midpoint_tick=str(market_increment(raw_midpoint, self.market_rules)),
                                      entry_rounding='NEAREST_TICK_TIES_HIGHER_CREDIT')
-        if price % market_increment(price, self.market_rules):
-            raise ValueError('Rounded midpoint is invalid at the resulting CME premium band')
         plan = Plan(entry.date().isoformat(), entry, self.expiry,
                     self.call.conId, self.put.conId, future.conId, strike, price, entry_tick)
         plan.validate(now())
@@ -494,7 +507,7 @@ def main():
     parser.add_argument('--config', type=Path, help='Private local JSON defaults; never committed')
     parser.add_argument("--account", help="Exact DU paper account; never committed")
     parser.add_argument("--underlying-id", type=int, help="Verified current ES futures conId")
-    parser.add_argument("--combo-tick", help="Verified ES combo minimum price increment")
+    parser.add_argument("--combo-tick", help="Legacy installation tick hint; entry uses the current broker market-rule band")
     parser.add_argument("--port", type=int, default=7497)
     parser.add_argument("--client-id", type=int, default=1820)
     parser.add_argument("--state-dir", type=Path)

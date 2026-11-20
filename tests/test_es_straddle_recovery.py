@@ -8,10 +8,10 @@ from types import SimpleNamespace as N
 from datetime import timedelta
 from unittest.mock import patch
 from test_es_straddle import plan, ENTRY, EXPIRY
-from es_straddle.core import Engine, Command, Snapshot, ET, midpoint, D
+from es_straddle.core import Engine, Command, Snapshot, ET, midpoint, D, Quote, target_price
 from es_straddle.recovery import (RecoveryError, new_record, load_record, reserve,
     observe_fill, observe_order, recovered_order, history_covers, process_lock)
-from es_straddle.tws import drive_session, expiry_time, market_increment, TWS, save
+from es_straddle.tws import drive_session, expiry_time, market_increment, market_midpoint, TWS, save
 
 
 class RecoveryTests(unittest.TestCase):
@@ -245,6 +245,68 @@ class RecoveryTests(unittest.TestCase):
                N(lowEdge=20,increment=.25),N(lowEdge=100,increment=.5)]
         self.assertEqual(str(market_increment('70',rules)),'0.25')
         self.assertEqual(str(market_increment('110',rules)),'0.5')
+
+    def test_recorded_nov19_quotes_pass_full_selection_with_legacy_quarter_hint(self):
+        from ib_insync import Contract,ComboLeg
+        clock=ENTRY+timedelta(days=3)
+        rules=[N(lowEdge=0,increment=.05),N(lowEdge=5,increment=.1),
+               N(lowEdge=20,increment=.25),N(lowEdge=100,increment=.5)]
+        a=TWS.__new__(TWS); a.Contract=Contract; a.ComboLeg=ComboLeg
+        a.underlying_id=100; a.combo_tick=D('.25'); a.expiry_zone=ET
+        future=Contract(conId=100,secType='FUT',symbol='ES',currency='USD',multiplier='50')
+        details={right:N(contract=Contract(conId=cid,secType='FOP',symbol='ES',right=right,
+                                           strike=7185,currency='USD',multiplier='50'),
+                         underConId=100,realExpirationDate='20261120',lastTradeTime='16:00:00',
+                         tradingHours='20261119:1700-20261120:1500',timeZoneId='America/Chicago',
+                         validExchanges='CME',marketRuleIds='235')
+                 for right,cid in (('C',101),('P',102))}
+        a.ib=N(reqContractDetails=lambda c:[N(contract=future)] if c.conId==100 else [details[c.right]],
+               reqTickers=lambda c:[N(marketDataType=1,time=clock,bid=7184.75,ask=7185.25)],
+               reqSecDefOptParams=lambda *args:[N(underlyingConId='100',multiplier='50',
+                   expirations=['20261120'],strikes=[7185],tradingClass='EW3')],
+               reqMarketRule=lambda rid:rules,reqMktData=lambda c:None,sleep=lambda duration:None)
+        a.quote=lambda c:Quote(D('50.50') if c.right=='C' else D('50.75'),
+                               D('51.50') if c.right=='C' else D('51.25'),clock,clock)
+        with patch('es_straddle.tws.now',return_value=clock):
+            selected=a.select(clock)
+        self.assertEqual((selected.entry_limit,selected.entry_tick),(D('102'),D('.5')))
+        self.assertEqual(a.combo_tick,D('.25'))
+        self.assertEqual(a.selection_report['entry_tick_source'],'IBKR_CME_MARKET_RULE')
+        command=Engine(selected).step(Snapshot(clock))[0]
+        self.assertEqual((command.action,command.quantity,D(command.price)),('SELL',10,D('102')))
+        self.assertEqual(target_price(selected.entry_limit),D('88.25'))
+
+    def test_market_midpoint_rounds_across_all_premium_bands_and_boundaries(self):
+        rules=[N(lowEdge=0,increment=.05),N(lowEdge=5,increment=.1),
+               N(lowEdge=20,increment=.25),N(lowEdge=100,increment=.5)]
+        for raw,price,tick in [('4.925','4.95','.05'),('5.05','5.1','.1'),
+                               ('19.95','20','.25'),('20.125','20.25','.25'),
+                               ('99.875','100','.5'),('100.25','100.5','.5'),
+                               ('102','102','.5')]:
+            with self.subTest(raw=raw):
+                value=D(raw)
+                self.assertEqual(market_midpoint(value-D('.025'),value+D('.025'),rules),
+                                 (D(price),D(tick)))
+
+    def test_missing_or_inconsistent_market_grid_still_blocks_entry(self):
+        for rules in ([],[N(lowEdge=0,increment=0)],
+                      [N(lowEdge=0,increment=.25),N(lowEdge=100,increment=.3)]):
+            with self.subTest(rules=rules):
+                with self.assertRaises(ValueError): market_midpoint('99.95','99.97',rules)
+
+    def test_half_point_entry_grid_and_limit_survive_restart_without_repricing(self):
+        price,tick=market_midpoint('101.25','102.75',[N(lowEdge=0,increment=.25),N(lowEdge=100,increment=.5)])
+        p=plan(entry_limit=price,entry_tick=tick)
+        engine=Engine(p); command=engine.step(Snapshot(ENTRY))[0]
+        record=new_record(p,engine,self.args,ENTRY); reserve(record,command,99)
+        record['orders'][command.ref].update(status='Submitted',perm_id=900)
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'session.json'; save(path,record)
+            record,p=load_record(path,self.args)
+        restarted=Engine(p,record['state'])
+        pending=recovered_order(command.ref,record['orders'][command.ref],p)
+        self.assertEqual(restarted.step(Snapshot(ENTRY+timedelta(hours=1),orders={command.ref:pending})),[])
+        self.assertEqual((p.entry_limit,p.entry_tick),(D('102'),D('.5')))
 
     def test_invalid_target_tick_closes_without_repricing(self):
         self.filled()
