@@ -104,7 +104,23 @@ async function runStagingPipeline({store,url,api,date,clock=()=>new Date(),prepa
     state=await journal.update(targetDate,{messageId:sent.messageId,delivery:'ACCEPTED_NOT_DELIVERED'});
    }
    return await checkAcceptedDelivery(plan);
-  }catch(e){return blocked(stage==='RESEARCH'&&e?.message==='PREOPEN_PREPARATION_MISSING'?'PREOPEN_PREPARATION_MISSING':'STAGING_'+stage+'_EXCEPTION')}
+  }catch(e){
+   // SQLSTATE is a fixed machine code, never a raw database error/message.
+   // Preserve fail-closed behavior; classify only to diagnose the underlying fault.
+   const code=typeof e?.code==='string'&&/^[0-9A-Z]{5}$/.test(e.code)?e.code:null;
+   const sqlClass=code?.slice(0,2);
+   const category=sqlClass==='08'?'DB_CONNECTION':
+    sqlClass==='40'?'DB_TRANSACTION':
+    sqlClass==='53'?'DB_RESOURCES':
+    sqlClass==='57'?'DB_OPERATOR':
+    sqlClass==='23'?'DB_CONSTRAINT':
+    sqlClass==='42'?'DB_SCHEMA':null;
+   const reason=stage==='RESEARCH'&&e?.message==='PREOPEN_PREPARATION_MISSING'?
+    'PREOPEN_PREPARATION_MISSING':'STAGING_'+stage+'_EXCEPTION';
+   if(category&&['LEDGER','MODEL'].includes(stage))
+    return blocked(reason+'_'+category);
+   return blocked(reason);
+  }
  });
 }
 module.exports={runStagingPipeline,SHADOW_ORIGIN};
