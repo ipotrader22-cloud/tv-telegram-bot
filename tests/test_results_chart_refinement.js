@@ -1,56 +1,28 @@
 "use strict";
 
-const assert = require("assert");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const results = require("../website_conversion_results_refinement");
+const { resultsAsset } = require("../lib/website-public-assets");
+const { finiteMetric } = require("../public/vixale-results");
 
-function extractInlineScript(html, id) {
-  const match = String(html).match(new RegExp(`<script id=["']${id}["']>([\\s\\S]*?)<\\/script>`));
-  assert(match, `expected inline script ${id}`);
-  return match[1];
-}
-
-const base = "<!doctype html><html><head></head><body><main>fixture</main></body></html>";
 const main = results.renderResultsMain();
-assert(main.includes('id="vx-results-day-chart"'));
-assert(main.includes('id="vx-results-swing-chart"'));
-assert(main.includes('id="vx-results-options-chart"'));
-assert(main.includes('data-href="/trading-systems/options"'));
-assert(main.includes('role="link"'));
-assert(main.includes("Options Trading results"));
-assert(main.includes('class="vx-results-options-head-actions"'));
-assert(main.includes('class="vx-results-options-total"'));
-assert(main.includes('id="vx-results-options-total"'));
-assert(!main.includes('<div class="vx-results-metrics"><div><span>Total Realized P&amp;L</span><strong id="vx-results-options-total">'));
-assert(main.includes('viewBox="0 0 720 260"'));
-assert(main.includes("Realized P&amp;L"));
-assert(main.includes("Model P&amp;L"));
-assert(main.includes("<span>Candidates</span>"));
-assert(!main.includes("<span>Potential Candidates</span>"));
+assert.match(main, /id="vx-results-day-chart"/);
+assert.match(main, /id="vx-results-options-chart"/);
+assert.match(main, /href="#swing-trading"/);
+assert.match(main, /Log in to view portfolio/);
+assert.doesNotMatch(main, /id="vx-results-swing-chart"|role="link"/);
 
-const html = results.refineResults(base);
-const script = extractInlineScript(html, results.SCRIPT_ID);
-assert.doesNotThrow(() => new Function(script), "Results inline chart script must parse after HTML injection");
-assert(script.includes("axisMoney"));
-assert(script.includes("const ticks=5"));
-assert(script.includes("'cumulative_pnl'"));
-assert(script.includes("'total_model_pnl'"));
-assert(script.includes("renderPnlChart('vx-results-day-chart'"));
-assert(script.includes("renderPnlChart('vx-results-swing-chart'"));
-assert(script.includes("renderPnlChart('vx-results-options-chart'"));
-assert(script.includes("{showAllPoints:true,weeklyDates:true,height:260}"));
-assert(script.includes("'data-equity-point':'1'"));
-assert(script.includes("'data-date-tick':'weekly'"));
-assert(script.includes("item.time-last>=6*86400000"));
-assert(script.includes("labels.length>8"));
-assert(script.includes(results.OPTIONS_PERFORMANCE_PATH));
-assert(script.includes("optionsCard.addEventListener('click'"));
-assert(script.includes("window.location.href=optionsCard.dataset.href"));
-assert(script.includes("snapshot_date"));
-assert(script.includes("cache:'no-store'"));
-assert(html.includes("vx-results-chart-legend"));
-assert(html.includes("viewBox=\"0 0 720 230\""));
-assert(html.includes("viewBox=\"0 0 720 260\""));
-assert(html.includes(".vx-results-live-card.options .vx-results-chart{height:260px}"));
-assert(html.includes(".vx-results-options-head-actions"));
+const html = results.refineResults("<!doctype html><html><head></head><body><main></main></body></html>");
+assert(html.includes('defer src="' + resultsAsset.url + '"'));
+const chromeCode = fs.readFileSync(path.join(__dirname, "../public/vixale-results.js"), "utf8");
+assert.doesNotThrow(() => new vm.Script(chromeCode));
+assert.doesNotMatch(chromeCode, /\/api\/swing-leaders/);
+for (const value of [null, undefined, false, "", " ", Infinity]) assert.equal(finiteMetric(value), null);
+assert.equal(finiteMetric("0"), 0);
+assert.equal(finiteMetric(0), 0);
+assert.equal(finiteMetric("-3.5"), -3.5);
 
-console.log("Results chart refinement: PASS");
+console.log("Public Results evidence and null-value contracts passed.");

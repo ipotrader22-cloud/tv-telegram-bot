@@ -8,7 +8,7 @@ const STYLE_ID = "vx-conversion-home-style";
 const SCRIPT_ID = "vx-conversion-home-script";
 const MARKER = 'class="vx-conversion-home"';
 const DAY_PATH = SYSTEMS[0].path;
-const SWING_PATH = SYSTEMS[1].path;
+const { OVERVIEW_PATH: SWING_PATH, PORTFOLIO_PATH } = require("./lib/website-swing-public");
 const OPTIONS_PATH = SYSTEMS[2].path;
 
 function escapeRegex(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -44,8 +44,8 @@ function renderDayPanel() {
 }
 function renderSwingPanel() {
   return `<section id="vx-preview-swing" class="vx-conversion-preview-panel" role="tabpanel" aria-labelledby="vx-preview-tab-swing" data-vx-preview-panel="swing" hidden>
-    <div class="vx-conversion-panel-head"><div><span>Swing Trading</span><strong>Daily portfolio preview</strong></div><a href="${SWING_PATH}#active-portfolio">View Swing Portfolio →</a></div>
-    <div class="vx-conversion-swing-state" data-vx-swing-state><div class="vx-conversion-skeleton-row" aria-hidden="true"><i></i><i></i><i></i></div><p>Loading the latest published portfolio update…</p></div>
+    <div class="vx-conversion-panel-head"><div><span>Swing Trading</span><strong>Swing model portfolio</strong></div><a href="${SWING_PATH}">Explore Swing Trading</a></div>
+    <div class="vx-conversion-protected-state"><span>Website updates</span><h3>Portfolio access for approved viewers</h3><p>View the selected stocks, closed trades, and model equity history with your viewer code.</p><div><a href="${PORTFOLIO_PATH}">Log in to view portfolio</a><a href="/access?system=swing-trading">Request viewer access</a></div></div>
   </section>`;
 }
 function renderOptionsPanel() {
@@ -57,7 +57,7 @@ function renderOptionsPanel() {
 function renderSystemCards() {
   return `<section class="vx-conversion-system-cards" aria-label="Vixale trading systems">
     <article><span>DAY TRADING</span><h2>Watch the trades. Get the signals.</h2><p>Two active strategies working across 5, 15, 30 and 60-minute charts. Vixale Prime trades intraday but closes all positions at the end of the trading day. Vixale Edge trades intraday but can hold overnight if target/stop not reached.</p><p>Follow entries, exits, targets, stop levels and live P&amp;L on your screen. Receive Day Trading signals directly in Telegram.</p><a href="${DAY_PATH}">Get Day Trading Signals</a></article>
-    <article><span>ACTIVE PORTFOLIO</span><h2>Active portfolio updated every morning</h2><p>A stock portfolio built around Vixale's proprietary ranking system. Each trading morning around 10:15am, positions are reviewed, new opportunities are added and exits are published.</p><p>Follow open positions, ranking changes and completed trades — with a clear daily portfolio update.</p><a href="${SWING_PATH}#active-portfolio">View Active Portfolio and candidates</a></article>
+    <article><span>ACTIVE PORTFOLIO</span><h2>Active portfolio updated every morning</h2><p>A stock portfolio built around Vixale's proprietary ranking system. Each trading morning around 10:15am, positions are reviewed, new opportunities are added and exits are published.</p><p>Follow open positions, ranking changes and completed trades — with a clear daily portfolio update.</p><a href="${SWING_PATH}">View Active Portfolio and candidates</a></article>
     <article><span>OPTIONS</span><h2>Options Trades</h2><p>An actively managed options 0DTE system with daily position updates. See new positions, follow their progress and review the results when trades close.</p><p>Explore the trade history and real brokerage records.</p><a href="${OPTIONS_PATH}">Get options signals</a></article>
   </section>`;
 }
@@ -72,7 +72,7 @@ function renderIntroVideo() {
     '<p class="vx-home-overview-sub"><span class="vx-overview-en">A 55-second introduction before you explore the systems and their published results.</span><span class="vx-overview-ru" lang="ru">55-секундное введение перед изучением систем и опубликованных результатов.</span></p>' +
     '<p class="vx-home-overview-note"><span class="vx-overview-en">Video charts and portfolios are illustrative, not live brokerage executions.</span><span class="vx-overview-ru" lang="ru">Графики и портфели в видео иллюстративные, а не реальные сделки.</span></p></div>' +
     '<div class="vx-home-overview-media"><div class="vx-home-overview-player">' +
-    '<iframe class="vx-overview-en" title="Vixale: Three Trading Systems, One Platform" src="https://app.heygen.com/embeds/5b58c907fc054fe7b8a6807ccfd69633" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>' +
+    '<button type="button" class="vx-overview-en vx-overview-play" data-vx-video-src="https://app.heygen.com/embeds/5b58c907fc054fe7b8a6807ccfd69633">&#9654; Play the 55-second Vixale introduction</button>' +
     '<video class="vx-overview-ru" title="Vixale: Три торговые системы" aria-label="Вводное видео о Vixale на русском языке" controls preload="none" playsinline><source src="https://resource2.heygen.ai/video_translate/cc6bde06dc634fb2a1ba927cfb1a426e-ru/original.mp4" type="video/mp4"></video>' +
     '</div><div class="vx-home-overview-fallback"><span class="vx-overview-en">Video not loading? <a href="https://app.heygen.com/share/5b58c907fc054fe7b8a6807ccfd69633" target="_blank" rel="noopener noreferrer">Open on HeyGen ↗</a></span>' +
     '<span class="vx-overview-ru" lang="ru">Видео не загружается? <a href="https://app.heygen.com/video-translate/share/cc6bde06dc634fb2a1ba927cfb1a426e-ru" target="_blank" rel="noopener noreferrer">Открыть на HeyGen ↗</a></span></div></div>' +
@@ -119,13 +119,12 @@ html[lang="ru"] video.vx-overview-ru{display:block!important}
 </style>`;
 
 const script = `<script id="${SCRIPT_ID}">(() => {
-const tabs=Array.from(document.querySelectorAll('[data-vx-preview-tab]')),panels=Array.from(document.querySelectorAll('[data-vx-preview-panel]'));if(!tabs.length||!panels.length)return;let swingLoaded=false;
+const tabs=Array.from(document.querySelectorAll('[data-vx-preview-tab]')),panels=Array.from(document.querySelectorAll('[data-vx-preview-panel]'));if(!tabs.length||!panels.length)return;
 const money=v=>{const n=Number(v);if(!Number.isFinite(n))return'—';const a=Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return n>0?'+$'+a:n<0?'-$'+a:'$0.00'};
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cloneDayChart=()=>{const source=document.getElementById('vx-home-equity-svg'),target=document.getElementById('vx-conversion-day-chart');if(!target)return;if(!source){target.innerHTML='<div class="vx-conversion-chart-loading">Realized-results chart unavailable.</div>';return}const clone=source.cloneNode(true);clone.id='vx-conversion-day-equity-svg';target.replaceChildren(clone)};
 const stage=document.getElementById('vx-home-equity-stage');if(stage)new MutationObserver(cloneDayChart).observe(stage,{childList:true,subtree:true,attributes:true});if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',cloneDayChart,{once:true});else cloneDayChart();
-const loadSwing=async()=>{if(swingLoaded)return;swingLoaded=true;const state=document.querySelector('[data-vx-swing-state]');if(!state)return;try{const r=await fetch('/api/swing-leaders',{credentials:'same-origin',headers:{Accept:'application/json'}});if(!r.ok)throw new Error('unavailable');const d=await r.json(),positions=Array.isArray(d.active_portfolio)?d.active_portfolio.slice(0,3):[],unrealized=Number(d.active_unrealized_model_pnl),realized=Number(d.closed_realized_model_pnl),currentTotal=Number.isFinite(unrealized)&&Number.isFinite(realized)?unrealized+realized:NaN;const rows=positions.length?positions.map(i=>'<div class="vx-conversion-swing-position"><strong>'+esc(i.ticker)+'</strong><span>Score '+esc(i.score)+'</span><span>'+esc(i.return_pct)+'</span></div>').join(''):'<div class="vx-conversion-swing-position"><strong>No active positions</strong><span>Latest published snapshot</span><span></span></div>';state.innerHTML='<div class="vx-conversion-swing-summary"><div><span>Open positions</span><strong>'+esc(d.active_count)+'</strong></div><div><span>Potential candidates</span><strong>'+esc(d.intern_count)+'</strong></div><div><span>Total model P&amp;L</span><strong>'+esc(money(currentTotal))+'</strong></div></div><div class="vx-conversion-swing-positions">'+rows+'</div><div class="vx-conversion-swing-meta">Reviewed each trading morning · Latest published update '+esc(d.snapshot_date||'unavailable')+(d.stale?' · Last validated snapshot':'')+'</div>'}catch(_){state.innerHTML='<div class="vx-conversion-protected-state"><span>Daily portfolio update</span><h3>Latest Swing portfolio update is temporarily unavailable.</h3><p>No replacement values are shown. Open the Swing portfolio page for the current published state.</p><div><a href="${SWING_PATH}#active-portfolio">View Swing Portfolio</a></div></div>'}};
-const activate=key=>{tabs.forEach(t=>{const on=t.dataset.vxPreviewTab===key;t.setAttribute('aria-selected',on?'true':'false');t.tabIndex=on?0:-1});panels.forEach(p=>{const on=p.dataset.vxPreviewPanel===key;p.hidden=!on;p.classList.toggle('is-active',on)});if(key==='swing')loadSwing();if(key==='day')cloneDayChart()};
+const activate=key=>{tabs.forEach(t=>{const on=t.dataset.vxPreviewTab===key;t.setAttribute('aria-selected',on?'true':'false');t.tabIndex=on?0:-1});panels.forEach(p=>{const on=p.dataset.vxPreviewPanel===key;p.hidden=!on;p.classList.toggle('is-active',on)});if(key==='day')cloneDayChart()};
 tabs.forEach((tab,index)=>{tab.addEventListener('click',()=>activate(tab.dataset.vxPreviewTab));tab.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();let next=index;if(e.key==='ArrowLeft')next=(index-1+tabs.length)%tabs.length;if(e.key==='ArrowRight')next=(index+1)%tabs.length;if(e.key==='Home')next=0;if(e.key==='End')next=tabs.length-1;tabs[next].focus();activate(tabs[next].dataset.vxPreviewTab)})});
 })();</script>`;
 

@@ -10,7 +10,7 @@ const PREVIEW_MARKER = 'class="vx-home-proof-preview"';
 const DAY_SECTION_CLASS = "vx-home-day-trading";
 const DAY_ANCHOR_ID = "live-day-trading";
 const DAY_TRADING_PATH = "/trading-systems/day-trading";
-const SWING_TRADING_PATH = "/trading-systems/swing-trading";
+const { OVERVIEW_PATH: SWING_TRADING_PATH } = require("./lib/website-swing-public");
 const OPTIONS_PATH = "/trading-systems/options";
 
 function escapeRegex(value) {
@@ -73,8 +73,8 @@ function renderSystemSelector() {
         <span>Swing Trading</span><strong>Multi-session positions</strong>
         <div class="vx-home-system-fact"><b>Holding horizon</b><p>Positions can remain active across multiple sessions.</p></div>
         <div class="vx-home-system-fact"><b>How often to check</b><p>Review the public portfolio and its daily updates.</p></div>
-        <div class="vx-home-system-fact"><b>Public evidence</b><p>Public research/model portfolio and swing equity history.</p></div>
-        <div class="vx-home-system-fact"><b>Viewer access</b><p>The public Swing portfolio remains viewable without login.</p></div>
+        <div class="vx-home-system-fact"><b>Public evidence</b><p>Public overview of the model and the evidence available to viewers.</p></div>
+        <div class="vx-home-system-fact"><b>Viewer access</b><p>An approved viewer code opens the Swing model portfolio.</p></div>
         <em>Learn about Swing Trading →</em>
       </a>
       <a class="vx-home-system-card" href="${OPTIONS_PATH}">

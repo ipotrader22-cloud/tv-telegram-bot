@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+const { OVERVIEW_PATH } = require("./lib/website-swing-public");
 
 const CANONICAL_HOST = "www.vixale.com";
 const APEX_HOST = "vixale.com";
@@ -11,7 +12,8 @@ const PUBLIC_META = Object.freeze({
   "/": ["Vixale | Trading Systems, Results & Free Viewer Access", "Compare Vixale Day Trading, Swing Trading, and Options, inspect available evidence, and request free read-only viewer access."],
   "/trading-systems": ["Vixale | Trading Systems", "Compare Vixale Day Trading, Swing Trading, and Options by holding horizon, public evidence, and viewer-access boundary."],
   "/trading-systems/day-trading": ["Vixale | Day Trading", "Understand Vixale Day Trading, Prime and Edge, public realized evidence, and what read-only viewer access adds."],
-  "/trading-systems/swing-trading": ["Vixale | Swing Trading", "Review the public Vixale Swing research/model portfolio, model equity history, and delayed-quote disclosures."],
+  [OVERVIEW_PATH]: ["Vixale | Swing Trading", "Learn how Vixale publishes its Swing model portfolio and how to request viewer access."],
+  "/daily-trading-summary": ["Vixale | Daily Trading Recaps", "Browse Vixale daily recaps and recorded trading activity."],
   "/trading-systems/options": ["Vixale | Options", "Understand the owner-entered Vixale Option Journal evidence and what protected viewer access adds."],
   "/results": ["Vixale | Results by Trading System", "Review Day Trading, Swing Trading, and Options evidence separately with their source and access boundaries."],
   "/services": ["Vixale | Services", "Choose among Signals & Research, Automation / Setup, Strategy Review / Development, and Custom Bot / Integration services."],
@@ -23,7 +25,7 @@ const PUBLIC_META = Object.freeze({
   "/risk-management": ["Vixale | Risk Management", "Review Vixale risk disclosures and general risk-management information for trading-system users."],
 });
 
-const SITEMAP_PATHS = Object.freeze(Object.keys(PUBLIC_META).filter(path => path !== "/pricing"));
+const SITEMAP_PATHS = Object.freeze(Object.keys(PUBLIC_META));
 
 const styles = `<style id="${STYLE_ID}">
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}body{overflow-x:hidden}img,svg{max-width:100%}input,select,textarea,button{font:inherit}.vx-skip-link{position:fixed;left:12px;top:10px;z-index:2147483647;transform:translateY(-180%);padding:10px 14px;border-radius:10px;background:#101713;color:#fff!important;font-size:14px;font-weight:700;text-decoration:none}.vx-skip-link:focus{transform:translateY(0)}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:3px solid #087a48!important;outline-offset:3px!important}.vx-watch-chart-svg text,.vx-home-equity-svg text{fill:#5f6d67!important}.vx-evidence-freshness-note,.vx-evidence-coverage{font-size:12px!important;color:#5f6d67!important}input:invalid:focus,select:invalid:focus,textarea:invalid:focus{border-color:#9b2c2c!important;box-shadow:0 0 0 3px rgba(155,44,44,.12)!important}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}@media(max-width:768px){main,.wrap{max-width:100%}.table-wrap{max-width:100%;overflow-x:auto}.vx-evidence-facts{grid-template-columns:1fr!important}}@media(max-width:390px){.wrap{padding-left:16px!important;padding-right:16px!important}.vx-public-nav-cta{min-height:42px!important}.vx-systems-btn,.vx-watch-btn,.vx-home-hero-btn{white-space:normal;text-align:center}.vx-evidence-context{padding:16px!important}}@media(min-width:1200px){main{min-width:0}}
@@ -111,7 +113,7 @@ function refinePublicQaHtml(html, pathname) {
   return applyAccessibility(setSeo(html, pathname));
 }
 
-function renderRobotsTxt() {
+function renderRobotsTxt(host = CANONICAL_HOST) {
   return [
     "User-agent: *",
     "Allow: /",
@@ -120,13 +122,14 @@ function renderRobotsTxt() {
     "Disallow: /dashboard/",
     "Disallow: /dashboard-access/",
     "Disallow: /trading-systems/options/viewer",
-    `Sitemap: https://${CANONICAL_HOST}/sitemap.xml`,
+    `Sitemap: https://${host}/sitemap.xml`,
     "",
   ].join("\n");
 }
 
-function renderSitemapXml() {
-  const urls = SITEMAP_PATHS.map(path => `  <url><loc>${escapeXml(canonicalUrl(path))}</loc></url>`).join("\n");
+function renderSitemapXml(host = CANONICAL_HOST) {
+  const urls = SITEMAP_PATHS.filter(path => host !== "ru.vixale.com" || path !== "/daily-trading-summary")
+    .map(path => `  <url><loc>${escapeXml("https://" + host + path)}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 
@@ -140,13 +143,15 @@ function installPublicQaRefinement(app) {
     const redirect = canonicalRedirectTarget(req.get?.("host") || req.headers?.host || "", req.originalUrl || req.url || "/");
     if (redirect) return res.redirect(308, redirect);
 
+    if (pathname === "/daily-recaps") return res.redirect(301, "/daily-trading-summary");
+    const siteHost = String(req.get?.("host") || "").toLowerCase().replace(/:\d+$/, "") === "ru.vixale.com" ? "ru.vixale.com" : CANONICAL_HOST;
     if (pathname === "/robots.txt") {
       res.status(200); res.setHeader("Content-Type", "text/plain; charset=utf-8"); res.setHeader("Cache-Control", "public, max-age=3600");
-      return method === "HEAD" ? res.end() : res.send(renderRobotsTxt());
+      return method === "HEAD" ? res.end() : res.send(renderRobotsTxt(siteHost));
     }
     if (pathname === "/sitemap.xml") {
       res.status(200); res.setHeader("Content-Type", "application/xml; charset=utf-8"); res.setHeader("Cache-Control", "public, max-age=3600");
-      return method === "HEAD" ? res.end() : res.send(renderSitemapXml());
+      return method === "HEAD" ? res.end() : res.send(renderSitemapXml(siteHost));
     }
     if (!PUBLIC_META[pathname]) return next();
 

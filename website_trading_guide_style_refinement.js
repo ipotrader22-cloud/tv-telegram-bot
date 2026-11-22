@@ -41,14 +41,14 @@ const siteAlignedStyles = `
   .example h3{margin-bottom:14px;font-size:19px;line-height:1.2;letter-spacing:-.01em;font-weight:600}
   .quote{border-radius:16px;background:#14231d;font-size:12.5px;line-height:1.6}
   .row{color:#33433c}
-  .row span{color:#728079}
+  .row span{color:#52635b}
   .row b{font-weight:600}
   .note{background:#fbf7ed;color:#746443}
 
   .quick{margin-bottom:72px;padding:26px;border-radius:26px;background:#17362b;box-shadow:none}
   .quick h2{font-size:26px;line-height:1.2;letter-spacing:-.02em;font-weight:500}
   .quick-item strong{font-weight:600}
-  .footer{color:#7a8781}
+  .footer{color:#52635b}
 
   @media(max-width:820px){
     .hero{padding:42px 0 34px}

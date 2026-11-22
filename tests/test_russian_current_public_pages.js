@@ -3,6 +3,7 @@
 const assert = require("assert");
 const {
   RUNTIME_SCRIPT_ID,
+  buildRuntimeLocalizationScript,
   translateChunk,
   translateRuntimeChunk,
   localizeRussianHtml,
@@ -68,8 +69,10 @@ assert.match(localized, /<html lang="ru">/);
 assert.match(localized, /Vixale \| Тарифы/);
 assert.match(localized, /Выберите одну систему или следите за всеми тремя\./);
 assert.match(localized, new RegExp(`id="${RUNTIME_SCRIPT_ID}"`));
-assert.match(localized, /Последнее обновление:/, "runtime pattern catalog must be embedded");
-assert.match(localized, /Открытый P&L/, "decoded browser-visible Open P&L translation must be embedded");
+assert.match(localized, /defer src="\/assets\/vixale-ru\.[a-f0-9]{12}\.js"/);
+assert.doesNotMatch(localized, /const map=new Map/);
+assert.match(buildRuntimeLocalizationScript(), /Последнее обновление:/);
+assert.match(buildRuntimeLocalizationScript(), /Открытый P&L/);
 assert.match(localized, /document\.getElementById\('dynamic'\)\.textContent='Last updated: unavailable'/, "page script must remain byte-for-byte unchanged");
 
 const secondPass = localizeRussianHtml(localized, "/pricing");

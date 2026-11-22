@@ -43,8 +43,8 @@ assert(hero.includes('data-vx-mirror-text="vx-home-day-badge"'));
 assert(hero.includes('data-vx-mirror-text="vx-home-day-updated"'));
 assert(!hero.includes("vx-home-open-pnl"), "must use the real existing Open P&L source id");
 
-assert(hero.includes("Daily portfolio preview"));
-assert(hero.includes('href="/trading-systems/swing-trading#active-portfolio">View Swing Portfolio'));
+assert(hero.includes("Portfolio access for approved viewers"));
+assert(hero.includes('href="/trading-systems/swing-trading">Log in to view portfolio'));
 assert(!hero.includes("Quotes delayed"), "new sales preview must use daily-update wording");
 assert(hero.includes("Daily website updates"));
 assert(hero.includes("Position details and supporting records are protected."));
@@ -64,7 +64,7 @@ for (const phrase of [
   "real brokerage records",
 ]) assert(cards.includes(phrase), `missing approved card copy: ${phrase}`);
 assert(cards.includes('href="/trading-systems/day-trading">Get Day Trading Signals</a>'));
-assert(cards.includes('href="/trading-systems/swing-trading#active-portfolio">View Active Portfolio and candidates</a>'));
+assert(cards.includes('href="/trading-systems/swing-trading/overview">View Active Portfolio and candidates</a>'));
 assert(cards.includes('href="/trading-systems/options">Get options signals</a>'));
 assert(!cards.includes(">Explore Day Trading →</a>"));
 assert(!cards.includes(">View Swing Portfolio →</a>"));
@@ -78,12 +78,7 @@ assert(refined.includes('class="vx-home-day-trading"'), "existing lower Day data
 assert(refined.includes(`id="${home.STYLE_ID}"`));
 assert(refined.includes(".vx-conversion-btn.recaps{"), "Daily Trading Recaps CTA must have a distinct visible treatment");
 assert(refined.includes(`id="${home.SCRIPT_ID}"`));
-assert(refined.includes("fetch('/api/swing-leaders'"), "Swing tab must reuse the existing public Swing API");
-assert(refined.includes("d.active_unrealized_model_pnl"), "Swing homepage total must use current unrealized Model P&L");
-assert(refined.includes("d.closed_realized_model_pnl"), "Swing homepage total must use current realized Model P&L");
-assert(refined.includes("Number.isFinite(unrealized)&&Number.isFinite(realized)?unrealized+realized:NaN"), "Swing homepage current total must sum current unrealized and realized API aggregates");
-assert(!refined.includes("latest.total_model_pnl"), "Swing homepage total must not use the latest immutable Equity History point");
-assert(!refined.includes("d.equity_history"), "Swing homepage preview must not derive the current total from Equity History");
+assert(!refined.includes("/api/swing-leaders"), "public homepage must not fetch protected Swing data");
 assert(!refined.includes("setInterval("), "homepage tabs must not add interval polling");
 assert(refined.includes("ArrowLeft") && refined.includes("ArrowRight") && refined.includes("Home") && refined.includes("End"), "tabs must support keyboard navigation");
 assert(refined.includes("prefers-reduced-motion:reduce"));

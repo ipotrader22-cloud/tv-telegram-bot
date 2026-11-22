@@ -8,7 +8,7 @@ const ACCESS_PATH = "/access";
 const SERVICES_PATH = "/services";
 const STYLE_ID = "vx-conversion-access-services-style";
 const MARKER = "data-vx-conversion-access-services";
-const SUPPORTED_PATHS = new Set([DAY_PATH, ACCESS_PATH, SERVICES_PATH]);
+const SUPPORTED_PATHS = new Set([DAY_PATH]);
 
 function escapeRegex(value){return String(value).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}
 function tagRange(html,tag,start){if(start<0)return null;const openEnd=html.indexOf(">",start);if(openEnd<0)return null;const re=new RegExp(`<\\/?${escapeRegex(tag)}\\b[^>]*>`,"gi");re.lastIndex=start;let depth=0,m;while((m=re.exec(html))){depth+=new RegExp(`^<\\/${escapeRegex(tag)}\\b`,"i").test(m[0])?-1:1;if(depth===0)return{start,end:re.lastIndex,openEnd:openEnd+1,closeStart:m.index};}return null;}
@@ -33,7 +33,7 @@ function injectStyles(html){if(html.includes(`id="${STYLE_ID}"`))return html;ret
 function refineDay(html){if(html.includes(`${MARKER}="telegram-example"`))return html;return injectStyles(appendBeforeMainClose(html,renderTelegramExample()));}
 function refineAccess(html,system){if(html.includes(`${MARKER}="access"`))return html;return injectStyles(prependMain(html,renderAccessIntro(system)));}
 function refineServices(html){if(html.includes(`${MARKER}="services"`))return html;return injectStyles(prependMain(html,renderServicesIntro()));}
-function refine(html,path,system=""){if(typeof html!=="string")return html;if(path===DAY_PATH)return refineDay(html);if(path===ACCESS_PATH)return refineAccess(html,system);if(path===SERVICES_PATH)return refineServices(html);return html;}
+function refine(html,path,system=""){if(typeof html!=="string")return html;if(path===DAY_PATH)return refineDay(html);return html;}
 function install(app){app.use((req,res,next)=>{const method=String(req.method||"GET").toUpperCase(),path=String(req.path||req.url||"/").split("?")[0];if((method!=="GET"&&method!=="HEAD")||!SUPPORTED_PATHS.has(path))return next();const send=res.send.bind(res);res.send=function(body){const type=String(res.getHeader?.("Content-Type")||"");if(typeof body==="string"&&(!type||type.includes("html"))&&res.statusCode<300)body=refine(body,path,req.query&&req.query.system);return send(body)};return next()});}
 function copyExpressStatics(target,source){for(const key of Reflect.ownKeys(source)){if(["length","name","prototype","arguments","caller"].includes(String(key)))continue;const d=Object.getOwnPropertyDescriptor(source,key);if(d)try{Object.defineProperty(target,key,d)}catch(_){}}Object.setPrototypeOf(target,Object.getPrototypeOf(source))}
 function wrapExpress(factory){if(typeof factory!=="function"||factory.__vixaleConversionAccessServicesWrapped)return factory;function wrapped(...args){const app=factory(...args);install(app);return app}copyExpressStatics(wrapped,factory);Object.defineProperty(wrapped,"__vixaleConversionAccessServicesWrapped",{value:true});return wrapped}
