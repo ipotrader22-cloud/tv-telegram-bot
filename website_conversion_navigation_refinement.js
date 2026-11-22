@@ -43,6 +43,7 @@ const PUBLIC_PATHS = new Set([
   TRADING_SYSTEMS_PATH,
   DAY_PATH,
   SWING_PATH,
+  "/trading-systems/swing-trading/overview",
   OPTIONS_PATH,
   RESULTS_PATH,
   DAILY_SUMMARY_PATH,
@@ -116,7 +117,7 @@ function renderPublicNavLinks(path = "/") {
     navAnchor(path, SERVICES_PATH, "Services"),
     navAnchor(path, HELP_PATH, "Help"),
   ].join("");
-  return `<div class="vx-unified-public-nav" aria-label="Primary navigation">${links}</div><div class="vx-direct-nav-actions"><a class="vx-public-nav-login" href="${LOGIN_PATH}">Log In</a><a class="vx-public-nav-cta" href="${LIVE_ACCESS_HREF}">Live Access</a></div>`;
+  return `<div class="vx-unified-public-nav" role="navigation" aria-label="Primary navigation">${links}</div><div class="vx-direct-nav-actions"><a class="vx-public-nav-login" href="${LOGIN_PATH}">Log In</a><a class="vx-public-nav-cta" href="${LIVE_ACCESS_HREF}">Live Access</a></div>`;
 }
 
 function isPublicPath(path) {

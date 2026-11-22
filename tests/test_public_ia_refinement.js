@@ -53,10 +53,10 @@ assert.strictEqual(directHomeCopy, "Request Free Access · Request Free Access")
 assert.strictEqual(normalizeAccessLinksToHome('<a href="#password-access">x</a><a href="/services#password-access">y</a>'), '<a href="/#password-access">x</a><a href="/#password-access">y</a>');
 assert.strictEqual(normalizeAccessLinksToAccessPage('<a href="#password-access">x</a><a href="/services#password-access">y</a><a href="/#password-access">z</a>'), '<a href="/access">x</a><a href="/access">y</a><a href="/access">z</a>');
 
-const services = renderServicesFromLanding(sample);
+const { prepareServicesSourceForPublicIa } = require("../website_services_source_parity_fix");
+const services = renderServicesFromLanding(prepareServicesSourceForPublicIa(sample));
 assert(services.includes("<title>Vixale | Services</title>"));
-assert(services.includes(`class="wrap section ${SERVICES_INTRO_MARKER}"`));
-assert(services.includes('<h1 id="vx-services-title">Vixale Services</h1>'));
+assert(services.includes('<h1 id="vx-services-offer-title">Choose one service path.</h1>'));
 assert(services.includes(`class="${SERVICES_OFFER_MARKER}"`));
 for (const heading of ["Signals &amp; Research", "Automation / Setup", "Strategy Review / Development", "Custom Bot / Integration"]) assert(services.includes(heading), `missing service path ${heading}`);
 assert.strictEqual((services.match(/class="vx-services-offer-card"/g) || []).length, 4, "Services must present exactly four commercial path cards");
@@ -108,9 +108,8 @@ assert(access.includes("Access request started from Options"));
 for (const step of ["Request access","Verify email","Manual review","Receive viewer code","Log in"]) assert(access.includes(step), `missing access step ${step}`);
 assert(access.includes("verification link expires after 60 minutes"));
 assert(access.includes("Inbox and Spam/Junk"));
-assert(access.includes("read-only Day Trading dashboard"));
-assert(access.includes("protected Options viewer"));
-assert(access.includes("Swing research/model portfolio is already public"));
+assert(access.includes("Day Trading dashboard, Swing model portfolio, and eligible Options brokerage proofs"));
+assert(access.indexOf('action="/password-request"') < access.indexOf('class="vx-access-steps"'));
 assert(access.includes("Each approved viewer code has its own expiration date"));
 assert(access.includes('href="/login">Log In with your viewer code</a>'));
 assert(access.includes('action="/password-request"'));

@@ -1,0 +1,39 @@
+name: Public website browser checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app.js"
+      - "website_*.js"
+      - "lib/website-*.js"
+      - "public/**"
+      - "tests/qa-public-website.cjs"
+      - "tests/test_public_ia_refinement.js"
+      - "tests/test_results_chart_refinement.js"
+      - "tests/test_issue107_pr7_public_qa.js"
+      - "package*.json"
+      - ".gitattributes"
+      - ".github/workflows/public-website-browser.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  website:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - run: node --check app.js
+      - run: node tests/test_public_ia_refinement.js
+      - run: node tests/test_results_chart_refinement.js
+      - run: node tests/test_issue107_pr7_public_qa.js
+      - run: node tests/qa-public-website.cjs

@@ -6,7 +6,6 @@ const { google } = require("googleapis");
 const ARCHIVE_PATH = "/closed-trades";
 const CLOSED_TRADES_SHEET = "Closed Trades";
 const STYLE_ID = "vx-closed-trades-archive-style";
-const SCRIPT_ID = "vx-closed-trades-archive-script";
 const SNAPSHOT_TIMEOUT_MS = 4500;
 const CACHE_MS = 60_000;
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID || "";
@@ -296,13 +295,60 @@ function dateRangeText(summary) {
   return `${first} → ${last}`;
 }
 
-function archiveContent(snapshot) {
+const PAGE_SIZE = 50;
+const SIDES = [["", "All sides"], ["long", "Long"], ["short", "Short"]];
+const OUTCOMES = [["", "All outcomes"], ["win", "Wins"], ["loss", "Losses"], ["neutral", "Flat / N/A"]];
+
+function archivePage(trades, query = {}) {
+  const search = typeof query.q === "string" ? query.q.trim().slice(0, 80) : "";
+  const side = SIDES.some(([key]) => key === query.side) ? query.side : "";
+  const outcome = OUTCOMES.some(([key]) => key === query.outcome) ? query.outcome : "";
+  const requested = typeof query.page === "string" && /^\d+$/.test(query.page)
+    ? Number(query.page) : 1;
+  const needle = search.toLowerCase();
+  const matches = trades.filter(trade => {
+    const tradeOutcome = trade.result > 0 ? "win" : trade.result < 0 ? "loss" : "neutral";
+    const text = [trade.symbol, trade.side, trade.event, prettyEvent(trade.event), trade.close_time].join(" ").toLowerCase();
+    return (!needle || text.includes(needle)) && (!side || String(trade.side).toLowerCase() === side)
+      && (!outcome || outcome === tradeOutcome);
+  });
+  const pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
+  const page = Math.max(1, Math.min(pages, requested));
+  const offset = (page - 1) * PAGE_SIZE;
+  return { search, side, outcome, page, pages, total: matches.length, rows: matches.slice(offset, offset + PAGE_SIZE) };
+}
+
+function pagination(view) {
+  if (view.pages === 1) return "";
+  const pageLink = (number, label) => {
+    const params = new URLSearchParams();
+    if (view.search) params.set("q", view.search);
+    if (view.side) params.set("side", view.side);
+    if (view.outcome) params.set("outcome", view.outcome);
+    params.set("page", String(number));
+    return '<a href="' + ARCHIVE_PATH + '?' + escapeHtml(params.toString()) + '">' + label + '</a>';
+  };
+  return '<nav class="vx-closed-pagination" aria-label="Closed trades pages">' +
+    (view.page > 1 ? pageLink(view.page - 1, "Previous page") : "") +
+    '<span>' + view.page + ' / ' + view.pages + '</span>' +
+    (view.page < view.pages ? pageLink(view.page + 1, "Next page") : "") + '</nav>';
+}
+function renderOptions(choices, active) {
+  return choices.map(([key, label]) => '<option value="' + key + '"' + (key === active ? " selected" : "") + '>' + label + '</option>').join("");
+}
+
+function archiveContent(snapshot, query) {
   const summary = snapshot?.summary || {};
   const available = Boolean(snapshot);
   const status = available
     ? (snapshot.stale ? "Last verified Google Sheets snapshot" : "Google Sheets · Closed Trades")
     : "Closed Trades source unavailable";
-  const rows = available ? archiveRows(snapshot.trades) : `<tr><td class="vx-closed-empty" colspan="8">Closed Trades data is temporarily unavailable. No simulated rows are shown.</td></tr>`;
+  const allTrades = Array.isArray(snapshot?.trades) ? snapshot.trades : [];
+  const view = archivePage(allTrades, query);
+  const filtered = Boolean(view.search || view.side || view.outcome);
+  const rows = available ? (filtered && !view.total
+    ? '<tr><td class="vx-closed-empty" colspan="8">No matching trades.</td></tr>'
+    : archiveRows(view.rows)) : `<tr><td class="vx-closed-empty" colspan="8">Closed Trades data is temporarily unavailable. No simulated rows are shown.</td></tr>`;
 
   return `<section class="vx-closed-page"><div class="vx-closed-wrap">
     <div class="vx-closed-hero">
@@ -319,20 +365,22 @@ function archiveContent(snapshot) {
 
     <div class="vx-closed-panel">
       <div class="vx-closed-toolbar">
-        <div class="vx-closed-toolbar-copy"><h2>Trade history</h2><p><span id="vx-closed-visible-count">${available ? escapeHtml(summary.total_trades) : "0"}</span> records shown</p></div>
-        <div class="vx-closed-controls">
-          <input id="vx-closed-search" type="search" placeholder="Search symbol or event" aria-label="Search closed trades">
-          <select id="vx-closed-side" aria-label="Filter by side"><option value="">All sides</option><option value="long">Long</option><option value="short">Short</option></select>
-          <select id="vx-closed-outcome" aria-label="Filter by outcome"><option value="">All outcomes</option><option value="win">Wins</option><option value="loss">Losses</option><option value="neutral">Flat / N/A</option></select>
-          <button id="vx-closed-refresh" type="button">Refresh data</button>
-        </div>
+        <div class="vx-closed-toolbar-copy"><h2>Trade history</h2><p role="status"><span id="vx-closed-visible-count">${view.rows.length} / ${view.total}</span> records shown</p></div>
+        <form class="vx-closed-controls" method="get" action="${ARCHIVE_PATH}">
+          <input name="q" id="vx-closed-search" type="search" maxlength="80" placeholder="Search symbol or event" aria-label="Search closed trades" value="${escapeHtml(view.search)}">
+          <select name="side" aria-label="Filter by side">${renderOptions(SIDES, view.side)}</select>
+          <select name="outcome" aria-label="Filter by outcome">${renderOptions(OUTCOMES, view.outcome)}</select>
+          <button type="submit">Apply filters</button>
+        </form>
       </div>
-      <div class="vx-closed-table-scroll">
+      <div class="vx-closed-table-scroll" role="region" aria-label="Closed trades table" tabindex="0">
         <table class="vx-closed-table">
+          <caption class="vx-closed-caption">Day Trading closed trades</caption>
           <thead><tr><th>Closed</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>Size</th><th>Realized P&amp;L</th><th>Event</th></tr></thead>
           <tbody id="vx-closed-table-body">${rows}</tbody>
         </table>
       </div>
+      ${pagination(view)}
       <div class="vx-closed-foot">Closed Trades ledger · read-only archive · Open/unrealized P&amp;L is not included here.</div>
     </div>
   </div></section>`;
@@ -343,44 +391,26 @@ const styles = `
 .vx-closed-page{min-height:calc(100vh - 140px);padding:54px 0 86px;background:linear-gradient(180deg,#f3faf6 0%,#f8fbf9 34%,#fff 100%);color:#17211d}
 .vx-closed-wrap{max-width:1420px;margin:0 auto;padding:0 24px;box-sizing:border-box}
 .vx-closed-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:26px}.vx-closed-hero>div:first-child{max-width:800px}.vx-closed-kicker{color:#23704f;font-size:11px;font-weight:650;letter-spacing:.085em;text-transform:uppercase}.vx-closed-hero h1{margin:10px 0 0;font-size:clamp(38px,5vw,62px);line-height:1;letter-spacing:-.045em;font-weight:500}.vx-closed-hero p{max-width:720px;margin:16px 0 0;color:#6f7a75;font-size:15px;line-height:1.6}.vx-closed-source{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:#287153;font-size:11px}.vx-closed-source span{width:8px;height:8px;border-radius:50%;background:#0aa25f;box-shadow:0 0 0 4px rgba(10,162,95,.09)}
-.vx-closed-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.vx-closed-summary-card{min-height:116px;padding:20px;border:1px solid #dce7e1;border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 12px 34px rgba(31,67,51,.04)}.vx-closed-summary-card div{color:#85918c;font-size:10.5px;letter-spacing:.055em;text-transform:uppercase}.vx-closed-summary-card strong{display:block;margin-top:13px;font-size:25px;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.vx-closed-summary-card strong.positive{color:#009452}.vx-closed-summary-card strong.negative{color:#b33a3a}.vx-closed-summary-card .vx-closed-range{font-size:18px;line-height:1.3}
-.vx-closed-panel{overflow:hidden;border:1px solid #d8e6de;border-radius:28px;background:#fff;box-shadow:0 22px 60px rgba(31,67,51,.08)}.vx-closed-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:20px 22px;border-bottom:1px solid #e5eee9;background:#fbfdfc}.vx-closed-toolbar h2{margin:0;font-size:20px;font-weight:550;letter-spacing:-.025em}.vx-closed-toolbar p{margin:5px 0 0;color:#87918d;font-size:12px}.vx-closed-controls{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.vx-closed-controls input,.vx-closed-controls select,.vx-closed-controls button{min-height:40px;border:1px solid #d4e0da;border-radius:12px;background:#fff;color:#26302c;font:inherit;font-size:12.5px;padding:0 12px;box-sizing:border-box}.vx-closed-controls input{min-width:220px}.vx-closed-controls button{cursor:pointer;font-weight:600}.vx-closed-controls button:hover{border-color:#9fbeae;background:#f7fbf9}
-.vx-closed-table-scroll{overflow:auto}.vx-closed-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;font-size:13px}.vx-closed-table th{position:sticky;top:0;z-index:1;padding:13px 16px;border-bottom:1px solid #e5eee9;background:#f8fbf9;color:#7f8b85;text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.055em;text-transform:uppercase;white-space:nowrap}.vx-closed-table td{padding:14px 16px;border-bottom:1px solid #edf2ef;color:#4f5d57;white-space:nowrap}.vx-closed-table tbody tr:hover td{background:#fbfdfc}.vx-closed-table td strong{color:#17211d;font-weight:600}.vx-closed-time{color:#6f7a75!important;font-variant-numeric:tabular-nums}.vx-side{display:inline-flex;align-items:center;min-height:26px;padding:0 9px;border-radius:999px;border:1px solid #dce7e1;background:#f8fbf9;font-size:10.5px;font-weight:650;letter-spacing:.045em}.vx-side-long{color:#087c49}.vx-side-short{color:#9d4141}.vx-pnl{font-variant-numeric:tabular-nums;font-weight:600}.vx-pnl.positive{color:#009452}.vx-pnl.negative{color:#b33a3a}.vx-pnl.neutral{color:#68736f}.vx-closed-empty{padding:46px 20px!important;text-align:center;color:#7d8983!important}.vx-closed-foot{padding:14px 20px;color:#8a9590;font-size:11.5px;background:#fbfdfc}
+.vx-closed-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.vx-closed-summary-card{min-height:116px;padding:20px;border:1px solid #dce7e1;border-radius:22px;background:rgba(255,255,255,.96);box-shadow:0 12px 34px rgba(31,67,51,.04)}.vx-closed-summary-card div{color:#85918c;font-size:10.5px;letter-spacing:.055em;text-transform:uppercase}.vx-closed-summary-card strong{display:block;margin-top:13px;font-size:25px;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.vx-closed-summary-card strong.positive{color:#087643}.vx-closed-summary-card strong.negative{color:#b33a3a}.vx-closed-summary-card .vx-closed-range{font-size:18px;line-height:1.3}
+.vx-closed-panel{overflow:hidden;border:1px solid #d8e6de;border-radius:28px;background:#fff;box-shadow:0 22px 60px rgba(31,67,51,.08)}.vx-closed-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:20px 22px;border-bottom:1px solid #e5eee9;background:#fbfdfc}.vx-closed-toolbar h2{margin:0;font-size:20px;font-weight:550;letter-spacing:-.025em}.vx-closed-toolbar p{margin:5px 0 0;color:#52635b;font-size:12px}.vx-closed-controls{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.vx-closed-controls input,.vx-closed-controls select,.vx-closed-controls button{min-height:40px;border:1px solid #d4e0da;border-radius:12px;background:#fff;color:#26302c;font:inherit;font-size:12.5px;padding:0 12px;box-sizing:border-box}.vx-closed-controls input{min-width:220px}.vx-closed-controls button{cursor:pointer;font-weight:600}.vx-closed-controls button:hover{border-color:#9fbeae;background:#f7fbf9}
+.vx-closed-table-scroll{overflow:auto}.vx-closed-caption{padding:10px 16px;text-align:left;color:#52635b}.vx-closed-pagination{display:flex;align-items:center;justify-content:center;gap:16px;padding:8px 16px;color:#52635b}.vx-closed-pagination a{display:inline-flex;align-items:center;min-height:44px;color:#087643}.vx-closed-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;font-size:13px}.vx-closed-table th{position:sticky;top:0;z-index:1;padding:13px 16px;border-bottom:1px solid #e5eee9;background:#f8fbf9;color:#52635b;text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.055em;text-transform:uppercase;white-space:nowrap}.vx-closed-table td{padding:14px 16px;border-bottom:1px solid #edf2ef;color:#4f5d57;white-space:nowrap}.vx-closed-table tbody tr:hover td{background:#fbfdfc}.vx-closed-table td strong{color:#17211d;font-weight:600}.vx-closed-time{color:#6f7a75!important;font-variant-numeric:tabular-nums}.vx-side{display:inline-flex;align-items:center;min-height:26px;padding:0 9px;border-radius:999px;border:1px solid #dce7e1;background:#f8fbf9;font-size:10.5px;font-weight:650;letter-spacing:.045em}.vx-side-long{color:#087c49}.vx-side-short{color:#9d4141}.vx-pnl{font-variant-numeric:tabular-nums;font-weight:600}.vx-pnl.positive{color:#087643}.vx-pnl.negative{color:#b33a3a}.vx-pnl.neutral{color:#68736f}.vx-closed-empty{padding:46px 20px!important;text-align:center;color:#52635b!important}.vx-closed-foot{padding:14px 20px;color:#52635b;font-size:11.5px;background:#fbfdfc}
 .vx-home-equity-ledger-link{color:#4e6157;text-decoration:underline;text-underline-offset:3px}
 @media(max-width:900px){.vx-closed-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.vx-closed-hero,.vx-closed-toolbar{align-items:flex-start;flex-direction:column}.vx-closed-controls{justify-content:flex-start;width:100%}}
 @media(max-width:600px){.vx-closed-page{padding:38px 0 64px}.vx-closed-wrap{padding:0 14px}.vx-closed-summary{gap:9px}.vx-closed-summary-card{min-height:96px;padding:15px;border-radius:18px}.vx-closed-summary-card strong{font-size:21px}.vx-closed-summary-card .vx-closed-range{font-size:14px}.vx-closed-panel{border-radius:22px}.vx-closed-toolbar{padding:17px}.vx-closed-controls{display:grid;grid-template-columns:1fr 1fr}.vx-closed-controls input{grid-column:1/-1;min-width:0;width:100%}.vx-closed-controls button{grid-column:1/-1}.vx-closed-controls select{width:100%}}
 </style>`;
-
-const script = `
-<script id="${SCRIPT_ID}">
-(() => {
-  const rows=[...document.querySelectorAll('[data-archive-row]')];
-  const search=document.getElementById('vx-closed-search');
-  const side=document.getElementById('vx-closed-side');
-  const outcome=document.getElementById('vx-closed-outcome');
-  const count=document.getElementById('vx-closed-visible-count');
-  const refresh=document.getElementById('vx-closed-refresh');
-  function apply(){const q=String(search?.value||'').trim().toLowerCase(),s=String(side?.value||''),o=String(outcome?.value||'');let visible=0;rows.forEach(row=>{const show=(!q||String(row.dataset.search||'').includes(q))&&(!s||row.dataset.side===s)&&(!o||row.dataset.outcome===o);row.hidden=!show;if(show)visible+=1;});if(count)count.textContent=String(visible);}
-  [search,side,outcome].forEach(el=>el&&el.addEventListener('input',apply));
-  if(refresh)refresh.addEventListener('click',()=>window.location.reload());
-})();
-</script>`;
 
 function injectAssets(html) {
   let result = html;
   if (!result.includes(`id="${STYLE_ID}"`)) {
     result = result.includes("</head>") ? result.replace("</head>", () => `${styles}\n</head>`) : `${styles}${result}`;
   }
-  if (!result.includes(`id="${SCRIPT_ID}"`)) {
-    result = result.includes("</body>") ? result.replace("</body>", () => `${script}\n</body>`) : `${result}${script}`;
-  }
   return result;
 }
 
-function refineClosedTradesArchivePage(html, snapshot) {
+function refineClosedTradesArchivePage(html, snapshot, query) {
   if (typeof html !== "string") return html;
   let result = refineGlobalArchiveLinks(html);
-  result = replaceMainContents(result, archiveContent(snapshot));
+  result = replaceMainContents(result, archiveContent(snapshot, query));
   result = updateTitle(result, "Vixale | Closed Trades Archive");
   result = updateCanonical(result);
   return injectAssets(result);
@@ -407,7 +437,7 @@ function installClosedTradesArchiveRefinement(app) {
         const type = String(res.getHeader("Content-Type") || "");
         if (typeof body === "string" && (!type || type.includes("html"))) {
           body = originalPath === ARCHIVE_PATH
-            ? refineClosedTradesArchivePage(body, snapshot)
+            ? refineClosedTradesArchivePage(body, snapshot, req.query)
             : refineGlobalArchiveLinks(body);
         }
         return originalSend(body);
@@ -462,7 +492,7 @@ module.exports = {
   ARCHIVE_PATH,
   CLOSED_TRADES_SHEET,
   STYLE_ID,
-  SCRIPT_ID,
+  archivePage,
   SNAPSHOT_TIMEOUT_MS,
   CACHE_MS,
   cleanNumber,

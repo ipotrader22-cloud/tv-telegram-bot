@@ -2,6 +2,8 @@
 
 const Module = require("module");
 const offer = require("./lib/website-commercial-offer");
+const swing = require("./lib/website-swing-public");
+const { assets, installAsset, publicTags } = require("./lib/website-public-assets");
 
 const STYLE_ID = "vx-oct6-user-friendliness-style";
 const SCRIPT_ID = "vx-oct6-user-friendliness-funnel";
@@ -10,6 +12,7 @@ const PUBLIC_PATHS = new Set([
   "/trading-systems",
   "/trading-systems/day-trading",
   "/trading-systems/swing-trading",
+  swing.OVERVIEW_PATH,
   "/trading-systems/options",
   "/results",
   "/pricing",
@@ -111,7 +114,7 @@ function copy(locale) {
       trialMicro: "30 дней сигналов Day Trading через Telegram. Запросите пробный доступ в Telegram; мы подтвердим активацию.",
       viewResults: "Посмотреть результаты",
       exploreDay: "Подробнее о Day Trading",
-      viewSwing: "Посмотреть Swing Portfolio",
+      viewSwing: "О свинг-трейдинге",
       exploreOptions: "Подробнее об Options",
       paidOptions: "Запросить подписку Options — $49/месяц",
       paidSwing: "Запросить подписку Swing — $49/месяц",
@@ -137,7 +140,7 @@ function copy(locale) {
     trialMicro: "30 days of Day Trading signals through Telegram. Request your trial on Telegram; we’ll confirm activation.",
     viewResults: "View Trading Results",
     exploreDay: "Explore Day Trading",
-    viewSwing: "View Swing Portfolio",
+    viewSwing: "Explore Swing Trading",
     exploreOptions: "Explore Options",
     paidOptions: "Request Options Subscription — $49/month",
     paidSwing: "Request Swing Subscription — $49/month",
@@ -157,10 +160,10 @@ function renderPrimaryNavigation(path, locale) {
   const c = copy(locale);
   return [
     navLink(path, "/trading-systems/day-trading", c.day),
-    navLink(path, "/trading-systems/swing-trading", c.swing),
+    navLink(path === swing.PORTFOLIO_PATH ? swing.OVERVIEW_PATH : path, swing.OVERVIEW_PATH, c.swing),
     navLink(path, "/trading-systems/options", c.options),
     navLink(path, "/results", c.results),
-    navLink(path, "/daily-trading-summary", c.recaps),
+    navLink(path, "/daily-trading-summary", locale === "ru" ? c.recaps + " (EN)" : c.recaps),
     navLink(path, "/pricing", c.pricing),
   ].join("");
 }
@@ -185,21 +188,36 @@ function renderSecondaryNavigation(locale) {
 function refineNavigation(html, path, locale) {
   let out = html;
   const primary = rangeByClass(out, "div", "vx-unified-public-nav");
-  if (primary) out = replaceInner(out, primary, renderPrimaryNavigation(path, locale));
+  if (primary && !out.includes('class="vx-public-nav-toggle"')) {
+    const menuLabel = locale === "ru" ? "Меню" : "Menu";
+    const navLabel = locale === "ru" ? "Основная навигация" : "Primary navigation";
+    const toggle = '<button type="button" class="vx-public-nav-toggle" aria-expanded="false" aria-controls="vx-primary-menu">' + menuLabel + '</button>';
+    const menu = '<div class="vx-unified-public-nav" id="vx-primary-menu" role="navigation" aria-label="' + navLabel + '">' + renderPrimaryNavigation(path, locale) + '</div>';
+    out = replaceRange(out, primary, toggle + menu);
+  }
   const actions = rangeByClass(out, "div", "vx-direct-nav-actions");
   if (actions) out = replaceInner(out, actions, renderNavigationActions(locale));
   const secondary = rangeByClass(out, "nav", "vx-public-secondary-nav");
   if (secondary) out = replaceInner(out, secondary, renderSecondaryNavigation(locale));
+  if (primary && path !== swing.PORTFOLIO_PATH && !out.includes('class="vx-public-language"')) {
+    const other = locale === "ru" ? "en" : "ru";
+    const otherHost = other === "ru" ? "ru.vixale.com" : "www.vixale.com";
+    const otherPath = path.startsWith("/daily-trading-summary") ? "/" : path;
+    const languageLink = '<a class="vx-public-language" lang="' + other + '" hreflang="' + other + '" href="https://' + otherHost + otherPath + '">' + (other === "ru" ? "Русский" : "English") + '</a>';
+    const footer = rangeByClass(out, "nav", "vx-public-secondary-nav");
+    if (footer) out = appendInside(out, footer, languageLink);
+    else out = out.replace("</body>", '<footer class="vx-public-secondary-nav">' + languageLink + '</footer></body>');
+  }
   return out;
 }
 
 function renderHomeHeroCopy(locale) {
   const c = copy(locale);
   return '<div class="vx-conversion-kicker">Vixale Trading Systems</div>' +
-    '<h1>Trading signals. Three systems. Your choice.</h1>' +
+    '<h1>' + (locale === "ru" ? "Торговые сигналы в Telegram и обновления портфелей на Vixale." : "Trading signals in Telegram. Portfolio updates on Vixale.") + '</h1>' +
     '<p>' + c.heroLead + '</p>' +
     '<div class="vx-conversion-hero-actions">' +
-      '<a class="vx-conversion-btn primary" data-vx-funnel-kind="trial" data-vx-funnel-system="day-trading" data-vx-funnel-offer="day-trial" href="' + esc(offer.DAY_TRIAL_URL) + '" target="_blank" rel="noopener noreferrer">' + c.trial + '</a>' +
+      '<a class="vx-conversion-btn primary" data-vx-funnel-kind="trial" data-vx-funnel-system="day-trading" data-vx-funnel-offer="day-trial" href="' + esc(offer.DAY_TRIAL_URL) + '" target="_blank" rel="noopener noreferrer">' + (locale === "ru" ? "Попробовать дейтрейдинг 30 дней" : "Start the 30-day Day Trading trial") + '</a>' +
       '<a class="vx-conversion-btn" data-vx-funnel-kind="results" data-vx-funnel-offer="results" href="/results">' + c.viewResults + '</a>' +
     '</div>' +
     '<a class="vx-home-viewer-link" data-vx-funnel-kind="viewer" data-vx-funnel-offer="viewer-access" href="/access">' + c.viewer + '</a>' +
@@ -211,13 +229,13 @@ function renderHomeCards(locale) {
   if (locale === "ru") {
     return '<section class="vx-conversion-system-cards" aria-label="Торговые системы Vixale">' +
       '<article><span>DAY TRADING</span><h2>Дейтрейдинговые системы на базе ИИ</h2><p>Сигналы Live Day Trading мгновенно в режиме реального времени поступают на сайт и в Telegram. Все сделки фиксируются и публикуются на dashboard сайта, а результаты сразу доступны на сайте.</p><p>Следуйте точным сигналам по акциям, входам и выходам. Vixale Prime закрывает позиции к концу торгового дня; Vixale Edge может удерживать позиции овернайт.</p><a data-vx-funnel-kind="system" data-vx-funnel-system="day-trading" href="/trading-systems/day-trading">' + c.exploreDay + '</a></article>' +
-      '<article><span>SWING TRADING</span><h2>Активный портфель</h2><p>10 лучших на данный момент акций, выбранных фирменной системой Vixale для ранжирования swing-акций. Проверяйте новые добавления и выходы — обновления публикуются ежедневно примерно в 10:00. Active Portfolio обновляется на сайте в режиме реального времени. Надёжное управление рисками. Доступна полная автоматизация.</p><a data-vx-funnel-kind="system" data-vx-funnel-system="swing-trading" href="/trading-systems/swing-trading#active-portfolio">' + c.viewSwing + '</a></article>' +
+      '<article><span>SWING TRADING</span><h2>Активный портфель</h2><p>10 лучших на данный момент акций, выбранных фирменной системой Vixale для ранжирования swing-акций. Проверяйте новые добавления и выходы — обновления публикуются ежедневно примерно в 10:00. Active Portfolio обновляется на сайте в режиме реального времени. Надёжное управление рисками. Доступна полная автоматизация.</p><a data-vx-funnel-kind="system" data-vx-funnel-system="swing-trading" href="/trading-systems/swing-trading/overview">' + c.viewSwing + '</a></article>' +
       '<article><span>OPTIONS</span><h2>Стрэддлы, календари, кондоры и другое</h2><p>Следите за опубликованными позициями Options и ежедневными обновлениями на сайте. Options не ограничен одной структурой или только 0DTE.</p><a data-vx-funnel-kind="system" data-vx-funnel-system="options" href="/trading-systems/options">' + c.exploreOptions + '</a></article>' +
     '</section>';
   }
   return '<section class="vx-conversion-system-cards" aria-label="Vixale trading systems">' +
     '<article><span>DAY TRADING</span><h2>AI Driven Day Trading Systems</h2><p>Live Day Trading signals are delivered instantly in real time to the website and through Telegram. All trades are recorded and posted on the website dashboard and results available on the website immediately.</p><p>Follow precise stock signals, entries, and exits. Vixale Prime closes at the end of the trading day; Vixale Edge may hold overnight.</p><a data-vx-funnel-kind="system" data-vx-funnel-system="day-trading" href="/trading-systems/day-trading">' + c.exploreDay + '</a></article>' +
-    '<article><span>SWING TRADING</span><h2>Active Portfolio</h2><p>10 currently best stocks chosen by Vixale proprietary stock swing ranking system. Check for new additions and exits updates published everyday around 10:00am. Active Portfolio updates in real time on the website. Robust risk management. Full automation available</p><a data-vx-funnel-kind="system" data-vx-funnel-system="swing-trading" href="/trading-systems/swing-trading#active-portfolio">' + c.viewSwing + '</a></article>' +
+    '<article><span>SWING TRADING</span><h2>Active Portfolio</h2><p>10 currently best stocks chosen by Vixale proprietary stock swing ranking system. Check for new additions and exits updates published everyday around 10:00am. Active Portfolio updates in real time on the website. Robust risk management. Full automation available</p><a data-vx-funnel-kind="system" data-vx-funnel-system="swing-trading" href="/trading-systems/swing-trading/overview">' + c.viewSwing + '</a></article>' +
     '<article><span>OPTIONS</span><h2>Straddles, Calendars, Condors and More</h2><p>Follow published Options positions and daily website updates, then review completed trades. Options is not restricted to one structure or to 0DTE.</p><a data-vx-funnel-kind="system" data-vx-funnel-system="options" href="/trading-systems/options">' + c.exploreOptions + '</a></article>' +
   '</section>';
 }
@@ -380,16 +398,8 @@ function refineResults(html, locale) {
   return out;
 }
 
-function refineAccess(html, locale) {
-  let out = html;
-  const c = copy(locale);
-  const facts = locale === "ru"
-    ? "Одобренный viewer-доступ открывает read-only защищённые материалы, на которые вы получили право, включая детали Day Trading dashboard и доступные защищённые брокерские файлы Options. Публичные график и Option Journal Options, а также публичный Swing Portfolio не требуют входа."
-    : "Approved viewer access opens read-only protected detail for which you are entitled, including Day Trading dashboard detail and protected Options brokerage proof files where available. The public Options chart and Option Journal and the public Swing model portfolio do not require login.";
-  out = out.replace(/Approved viewer access opens the read-only Day Trading dashboard and the protected Options viewer\. The Swing research\/model portfolio is already public and does not require login\./g, facts);
-  out = out.replace(/Legacy links to <code>\/#password-access<\/code> remain supported\./g, "");
-  out = out.replace(/Existing approved viewer\? <a href="\/login">Log In with your viewer code<\/a>\.\s*/g, 'Existing approved viewer? <a href="/login">' + c.login + " with your viewer code</a>. ");
-  return out;
+function refineAccess(html) {
+  return html.replace(/Legacy links to <code>\/#password-access<\/code> remain supported\./g, "");
 }
 
 function renderGuideOptions(locale) {
@@ -470,10 +480,12 @@ function refineHtml(html, path, locale, query = {}) {
   if (path === "/access") out = refineAccess(out, locale);
   if (path === "/trading-guide") out = refineGuide(out, locale);
   out = refineCrossPageCopy(out, locale);
-  return injectAssets(out);
+  const withAssets = injectAssets(out);
+  return withAssets.includes(assets[0].url) ? withAssets : withAssets.replace("</head>", publicTags + "</head>");
 }
 
 function install(app) {
+  for (const asset of assets) installAsset(app, asset);
   app.use((req, res, next) => {
     const method = String(req.method || "GET").toUpperCase();
     const path = requestPath(req);

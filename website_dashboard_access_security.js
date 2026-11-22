@@ -31,6 +31,7 @@ const websiteFunnelSourcePatch = require("./lib/website-funnel-source-patch");
 
 function patchAppSource(source) {
   if (typeof source !== "string") throw new TypeError("app source must be a string");
+  source = source.replace(/\r\n/g, "\n");
   if (source.includes(APP_PATCH_MARKER)) return websiteFunnelSourcePatch.patchAppSource(source);
   let out = source;
 
@@ -120,7 +121,7 @@ function patchAppSource(source) {
   out = replaceOnce(
     out,
     '<form class="strategy-form" method="POST" action="/password-request">\n          <div class="form-grid">',
-    '<form class="strategy-form" method="POST" action="/password-request">\n          <div class="form-grid">\n            ${TURNSTILE_SITE_KEY ? \'<div class="form-field full"><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script><div class="cf-turnstile" data-sitekey="\' + escapeHtml(TURNSTILE_SITE_KEY) + \'" data-action="dashboard_access"></div></div>\' : \'\'}',
+    '<form class="strategy-form" method="POST" action="/password-request">\n          <div class="form-grid">\n            ${TURNSTILE_SITE_KEY ? \'<div class="form-field full"><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script><div class="cf-turnstile" data-sitekey="\' + escapeHtml(TURNSTILE_SITE_KEY) + \'" data-action="dashboard_access" data-size="compact"></div></div>\' : \'\'}',
     "public access Turnstile widget"
   );
 

@@ -9632,10 +9632,10 @@ function renderLoginHtml(errorMessage = '', nextPath = '') {
   </style>
 </head>
 <body>
-  <div class="card">
+  <main class="card">
     <div class="logo">Vixale<span>.</span></div>
     <h1>Dashboard access</h1>
-    <p>Enter your personal viewer code or the owner password. Viewer codes open the read-only dashboard only.</p>
+    <p>Enter your viewer code or owner password. A viewer code opens the read-only pages approved for your account.</p>
     <form method="POST" action="/dashboard-login">
       ${nextPath === "/trading-systems/swing-trading" ? '<input type="hidden" name="next" value="/trading-systems/swing-trading" />' : ""}
       <label for="password">Password or access code</label>
@@ -9645,9 +9645,9 @@ function renderLoginHtml(errorMessage = '', nextPath = '') {
     ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ''}
     <div class="links">
       <a href="/">← Back to Home</a>
-      <a href="/#password-access">Request dashboard access</a>
+      <a href="/access">Request dashboard access</a>
     </div>
-  </div>
+  </main>
 </body>
 </html>`;
 }
@@ -14296,8 +14296,8 @@ app.post('/tv', handleTradingViewWebhook);
 const PORT = process.env.PORT || 10000;
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  const listener = app.listen(PORT, () => {
+    console.log(`Server running on port ${listener.address().port}`);
   });
   startEdgePendingEodCleanupScheduler();
   startWebhookInboxWorker();

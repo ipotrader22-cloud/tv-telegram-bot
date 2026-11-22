@@ -67,7 +67,7 @@ for (const source of [
 }
 
 const homeRu = localizeRussianHtml(`<!doctype html><html><head></head><body>${refineOwnerCopy("<button>Closed Trades ledger · realized P&amp;L source</button>", HOME_PATH)}</body></html>`, HOME_PATH);
-assert(homeRu.includes("P&L закрытых сделок"));
+assert(homeRu.includes("P&amp;L закрытых сделок"));
 
 const optionRows = [
   ["ID", "Trade Date", "Entry Time", "Symbol", "Strategy", "Legs", "Expiration", "Contracts", "Multiplier", "Trade Type", "Entry Price", "Exit Date", "Exit Time", "Exit Price", "Fees", "Status"],

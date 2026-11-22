@@ -1,3 +1,33 @@
+## November 22, 2026 — Public website audit fixes
+
+Handbook update required: YES. The public navigation now points visitors to the
+EN/RU Swing overview at `/trading-systems/swing-trading/overview`. Home and
+Results explain the model and viewer access without requesting protected Swing
+data. The existing portfolio URL and API keep their authentication, session
+return path, and data contracts. Results consumes only the public Day Trading
+and Options feeds, preserves missing values, and renders charts sized to the
+viewport. Evidence bases stay separate.
+
+The public header has a keyboard-accessible mobile menu and reciprocal language
+links for equivalent public pages. Daily Recaps are labeled as English on the
+Russian site. The /daily-recaps alias redirects to the existing recap index.
+The shared stylesheet and browser scripts use content-hashed URLs. Russian
+copy is translated in the server response, and an external cached dictionary
+localizes later changes within the main content.
+
+Access puts the existing form and its verification step before the detailed
+explanation. Services retains its four request forms and anchor URLs under one
+main heading. Closed Trades applies shareable GET filters and paginates 50 rows
+while preserving the full ledger summary and the original data source.
+Launch-time source patching normalizes line endings. CI runs the full public
+renderer with isolated fixture data and a locked dependency tree.
+
+The change is limited to website presentation, public page routing, and QA.
+It does not change order execution, signals, published trade identities,
+payment or access form POST contracts, or session and proof permissions.
+Rollback by reverting the website PR on main and verifying Render has restored
+the preceding website deployment. No broker or ledger rollback is needed.
+
 ## ADR — ES Straddle Monitor in the Options viewer (November 13, 2026)
 
 Handbook update required: YES. The authenticated Options viewer now embeds

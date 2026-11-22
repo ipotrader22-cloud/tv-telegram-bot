@@ -13,7 +13,7 @@ const shell = body => `<!doctype html><html lang="en"><head><title>Vixale</title
 const nav = ux.refineHtml(shell("content"), "/trading-systems/day-trading", "en");
 const navOrder = [
   'href="/trading-systems/day-trading"',
-  'href="/trading-systems/swing-trading"',
+  'href="/trading-systems/swing-trading/overview"',
   'href="/trading-systems/options"',
   'href="/results"',
   'href="/daily-trading-summary"',
@@ -37,7 +37,7 @@ assert(nav.includes("#password-access{scroll-margin-top:140px!important}"));
 
 const homeHtml = shell(home.renderHeroAndPreview());
 const refinedHome = ux.refineHtml(homeHtml, "/", "en");
-assert(refinedHome.includes("Trading signals. Three systems. Your choice."));
+assert(refinedHome.includes("Trading signals in Telegram. Portfolio updates on Vixale."));
 assert(refinedHome.includes("Vixale publishes trading signals and portfolio updates. Follow Day Trading signals in Telegram, review Swing and Options updates on the website, and place any trades through your own broker."));
 assert(refinedHome.includes(">Get 30 Days Free</a>"));
 assert(refinedHome.includes(">View Trading Results</a>"));
@@ -46,7 +46,7 @@ assert(refinedHome.includes("30 days of Day Trading signals through Telegram. Re
 assert(!refinedHome.includes(">Telegram Signals</a>"));
 assert(!refinedHome.includes('class="vx-conversion-btn recaps"'));
 assert(refinedHome.includes(">Explore Day Trading</a>"));
-assert(refinedHome.includes(">View Swing Portfolio</a>"));
+assert(refinedHome.includes(">Explore Swing Trading</a>"));
 assert(refinedHome.includes(">Explore Options</a>"));
 assert(refinedHome.includes("<h2>AI Driven Day Trading Systems</h2>"));
 assert(refinedHome.includes("Live Day Trading signals are delivered instantly in real time to the website and through Telegram. All trades are recorded and posted on the website dashboard and results available on the website immediately."));
@@ -99,7 +99,7 @@ assert(fixedResults.includes(">Request Options Subscription — $49/month</a>"))
 
 const accessFixture = shell('<section class="vx-access-page"><article class="vx-access-fact"><strong>What access opens</strong><p>Approved viewer access opens the read-only Day Trading dashboard and the protected Options viewer. The Swing research/model portfolio is already public and does not require login.</p></article><div class="vx-access-foot">Existing approved viewer? <a href="/login">Log In with your viewer code</a>. Legacy links to <code>/#password-access</code> remain supported.</div></section>');
 const fixedAccess = ux.refineHtml(accessFixture, "/access", "en");
-assert(fixedAccess.includes("The public Options chart and Option Journal and the public Swing model portfolio do not require login."));
+assert(fixedAccess.includes("Log In with your viewer code"));
 assert(!fixedAccess.includes("Legacy links to"));
 
 const guideFixture = shell('<section class="section" id="options"><div>Options · Protected workflow</div><p>Options remains a website-update product in this release.</p></section>');
@@ -113,7 +113,7 @@ assert(!fixedGuide.includes("ES straddle"));
 assert(!fixedGuide.includes("6:00–8:30"));
 
 const ruNav = ux.refineHtml(shell("content"), "/pricing", "ru");
-for (const label of ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги", "Тарифы", "Войти", "30 дней бесплатно"]) {
+for (const label of ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги (EN)", "Тарифы", "Войти", "30 дней бесплатно"]) {
   assert(ruNav.includes(`>${label}</a>`), `missing RU audit nav label: ${label}`);
 }
 const ruHome = ux.refineHtml(homeHtml, "/", "ru");

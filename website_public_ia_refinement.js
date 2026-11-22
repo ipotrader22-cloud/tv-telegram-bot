@@ -1,6 +1,7 @@
 "use strict";
 
 const Module = require("module");
+const { OVERVIEW_PATH, renderOverview } = require("./lib/website-swing-public");
 
 const HOME_PATH = "/";
 const SYSTEMS_PATH = "/trading-systems";
@@ -202,7 +203,7 @@ function renderServicesIntro() {
 
 const servicesOfferStyles = `
 <style id="${SERVICES_OFFER_STYLE_ID}">
-  .${SERVICES_OFFER_MARKER}{max-width:1180px;margin:0 auto;padding:0 24px 44px;box-sizing:border-box}.vx-services-offer-head{max-width:820px}.vx-services-offer-head h2{margin:0;color:#17211d;font-size:clamp(28px,3.4vw,40px);font-weight:520;letter-spacing:-.035em}.vx-services-offer-head p{margin:12px 0 0;color:#56645e;font-size:15px;line-height:1.6}.vx-services-offer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}.vx-services-offer-card{display:flex;min-height:330px;flex-direction:column;padding:24px;border:1px solid #dbe7e0;border-radius:23px;background:#fff;box-shadow:0 14px 38px rgba(24,54,42,.045)}.vx-services-offer-card>span{color:#287153;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.vx-services-offer-card h3{margin:10px 0 0;color:#17211d;font-size:24px;font-weight:550;letter-spacing:-.025em}.vx-services-offer-card>p{margin:9px 0 0;color:#56645e;font-size:13.5px;line-height:1.55}.vx-services-offer-facts{display:grid;gap:7px;margin:16px 0 0}.vx-services-offer-facts div{display:grid;grid-template-columns:86px 1fr;gap:8px;padding-top:7px;border-top:1px solid #edf2ef}.vx-services-offer-facts dt{color:#425049;font-size:11.5px;font-weight:700}.vx-services-offer-facts dd{margin:0;color:#65716c;font-size:12.5px;line-height:1.45}.vx-services-offer-card a{display:inline-flex;align-items:center;margin-top:auto;padding-top:18px;color:#176442;font-size:12.5px;font-weight:700;text-decoration:none}.vx-services-free-path{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:17px 19px;border:1px solid #cfe4d8;border-radius:18px;background:#f4fbf7}.vx-services-free-path strong{font-size:13px}.vx-services-free-path span{display:block;margin-top:4px;color:#5f6d67;font-size:12.5px}.vx-services-free-path a{color:#176442;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}.vx-services-boundary{margin-top:12px;padding:16px 18px;border:1px solid #dce8e1;border-radius:17px;background:#f6faf8;color:#4d5c55;font-size:12.8px;line-height:1.55}.vx-services-boundary strong{color:#17211d}.vx-services-research{max-width:1180px;margin:0 auto;padding:0 24px 32px;box-sizing:border-box}@media(max-width:760px){.${SERVICES_OFFER_MARKER},.vx-services-research{padding-left:16px;padding-right:16px}.vx-services-offer-grid{grid-template-columns:1fr}.vx-services-offer-card{min-height:0;padding:21px}.vx-services-offer-facts div{grid-template-columns:1fr;gap:3px}.vx-services-free-path{align-items:flex-start;flex-direction:column}.vx-services-free-path a{white-space:normal}}
+  .${SERVICES_OFFER_MARKER}{max-width:1180px;margin:0 auto;padding:40px 24px 44px;box-sizing:border-box}.vx-services-offer-head{max-width:820px}.vx-services-offer-head h1{white-space:normal;margin:0;color:#17211d;font-size:clamp(28px,3.4vw,40px);font-weight:520;letter-spacing:-.035em}.vx-services-offer-head p{margin:12px 0 0;color:#56645e;font-size:15px;line-height:1.6}.vx-services-offer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}.vx-services-offer-card{display:flex;min-height:330px;flex-direction:column;padding:24px;border:1px solid #dbe7e0;border-radius:23px;background:#fff;box-shadow:0 14px 38px rgba(24,54,42,.045)}.vx-services-offer-card>span{color:#287153;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.vx-services-offer-card h3{margin:10px 0 0;color:#17211d;font-size:24px;font-weight:550;letter-spacing:-.025em}.vx-services-offer-card>p{margin:9px 0 0;color:#56645e;font-size:13.5px;line-height:1.55}.vx-services-offer-facts{display:grid;gap:7px;margin:16px 0 0}.vx-services-offer-facts div{display:grid;grid-template-columns:86px 1fr;gap:8px;padding-top:7px;border-top:1px solid #edf2ef}.vx-services-offer-facts dt{color:#425049;font-size:11.5px;font-weight:700}.vx-services-offer-facts dd{margin:0;color:#65716c;font-size:12.5px;line-height:1.45}.vx-services-offer-card a{display:inline-flex;align-items:center;margin-top:auto;padding-top:18px;color:#176442;font-size:12.5px;font-weight:700;text-decoration:none}.vx-services-free-path{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:17px 19px;border:1px solid #cfe4d8;border-radius:18px;background:#f4fbf7}.vx-services-free-path strong{font-size:13px}.vx-services-free-path span{display:block;margin-top:4px;color:#5f6d67;font-size:12.5px}.vx-services-free-path a{color:#176442;font-size:12.5px;font-weight:700;text-decoration:none;white-space:nowrap}.vx-services-boundary{margin-top:12px;padding:16px 18px;border:1px solid #dce8e1;border-radius:17px;background:#f6faf8;color:#4d5c55;font-size:12.8px;line-height:1.55}.vx-services-boundary strong{color:#17211d}.vx-services-research{max-width:1180px;margin:0 auto;padding:0 24px 32px;box-sizing:border-box}@media(max-width:760px){.${SERVICES_OFFER_MARKER},.vx-services-research{padding-left:16px;padding-right:16px}.vx-services-offer-grid{grid-template-columns:1fr}.vx-services-offer-card{min-height:0;padding:21px}.vx-services-offer-facts div{grid-template-columns:1fr;gap:3px}.vx-services-free-path{align-items:flex-start;flex-direction:column}.vx-services-free-path a{white-space:normal}}
 </style>`;
 
 function injectServicesOfferStyles(html) {
@@ -216,7 +217,7 @@ function serviceFacts(items) {
 }
 
 function renderServicesOffer() {
-  return `<section class="${SERVICES_OFFER_MARKER}" aria-labelledby="vx-services-offer-title"><div class="vx-services-offer-head"><h2 id="vx-services-offer-title">Choose one service path.</h2><p>Each path has a different request form so research, automation, strategy work, and custom integrations do not collapse into the same questions. No standardized price is published here; scoped work is discussed or quoted after the request is understood.</p></div><div class="vx-services-offer-grid">
+  return `<section class="${SERVICES_OFFER_MARKER}" aria-labelledby="vx-services-offer-title"><div class="vx-services-offer-head"><h1 id="vx-services-offer-title">Choose one service path.</h1><p>Each path has a different request form so research, automation, strategy work, and custom integrations do not collapse into the same questions. No standardized price is published here; scoped work is discussed or quoted after the request is understood.</p></div><div class="vx-services-offer-grid">
     <article class="vx-services-offer-card"><span>01 · Research</span><h3>Signals &amp; Research</h3><p>Discuss currently supported Vixale signals, research, and evidence access for your use case.</p>${serviceFacts([["You provide","What market/system research you want and how you expect to use it."],["You get","A scope reply covering what is currently available and the relevant access/delivery path."],["Outcome","Clear onboarding or a clear no-fit answer."],["Pricing","Discussed after scope; no standard price is published here."]])}<a href="#research-request">Discuss Signals &amp; Research →</a></article>
     <article class="vx-services-offer-card"><span>02 · Setup</span><h3>Automation / Setup</h3><p>Plan supported TradingView alert, webhook, TWS/IBKR, dashboard, or related setup.</p>${serviceFacts([["You provide","Your current platforms, broker/setup state, and the automation goal."],["You get","A setup conversation focused on what exists, what is missing, and dependencies."],["Outcome","An implementation checklist plus any separately scoped custom work."],["Pricing","Discussed or quoted after scope; no price is invented here."]])}<a href="#appointment">Book Automation / Setup Consultation →</a></article>
     <article class="vx-services-offer-card"><span>03 · Strategy</span><h3>Strategy Review / Development</h3><p>Send your own trading rules for structured review, testing/development scoping, or coding discussion.</p>${serviceFacts([["You provide","Market, rules, current maturity, and the outcome you want."],["You get","Questions and an assessment of the appropriate next engineering/research step."],["Outcome","A review path: clarify, test, code, scope development, or stop."],["Pricing","Any development work is scoped/quoted after the initial rules review."]])}<a href="#strategy-review">Send Strategy Rules →</a></article>
@@ -274,7 +275,7 @@ function renderServicesFromLanding(html) {
   const strategy = refineStrategySection(extractSectionByText(html, SERVICE_FORM_SECTION_NEEDLES[2]));
   let result = transformPrimaryNav(html);
   result = normalizeHeaderHashLinksToHome(result);
-  result = replaceMainContents(result, [renderServicesIntro(), renderServicesOffer(), renderResearchRequest(), appointment, strategy, bot].filter(Boolean).join("\n\n"));
+  result = replaceMainContents(result, [renderServicesOffer(), renderResearchRequest(), appointment, strategy, bot].filter(Boolean).join("\n\n"));
   result = normalizeAccessLinksToAccessPage(result);
   result = injectServicesOfferStyles(result);
   result = replaceAllLiteral(result, "Request Dashboard Access", "Request Free Access");
@@ -311,7 +312,8 @@ function renderAccessJourney(formSection, context = accessContext("")) {
     ? `<div class="vx-access-context">Access request started from ${context.label}</div>`
     : "";
   return `<section class="vx-access-page"><div class="wrap">
-    <div class="vx-access-head"><div class="vx-access-kicker">Free Access</div><h1>Request read-only Vixale viewer access.</h1><p>Review public evidence first, then use this form if protected viewer detail is useful. Access is free, requires email verification and manual approval, and never gives Vixale control of your brokerage account.</p>${contextNote}</div>
+    <div class="vx-access-head"><div class="vx-access-kicker">Free Access</div><h1>Request read-only Vixale viewer access.</h1><p>Enter your email to request free access. Verify your address, then wait for manual review.</p>${contextNote}</div>
+    ${formSection}
     <div class="vx-access-steps" aria-label="Access process">
       <div class="vx-access-step"><b>1</b><strong>Request access</strong><span>Submit the form below.</span></div>
       <div class="vx-access-step"><b>2</b><strong>Verify email</strong><span>Use the one-time confirmation link. The verification link expires after 60 minutes.</span></div>
@@ -320,13 +322,12 @@ function renderAccessJourney(formSection, context = accessContext("")) {
       <div class="vx-access-step"><b>5</b><strong>Log in</strong><span>Enter that code on the Vixale Log In page.</span></div>
     </div>
     <div class="vx-access-facts">
-      <article class="vx-access-fact"><strong>What access opens</strong><p>Approved viewer access opens the read-only Day Trading dashboard and the protected Options viewer. The Swing research/model portfolio is already public and does not require login.</p></article>
+      <article class="vx-access-fact"><strong>What access opens</strong><p>An approved viewer code opens the Day Trading dashboard, Swing model portfolio, and eligible Options brokerage proofs. The public Options chart and journal are available without an account.</p></article>
       <article class="vx-access-fact"><strong>Email not visible?</strong><p>Check Inbox and Spam/Junk for the verification email before submitting again. The verification link itself is valid for 60 minutes.</p></article>
       <article class="vx-access-fact"><strong>Duration / expiration</strong><p>Access is free. Each approved viewer code has its own expiration date; no fixed public access duration is promised on this page. After a code expires, it will no longer log in.</p></article>
       <article class="vx-access-fact"><strong>Need help?</strong><p>Use <a href="/trading-guide">Help</a> if you are unsure what the viewer contains or submit a new access request if an earlier viewer code has expired.</p></article>
     </div>
-    ${formSection}
-    <div class="vx-access-foot">Existing approved viewer? <a href="/login">Log In with your viewer code</a>. Legacy links to <code>/#password-access</code> remain supported.</div>
+    <div class="vx-access-foot"><p>Looking for signals or a subscription? <a href="/pricing">Compare plans and the Day Trading trial</a>.</p>Existing approved viewer? <a href="/login">Log In with your viewer code</a>. Legacy links to <code>/#password-access</code> remain supported.</div>
   </div></section>`;
 }
 
@@ -467,6 +468,7 @@ function installPublicIaRefinement(app) {
     else if (originalPath === RESULTS_PATH) mode = "results";
     else if (originalPath === ACCESS_PATH) mode = "access";
     else if (originalPath === PRICING_PATH) mode = "pricing";
+    else if (originalPath === OVERVIEW_PATH) mode = "swing-overview";
     if (!mode) return next();
 
     const originalSend = res.send.bind(res);
@@ -479,11 +481,15 @@ function installPublicIaRefinement(app) {
         else if (mode === "results") body = renderResultsFromLanding(body);
         else if (mode === "access") body = renderAccessFromLanding(body, req.query && req.query.system);
         else if (mode === "pricing") body = renderPricingFromLanding(body);
+        else if (mode === "swing-overview") {
+          const locale = /^ru\.vixale\.com(?::\d+)?$/i.test(req.get("host") || "") ? "ru" : "en";
+          body = replaceMainContents(normalizeHeaderHashLinksToHome(body), renderOverview(locale));
+        }
       }
       return originalSend(body);
     };
 
-    if (mode === "services" || mode === "results" || mode === "access" || mode === "pricing") {
+    if (mode === "services" || mode === "results" || mode === "access" || mode === "pricing" || mode === "swing-overview") {
       const queryIndex = req.url.indexOf("?");
       const query = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
       req.url = `/${query}`;

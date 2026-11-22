@@ -166,12 +166,11 @@ function installFinalQaRefinement(app) {
       }
     }
 
-    if (![HOME_PATH, GUIDE_PATH, SYSTEMS_PATH, PRICING_PATH, SITEMAP_PATH].includes(pathname)) return next();
+    if (![HOME_PATH, GUIDE_PATH, SYSTEMS_PATH, PRICING_PATH].includes(pathname)) return next();
     const send = res.send.bind(res);
     res.send = function sendWithFinalQa(body) {
       const type = String(res.getHeader?.("Content-Type") || "");
-      if (pathname === SITEMAP_PATH && typeof body === "string") body = refineSitemapXml(body);
-      else if (typeof body === "string" && (!type || type.includes("html"))) body = refineHtml(body, pathname);
+      if (typeof body === "string" && (!type || type.includes("html"))) body = refineHtml(body, pathname);
       return send(body);
     };
     return next();

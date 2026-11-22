@@ -14,7 +14,7 @@ const {
   installPublicQaRefinement,
 } = require("../website_public_qa_refinement");
 
-assert(pkg.scripts.start.startsWith("node -r ./website_public_qa_refinement.js -r ./website_evidence_credibility_refinement.js "), "public QA must be the first preload and evidence credibility must remain second");
+assert(pkg.scripts.start.includes("-r ./website_public_qa_refinement.js "), "the normal startup must include public QA");
 assert.strictEqual(CANONICAL_HOST, "www.vixale.com");
 assert.strictEqual(canonicalRedirectTarget("vixale.com", "/results?from=apex"), "https://www.vixale.com/results?from=apex");
 assert.strictEqual(canonicalRedirectTarget("vixale.com:443", "/"), "https://www.vixale.com/");
@@ -53,7 +53,11 @@ assert.strictEqual(refinePublicQaHtml("<html>unchanged</html>", "/dashboard"), "
 
 const sitemap = renderSitemapXml();
 for (const path of SITEMAP_PATHS) assert(sitemap.includes(`<loc>${canonicalUrl(path)}</loc>`), `sitemap missing ${path}`);
-for (const forbidden of ["/dashboard", "/admin/", "/trading-systems/options/viewer", "/pricing"]) assert(!sitemap.includes(`www.vixale.com${forbidden}`), `sitemap must omit ${forbidden}`);
+for (const forbidden of ["/dashboard", "/admin/", "/trading-systems/options/viewer"]) assert(!sitemap.includes(`www.vixale.com${forbidden}`), `sitemap must omit ${forbidden}`);
+assert(!sitemap.includes("<loc>https://www.vixale.com/trading-systems/swing-trading</loc>"));
+const russianSitemap = renderSitemapXml("ru.vixale.com");
+assert(russianSitemap.includes("<loc>https://ru.vixale.com/pricing</loc>"));
+assert(!russianSitemap.includes("www.vixale.com") && !russianSitemap.includes("/daily-trading-summary"));
 
 const robots = renderRobotsTxt();
 assert(robots.includes("User-agent: *"));

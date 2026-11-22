@@ -150,7 +150,7 @@ console.log("Russian localization regression checks: PASS");
 // Host scoping: the middleware must not alter English-host responses and must
 // localize Russian-host HTML responses without changing JSON/API behavior.
 let middleware;
-installRussianLocalization({ use(fn) { middleware = fn; } });
+installRussianLocalization({ get() {}, use(fn) { middleware = fn; } });
 assert.strictEqual(typeof middleware, "function");
 
 function runMiddleware(host, path, body, contentType = "text/html; charset=utf-8", method = "GET") {
@@ -194,6 +194,7 @@ const fakeApp = {
   use(fn) { homepageMiddleware = fn; },
   get(path, ...handlers) {
     if (handlers.length === 0) return undefined;
+    if (path.startsWith("/assets/")) return this;
     assert.strictEqual(path, "/");
     registeredRootHandler = handlers[0];
     return this;

@@ -11,14 +11,14 @@ const OUTPUT_DIR = process.env.QA_OUTPUT_DIR || "artifacts/production-locale-qa"
 
 const EXPECTED_NAV_HREFS = [
   "/trading-systems/day-trading",
-  "/trading-systems/swing-trading",
+  "/trading-systems/swing-trading/overview",
   "/trading-systems/options",
   "/results",
   "/daily-trading-summary",
   "/pricing",
 ];
 const EXPECTED_EN_NAV = ["Day Trading", "Swing Trading", "Options", "Results", "Daily Recaps", "Pricing"];
-const EXPECTED_RU_NAV = ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги", "Тарифы"];
+const EXPECTED_RU_NAV = ["Дейтрейдинг", "Свинг-трейдинг", "Опционы", "Результаты", "Ежедневные итоги (EN)", "Тарифы"];
 const EXPECTED_EN_ACTIONS = ["Log In", "Get 30 Days Free"];
 const EXPECTED_RU_ACTIONS = ["Войти", "30 дней бесплатно"];
 const EXPECTED_ACTION_HREFS = [offer.LOGIN_URL, offer.DAY_TRIAL_URL];
@@ -26,7 +26,7 @@ const EXPECTED_ACTION_HREFS = [offer.LOGIN_URL, offer.DAY_TRIAL_URL];
 const ROUTES = [
   {
     path: "/",
-    requiredRu: ["Торговые сигналы. Три системы. Выбор за вами.", "30 дней бесплатно", "Посмотреть результаты", "Запросить бесплатный viewer-доступ"],
+    requiredRu: ["Торговые сигналы в Telegram и обновления портфелей на Vixale.", "30 дней бесплатно", "Посмотреть результаты", "Запросить бесплатный viewer-доступ"],
     forbiddenRu: ["Trading signals. Three systems. Your choice.", "Live Trade Dashboard"],
   },
   { path: "/trading-systems" },
@@ -36,6 +36,7 @@ const ROUTES = [
     forbiddenRu: ["Live stock signals and P&L.", "Follow entries, exits, targets, stop levels"],
   },
   { path: "/trading-systems/swing-trading" },
+  { path: "/trading-systems/swing-trading/overview" },
   {
     path: "/trading-systems/options",
     requiredRu: ["Следите за нашими опционными сделками от входа до выхода."],
@@ -55,7 +56,6 @@ const ROUTES = [
   {
     path: "/services",
     requiredRu: [
-      "Нужна настройка, автоматизация, работа со стратегией или индивидуальный бот?",
       "Выберите одно направление услуг.",
       "Расскажите, какие исследования или сигналы вам нужны.",
       "Консультация по автоматизации / настройке",
