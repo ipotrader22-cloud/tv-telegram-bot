@@ -101,6 +101,7 @@ async function gotoWithRetry(page, url) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      if ([502, 503, 504].includes(response?.status())) throw new Error(`Transient HTTP ${response.status()} for ${url}`);
       await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(1200);
       return response;
@@ -118,7 +119,10 @@ async function pageSnapshot(page) {
     const primaryNav = document.querySelector(".vx-unified-public-nav");
     const navActions = document.querySelector(".vx-direct-nav-actions");
     const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"][href]'))
-      .map((node) => node.href)
+      .map((node) => {
+        const url = new URL(node.href);
+        return url.origin === location.origin ? url.pathname + url.search : url.href;
+      })
       .sort();
     const directMainChildren = main
       ? Array.from(main.children).map((node) => {
@@ -184,7 +188,7 @@ async function run() {
     failures: [],
   };
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.QA_CHROMIUM || undefined });
   try {
     for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
       const enContext = await browser.newContext({ viewport, locale: "en-US" });

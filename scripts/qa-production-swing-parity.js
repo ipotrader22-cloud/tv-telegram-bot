@@ -12,15 +12,22 @@ const API = "/api/swing-leaders";
 const PRIVATE_FIELDS = /"active_portfolio"|"reporting_equity_history"|"total_model_pnl"/i;
 
 async function readAnonymous(path, accept) {
-  const url = ORIGIN + path + (path.includes("?") ? "&" : "?") +
-    "vx_access_qa=" + Date.now();
-  const response = await fetch(url, {
-    cache: "no-store",
-    redirect: "manual",
-    headers: { Accept: accept, "Cache-Control": "no-cache" },
-    signal: AbortSignal.timeout(20000),
-  });
-  return { response, body: await response.text() };
+  for (let attempt = 1; ; attempt++) {
+    const url = ORIGIN + path + "?vx_access_qa=" + Date.now();
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        redirect: "manual",
+        headers: { Accept: accept, "Cache-Control": "no-cache" },
+        signal: AbortSignal.timeout(8000),
+      });
+      const body = await response.text();
+      if (![502, 503, 504].includes(response.status) || attempt === 10) return { response, body };
+    } catch (error) {
+      if (attempt === 10) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
 }
 
 function assertProtected(path, result) {
