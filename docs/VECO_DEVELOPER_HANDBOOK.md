@@ -4549,3 +4549,13 @@ workbook. Merge this narrow PR into that branch and deploy observer then cron.
 Do not merge the whole development branch into main or modify production secrets.
 See `docs/VIXALE_Active_Portfolio_Source_of_Truth.md` for the operating amendment.
 Rollback by reverting this PR/redeploying both services; preserve resulting lots.
+
+### Engine 2 shadow ledger read timeout on November 20, 2026
+
+Shadow Postgres canceled the cumulative clean-state query at the five-second
+statement timeout. The cancellation at 10:19:17 ET coincided with the staging
+cron's ledger exception. The read now projects historical model totals and
+fetches active lots, closed lots and candidates only for the latest joined
+session, in the same statement. Check the query and startup readback on the
+shadow Render services before certifying recovery. Legacy imported valuation
+certification is independent of this clean-state read path.
