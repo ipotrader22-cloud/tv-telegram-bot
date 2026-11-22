@@ -21,6 +21,8 @@ main heading. Closed Trades applies shareable GET filters and paginates 50 rows
 while preserving the full ledger summary and the original data source.
 Launch-time source patching normalizes line endings. CI runs the full public
 renderer with isolated fixture data and a locked dependency tree.
+Production locale checks compare same-origin stylesheet paths across hosts
+and retry transient gateway errors during the Render deployment transition.
 
 The change is limited to website presentation, public page routing, and QA.
 It does not change order execution, signals, published trade identities,
