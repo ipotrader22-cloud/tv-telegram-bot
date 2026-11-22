@@ -166,6 +166,12 @@ const refresh=async()=>{
  await refresh();
  server.listen(port,'0.0.0.0',()=>{
   void require('./startup-readonly-audit.cjs').auditReadOnlySurface({port,googleProbe}).then(result=>console.log('Shadow startup read-only audit:',JSON.stringify(result)));
+  // Exercise the same read used by the staging ledger and model against the live shadow database.
+  void require('./clean-ledger.cjs').readLastCleanState({url})
+   .then(state=>console.log('Engine 2 clean ledger read (read only):',JSON.stringify({
+    status:state?'PASS':'EMPTY',latestDate:state?.date??null,historyRows:state?.history.length??0
+   })))
+   .catch(()=>console.log('Engine 2 clean ledger read (read only):',JSON.stringify({status:'BLOCKED'})));
   // One private aggregate receipt at startup; no public route or financial write.
   const today=require('./market-data-adapter.cjs').localET(new Date().toISOString()).date;
   void require('./staging-db-integrity.cjs').auditStagingDb({url,date:today})
