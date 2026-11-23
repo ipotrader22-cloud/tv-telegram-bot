@@ -36,6 +36,45 @@ function payload(side = 'LONG', mode = 'ATR') {
     session_timezone: 'America/New_York' };
 }
 
+
+function verifyTelegramEntryPresentation() {
+  const exampleEntries = [
+    [207.32999999999998, '207.33'],
+    [129.2795189873418, '129.28'],
+    [135.29933333333332, '135.30'],
+  ];
+  for (const [entry, expected] of exampleEntries) {
+    const row = {
+      event: 'FILL', symbol: 'CVX', timeframe: '60', side: 'SHORT',
+      entry, target: 206.2, size: 489,
+      raw: JSON.stringify({ system_id: 'TRADING_LAB_SMIO_RSI_PAPER' }),
+    };
+    const message = api.formatTelegramMessage(row, '');
+    assert(message.includes(`Entry: <b>${expected}</b>`), message);
+    assert(message.includes('Target: <b>206.2</b>'), 'target display must remain unchanged');
+    assert.strictEqual(row.entry, entry, 'original execution precision must remain unchanged');
+  }
+
+  const prime = {
+    event: 'TP', symbol: 'XOM', side: 'SHORT', strategy: 'SHREK_1_4',
+    entry: 158.83599999999998, exit: 157.94, size: 189,
+    result: 170.1, result_pct: 0.57, raw: '{}',
+  };
+  const primeMessage = api.formatTelegramMessage(prime, '');
+  assert(primeMessage.includes('Entry: <b>158.84</b>'), primeMessage);
+  assert(primeMessage.includes('Exit: <b>157.94</b>'), 'exit display must remain unchanged');
+  assert.strictEqual(prime.entry, 158.83599999999998);
+  assert.strictEqual(prime.result, 170.1);
+
+  const edge = {
+    event: 'FILL', symbol: 'WMT', side: 'LONG',
+    variant: 'FIONA_LIMIT_PULLBACK_ATR_TARGET',
+    entry: 129.2795189873418, target: 130.07, size: 790, raw: '{}',
+  };
+  assert(api.formatTelegramMessage(edge, '').includes('Entry: <b>129.28</b>'));
+}
+verifyTelegramEntryPresentation();
+
 (async () => {
   for (const side of ['LONG', 'SHORT']) for (const mode of ['ATR', 'RSI_80_20', 'FirstOfEither']) {
     const p = payload(side, mode);
