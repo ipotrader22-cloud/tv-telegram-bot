@@ -1936,11 +1936,16 @@ function shouldSuppressTelegram(row) {
 
 function formatTelegramMessage(row, originalMessage) {
   if (!row || row.event === 'UNKNOWN') return originalMessage;
+  // Telegram presentation only: never round entry values used for trade records or P&L.
+  const numericEntry = Number(row.entry);
+  const displayEntry = row.entry !== '' && row.entry != null && Number.isFinite(numericEntry)
+    ? numericEntry.toFixed(2)
+    : row.entry;
   if (isSmioRsiPayload(parseRawJsonSafe(row.raw)) && ['FILL', 'TP', 'SL', 'EOD'].includes(row.event)) {
     const action = row.event === 'FILL' ? `opened ${row.side}` : row.event === 'TP' ? 'Take Profit' : row.event === 'EOD' ? 'EOD close' : 'RSI Stop Loss';
     return [
       `🧪 <b>SMIO_RSI Demo ${action}</b>`, '', `<b>${row.symbol} · ${row.timeframe}m</b>`,
-      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.event !== 'FILL' && row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
       row.event === 'FILL' && row.target !== '' ? `Target: <b>${row.target}</b>` : '',
       `Qty: <b>${row.size}</b>`, pnlTelegramLine(row),
@@ -1955,7 +1960,7 @@ function formatTelegramMessage(row, originalMessage) {
       `🟣 <b>Vixale Edge setup ${row.side}</b>`,
       '',
       `<b>${row.symbol}${row.timeframe ? ` · ${row.timeframe}` : ''}</b>`,
-      row.entry !== '' ? `Planned Entry: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `Planned Entry: <b>${displayEntry}</b>` : '',
       row.target !== '' ? `Target: <b>${row.target}</b>` : '',
       edgeStopLossThresholdLine(row),
     ].filter(Boolean).join('\n');
@@ -1969,7 +1974,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🟣 <b>Vixale Edge opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         edgeStopLossThresholdLine(row, '🛑 '),
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -1981,7 +1986,7 @@ function formatTelegramMessage(row, originalMessage) {
         `${emoji} <b>Vixale Prime opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -1993,7 +1998,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🕺 <b>Elvis in the Building!</b>`,
         '',
         `<b>${titleBase}</b>`,
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
@@ -2003,7 +2008,7 @@ function formatTelegramMessage(row, originalMessage) {
       return [
         `${emoji} <b>${titleBase} OPENED</b>`,
         '',
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 ATR Target: <b>${row.target}</b>` : '',
         row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -2013,7 +2018,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `${emoji} <b>${titleBase} SETUP</b>`,
       '',
-      row.entry !== '' ? `📍 Entry Limit: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `📍 Entry Limit: <b>${displayEntry}</b>` : '',
       row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
       row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -2026,7 +2031,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🟣 <b>Vixale Edge opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         edgeStopLossThresholdLine(row, '🛑 '),
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -2039,7 +2044,7 @@ function formatTelegramMessage(row, originalMessage) {
         `${emoji} <b>Vixale Prime opened ${row.side}</b>`,
         '',
         `<b>${row.symbol}</b>`,
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         row.stop !== '' ? `🛑 Stop Ref: <b>${row.stop}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -2051,7 +2056,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🕺 <b>Elvis in the Building!</b>`,
         '',
         `<b>${titleBase}</b>`,
-        row.entry !== '' ? `📍 Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `📍 Entry: <b>${displayEntry}</b>` : '',
         row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       ].filter(Boolean).join('\n');
@@ -2060,7 +2065,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `🎉 <b>${titleBase} FILLED</b>`,
       '',
-      row.entry !== '' ? `✅ Entry: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `✅ Entry: <b>${displayEntry}</b>` : '',
       row.target !== '' ? `🎯 Target: <b>${row.target}</b>` : '',
       row.stop !== '' ? `⛔ Stop: close beyond <b>${row.stop}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
@@ -2098,7 +2103,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${titleBase}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2110,7 +2115,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${titleBase}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2122,7 +2127,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${titleBase}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2132,7 +2137,7 @@ function formatTelegramMessage(row, originalMessage) {
       `🎯 <b>${titleBase} TAKE PROFIT HIT</b>`,
       '',
       row.exit !== '' ? `✅ Exit Price: <b>${row.exit}</b>` : '',
-      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       pnlLine,
     ].filter(Boolean).join('\n');
@@ -2145,7 +2150,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${row.symbol}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2157,7 +2162,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${row.symbol}</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2169,7 +2174,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${titleBase} position closed</b>`,
         row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2179,7 +2184,7 @@ function formatTelegramMessage(row, originalMessage) {
       `🛑 <b>${titleBase} MARKET STOP</b>`,
       '',
       row.exit !== '' ? `❌ Exit Price: <b>${row.exit}</b>` : '',
-      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       pnlLine,
     ].filter(Boolean).join('\n');
@@ -2192,7 +2197,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${titleBase || row.symbol}</b>`,
         row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2204,7 +2209,7 @@ function formatTelegramMessage(row, originalMessage) {
         '',
         `<b>${titleBase || row.symbol}</b>`,
         row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
-        row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+        row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
         pnlLine,
       ].filter(Boolean).join('\n');
@@ -2214,7 +2219,7 @@ function formatTelegramMessage(row, originalMessage) {
       `⏰ <b>${titleBase || row.symbol} EOD CLOSE</b>`,
       '',
       row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
-      row.entry !== '' ? `Entry: <b>${row.entry}</b>` : '',
+      row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
       pnlLine,
     ].filter(Boolean).join('\n');
