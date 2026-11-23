@@ -1,0 +1,22 @@
+name: VIXALE Guarded Writer Integration Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/vixale-guarded-sheets-writer.js'
+      - 'scripts/vixale-staging-reviewed-engine.js'
+      - 'scripts/vixale-review-evidence-gate.js'
+      - 'test/vixale-guarded-sheets-writer.test.js'
+      - 'test/vixale-staging-reviewed-engine.test.js'
+      - '.github/workflows/vixale-guarded-integration-tests.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-guarded-sheets-writer.test.js test/vixale-staging-reviewed-engine.test.js test/vixale-review-evidence-gate.test.js
