@@ -1,0 +1,19 @@
+name: VIXALE Model Accounting Unit Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/vixale-model-accounting-gate.js'
+      - 'test/vixale-model-accounting-gate.test.js'
+      - '.github/workflows/vixale-model-accounting-tests.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --test test/vixale-model-accounting-gate.test.js
