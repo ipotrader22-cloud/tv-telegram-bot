@@ -1941,12 +1941,16 @@ function formatTelegramMessage(row, originalMessage) {
   const displayEntry = row.entry !== '' && row.entry != null && Number.isFinite(numericEntry)
     ? numericEntry.toFixed(2)
     : row.entry;
+  const numericExit = Number(row.exit);
+  const displayExit = row.exit !== '' && row.exit != null && Number.isFinite(numericExit)
+    ? numericExit.toFixed(2)
+    : row.exit;
   if (isSmioRsiPayload(parseRawJsonSafe(row.raw)) && ['FILL', 'TP', 'SL', 'EOD'].includes(row.event)) {
     const action = row.event === 'FILL' ? `opened ${row.side}` : row.event === 'TP' ? 'Take Profit' : row.event === 'EOD' ? 'EOD close' : 'RSI Stop Loss';
     return [
       `🧪 <b>SMIO_RSI Demo ${action}</b>`, '', `<b>${row.symbol} · ${row.timeframe}m</b>`,
       row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
-      row.event !== 'FILL' && row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+      row.event !== 'FILL' && row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
       row.event === 'FILL' && row.target !== '' ? `Target: <b>${row.target}</b>` : '',
       `Qty: <b>${row.size}</b>`, pnlTelegramLine(row),
     ].filter(Boolean).join('\n');
@@ -2078,7 +2082,7 @@ function formatTelegramMessage(row, originalMessage) {
       '',
       `<b>${titleBase || row.symbol}</b>`,
       row.exit !== ''
-        ? `Manual Close: <b>${row.exit}</b>`
+        ? `Manual Close: <b>${displayExit}</b>`
         : 'Manual Close — price unavailable',
       row.exit !== '' && row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
@@ -2090,7 +2094,7 @@ function formatTelegramMessage(row, originalMessage) {
       '',
       `<b>${titleBase || row.symbol}</b>`,
       row.exit !== ''
-        ? `Manual Close: <b>${row.exit}</b>`
+        ? `Manual Close: <b>${displayExit}</b>`
         : 'Manual Close — price unavailable',
       row.exit !== '' && row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
     ].filter(Boolean).join('\n');
@@ -2102,7 +2106,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🎯 <b>Vixale Edge hit target</b>`,
         '',
         `<b>${titleBase}</b>`,
-        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2114,7 +2118,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🎯 <b>Vixale Prime hit target</b>`,
         '',
         `<b>${titleBase}</b>`,
-        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2126,7 +2130,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🎯 <b>Elvis hit target</b>`,
         '',
         `<b>${titleBase}</b>`,
-        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2136,7 +2140,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `🎯 <b>${titleBase} TAKE PROFIT HIT</b>`,
       '',
-      row.exit !== '' ? `✅ Exit Price: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `✅ Exit Price: <b>${displayExit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       pnlLine,
@@ -2149,7 +2153,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🛑 <b>Vixale Edge hit Stop Loss</b>`,
         '',
         `<b>${row.symbol}</b>`,
-        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2161,7 +2165,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🛑 <b>Vixale Prime hit Stop Loss</b>`,
         '',
         `<b>${row.symbol}</b>`,
-        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2173,7 +2177,7 @@ function formatTelegramMessage(row, originalMessage) {
         `🎸 <b>Elvis has left the building</b>`,
         '',
         `<b>${titleBase} position closed</b>`,
-        row.exit !== '' ? `Exit: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2183,7 +2187,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `🛑 <b>${titleBase} MARKET STOP</b>`,
       '',
-      row.exit !== '' ? `❌ Exit Price: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `❌ Exit Price: <b>${displayExit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.size !== '' ? `📦 Qty: <b>${row.size}</b>` : '',
       pnlLine,
@@ -2196,7 +2200,7 @@ function formatTelegramMessage(row, originalMessage) {
         `⏰ <b>Vixale Edge EOD close</b>`,
         '',
         `<b>${titleBase || row.symbol}</b>`,
-        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit Price: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2208,7 +2212,7 @@ function formatTelegramMessage(row, originalMessage) {
         `⏰ <b>Vixale Prime EOD close</b>`,
         '',
         `<b>${titleBase || row.symbol}</b>`,
-        row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+        row.exit !== '' ? `Exit Price: <b>${displayExit}</b>` : '',
         row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
         row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
         pnlLine,
@@ -2218,7 +2222,7 @@ function formatTelegramMessage(row, originalMessage) {
     return [
       `⏰ <b>${titleBase || row.symbol} EOD CLOSE</b>`,
       '',
-      row.exit !== '' ? `Exit Price: <b>${row.exit}</b>` : '',
+      row.exit !== '' ? `Exit Price: <b>${displayExit}</b>` : '',
       row.entry !== '' ? `Entry: <b>${displayEntry}</b>` : '',
       row.size !== '' ? `Qty: <b>${row.size}</b>` : '',
       pnlLine,
