@@ -134,6 +134,25 @@ class Engine:
             raise ValueError("Journal/plan mismatch")
         self.prefix = "ESSTR:" + plan.session
         self.entry_ref = self.prefix + ":ENTRY"
+        self.addon_ref = self.prefix + ":ENTRY:ADDON"
+        if self.state.get("addon_ref") not in (None, self.addon_ref):
+            raise ValueError("Invalid owner add-on reference")
+
+    def entry_orders(self, orders):
+        refs = [self.entry_ref]
+        if self.state.get("addon_ref"):
+            refs.append(self.addon_ref)
+        return [orders.get(ref) for ref in refs]
+
+    def entry_summary(self, orders):
+        entries = self.entry_orders(orders)
+        if any(entry is None for entry in entries):
+            return None
+        filled = sum(entry.filled for entry in entries)
+        average = sum((entry.filled * entry.average for entry in entries), D("0")) / filled if filled else D("0")
+        terminal = all(entry.status in TERMINAL for entry in entries)
+        proven = all(entry.proven and entry.filled >= 0 for entry in entries) and 0 <= filled <= 10
+        return Order(self.entry_ref, "Filled" if terminal else "Submitted", filled, average, proven)
 
     def block(self, reason):
         self.state["blocked"] = reason
@@ -163,7 +182,7 @@ class Engine:
             s["started"] = True
             return [Command("SUBMIT", self.entry_ref, "SELL", 10, "LMT",
                             str(self.plan.entry_limit), "ENTRY")]
-        entry = snap.orders.get(self.entry_ref)
+        entry = self.entry_summary(snap.orders)
         if entry is None:
             return self.block("ENTRY_ACK_UNKNOWN")
         if not entry.proven or not 0 <= entry.filled <= 10:
@@ -186,11 +205,17 @@ class Engine:
                 and sum(decimal(q.ask) for q in quotes) >=
                 decimal(entry.average) * D("1.65")):
             s["reason"] = s["reason"] or "MAYDAY"
-        # First partial entry: freeze actual quantity by canceling the remainder.
-        # No target can race further entry fills.
+        # Normal entry cancels on the first partial fill. An explicit owner
+        # add-on may work at the same limit until full or an exit is due.
+        # Confirm all entry cancellations before placing any exit.
         cancel = []
-        if entry.status not in TERMINAL and (entry.filled or s["reason"]):
-            cancel.append(Command("CANCEL", self.entry_ref))
+        target_reached = (s.get("addon_ref") and entry.filled and
+                          all(q and q.valid(snap.now) for q in quotes) and
+                          sum(decimal(q.ask) for q in quotes) <= target_price(entry.average))
+        for order in self.entry_orders(snap.orders):
+            if order.status not in TERMINAL and (s["reason"] or target_reached
+                    or (order.ref == self.entry_ref and order.filled)):
+                cancel.append(Command("CANCEL", order.ref))
         if s["reason"] and s["target_ref"]:
             target = snap.orders[s["target_ref"]]
             if target.status not in TERMINAL:

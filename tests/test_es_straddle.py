@@ -71,6 +71,30 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(self.e.state["done"])
         self.assertEqual(self.e.state["outcome"], "TARGET")
 
+    def test_owner_addon_combines_exact_fills_and_preserves_limit(self):
+        self.entry(1, "Cancelled")
+        self.e.state["addon_ref"] = ref = self.e.addon_ref
+        self.assertEqual(self.e.step(self.s), [])
+        self.assertEqual(self.e.state["blocked"], "ENTRY_ACK_UNKNOWN")
+        self.s.orders[ref] = Order(ref, "Submitted", 3, D("50.75"))
+        self.s.call_position = self.s.put_position = -4
+        self.assertEqual(self.e.step(self.s), [])
+        self.s.orders[ref] = Order(ref, "Filled", 9, D("50.75"))
+        self.s.call_position = self.s.put_position = -10
+        cmd, = self.e.step(self.s)
+        self.assertEqual((cmd.action, cmd.quantity, cmd.price), ("BUY", 10, "44.00"))
+
+    def test_owner_addon_cancels_before_target_when_buyback_is_available(self):
+        self.entry(1, "Cancelled")
+        self.e.state["addon_ref"] = ref = self.e.addon_ref
+        self.s.orders[ref] = Order(ref, "Submitted")
+        self.s.call_quote = self.s.put_quote = Quote(D("21"), D("21.5"), ENTRY, ENTRY)
+        cmd, = self.e.step(self.s)
+        self.assertEqual((cmd.kind, cmd.ref), ("CANCEL", ref))
+        self.s.orders[ref] = Order(ref, "Cancelled")
+        cmd, = self.e.step(self.s)
+        self.assertEqual((cmd.reason, cmd.quantity), ("TARGET", 1))
+
     def mayday(self):
         t = self.s.now
         self.s.call_quote = Quote(D("41.5"), D("42"), t, t)

@@ -149,6 +149,14 @@ This supersedes the earlier absence of active-night evidence for that observed
 cycle. Complete all-client history, other partial-entry cases, Mayday and actual
 15:55 close remain acceptance-pending; paper-training authorization is unchanged.
 
+November 22 partial-cancel recovery: a completed callback may report its
+unfilled remainder in totalQuantity. Normalize to the reserved total only
+with exact broker order and combo identity and independent partial executions.
+An explicitly recorded, one-time paper add-on uses its own order reference,
+the original frozen limit and shared weighted entry-credit accounting, with a
+ten-lot cap. It requires proven cancellation before any exit. The scheduled
+entry behavior stays the same. See the ES paper document for recovery details.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

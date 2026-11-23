@@ -432,6 +432,23 @@ does not certify every partial-entry, Mayday or 15:55-close scenario, or complet
 all-client history coverage. The history attestation remains false and execution
 remains explicitly authorized paper training only.
 
+### Partial-cancel recovery and explicit paper add-ons
+
+A completed cancellation can report the canceled remainder in totalQuantity
+and the executed amount separately in filledQuantity. Normalize the reserved
+total only for an already bound permanent ID, exact combo legs, matching
+frozen fields, and independent execution proof of the reported partial fill.
+An unexplained discrepancy still holds actions.
+
+The normal scheduled entry keeps its existing first-partial cancellation rule.
+An explicit one-time paper add-on can be journaled under a separate entry
+reference after verifying the original terminal fill, remaining position and
+same frozen limit. The coordinator sums independently proven quantities and
+weights entry credits across both references with a ten-lot cap. A pending
+add-on stays at its fixed limit. If Mayday or mandatory close is due, or
+fresh asks reach the buyback target, cancel before reconciling and submitting
+an exit for the actual position. Unknown acknowledgments are never replayed.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders

@@ -370,6 +370,22 @@ class RecoveryTests(unittest.TestCase):
         with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
             with self.assertRaises(RecoveryError): a.snapshot(self.engine)
 
+    def test_completed_canceled_remainder_requires_exact_partial_fill(self):
+        t=self.trade(orderId=0,clientId=0,totalQuantity=9)
+        t.contract=N(secType='BAG',symbol='ES',currency='USD',comboLegs=[
+            N(conId=cid,ratio=1,action='BUY',exchange='CME') for cid in (101,102)])
+        t.order.orderRef=self.ref; t.order.filledQuantity=1
+        t.orderStatus=N(status='Cancelled',filled=0)
+        fills=[self.fill(qty=1),self.fill(102,qty=1,eid='put')]
+        with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
+            with self.assertRaises(RecoveryError):
+                self.adapter(completed=[t],fills=fills[:1],position=-1).snapshot(self.engine)
+            snap=self.adapter(completed=[t],fills=fills,position=-1).snapshot(self.engine)
+        entry=snap.orders[self.ref]
+        self.assertTrue(entry.proven)
+        self.assertEqual((entry.status,entry.filled),('Cancelled',1))
+        self.assertEqual(self.engine.step(snap)[0].quantity,1)
+
     def test_timeout_does_not_advance_durable_coverage(self):
         a=self.adapter()
         a.ib.reqPositions=lambda:(_ for _ in ()).throw(TimeoutError())

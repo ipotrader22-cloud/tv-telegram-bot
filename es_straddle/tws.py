@@ -413,6 +413,22 @@ class TWS:
                 t = copy.deepcopy(exact[0])
                 t.order.orderId, t.order.clientId = saved['order_id'], self.client_id
                 t.orderStatus.filled = t.order.filledQuantity
+                filled = decimal(t.order.filledQuantity)
+                reported = decimal(t.order.totalQuantity)
+                if (t.orderStatus.status in ('Cancelled', 'ApiCancelled')
+                        and 0 < filled < saved['quantity'] and reported + filled == saved['quantity']):
+                    c = t.contract
+                    contracts = sorted((leg.conId, leg.ratio, leg.action, leg.exchange)
+                                       for leg in (c.comboLegs or []))
+                    expected = sorted((cid, 1, 'BUY', 'CME') for cid in ids)
+                    if c.secType != 'BAG' or c.symbol != 'ES' or c.currency != 'USD' or contracts != expected:
+                        raise RecoveryError('Completed partial order combo legs changed')
+                    # Completed callbacks describe the unfilled remainder.
+                    # Require matching exact executions before normalizing it.
+                    canceled = dict(saved, status=t.orderStatus.status, filled=str(filled))
+                    partial = recovered_order(ref, canceled, engine.plan)
+                    if partial is not None and partial.proven and partial.filled == filled:
+                        t.order.totalQuantity = saved['quantity']
                 # A filled CME combo's completed callback can report remaining
                 # quantity (zero) in totalQuantity. Restore its reserved total
                 # only when exact executions independently prove the full fill.
@@ -442,7 +458,7 @@ class TWS:
         self._coverage_generation = generation
         self._coverage_checkpoint = candidate['coverage_through']
         from .core import target_price
-        entry = orders.get(engine.entry_ref)
+        entry = engine.entry_summary(orders)
         target_valid = True
         if entry and entry.proven and entry.filled:
             target = target_price(entry.average)
