@@ -1,3 +1,17 @@
+## November 23, 2026 — Telegram Entry price presentation
+
+Handbook update required: YES. The Telegram formatter in `app.js` displays
+numeric Entry, Planned Entry and Entry Limit values with exactly two digits
+after the decimal point. This includes SMIO_RSI Demo, Prime, Edge and other
+existing Telegram lifecycle templates. The formatter retains the original
+full-precision `row.entry` and never changes the broker execution value,
+TradingView payload, Sheets ledger, target, stop, exit, order sizing or P&L
+calculation. Missing or nonnumeric entry data is not converted to a fake price.
+Regression assertions live in `tests/test_smio_demo_render.js` and run in
+the existing App Webhook Regression PR workflow. Live Telegram delivery is
+observable only after the approved Render deployment and a genuine event;
+no synthetic broker callback or signal is generated to validate presentation.
+
 ## November 23, 2026 — Shrek EOD duplicate-exit protection
 
 Handbook update required: YES. The November 20 GOOGL paper-account incident
