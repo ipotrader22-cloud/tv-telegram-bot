@@ -27,14 +27,16 @@ class ShrekEodWatchdogTests(unittest.IsolatedAsyncioTestCase):
     async def test_already_flat_does_not_submit_close(self):
         row = {"strategy": "SHREK_1_4", "last_payload": {"strategy": "SHREK_1_4"}}
         with (
-            patch.object(ib_bridge, "get_position_size", AsyncMock(return_value=0.0)),
+            patch.object(ib_bridge, "cancel_and_verify_targets_for_shrek_eod", AsyncMock(return_value={
+                "ok": True, "status": "position_flat_during_target_cancel", "position": 0.0,
+            })),
             patch.object(ib_bridge.ib, "placeOrder") as place_order,
         ):
             result = await ib_bridge.flatten_one_shrek_position(
                 "2026-07-27", "SPY", row, "TEST", {}
             )
 
-        self.assertEqual(result["status"], "already_flat")
+        self.assertEqual(result["status"], "target_fill_race_flat")
         place_order.assert_not_called()
 
     async def test_target_fill_race_does_not_submit_close(self):

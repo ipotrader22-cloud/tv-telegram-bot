@@ -8,6 +8,7 @@ on:
       - "bridge/**"
       - "tests/test_vixale_edge_bridge_isolation.py"
       - "tests/test_smio*.py"
+      - "tests/test_shrek*.py"
       - ".github/workflows/bridge-edge-regression.yml"
 
 permissions:
@@ -30,7 +31,7 @@ jobs:
         run: python -m py_compile bridge/ib_bridge_core.py tests/test_vixale_edge_bridge_isolation.py
 
       - name: Run Vixale Edge bridge regression
-        run: python -m unittest tests.test_vixale_edge_bridge_isolation
+        run: python -m unittest tests.test_vixale_edge_bridge_isolation tests.test_shrek_eod_watchdog tests.test_shrek_eod_safety
 
       - name: Run SMIO experimental demo lifecycle and isolation
         run: python -m unittest discover -s tests -p 'test_smio*.py'

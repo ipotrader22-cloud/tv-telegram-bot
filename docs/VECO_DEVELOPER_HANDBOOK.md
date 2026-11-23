@@ -1,3 +1,38 @@
+## November 23, 2026 — Shrek EOD duplicate-exit protection
+
+Handbook update required: YES. The November 20 GOOGL paper-account incident
+was a Shrek short closed by the EOD market buy, followed nine seconds later by
+another buy at the target price, reopening a 110-share long. The owner manually
+closed the unintended long; the November 23 read-only broker audit confirmed
+zero GOOGL shares and no working GOOGL orders. Do not manufacture another
+strategy close or rewrite the original short's confirmed execution history.
+
+Shrek EOD now refreshes broker open orders, completed orders, executions and
+positions. It identifies the exact managed target, persists its permanent ID
+before cancellation, and requires terminal broker acknowledgement plus exact
+fill evidence before sizing the remaining market close. An empty local order
+cache or a disappearing target is not cancellation proof. Pending cancellation,
+missing evidence, unrelated orders, foreign-client targets or a conflicting
+position block submission and retain recovery state. A target fill during
+cancellation reduces the close quantity or eliminates the market close.
+
+The close reservation is saved before submission. Retries observe the same
+broker order and never submit a second order after ambiguous submission. Final
+publication requires exact execution IDs/quantities/prices, a fresh flat
+position and no working symbol orders. Partial target plus EOD fills publish
+one full-position weighted exit with additive execution evidence fields. The
+existing callback handoff and configured EOD time remain unchanged. Session
+gates are rechecked before broker mutations; SMIO, Edge and strategy settings
+are unchanged. Missing same-day broker history requires operator review.
+
+For local rollout, stop/confirm absence of the stock bridge, back up and replace
+only `C:\ib_bridge\ib_bridge_core.py`, compile, and compare its hash to the
+merged source. Preserve adapters, environment, startup scripts and journals.
+If the bridge was stopped, preserve its normal startup schedule; installation
+is not proof of a running connected process. Rollback restores the backed-up
+core while stopped and reverts the PR; never restore journals over real fills.
+See `docs/incidents/2026-11-20-shrek-googl-double-exit.md` for evidence and checks.
+
 ## November 22, 2026 — Public website audit fixes
 
 Handbook update required: YES. The public navigation now points visitors to the

@@ -2246,40 +2246,128 @@ def active_target_trades_for_symbol(symbol: str) -> List[Any]:
     ]
 
 
-async def cancel_and_verify_targets_for_shrek_eod(symbol: str) -> Dict[str, Any]:
-    canceled = await cancel_target_orders_for_symbol(symbol)
+async def shrek_eod_broker_snapshot(row: Dict[str, Any], close_ref: str = "") -> Dict[str, Any]:
+    """Refresh broker evidence; an empty local openTrades cache proves nothing."""
+    symbol = str(row.get("symbol") or "").upper().strip()
+    expected = managed_order_identity(row, "target")
+    if not symbol or not any(expected.get(k) for k in ("perm_id", "order_id")):
+        return {"ok": False, "reason": "missing_exact_target_identity"}
+    results = []
+    for method, args in (
+        ("reqAllOpenOrdersAsync", ()),
+        ("reqCompletedOrdersAsync", (False,)),
+        ("reqExecutionsAsync", ()),
+        ("reqPositionsAsync", ()),
+    ):
+        result = await bounded_ib_refresh_request(method, *args)
+        if not result["ok"]:
+            return {"ok": False, "reason": "broker_refresh_unconfirmed", "request": method}
+        results.append(result["values"])
+    open_trades, completed, fills, positions = results
+    client_id = getattr(ib.client, "clientId", None)
+
+    def matches_target(trade: Any) -> bool:
+        return (
+            trade_contract_symbol(trade) == symbol
+            and trade_action(trade) == expected_exit_action(row)
+            and identity_matches(trade_order_id(trade), trade_perm_id(trade),
+                                 trade_order_ref_value(trade), expected)
+            # orderId is client-scoped. Never adopt another client's order.
+            and (expected.get("perm_id") not in (None, "", 0, "0")
+                 or getattr(trade.order, "clientId", None) == client_id)
+        )
+
+    active_targets = [t for t in open_trades if matches_target(t)]
+    terminal_targets = [t for t in completed if matches_target(t)]
+    candidates = active_targets or terminal_targets
+    if len(candidates) != 1:
+        return {"ok": False, "reason": "exact_target_missing_or_ambiguous"}
+    target = candidates[0]
+    # Completed-order replies may omit client-local orderId. Pin the broker's
+    # permanent ID while the original client/order identity is still provable.
+    target_identity = {**expected, "perm_id": trade_perm_id(target) or expected.get("perm_id")}
+    account = str(getattr(target.order, "account", "") or "")
+    other_orders = [t for t in open_trades
+                    if trade_contract_symbol(t) == symbol and not matches_target(t)
+                    and not (close_ref and trade_order_ref_value(t) == close_ref
+                             and trade_action(t) == expected_exit_action(row)
+                             and getattr(t.order, "clientId", None) == client_id)]
+    if other_orders:
+        return {"ok": False, "reason": "unrelated_symbol_order_working"}
+    symbol_positions = [p for p in positions
+                        if str(getattr(p.contract, "symbol", "")).upper() == symbol
+                        and abs(to_float(p.position)) > 0.000001]
+    if (len(symbol_positions) > 1
+            or any(getattr(p.contract, "secType", "") != "STK" for p in symbol_positions)
+            or any(account and p.account != account for p in symbol_positions)):
+        return {"ok": False, "reason": "position_account_or_contract_ambiguous"}
+    position = sum(to_float(p.position) for p in symbol_positions)
+    exact = exact_execution_components_for_expected_order(row, target_identity, [target], fills)
+    components = list(exact["components"])
+    filled_qty = sum(to_float(c["qty"]) for c in components)
+    original_qty = to_float(row.get("qty"))
+    terminal = not active_targets and trade_status(target).lower() in (
+        "cancelled", "canceled", "apicancelled", "filled",
+    )
+    # Completed orders can report fills only on Order.filledQuantity.
+    reported_qty = to_float(getattr(target.order, "filledQuantity", 0))
+    if reported_qty > 1e100:  # IB UNSET_DOUBLE, not an execution quantity.
+        reported_qty = 0
+    evidence_missing = (exact["ambiguous"] or exact["incomplete"]
+                        or max(reported_qty, trade_filled_qty(target)) > filled_qty + 0.000001
+                        or (trade_status(target).lower() == "filled"
+                            and abs(filled_qty - original_qty) > 0.000001))
+    return {"ok": True, "position": position, "target": target, "target_identity": target_identity,
+            "target_active": bool(active_targets), "target_terminal": terminal,
+            "target_filled_qty": filled_qty, "target_components": components,
+            "target_evidence_missing": bool(evidence_missing),
+            "open_trades": open_trades, "completed": completed, "fills": fills}
+
+
+async def cancel_and_verify_targets_for_shrek_eod(
+    symbol: str, row: Dict[str, Any], persist_target_identity=None,
+) -> Dict[str, Any]:
+    canceled = 0
     poll = max(FORCE_EOD_VERIFY_POLL_SECONDS, 0.10)
     waited = 0.0
-
-    while waited <= max(FORCE_EOD_CANCEL_VERIFY_SECONDS, poll):
-        position_size = await get_position_size(symbol)
-        if abs(position_size) <= 0.000001:
-            return {
-                "ok": True,
-                "status": "position_flat_during_target_cancel",
-                "canceled_targets": canceled,
-                "position": position_size,
-            }
-
-        active = active_target_trades_for_symbol(symbol)
-        if not active:
-            return {
-                "ok": True,
-                "status": "targets_canceled",
-                "canceled_targets": canceled,
-                "position": position_size,
-            }
-
+    original_qty = to_float(row.get("qty"))
+    side = str(row.get("side") or "").upper()
+    if side not in ("LONG", "SHORT") or original_qty <= 0 or not original_qty.is_integer():
+        return {"ok": False, "status": "target_cancel_unconfirmed", "reason": "invalid_managed_position"}
+    snapshot = {}
+    while waited <= max(FORCE_EOD_CANCEL_VERIFY_SECONDS, FORCE_EOD_POSITION_VERIFY_SECONDS, poll):
+        snapshot = await shrek_eod_broker_snapshot(row)
+        if not snapshot["ok"]:
+            return {**snapshot, "status": "target_cancel_unconfirmed", "canceled_targets": canceled}
+        target = snapshot["target"]
+        row["target_order"] = {**dict(row.get("target_order") or {}), **snapshot["target_identity"]}
+        if persist_target_identity is not None:
+            persist_target_identity(row["target_order"])
+        if snapshot["target_active"] and not canceled:
+            if getattr(target.order, "clientId", None) != getattr(ib.client, "clientId", None):
+                return {"ok": False, "status": "target_cancel_unconfirmed", "reason": "target_owned_by_other_client"}
+            if DRY_RUN:
+                return {"ok": False, "status": "dry_run_no_cancel"}
+            if not is_us_stock_rth_now():
+                return {"ok": False, "status": "blocked_close_outside_rth_no_cancel"}
+            ib.cancelOrder(target.order)
+            canceled += 1
+        if snapshot["target_terminal"] and not snapshot["target_evidence_missing"]:
+            remaining = original_qty - snapshot["target_filled_qty"]
+            signed_remaining = remaining if side == "LONG" else -remaining
+            position = snapshot["position"]
+            # Refresh after terminal acknowledgement, and never reuse pre-cancel size.
+            if 0 <= remaining <= original_qty and abs(position - signed_remaining) <= 0.000001:
+                return {"ok": True, "status": "position_flat_during_target_cancel" if remaining == 0 else "targets_canceled",
+                        "position": position, "canceled_targets": canceled,
+                        "target_components": snapshot["target_components"]}
+            if abs(position) <= 0.000001:
+                return {"ok": True, "status": "position_flat_during_target_cancel", "position": position,
+                        "canceled_targets": canceled, "target_components": snapshot["target_components"]}
         await asyncio.sleep(poll)
         waited += poll
-
-    return {
-        "ok": False,
-        "status": "target_cancel_unconfirmed",
-        "canceled_targets": canceled,
-        "position": await get_position_size(symbol),
-        "active_target_order_ids": [trade_order_id(trade) for trade in active_target_trades_for_symbol(symbol)],
-    }
+    return {"ok": False, "status": "target_cancel_unconfirmed", "canceled_targets": canceled,
+            "reason": "terminal_target_or_position_sync_unconfirmed", "position": snapshot.get("position")}
 
 
 async def cleanup_orphan_targets_if_flat(symbol: str) -> Dict[str, Any]:
@@ -9291,6 +9379,7 @@ async def flatten_one_shrek_position(
     reason: str,
     all_state: Dict[str, Any],
 ) -> Dict[str, Any]:
+    row = {**row, "symbol": symbol}
     strategy = managed_strategy_id(row)
     key = shrek_eod_idempotency_key(day_key, symbol, strategy)
     state = dict(all_state.get(key) or {})
@@ -9299,35 +9388,47 @@ async def flatten_one_shrek_position(
         render_result = await deliver_confirmed_shrek_eod_callback(key, state, all_state)
         return {"symbol": symbol, "status": "confirmed_flat_callback_retry", "idempotency_key": key, "render_result": render_result}
 
-    position_before = await get_position_size(symbol)
-    if abs(position_before) <= 0.000001:
-        return {"symbol": symbol, "status": "already_flat", "idempotency_key": key, "position": position_before}
-
-    cancel_result = await cancel_and_verify_targets_for_shrek_eod(symbol)
-    if cancel_result.get("status") == "position_flat_during_target_cancel":
-        return {
-            "symbol": symbol,
-            "status": "target_fill_race_flat",
-            "idempotency_key": key,
-            "cancel_result": cancel_result,
-        }
-    if not cancel_result.get("ok"):
-        logger.critical("[SHREK EOD TARGET CANCEL UNCONFIRMED] symbol=%s key=%s result=%s", symbol, key, cancel_result)
-        return {"symbol": symbol, "status": "target_cancel_unconfirmed", "idempotency_key": key, "cancel_result": cancel_result}
-
-    position_after_cancel = await get_position_size(symbol)
-    if abs(position_after_cancel) <= 0.000001:
-        return {"symbol": symbol, "status": "target_fill_race_flat", "idempotency_key": key, "cancel_result": cancel_result}
-
-    side = "LONG" if position_after_cancel > 0 else "SHORT"
-    action = "SELL" if position_after_cancel > 0 else "BUY"
-    qty = abs(int(position_after_cancel))
     order_ref_value = state.get("order_ref") or f"VIXALE_EOD_{day_key.replace('-', '')}_{symbol}_{strategy}"
-    close_trade = find_trade_by_order_ref(order_ref_value)
+    if state.get("target_order"):
+        row["target_order"] = dict(state["target_order"])
 
-    if close_trade is None and state.get("order_submitted"):
-        logger.critical("[SHREK EOD ORDER STATE AMBIGUOUS] symbol=%s key=%s. Refusing duplicate close.", symbol, key)
-        return {"symbol": symbol, "status": "ambiguous_prior_submission", "idempotency_key": key}
+    def persist_target_identity(identity):
+        if state.get("target_order") != identity:
+            state["target_order"] = dict(identity)
+            all_state[key] = state
+            save_force_eod_state(all_state)
+
+    close_trade = None
+    if state.get("order_submitted") or state.get("status") == "submitting":
+        snapshot = await shrek_eod_broker_snapshot(row, order_ref_value)
+        candidates = [t for t in (snapshot.get("open_trades", []) + snapshot.get("completed", []))
+                      if trade_contract_symbol(t) == symbol and trade_order_ref_value(t) == order_ref_value
+                      and trade_action(t) == expected_exit_action(row)
+                      and ((state.get("order_perm_id") and str(trade_perm_id(t)) == str(state["order_perm_id"]))
+                           or (not state.get("order_perm_id")
+                               and getattr(t.order, "clientId", None) == getattr(ib.client, "clientId", None)))]
+        if not snapshot["ok"] or len(candidates) != 1:
+            return {"symbol": symbol, "status": "ambiguous_prior_submission", "idempotency_key": key}
+        close_trade = candidates[0]
+        qty = to_float(state.get("qty"))
+        side = state.get("side")
+        position_after_cancel = qty if side == "LONG" else -qty
+        cancel_result = {"canceled_targets": state.get("canceled_targets", 0)}
+    else:
+        cancel_result = await cancel_and_verify_targets_for_shrek_eod(symbol, row, persist_target_identity)
+        if not cancel_result.get("ok"):
+            logger.critical("[SHREK EOD TARGET CANCEL UNCONFIRMED] symbol=%s result=%s", symbol, cancel_result)
+            return {"symbol": symbol, "status": "target_cancel_unconfirmed", "idempotency_key": key, "cancel_result": cancel_result}
+        if cancel_result.get("status") == "position_flat_during_target_cancel":
+            return {"symbol": symbol, "status": "target_fill_race_flat", "idempotency_key": key}
+        position_after_cancel = cancel_result["position"]
+        side = str(row.get("side") or "").upper()
+        qty = abs(position_after_cancel)
+    if (side not in ("LONG", "SHORT") or side != str(row.get("side") or "").upper()
+            or qty <= 0 or qty > to_float(row.get("qty")) or not float(qty).is_integer()):
+        return {"symbol": symbol, "status": "invalid_close_quantity", "idempotency_key": key}
+    action = "SELL" if side == "LONG" else "BUY"
+    qty = int(qty)
 
     payload = dict(row.get("last_payload") or {})
     payload.update({
@@ -9349,9 +9450,13 @@ async def flatten_one_shrek_position(
     })
 
     if close_trade is None:
+        if DRY_RUN:
+            return {"symbol": symbol, "status": "dry_run_no_order", "idempotency_key": key, "action": action, "qty": qty}
         contract = await qualify_contract(payload)
         order = MarketOrder(action=action, totalQuantity=qty, tif="DAY")
         order.orderRef = order_ref_value
+        if not is_us_stock_rth_now():
+            return {"symbol": symbol, "status": "blocked_close_outside_rth", "idempotency_key": key}
         state.update({
             "status": "submitting",
             "symbol": symbol,
@@ -9359,17 +9464,19 @@ async def flatten_one_shrek_position(
             "side": side,
             "qty": qty,
             "order_ref": order_ref_value,
-            "order_submitted": False,
+            # Durable reservation BEFORE placeOrder: a crash never authorizes a retry buy.
+            "order_submitted": True,
+            "target_components": cancel_result.get("target_components", []),
+            "target_order": dict(row.get("target_order") or {}),
+            "canceled_targets": cancel_result.get("canceled_targets", 0),
             "submitted_at": now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat(),
         })
         all_state[key] = state
         save_force_eod_state(all_state)
 
-        if DRY_RUN:
-            return {"symbol": symbol, "status": "dry_run_no_order", "idempotency_key": key, "action": action, "qty": qty}
-
         close_trade = ib.placeOrder(contract, order)
         state["order_id"] = trade_order_id(close_trade)
+        state["order_perm_id"] = trade_perm_id(close_trade)
         state["order_submitted"] = True
         state["status"] = "submitted"
         all_state[key] = state
@@ -9391,26 +9498,46 @@ async def flatten_one_shrek_position(
         await asyncio.sleep(poll)
         waited += poll
 
-    flat, position_after = await verify_position_flat(symbol, FORCE_EOD_POSITION_VERIFY_SECONDS)
-    if not flat:
-        logger.critical(
-            "[SHREK EOD POSITION REMAINS OPEN] symbol=%s key=%s order_status=%s filled=%s position=%s",
-            symbol, key, trade_status(close_trade), trade_filled_qty(close_trade), position_after,
-        )
-        return {
-            "symbol": symbol,
-            "status": "position_remains_open",
-            "idempotency_key": key,
-            "position": position_after,
-            "order_status": trade_status(close_trade),
-        }
+    # Require a fresh broker snapshot AFTER the fill. Cached zero is not closure.
+    state["order_perm_id"] = trade_perm_id(close_trade) or state.get("order_perm_id")
+    all_state[key] = state
+    save_force_eod_state(all_state)
+    waited = 0.0
+    components = []
+    while waited <= max(FORCE_EOD_POSITION_VERIFY_SECONDS, poll):
+        snapshot = await shrek_eod_broker_snapshot(row, order_ref_value)
+        if snapshot["ok"] and snapshot["target_terminal"] and not snapshot["target_evidence_missing"]:
+            expected_close = {"order_id": trade_order_id(close_trade), "perm_id": trade_perm_id(close_trade),
+                              "order_ref": order_ref_value, "expected_qty": qty}
+            exact_close = exact_execution_components_for_expected_order(row, expected_close, [close_trade], snapshot["fills"])
+            close_components = list(exact_close["components"])
+            components = snapshot["target_components"] + close_components
+            close_qty = sum(c["qty"] for c in close_components)
+            total_qty = sum(c["qty"] for c in components)
+            symbol_orders = [t for t in snapshot["open_trades"] if trade_contract_symbol(t) == symbol]
+            if (not exact_close["ambiguous"] and not exact_close["incomplete"]
+                    and abs(close_qty - qty) <= 0.000001
+                    and abs(total_qty - to_float(row.get("qty"))) <= 0.000001
+                    and abs(snapshot["position"]) <= 0.000001 and not symbol_orders):
+                break
+        await asyncio.sleep(poll)
+        waited += poll
+    else:
+        logger.critical("[SHREK EOD CLOSE EVIDENCE UNCONFIRMED] symbol=%s position=%s", symbol, snapshot.get("position"))
+        return {"symbol": symbol, "status": "close_evidence_unconfirmed", "idempotency_key": key,
+                "position": snapshot.get("position"), "reason": snapshot.get("reason", "fill_target_or_flat_unconfirmed")}
+
+    position_after = snapshot["position"]
+    total_qty = sum(c["qty"] for c in components)
+    payload["qty"] = total_qty
+    weighted_price = sum(c["qty"] * c["price"] for c in components) / total_qty
 
     ib_result = {
         "status": "submitted",
         "close_filled": True,
         "close_status": "Filled",
-        "close_fill_price": trade_fill_price(close_trade, to_float(payload.get("entry"))),
-        "close_filled_qty": trade_filled_qty(close_trade) or qty,
+        "close_fill_price": weighted_price,
+        "close_filled_qty": total_qty,
         "position_before_close": position_after_cancel,
         "position_after_close": position_after,
         "canceled_open_orders": cancel_result.get("canceled_targets", 0),
@@ -9420,6 +9547,10 @@ async def flatten_one_shrek_position(
     render_payload = make_close_fill_payload(payload, ib_result)
     render_payload["broker_eod_watchdog"] = True
     render_payload["eod_idempotency_key"] = key
+    render_payload["broker_confirmed_flat"] = True
+    render_payload["execution_components"] = components
+    render_payload["exit_execution_id"] = "EXEC:" + ",".join(sorted(c["exec_id"] for c in components))
+    render_payload["reconciliation_id"] = f"{key}:{render_payload['exit_execution_id']}"
     state.update({
         "status": "confirmed_flat",
         "confirmed_flat_at": now_in_tz(FORCE_EOD_FLATTEN_TIMEZONE).isoformat(),
