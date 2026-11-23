@@ -1,3 +1,14 @@
+## November 23, 2026 — Telegram Exit price presentation
+
+Handbook update required: YES. The Telegram message renderer in `app.js`
+formats numeric exit execution prices to exactly two decimal places for Take
+Profit, Stop Loss, EOD Close and Manual Close, including SMIO_RSI Demo, Prime,
+Edge and legacy event templates. This applies only to Telegram output: raw
+`row.exit`, execution evidence, Sheets values, broker orders, strategy logic,
+result/P&L and quantity are not modified. Missing or nonnumeric prices are
+not synthesized as zero. Regression assertions are in
+`tests/test_smio_demo_render.js`.
+
 ## November 23, 2026 — Telegram Entry price presentation
 
 Handbook update required: YES. The Telegram formatter in `app.js` displays

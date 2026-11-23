@@ -74,6 +74,37 @@ function verifyTelegramEntryPresentation() {
   assert(api.formatTelegramMessage(edge, '').includes('Entry: <b>129.28</b>'));
 }
 verifyTelegramEntryPresentation();
+function verifyTelegramExitPresentation() {
+  const base = {
+    symbol: 'GOOGL', side: 'SHORT', strategy: 'SHREK_1_4',
+    entry: 158.83599999999998, exit: 157.9467,
+    size: 110, result: 97.82, raw: '{}',
+  };
+  for (const event of ['TP', 'SL', 'EOD', 'EXTERNAL_CLOSE']) {
+    const row = { ...base, event };
+    const message = api.formatTelegramMessage(row, '');
+    assert(message.includes('<b>157.95</b>'), event + ': ' + message);
+    assert(!message.includes('157.9467'), event + ': raw execution price leaked');
+    assert.strictEqual(row.exit, 157.9467);
+    assert.strictEqual(row.result, 97.82);
+  }
+  for (const event of ['TP', 'SL', 'EOD', 'EXTERNAL_CLOSE']) {
+    const row = { ...base, event, exit: '' };
+    const message = api.formatTelegramMessage(row, '');
+    assert(!message.includes('Exit: <b>0.00</b>'), message);
+    assert(!message.includes('Exit Price: <b>0.00</b>'), message);
+  }
+  const smio = {
+    event: 'EOD', symbol: 'SPY', side: 'LONG', timeframe: '45',
+    entry: 640.127, exit: 641.999, size: 10,
+    raw: JSON.stringify({ system_id: 'SMIO_RSI', strategy: 'SMIO_RSI' }),
+  };
+  // General formatter also applies when the SMIO classifier accepts this payload.
+  const smioMessage = api.formatTelegramMessage(smio, '');
+  assert(smioMessage.includes('<b>642.00</b>'), smioMessage);
+}
+verifyTelegramExitPresentation();
+
 
 (async () => {
   for (const side of ['LONG', 'SHORT']) for (const mode of ['ATR', 'RSI_80_20', 'FirstOfEither']) {
