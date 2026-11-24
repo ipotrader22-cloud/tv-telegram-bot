@@ -11,8 +11,9 @@ async function discover(){
 if(require.main===module)http.createServer(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type','application/json');
  if(req.method!=='GET'){res.writeHead(405);return res.end('{}');}
- if(req.url==='/health')return res.end(JSON.stringify({ok:true,mode:'discovery-only',orders:false}));
- if(req.url==='/discover'){try{return res.end(JSON.stringify(await discover()));}catch(e){res.writeHead(502);return res.end(JSON.stringify({error:'DISCOVERY_FAILED'}));}}
- res.writeHead(404);res.end('{}');
+ const pathname=new URL(req.url,'http://localhost').pathname;
+ if(pathname==='/health')return res.end(JSON.stringify({ok:true,mode:'discovery-only',orders:false}));
+ if(pathname==='/discover'){try{return res.end(JSON.stringify(await discover()));}catch(e){res.writeHead(502);return res.end(JSON.stringify({error:'DISCOVERY_FAILED'}));}}
+ res.writeHead(404);res.end(JSON.stringify({error:'NOT_FOUND'}));
 }).listen(process.env.PORT||10000,'0.0.0.0');
 module.exports={discover};
