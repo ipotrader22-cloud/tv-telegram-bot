@@ -136,6 +136,28 @@ function formatMoney(value) {
 
 // Keep the monitor on its own origin: no credentials or Vixale session data
 // are forwarded, and its existing authentication remains authoritative.
+// The authenticated ES monitor iframe supplies these display-only values.
+function openStraddleCards() {
+  return `<style>
+#vx-options-open-straddle{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+#vx-options-open-straddle .strategy-note{min-width:0;min-height:94px}
+#vx-options-open-straddle .vx-straddle-number{display:block;margin-top:7px;font-size:clamp(20px,2vw,29px);font-weight:760;line-height:1.2;font-variant-numeric:tabular-nums;color:#142d24}
+#vx-options-straddle-status{margin:9px 0 0;color:var(--muted,#68736f);font-size:11px;line-height:1.5}
+#vx-options-open-straddle .vx-straddle-label-ru{display:none}
+html[lang=ru] #vx-options-open-straddle .vx-straddle-label-en{display:none}
+html[lang=ru] #vx-options-open-straddle .vx-straddle-label-ru{display:inline}
+@media(max-width:900px){#vx-options-open-straddle{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){#vx-options-open-straddle{grid-template-columns:1fr}}
+</style>
+<div class="strategy-notes" id="vx-options-open-straddle" aria-label="ES straddle position levels">
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Short Straddle</span><span class="vx-straddle-label-ru">Короткий страддл</span></strong><span class="vx-straddle-number" id="vx-options-strike">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Open Price</span><span class="vx-straddle-label-ru">Цена открытия</span></strong><span class="vx-straddle-number" id="vx-options-open-price">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Target</span><span class="vx-straddle-label-ru">Цель</span></strong><span class="vx-straddle-number" id="vx-options-target">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Stop</span><span class="vx-straddle-label-ru">Стоп</span></strong><span class="vx-straddle-number" id="vx-options-stop">—</span></div>
+</div>
+<p id="vx-options-straddle-status" role="status">Awaiting authenticated monitor data · workbook-derived, not broker-position verified · stop is calculated, not an order</p>`;
+}
+
 function straddleMonitorSection() {
   const url = "https://es-straddle-monitor.onrender.com/";
   return `<section class="section" id="options-straddle-monitor" aria-labelledby="options-straddle-title">
@@ -150,7 +172,50 @@ function straddleMonitorSection() {
 <p class="straddle-monitor-note">If the chart asks you to sign in or appears blank, open the full chart, sign in to the monitor, then return here and reload the chart.</p>
 <iframe class="straddle-monitor-frame" id="options-straddle-frame" src="${url}" title="ES Straddle Monitor" loading="eager" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" allowfullscreen></iframe>
 </section>
-<script>(()=>{const button=document.getElementById('options-straddle-reload'),frame=document.getElementById('options-straddle-frame');if(button&&frame)button.addEventListener('click',()=>{frame.src=${JSON.stringify(url)};});})();</script>`;
+<script>(() => {
+  const frame = document.getElementById('options-straddle-frame');
+  const button = document.getElementById('options-straddle-reload');
+  const status = document.getElementById('vx-options-straddle-status');
+  const ids = ['vx-options-strike','vx-options-open-price','vx-options-target','vx-options-stop'];
+  const cells = ids.map(id => document.getElementById(id));
+  if (!frame || !status || cells.some(cell => !cell)) return;
+  let receivedAt = 0;
+  const ru = document.documentElement.lang.toLowerCase().startsWith('ru');
+  const waiting = ru ? 'Ожидание данных монитора · значения из Excel, не подтверждение позиции у брокера · стоп расчётный' : 'Awaiting authenticated monitor data · workbook-derived, not broker-position verified · stop is calculated, not an order';
+  const stale = ru ? 'Данные монитора недоступны или устарели · позиция не подтверждена брокером' : 'Monitor data unavailable or stale · workbook-derived, not broker-position verified';
+  const fresh = ru ? 'Недавние данные из Excel · позиция не подтверждена брокером · стоп расчётный, не ордер' : 'Recent monitor sample · workbook-derived, not broker-position verified · stop is calculated, not an order';
+  const clear = (message) => {
+    cells.forEach(cell => { cell.textContent = '—'; });
+    status.textContent = message;
+    receivedAt = 0;
+  };
+  const number = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+  window.addEventListener('message', event => {
+    if (event.origin !== 'https://es-straddle-monitor.onrender.com' || event.source !== frame.contentWindow) return;
+    const data = event.data;
+    if (!data || typeof data !== 'object' || data.type !== 'es-straddle-summary-v1') return;
+    const epoch = number(data.ts_epoch);
+    const age = epoch === null ? Infinity : Date.now() / 1000 - epoch;
+    if (age < -10 || age > 30) { clear(stale); return; }
+    const strike = number(data.strike);
+    const open = number(data.open_price);
+    const target = number(data.target);
+    cells[0].textContent = strike === null ? '—' : String(Number(strike.toFixed(2)));
+    cells[1].textContent = open === null ? '—' : open.toFixed(2);
+    cells[2].textContent = target === null ? '—' : target.toFixed(2);
+    // Credit x 1.65, rounded to cents for display; never a broker stop order.
+    cells[3].textContent = open === null ? '—' : (Math.round(open * 165) / 100).toFixed(2);
+    status.textContent = fresh;
+    receivedAt = Date.now();
+  });
+  if (button) button.addEventListener('click', () => {
+    clear(waiting);
+    frame.src = ${JSON.stringify(url)};
+  });
+  setInterval(() => {
+    if (receivedAt && Date.now() - receivedAt > 35000) clear(stale);
+  }, 5000);
+})();</script>`;
 }
 
 function optionsEquitySection(curve, error = false) {
@@ -221,7 +286,7 @@ function refineOptionsPageFromDashboard(html, curve = { points: [], total_realiz
   const optionSection = moveIbkrExplanationBelowJournal(extractOptionJournalSection(html));
   if (!optionSection) return html;
   let out = removeMetaRefresh(setCanonical(setTitle(html, "Vixale | Options Trading"), OPTIONS_CANONICAL_URL));
-  const body = `<div class="wrap" ${OPTIONS_PAGE_MARKER}="page"><div class="top-actions"><div class="left-links"><a class="home-link" href="/">← Back to Home</a><a class="home-link" href="/dashboard">Day Trading Dashboard</a><a class="home-link" href="/trading-systems/swing-trading">Swing Trading</a><a class="home-link" href="/trading-systems">Trading Systems</a></div><div class="dashboard-links"><a class="dash-btn primary" href="/#password-access">Watch Systems for Free</a><a class="dash-btn" href="/logout">Log Out</a></div></div><div class="hero"><div class="topline"><div class="brand"><h1>Vixale Options</h1><div class="subtitle">Owner-entered Option Journal · open and closed trades · realized P&amp;L</div><div class="updated">Options are recorded manually through the existing owner journal. This page is read-only.</div></div><div class="badge"><span class="dot"></span> OPTIONS JOURNAL</div></div><div class="strategy-notes"><div class="strategy-note"><strong>Manual journal</strong>Trades continue to be entered and updated by the owner through the existing Options admin workflow.</div><div class="strategy-note"><strong>Closed-only equity</strong>The curve changes only when an Option Journal trade is Closed with a valid Exit Date and derived realized P&amp;L.</div><div class="strategy-note"><strong>One viewer access</strong>The same Vixale viewer session used for the Day Trading dashboard opens this Options page and protected brokerage proofs.</div></div></div>${straddleMonitorSection()}${optionsEquitySection(curve, equityError)}${optionSection}<div class="footer"><strong>Options disclosure:</strong> Option Journal entries are owner-entered records. Realized P&amp;L is derived from the recorded Credit/Debit, entry price, exit price, contracts, multiplier, and fees; it is not entered manually. Brokerage screenshots, when present, are owner-provided and may be cropped or redacted. Trading options involves substantial risk and results are not guaranteed.</div></div>${optionsChartScript(curve)}`;
+  const body = `<div class="wrap" ${OPTIONS_PAGE_MARKER}="page"><div class="top-actions"><div class="left-links"><a class="home-link" href="/">← Back to Home</a><a class="home-link" href="/dashboard">Day Trading Dashboard</a><a class="home-link" href="/trading-systems/swing-trading">Swing Trading</a><a class="home-link" href="/trading-systems">Trading Systems</a></div><div class="dashboard-links"><a class="dash-btn primary" href="/#password-access">Watch Systems for Free</a><a class="dash-btn" href="/logout">Log Out</a></div></div><div class="hero"><div class="topline"><div class="brand"><h1>Vixale Options</h1><div class="subtitle">Owner-entered Option Journal · open and closed trades · realized P&amp;L</div><div class="updated">Options are recorded manually through the existing owner journal. This page is read-only.</div></div><div class="badge"><span class="dot"></span> OPTIONS JOURNAL</div></div>${openStraddleCards()}</div>${straddleMonitorSection()}${optionsEquitySection(curve, equityError)}${optionSection}<div class="footer"><strong>Options disclosure:</strong> Option Journal entries are owner-entered records. Realized P&amp;L is derived from the recorded Credit/Debit, entry price, exit price, contracts, multiplier, and fees; it is not entered manually. Brokerage screenshots, when present, are owner-provided and may be cropped or redacted. Trading options involves substantial risk and results are not guaranteed.</div></div>${optionsChartScript(curve)}`;
   return replaceBody(out, body);
 }
 

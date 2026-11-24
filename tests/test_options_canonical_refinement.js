@@ -69,6 +69,18 @@ assert(options.includes("<title>Vixale | Options Trading</title>"));
 assert(options.includes(`<link rel="canonical" href="${OPTIONS_CANONICAL_URL}" />`));
 assert(!options.includes('http-equiv="refresh"'));
 assert(options.includes("Vixale Options"));
+assert(options.includes('id="vx-options-open-straddle"'), "Four-level summary must replace old intro cards");
+for (const id of ["vx-options-strike","vx-options-open-price","vx-options-target","vx-options-stop"]) {
+  assert(options.includes('id="' + id + '"'), "Missing summary field " + id);
+}
+assert(!options.includes("<strong>Manual journal</strong>"));
+assert(!options.includes("<strong>Closed-only equity</strong>"));
+assert(!options.includes("<strong>One viewer access</strong>"));
+assert(options.includes("es-straddle-summary-v1"), "Authenticated chart message contract required");
+assert(options.includes("event.source !== frame.contentWindow"), "Reject messages not sent by the chart");
+assert(options.includes("event.origin !== 'https://es-straddle-monitor.onrender.com'"), "Require monitor origin");
+assert(options.includes("Math.round(open * 165) / 100"), "Stop = open credit x 1.65");
+assert(options.includes("Короткий страддл"), "Russian UI label required");
 assert(options.includes("Options Equity Curve — Realized P&amp;L"));
 assert(options.includes("Total Realized Options P&amp;L"));
 assert(options.includes("+$635.00"));
