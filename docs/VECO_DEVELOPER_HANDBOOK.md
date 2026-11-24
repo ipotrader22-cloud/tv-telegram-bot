@@ -1,3 +1,26 @@
+## November 24, 2026 — Repository operating instructions and verification map
+
+Handbook update required: YES. Repository-root `AGENTS.md` now consolidates
+the existing owner-authorized model rules, data/formula invariants, Engine 2
+single-writer and deployment boundaries, staging/CI gates, recovery, operational
+exception notifications, rollback and completion requirements. The existing
+October 6 merge/deploy authorization, October 25 autonomy instruction, broker
+execution-first rules and strategy-specific activation gates remain intact.
+An explicit PR-only request ends at the reviewed PR.
+
+See [VIXALE_REPOSITORY_OPERATING_MAP.md](VIXALE_REPOSITORY_OPERATING_MAP.md)
+for the audited revisions, implementation references, test entrypoints, dated
+Render configuration and evidence limits. Website `main` and the Engine 2
+writer branch remain distinct. The Engine 2 README and older staging ADRs
+contain historical pre-activation statements; use the later authorized rollout
+and actual deployed source for current operational status. No VIXALE Supabase
+configuration was established by this audit; do not infer one from an unrelated
+connected project. Re-read resource identity and live sources before mutations.
+
+This is documentation only: no strategy, runtime, configuration, schema, data,
+workflow, schedule, email or broker change. Rollback is a narrow documentation
+revert; it must not undo financial history or replay old deployment commands.
+
 ## November 23, 2026 — Authenticated Options viewer open-straddle summary
 
 Handbook update required: YES. The owner requested that the three introductory cards on the protected Options viewer be replaced with four read-only cards: Short Straddle (strike), Open Price (entry credit), Target (workbook target), and Stop (entry credit × 1.65, displayed to cents). These cards do not establish broker-confirmed position-active status; the monitor publisher does not provide a position-active flag. The stop is a calculated display level only, not a broker order or M0 MAYDAY exit rule.

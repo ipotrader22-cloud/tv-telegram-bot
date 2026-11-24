@@ -22,6 +22,29 @@ docs/VECO_DEVELOPER_HANDBOOK.md
 
 The handbook is the canonical project memory. The repository and deployed production code are the source of operational truth.
 
+### Operating references and precedence
+
+For Active Portfolio work, also read
+[`docs/VIXALE_Active_Portfolio_Source_of_Truth.md`](docs/VIXALE_Active_Portfolio_Source_of_Truth.md).
+It is the prospective allocation amendment, not a replacement for the FINAL
+October 12 Source of Truth and Operational Control supplied with the project.
+Read those sources before financial, publication, automation or email changes;
+files under a synced project `sources/` directory are read-only references.
+Use later explicit owner amendments only for the behavior they supersede.
+Historical holdings, rollout commands, paused-task lists and deployment IDs are
+evidence of their date, never current inputs or standing instructions to replay.
+
+Before state-changing actions, re-read the relevant live source and verify its
+identity, revision and ownership. Code establishes implemented behavior; it does
+not authorize a strategy change. Resolve specification/runtime conflicts before
+the affected mutation, without silently choosing a new trading rule.
+
+The [repository audit and verification map](docs/VIXALE_REPOSITORY_OPERATING_MAP.md)
+records implementation references, deployment branches, configuration boundaries
+and test entrypoints. Engine 2 paths in that map belong to its deployed branch
+and are not present on website `main`. Read the applicable branch's handbook,
+ADRs and any nested `AGENTS.md` before editing that subsystem.
+
 ---
 
 ## ChatGPT/Codex Session Bootstrap
@@ -65,6 +88,13 @@ For a normal requested change, Codex should complete the following workflow in o
 10. Push the feature branch.
 11. Create a Pull Request into `main`.
 12. If the task is eligible under the Standing Owner Authorization below, merge the PR to `main`, allow the normal production deployment, verify the exact deployed commit reaches Live, and report the result. If an exception applies, stop before merge and request the required task-specific approval.
+
+Branch exception: website work starts from current `origin/main`. Engine 2
+writer/observer work starts from, and targets, the freshly verified deployment
+branch (last verified `engine-v2-shadow-foundation-20261016`). Never merge the
+entire Engine 2 foundation into `main` to deliver a narrow engine change. Use an
+isolated worktree when existing checkouts contain unrelated work; do not reset,
+stash or overwrite that work. A request to submit a PR is a PR-only endpoint.
 
 Codex may commit, push the feature branch, create the Pull Request, and—when eligible under the standing authorization—merge/deploy as part of the same task.
 
@@ -136,7 +166,7 @@ GitHub or operating-system permission prompts may still require the user to clic
 
 ### Never bypass execution-first
 
-VECO must not publish an OPEN or CLOSED trade until TWS confirms the real broker fill.
+The broker-executed VECO path must not publish an OPEN or CLOSED trade until TWS confirms the real broker fill. The separate Active Portfolio path publishes explicitly labeled model events under the rules below; it never submits broker orders.
 
 Do not weaken or bypass:
 
@@ -202,7 +232,7 @@ Do not modify production environment variables unless explicitly instructed.
 
 ## Source and Classification Rules
 
-Current production systems:
+Core broker-system identities (this is not an activation inventory):
 
 ```text
 Shrek
@@ -361,7 +391,9 @@ After the PR checks are clean, continue through merge/deploy automatically when 
 
 ## Render Rules
 
-The production Render service tracks the repository production branch.
+The production website Render service tracks `main`. The Engine 2 writer and
+observer use their separate deployment branch; verify each service rather than
+assuming every VIXALE service tracks `main`.
 
 A merge or push to `main` may trigger Render Auto-Deploy.
 
@@ -374,6 +406,215 @@ Therefore:
 - do not claim Render is Live without checking deployment status and startup logs.
 
 Codex does not need to press a Render deploy button when Auto-Deploy is enabled for `main`.
+
+---
+
+## Authorized Active Portfolio Rules
+
+- Preserve the November 13 owner amendment, effective for new decisions from
+  November 16, 2026: verified current nine-factor score **strictly above 70** is
+  the sole entry signal. Fill free slots by descending score, ticker order for
+  ties, at most ten positions of fixed normalized $10,000 each. Do not restore
+  the old 80-point/setup/catalyst entry gates or add discretionary approval.
+- Keep eligible holdings; score 70 may remain held but cannot initiate entry.
+  Do not replace a holding merely because a candidate scores higher. Insufficient
+  qualifying candidates leave empty slots. Realized losses do not reduce the
+  ten-slot limit; negative formula-derived residual cash is model accounting,
+  not borrowing or broker leverage.
+- Preserve the pinned 518-security S&P 500/Nasdaq 100 universe and its versioned
+  membership/exclusion evidence. Missing research is not a low score. Do not
+  shrink the universe or change weights to make a failing review pass.
+- The nine factor caps total 100: Market 10, Sector/Theme 15, Leadership 15,
+  Catalyst 10, Base 15, Compression 10, Volume/Accumulation 15, MA 5,
+  Resistance 5. Retain dated facts, source hashes, completed-session OHLCV,
+  actual exchange volume and at least 200 completed daily bars where required
+  by the collector. Verify points, caps and sum. Preserve the implemented
+  versioned assessor; do not invent scores or a replacement rubric.
+- Opening STOP LOSS requires a lot held at that opening and verified 09:30 ET
+  regular-session OPEN <= original entry × 0.95, inclusive. An intraday low,
+  current quote below the reference, or prior close is not opening evidence.
+  Record the later verified model exit quote/time separately from the trigger;
+  never backdate to 09:30 or assume a fill at the threshold.
+- TARGET requires verified regular-session evidence at or above entry × 1.10
+  while the exact lot was open; close the full model lot at entry × 1.10.
+  Exclude pre-entry/after-hours highs. Preserve ordered trigger evidence and
+  scan watermarks; missing interval coverage cannot certify no target.
+- A newly verified score below 70 triggers the existing
+  `DROPPED FROM ACTIVE PORTFOLIO` exit at the verified model quote. Missing or
+  pending reassessment never creates a dropout. No continuous intraday -5%
+  stop or intraday rescoring is authorized.
+- New entries use new dated lot identities, including previously closed
+  tickers. Deduplicate against all closed lots, including Q=NO; prohibit
+  same-session exit/re-entry churn and reused same-date lot IDs. Preserve the
+  date-specific entry policy when replaying historical decisions.
+
+These model rules do not alter Prime/Shrek, Edge/Fiona, SMI forward-test or
+SMIO demo contracts. Preserve strategy-specific paper/activation gates, sizing,
+targets, session rules and exact broker ownership. SMIO demo approval is not
+live-money approval; an Options display or IBKR data probe does not enable
+futures in the stock execution service.
+
+## Data Integrity and Publication
+
+- Keep original entry prices/scores, closed lots, immutable events, evidence
+  hashes and historical valuations. Current research score and Closed Trades
+  Last Score are not the immutable Entry Score. Never rewrite history to make
+  today's reconciliation succeed or import legacy lots into the clean epoch.
+- Model P&L is `10000 * (mark / entry - 1)` per included lot; model equity is
+  `100000 + realized + unrealized`. Do not derive it from rounded displayed
+  percentages, whole-share quantities or brokerage P&L. Round for display only.
+- Closed Trades Q controls inclusion; R is Public P&L Effective Date. Q=NO is
+  soft exclusion, never deletion or permission to reuse a lot. Preserve
+  Q/R-aware realized history, Public Feed cash and Closed Trades spill/filter
+  formulas (B7/A33 in the inspected workbook), and Equity History C/E/F formulas.
+  Equity D is the captured numeric unrealized mark with its actual time, never
+  a historical reference to mutable current holdings. Do not add duplicate dates.
+- Reconcile Portfolio, Open Positions, Closed Trades, Public Feed and Equity
+  History. Verify exact sheet IDs/ranges, formulas as formulas and numeric cells
+  as numbers. Preserve formatted date/currency parsing for website history.
+  Do not confuse Open Positions R (Engine 2 review price) with Closed Trades R.
+- Every cooperating scheduled Sheets writer uses the native lease/fence
+  protocol in `docs/ADR_SWING_NATIVE_WRITE_FENCING.md`: lease 1030100, persistent
+  fence 1030101, exact key/value guards and all financial writes in one native
+  atomic batch. Re-read after acquisition, guard both records, release only the
+  exact owned lease and read back all affected layers. Never delete the fence,
+  steal an unexpired lease or split guards from writes. Unknown write outcome
+  requires revision/lot/formula reconciliation before any retry.
+- Preserve distinct DATA, PUBLICATION and DELIVERY results. A current news date
+  is not completed factor research; a green cron, HTTP 200 or LIVE deployment is
+  not a completed portfolio review. Public Feed time stays strict `HH:MM ET`.
+- The website remains a read-only financial consumer. Both feed/history use
+  the selected workbook. Keep authenticated owner/viewer boundaries, anonymous
+  page redirect/API 401, EN/RU parity, no-store headers and matching snapshot
+  identities. Preserve review-note/date/membership/chart refresh detection;
+  never revert to ticker-only comparison or bypass the coalesced source cache.
+- Keep immutable morning reference marks separate from live/last-session
+  valuation and company-news overlays. Stale, invalid or incomplete quotes
+  cannot manufacture fresh aggregate P&L. The November 11 reporting rebase is
+  display-only and must retain its exact anchor and original source history.
+
+## Engine 2, Render and Database Boundaries
+
+- The Engine 2 cron is the sole pipeline/journal/email writer. The observer
+  serves verified snapshots and performs read-only audits; never call its
+  `stagingWorker.tick()` to repair publication. Service names containing
+  `staging`/`shadow`, and legacy `productionCutover:false` flags, do not prove
+  that the workbook is unused by production.
+- Preserve PostgreSQL advisory locks, transaction-time prior-state/preparation
+  validation, immutable session/event identities and journal/outbox recovery.
+  Do not replace session locks with process-only locks or an incompatible
+  connection pool. Database identity is checked against the shadow-name
+  allowlist and `current_database()`; never bypass it by changing a URL alone.
+- Preserve pre-open frozen research and the current 10:00–10:05 ET new-decision
+  gate; the cron's wider 10:00–10:20 retry window does not permit late new
+  decisions. Use the maintained NYSE/DST/holiday/early-close calendar and actual
+  clock at commit. Recover committed artifacts without repricing. Legacy task
+  windows remain specific to those tasks; never copy them over engine gates.
+- Read actual service branch, commands, deploy SHA, auto-deploy state and
+  nonsecret configuration evidence before rollout. Optional Render YAML files
+  are provisioning references, not an inventory of all active services. Do not
+  sync them onto production, create duplicate databases/crons or change tiers
+  as an incidental repair. Keep the website's `npm start` preload chain.
+- Protect `/var/data` ingress spool and private Option Proofs. A disk-backed
+  website deployment can interrupt signals; use the documented safe rollout
+  window. GitHub/Render deployment never installs the Windows bridge. Local
+  rollout requires current file/hash comparison, controlled stop, private
+  backups, reviewed dependency set, original environment and runtime/broker
+  verification; never overwrite local customizations or live journals.
+- Keep `VIXALE_SWING_SOURCE`, Engine 2 database/service-account settings,
+  price/universe selectors, pipeline/email flags and recipient allowlist scoped
+  to their actual services. Record names and redacted readiness only. A website
+  source switch needs a normal deploy; Restart alone retains deploy config.
+  Website financial Sheets access remains read-only. Isolated website tests
+  use a separate auth/operational workbook and dedicated credentials.
+- **Supabase:** no VIXALE Supabase integration is established by the inspected
+  deployed branches; Engine 2 uses `pg` and the Render PostgreSQL contract.
+  Do not invent a project ref, Supabase migrations/RLS setup or assume another
+  connected project's database belongs to VIXALE. Any future Supabase work must
+  first establish the authorized project/environment, inspect its actual
+  schema/access policies and document migration, staging and rollback evidence.
+  This file does not authorize a database migration or new public data access.
+
+## Staging, GitHub Checks and Rollback
+
+- Use isolated fixtures first, then the affected subsystem's checks in the
+  operating map and actual `.github/workflows/` on the target branch. Root
+  `package.json` currently has `start`, not a universal `npm test`. Respect the
+  workflow's Node/Python/browser versions; do not rewrite dependencies to run QA.
+- For engine changes, require the exact-head Engine 2 suite including real
+  disposable PostgreSQL, replay/idempotency, formula/lease conflicts, outages,
+  incomplete research, source timestamps, calendar and publication/delivery
+  gates. Never run destructive integration tests against a hosted financial DB;
+  preserve disposable-loopback database guards. A skipped DB test is not PASS.
+- Validate website changes with all normal preloads, actual emitted JavaScript,
+  EN/RU owner/viewer and anonymous flows, same-snapshot page/API checks, stale
+  handling and browser refresh. Isolated staging success does not certify the
+  production page. Never send synthetic trading callbacks/orders for UI QA.
+- Check Actions runs/jobs at the exact PR head and target branch, including
+  push/manual runs when a connector only lists PR events. Path-filtered or
+  skipped workflows provide no execution evidence. Check artifacts/date/gate,
+  not only the green workflow conclusion. Do not dispatch a publishing workflow
+  as a read-only test: Daily Market Skim has its own content-write behavior.
+  Its existing scheduled commit does not authorize direct agent pushes to main.
+- Record the known-good commit/deployment, service/source settings and compatible
+  data format before an authorized rollout. Verify the exact deployed SHA and
+  startup/runtime evidence afterwards. Avoid duplicate manual deploys when
+  main auto-deploy already started; Engine 2 services use their own manual path.
+- Roll back with a narrow revert PR and the appropriate verified deploy; retain
+  every real/model event, Q/R decision, journal, receipt, outbox and proof file.
+  Preserve evidence-envelope decoding after compressed evidence has been stored;
+  an old incompatible reader is not a safe rollback. Schema rollback needs a
+  separately reviewed, non-destructive compatibility plan and verified backup.
+- Website source rollback follows `docs/releases/ENGINE2_SWING_ROLLOUT.md`:
+  restore the approved prior source/config via normal deploy and verify both
+  ranges and page/API. Label retained LEGACY data with its actual old date.
+  A presentation-only fix normally needs only its code revert, not source/data
+  rollback. Do not restore stale bridge journals over subsequent broker fills.
+
+## Automated Recovery and Exception-Only Notifications
+
+- Diagnose the failing layer: research/quotes, ledger transaction, Sheets,
+  publication/cache/deploy, or delivery. Repair the root cause within authorized
+  scope. A website problem must not regenerate trades or rewrite correct Sheets.
+- Use bounded retries only for transient transport/timeout/429/5xx failures,
+  following the component's existing cap/backoff. Re-read and deduplicate before
+  any side-effect retry. Semantic drift, missing evidence, safety rejection,
+  ownership conflict or expired decision window cannot be retried around.
+- Resume durable state and repair missing publication components; never resend
+  an ambiguous broker order, reset a ledger/lease/outbox or fabricate a fill.
+  Preserve broker session/ownership/target-cancellation proofs and quarantine.
+  Do not disable future schedules merely because a run failed, or re-enable
+  retired duplicate writers without an authorized coordinated handoff.
+- Unattended operational notifications are exception-only: a new actionable
+  failure, material state change or required owner action. Deduplicate unchanged
+  alerts by date/gate/lot as applicable; no routine “all clear” or no-event spam.
+  This does not suppress explicitly authorized morning reports or new verified
+  trade-event messages and does not claim a universal alert service exists.
+- Keep Resend delivery separate from financial commits. Use the existing
+  date/event idempotency key and full-date provider dedup, or the Engine 2 durable
+  immutable message plan. Once a message ID exists, recover its receipt instead
+  of sending again. Preserve the engine's 23-hour ambiguous-send cutoff.
+  Accepted, delivered, lookup-restricted, disabled and bounced are distinct;
+  a send-only credential cannot certify delivery. Never use Gmail as fallback
+  or send a staging letter to customers. Do not change email flags/recipients
+  merely to turn a partial result green.
+
+## Completion Criteria
+
+Complete the owner's requested endpoint, including an explicit PR-only or
+staging-only endpoint. For documentation-only work: verify references against
+current implementation, preserve valid instructions, review `git diff --check`
+and the complete file list, and confirm runtime/config/workflows are unchanged.
+An opened, verified documentation PR is completion when that is what was asked.
+
+For authorized runtime/portfolio work: relevant checks pass; fresh DATA and
+post-change PUBLICATION evidence reconcile exact lots, formulas, Q/R and model
+math; exact deployment and actual affected user flow are verified when required;
+expected DELIVERY is independently evidenced or explicitly marked disabled,
+pending or blocked. Disclose partial/skipped/unverified gates. No claim of
+production readiness, delivery, future monitoring or incident closure may exceed
+the observed evidence. Update the handbook/current-state record when required
+and report the rollback path and any remaining owner action.
 
 ---
 
