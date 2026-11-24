@@ -57,8 +57,9 @@ async function form(req){
  return new URLSearchParams(body);
 }
 function sameOrigin(req){if(req.headers.origin!=='https://vixale-ibkr-auth-probe.onrender.com')throw fail('ORIGIN_REQUIRED',403);}
+function pathPolicy(req){return new URL(req.url,'http://localhost').pathname==='/callback'?'no-referrer':'same-origin';}
 async function handler(req,res){
- res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+ res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy',pathPolicy(req));res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self' https://api.ibkr.com; frame-ancestors 'none'; base-uri 'none'");
  const url=new URL(req.url,'http://localhost'),path=url.pathname;
  try{
   if(req.method==='GET'&&path==='/health')return output(res,200,{ok:true,mode:'read-only-oauth-probe',ownerConfigured:enabled(),orders:false,persistentTokens:false});
