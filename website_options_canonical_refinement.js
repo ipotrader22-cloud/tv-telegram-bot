@@ -143,14 +143,17 @@ function openStraddleCards() {
 #vx-options-open-straddle .strategy-note{min-width:0;min-height:94px}
 #vx-options-open-straddle .vx-straddle-number{display:block;margin-top:7px;font-size:clamp(20px,2vw,29px);font-weight:760;line-height:1.2;font-variant-numeric:tabular-nums;color:#142d24}
 #vx-options-straddle-status{margin:9px 0 0;color:var(--muted,#68736f);font-size:11px;line-height:1.5}
+#vx-options-open-straddle .vx-straddle-label-ru{display:none}
+html[lang=ru] #vx-options-open-straddle .vx-straddle-label-en{display:none}
+html[lang=ru] #vx-options-open-straddle .vx-straddle-label-ru{display:inline}
 @media(max-width:900px){#vx-options-open-straddle{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){#vx-options-open-straddle{grid-template-columns:1fr}}
 </style>
 <div class="strategy-notes" id="vx-options-open-straddle" aria-label="ES straddle position levels">
-<div class="strategy-note"><strong>Short Straddle</strong><span class="vx-straddle-number" id="vx-options-strike">—</span></div>
-<div class="strategy-note"><strong>Open Price</strong><span class="vx-straddle-number" id="vx-options-open-price">—</span></div>
-<div class="strategy-note"><strong>Target</strong><span class="vx-straddle-number" id="vx-options-target">—</span></div>
-<div class="strategy-note"><strong>Stop</strong><span class="vx-straddle-number" id="vx-options-stop">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Short Straddle</span><span class="vx-straddle-label-ru">Короткий страддл</span></strong><span class="vx-straddle-number" id="vx-options-strike">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Open Price</span><span class="vx-straddle-label-ru">Цена открытия</span></strong><span class="vx-straddle-number" id="vx-options-open-price">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Target</span><span class="vx-straddle-label-ru">Цель</span></strong><span class="vx-straddle-number" id="vx-options-target">—</span></div>
+<div class="strategy-note"><strong><span class="vx-straddle-label-en">Stop</span><span class="vx-straddle-label-ru">Стоп</span></strong><span class="vx-straddle-number" id="vx-options-stop">—</span></div>
 </div>
 <p id="vx-options-straddle-status" role="status">Awaiting authenticated monitor data · workbook-derived, not broker-position verified · stop is calculated, not an order</p>`;
 }
@@ -177,9 +180,10 @@ function straddleMonitorSection() {
   const cells = ids.map(id => document.getElementById(id));
   if (!frame || !status || cells.some(cell => !cell)) return;
   let receivedAt = 0;
-  const waiting = 'Awaiting authenticated monitor data · workbook-derived, not broker-position verified · stop is calculated, not an order';
-  const stale = 'Monitor data unavailable or stale · workbook-derived, not broker-position verified';
-  const fresh = 'Recent monitor sample · workbook-derived, not broker-position verified · stop is calculated, not an order';
+  const ru = document.documentElement.lang.toLowerCase().startsWith('ru');
+  const waiting = ru ? 'Ожидание данных монитора · значения из Excel, не подтверждение позиции у брокера · стоп расчётный' : 'Awaiting authenticated monitor data · workbook-derived, not broker-position verified · stop is calculated, not an order';
+  const stale = ru ? 'Данные монитора недоступны или устарели · позиция не подтверждена брокером' : 'Monitor data unavailable or stale · workbook-derived, not broker-position verified';
+  const fresh = ru ? 'Недавние данные из Excel · позиция не подтверждена брокером · стоп расчётный, не ордер' : 'Recent monitor sample · workbook-derived, not broker-position verified · stop is calculated, not an order';
   const clear = (message) => {
     cells.forEach(cell => { cell.textContent = '—'; });
     status.textContent = message;
