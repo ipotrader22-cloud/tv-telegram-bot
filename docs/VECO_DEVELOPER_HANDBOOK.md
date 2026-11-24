@@ -1,3 +1,31 @@
+## November 24, 2026 — Branch-specific repository instruction rollout
+
+Handbook update required: YES. Synchronize the common operating instructions
+from PR #431 (reviewed head `41ddac7a8fff9f4d6482f21660de0c4b9db66062`,
+website merge `6085cf1e4008a5d90fd786c429708216cd90db0b`) into
+`engine-v2-shadow-foundation-20261016` through a separate documentation-only PR.
+This branch starts at `5f7fd8392cc1263e33018bee5cb84ba6486add1d`.
+
+[AGENTS.md](../AGENTS.md) retains valid existing rules, incorporates the owner
+autonomy instruction, and adds explicit Engine 2 financial writer and observer
+boundaries. The [operating map](VIXALE_REPOSITORY_OPERATING_MAP.md) records
+source revisions, cross-branch references, configuration ownership, verification
+limits and rollback. All prior handbook content below is retained verbatim;
+website-only rollout records are linked to main rather than importing its code.
+
+No trading rule, application, workflow, schema, database, credential, schedule,
+email or broker behavior changes. The November 13 allocation amendment and
+branch-specific runtime contracts remain unchanged. The IBKR probe cannot
+authorize financial-writer or broker activation.
+
+The owner now authorizes completing the instruction rollout through merges
+into all three destination branches. Use `[skip render]` in documentation merge
+commits; main's merge was observed as `commit_ignored`. Engine services and the
+probe retain auto-deploy off, with no manual deploy/restart or settings change.
+Verify documentation references, preservation, exact Git heads and identical
+non-documentation trees. Rollback is a narrow documentation revert PR using the
+same no-runtime-deploy procedure; never restore financial or broker history.
+
 ## ADR — Issue #388 completed Google minute valuation evidence — 2026-11-11
 
 The approved Google Sheets `GOOGLEFINANCE(price)` cell can change while
