@@ -106,6 +106,7 @@ class Snapshot:
     continuity: bool = True
     session_open: bool = True
     target_price_valid: bool = True
+    held_flat_evidence: bool = False
 
 @dataclass(frozen=True)
 class Command:
@@ -158,6 +159,24 @@ class Engine:
         self.state["blocked"] = reason
         return []
 
+    def reconcile_held_flat(self, snap):
+        """Close the journal without broker effects only after a proven full exit."""
+        state = self.state
+        entry = self.entry_summary(snap.orders)
+        exit_refs = ([state["target_ref"]] if state["target_ref"] else []) + state["close_refs"]
+        exits = [snap.orders.get(ref) for ref in exit_refs]
+        if (not state["started"] or not snap.held_flat_evidence
+                or snap.call_position or snap.put_position
+                or not entry or not entry.proven or entry.status not in TERMINAL
+                or not entry.filled or not exits
+                or any(not order or not order.proven or order.status not in TERMINAL
+                       or order.filled < 0 for order in exits)
+                or sum(order.filled for order in exits) != entry.filled):
+            return self.block("FOREIGN_ACTIVITY")
+        state.update(done=True, outcome=state["reason"] or "TARGET", blocked=None,
+                     foreign_flat_reconciled=True)
+        return []
+
     def step(self, snap):
         self.plan.validate(snap.now)
         s = self.state
@@ -166,7 +185,7 @@ class Engine:
         if not snap.synchronized or not snap.continuity:
             return self.block("BROKER_OR_CONTINUITY_UNPROVEN")
         if snap.foreign_activity:
-            return self.block("FOREIGN_ACTIVITY")
+            return self.reconcile_held_flat(snap)
         s["blocked"] = None
         if not s["started"]:
             if snap.now < self.plan.entry_at:

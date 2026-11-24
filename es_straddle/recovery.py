@@ -63,7 +63,7 @@ def new_record(plan, engine, args, clock):
             'coverage_through': clock.isoformat(), 'foreign_activity': False}
 
 
-def load_record(path, args):
+def load_record(path, args, *, review_held=False):
     record = json.loads(path.read_text(encoding='utf-8'))
     if record.get('version') != 2 or record.get('identity') != identity(args):
         raise RecoveryError('Journal version/account/client/port/underlying mismatch; retain for review')
@@ -72,7 +72,7 @@ def load_record(path, args):
         raise RecoveryError('Recovered underlying differs from configuration')
     if datetime.fromisoformat(record['coverage_through']).tzinfo is None:
         raise RecoveryError('Journal coverage timestamp is not timezone-aware')
-    if record.get('foreign_activity'):
+    if record.get('foreign_activity') and not review_held:
         raise RecoveryError('Persisted foreign activity requires operator reconciliation')
     return record, plan
 

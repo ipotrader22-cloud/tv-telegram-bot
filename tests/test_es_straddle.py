@@ -71,6 +71,27 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(self.e.state["done"])
         self.assertEqual(self.e.state["outcome"], "TARGET")
 
+    def test_flat_held_session_finalizes_only_with_complete_terminal_evidence(self):
+        self.entry()
+        target, = self.e.step(self.s)
+        self.fill_target()
+        self.s.foreign_activity = True
+        for pending, verified, remaining in [
+                (False, False, 0), (True, True, 0), (False, True, -1)]:
+            with self.subTest(pending=pending, verified=verified, remaining=remaining):
+                copy = Engine(self.e.plan, dict(self.e.state))
+                self.s.held_flat_evidence = verified
+                self.s.call_position = self.s.put_position = remaining
+                self.s.orders[target.ref] = replace(self.s.orders[target.ref],
+                                                     status="Submitted" if pending else "Filled")
+                self.assertEqual(copy.step(self.s), [])
+                self.assertFalse(copy.state["done"])
+                self.assertEqual(copy.state["blocked"], "FOREIGN_ACTIVITY")
+        self.s.call_position = self.s.put_position = 0
+        self.assertEqual(self.e.step(self.s), [])
+        self.assertTrue(self.e.state["foreign_flat_reconciled"])
+        self.assertEqual(self.e.state["outcome"], "TARGET")
+
     def test_owner_addon_combines_exact_fills_and_preserves_limit(self):
         self.entry(1, "Cancelled")
         self.e.state["addon_ref"] = ref = self.e.addon_ref

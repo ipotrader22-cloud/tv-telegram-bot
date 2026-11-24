@@ -157,6 +157,13 @@ the original frozen limit and shared weighted entry-credit accounting, with a
 ten-lot cap. It requires proven cancellation before any exit. The scheduled
 entry behavior stays the same. See the ES paper document for recovery details.
 
+November 23 scheduling recovery: keep foreign-activity holds for all broker
+actions. A fresh snapshot may finish the journal without an order when it
+independently confirms all reserved orders terminal, full entry/exit execution
+balance, exact flat positions, and no overlapping or ambiguous working order.
+Retain the hold evidence. Restart may review a held session under the same
+rules; unresolved ownership still blocks and the entry window is never replayed.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

@@ -449,6 +449,17 @@ add-on stays at its fixed limit. If Mayday or mandatory close is due, or
 fresh asks reach the buyback target, cancel before reconciling and submitting
 an exit for the actual position. Unknown acknowledgments are never replayed.
 
+### Journal finalization after a broker-confirmed exit
+
+A hold that occurs just as a full exit completes can leave a stale active
+journal blocking the next day's entry. The coordinator can now review a held
+journal on restart. It may finish the journal with no broker effects only
+when the latest broker snapshot has no overlapping or ambiguous working
+order, both exact positions are zero, each reservation is terminal and all
+recorded execution components appear in the broker response. Entry and exit
+quantities must match. The foreign-activity marker stays in the audit history.
+Any missing or unresolved evidence keeps the hold and prevents order actions.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders

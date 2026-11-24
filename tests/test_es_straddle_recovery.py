@@ -635,6 +635,37 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.engine.step(s),[])
         self.assertTrue(self.engine.state['done'])
 
+    def test_held_flat_recovery_requires_fresh_fills_and_no_overlapping_working_order(self):
+        self.filled()
+        entry = recovered_order(self.ref, self.saved, self.p)
+        target, = self.engine.step(Snapshot(ENTRY, orders={self.ref: entry},
+                                            call_position=-10, put_position=-10))
+        reserve(self.record, target, 10)
+        self.record['state'] = copy.deepcopy(self.engine.state)
+        self.record['foreign_activity'] = True
+        entry_fills = [self.fill(), self.fill(102, eid='put', price=25.5)]
+        exits = [self.fill(cid, eid=eid, side='BOT', orderId=10, permId=91, orderRef=target.ref)
+                 for cid, eid in ((101, 'tc'), (102, 'tp'))]
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'session.json'
+            save(path, self.record)
+            with self.assertRaises(RecoveryError):
+                load_record(path, self.args)
+            self.record, plan = load_record(path, self.args, review_held=True)
+        engine = Engine(plan, copy.deepcopy(self.record['state']))
+        cases = [
+            (entry_fills[:1] + exits, [], False),
+            (entry_fills + exits, [self.manual_combo(ids=(101, 201))], False),
+            (entry_fills + exits, [], True),
+        ]
+        with patch('es_straddle.tws.now', return_value=ENTRY + timedelta(seconds=2)):
+            for fills, working, may_finish in cases:
+                snap = self.adapter(fills=fills, working=working, position=0).snapshot(engine)
+                self.assertEqual(snap.held_flat_evidence, may_finish)
+                self.assertEqual(engine.step(snap), [])
+                self.assertEqual(engine.state['done'], may_finish)
+        self.assertTrue(self.record['foreign_activity'])
+
     def test_uninterrupted_midnight_retains_coverage_but_reconnect_does_not(self):
         before=ENTRY.replace(hour=23,minute=59,second=59)
         after=before+timedelta(seconds=2)

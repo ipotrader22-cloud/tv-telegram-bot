@@ -379,6 +379,7 @@ class TWS:
             observe_fill(candidate, fill, engine.plan, self.account, self.client_id,
                          known_trades)
         self.working = {}
+        relevant_working = False
         for trade in working:
             c, o = trade.contract, trade.order
             if o.account and o.account != self.account:
@@ -390,6 +391,7 @@ class TWS:
                          and combo_contract_ids(c) is None)
             if not involved:
                 continue
+            relevant_working = True
             saved = candidate['orders'].get(o.orderRef)
             if saved is None or o.orderRef in self.working:
                 candidate['foreign_activity'] = True
@@ -463,11 +465,18 @@ class TWS:
         if entry and entry.proven and entry.filled:
             target = target_price(entry.average)
             target_valid = target % market_increment(target, self.market_rules) == 0
+        held_flat_evidence = False
+        if candidate['foreign_activity'] and integral and not any(pos.values()) and not relevant_working:
+            fresh_ids = {fill.execution.execId for fill in fills if fill.execution.acctNumber == self.account}
+            held_flat_evidence = set(orders) == set(candidate['orders']) and all(
+                execution_ids.keys() <= fresh_ids
+                for execution_ids in (saved['executions'] for saved in candidate['orders'].values()))
         return Snapshot(clock, orders, int(pos[self.call.conId]), int(pos[self.put.conId]),
                         self.quote(self.call), self.quote(self.put),
                         synchronized=integral, foreign_activity=candidate['foreign_activity'],
                         continuity=self.continuous and history_policy_allowed(self.args),
-                        session_open=session_open, target_price_valid=target_valid)
+                        session_open=session_open, target_price_valid=target_valid,
+                        held_flat_evidence=held_flat_evidence)
 
     def execute(self, command):
         if not self.paper_execute:
@@ -586,7 +595,7 @@ def run(args, status=None):
         for candidate in args.state_dir.glob('session-*.json'):
             saved = json.loads(candidate.read_text(encoding='utf-8'))
             if not saved['state']['done']:
-                record, plan = load_record(candidate, args)
+                record, plan = load_record(candidate, args, review_held=True)
                 active.append((candidate, record, plan))
         if len(active) > 1:
             raise RecoveryError('Multiple unresolved sessions; no broker actions allowed')
