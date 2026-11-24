@@ -56,7 +56,7 @@ async function form(req){
  let body='';for await(const chunk of req){body+=chunk;if(body.length>4096)throw fail('FORM_TOO_LARGE',413);}
  return new URLSearchParams(body);
 }
-function sameOrigin(req){if(req.headers.origin!=='https://vixale-ibkr-auth-probe.onrender.com')throw fail('ORIGIN_REQUIRED',403);}
+function verifyForm(req,f){const origin=req.headers.origin;if(origin&&origin!=='null'&&origin!=='https://vixale-ibkr-auth-probe.onrender.com')throw fail('CROSS_ORIGIN',403);const value=cookie(req,'__Host-vixale_csrf');if(!value||!equal(value,f.get('csrf')))throw fail('CSRF_INVALID',403);}
 function pathPolicy(req){return new URL(req.url,'http://localhost').pathname==='/callback'?'no-referrer':'same-origin';}
 async function handler(req,res){
  res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy',pathPolicy(req));res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"default-src 'none'; form-action 'self' https://api.ibkr.com; frame-ancestors 'none'; base-uri 'none'");
@@ -67,11 +67,12 @@ async function handler(req,res){
   if(req.method==='GET'&&path==='/metadata')return output(res,200,await metadata());
   if(!enabled())return output(res,503,{error:'OWNER_SECRET_NOT_CONFIGURED'});
   if(req.method==='GET'&&(path==='/'||path==='/authorize')){
-   if(authorized(req))return html(res,'<p>Authorization succeeded. Read-only token is held in memory.</p><form method="post" action="/refresh"><button>Test token refresh</button></form><p><a href="/status">View test status</a></p>');
-   return html(res,'<p>Enter the separate probe owner secret configured in Render. Never enter your IBKR password here.</p><form method="post" action="/authorize"><label>Probe owner secret <input type="password" name="secret" required autocomplete="off"></label><button>Connect IBKR read-only</button></form>');
+   const csrf=random();setCookie(res,'__Host-vixale_csrf',csrf,600);
+   if(authorized(req))return html(res,'<p>Authorization succeeded. Read-only token is held in memory.</p><form method="post" action="/refresh"><input type="hidden" name="csrf" value="'+csrf+'"><button>Test token refresh</button></form><p><a href="/status">View test status</a></p>');
+   return html(res,'<p>Enter the separate probe owner secret configured in Render. Never enter your IBKR password here.</p><form method="post" action="/authorize"><input type="hidden" name="csrf" value="'+csrf+'"><label>Probe owner secret <input type="password" name="secret" required autocomplete="off"></label><button>Connect IBKR read-only</button></form>');
   }
   if(req.method==='POST'&&path==='/authorize'){
-   sameOrigin(req);const f=await form(req);
+   const f=await form(req);verifyForm(req,f);
    if(!equal(f.get('secret'),owner))throw fail('FORBIDDEN',403);
    if(busy)throw fail('BUSY',409);busy=true;
    try{
@@ -94,7 +95,7 @@ async function handler(req,res){
   if(!authorized(req))throw fail('FORBIDDEN',403);
   if(req.method==='GET'&&path==='/status')return output(res,200,{authorized:true,requestedScope:scope,refreshTokenReceived:!!session.refresh,accessTokenExpiresInSeconds:session.expiresIn,refreshTest:session.refreshTest,persistentTokens:false,orders:false});
   if(req.method==='POST'&&path==='/refresh'){
-   sameOrigin(req);if(!session.refresh)throw fail('NO_REFRESH_TOKEN',409);if(busy)throw fail('BUSY',409);busy=true;
+   const f=await form(req);verifyForm(req,f);if(!session.refresh)throw fail('NO_REFRESH_TOKEN',409);if(busy)throw fail('BUSY',409);busy=true;
    try{const t=await token({grant_type:'refresh_token',client_id:session.client,refresh_token:session.refresh,resource:endpoint,scope});Object.assign(session,{access:t.access,refresh:t.refresh||session.refresh,expiresIn:t.expiresIn,refreshTest:'PASS'});return output(res,200,{refreshTest:'PASS',orders:false});}
    finally{busy=false;}
   }
