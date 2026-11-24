@@ -72,6 +72,7 @@ async function handler(req,res){
    return html(res,'<p>Enter the separate probe owner secret configured in Render. Never enter your IBKR password here.</p><form method="post" action="/authorize"><input type="hidden" name="csrf" value="'+csrf+'"><label>Probe owner secret <input type="password" name="secret" required autocomplete="off"></label><button>Connect IBKR read-only</button></form>');
   }
   if(req.method==='POST'&&path==='/authorize'){
+   console.info('IBKR authorization form received');
    const f=await form(req);verifyForm(req,f);
    if(!equal(f.get('secret'),owner))throw fail('FORBIDDEN',403);
    if(busy)throw fail('BUSY',409);busy=true;
@@ -80,7 +81,9 @@ async function handler(req,res){
     pending={client,state,verifier,browser,expires:Date.now()+600000};
     const u=new URL(issuer+'/oauth2/authorize');
     u.search=new URLSearchParams({response_type:'code',client_id:client,redirect_uri:redirect,scope,state,code_challenge:challenge(verifier),code_challenge_method:'S256',resource:endpoint});
-    setCookie(res,'vixale_pending',browser,600);res.writeHead(303,{Location:u.toString()});return res.end();
+    setCookie(res,'vixale_pending',browser,600);
+    console.info('IBKR read-only registration succeeded; authorization link issued');
+    return html(res,'<p>Client registration succeeded. Continue on the official IBKR website.</p><p><a href="'+u.toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" rel="noreferrer">Continue to Interactive Brokers</a></p><p>Only approve read-only access.</p>');
    }finally{busy=false;}
   }
   if(req.method==='GET'&&path==='/callback'){
@@ -100,7 +103,7 @@ async function handler(req,res){
    finally{busy=false;}
   }
   return output(res,404,{error:'NOT_FOUND'});
- }catch(e){return output(res,e.status||502,{error:e.code||'PROBE_REQUEST_FAILED'});}
+ }catch(e){console.warn('IBKR probe request failed',e.status||502,typeof e.code==='string'&&/^[A-Z0-9_]+$/.test(e.code)?e.code:'PROBE_REQUEST_FAILED');return output(res,e.status||502,{error:e.code||'PROBE_REQUEST_FAILED'});}
 }
 if(require.main===module)http.createServer(handler).listen(process.env.PORT||10000,'0.0.0.0');
 module.exports={handler,challenge,validateToken};
