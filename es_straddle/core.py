@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo("America/New_York")
 D = Decimal
 TERMINAL = {"Filled", "Cancelled", "ApiCancelled", "Inactive"}
+QUOTE_MAX_AGE = timedelta(seconds=5)
+MAYDAY_CONFIRMATION = timedelta(seconds=3)
 
 def decimal(value):
     result = D(str(value))
@@ -45,7 +47,7 @@ class Quote:
         try:
             return (self.live and 0 < decimal(self.bid) <= decimal(self.ask)
                     and all(t.tzinfo is not None and
-                            0 <= (now - t).total_seconds() <= 5
+                            timedelta(0) <= now - t <= QUOTE_MAX_AGE
                             for t in (self.bid_at, self.ask_at)))
         except (ValueError, TypeError):
             return False
@@ -107,6 +109,40 @@ class Snapshot:
     session_open: bool = True
     target_price_valid: bool = True
     held_flat_evidence: bool = False
+    quote_history: tuple[tuple[datetime, Quote | None, Quote | None], ...] = ()
+
+    def confirmed_mayday(self, entry_credit):
+        threshold = decimal(entry_credit) * D("1.65")
+        call, put = self.call_quote, self.put_quote
+        if not (call and put and call.valid(self.now) and put.valid(self.now)
+                and call.ask + put.ask >= threshold):
+            return None
+        latest_ask_at = max(call.ask_at, put.ask_at)
+        next_observed_at = self.now
+        for observed_at, old_call, old_put in reversed(self.quote_history):
+            # Walk the contiguous crossing. A below-threshold quote or a
+            # gap in fresh quotes ends the confirmation window.
+            if (observed_at > next_observed_at
+                    or not (old_call and old_put and old_call.valid(observed_at)
+                            and old_put.valid(observed_at) and old_call.valid(next_observed_at)
+                            and old_put.valid(next_observed_at))
+                    or old_call.ask + old_put.ask < threshold):
+                break
+            if (latest_ask_at - observed_at >= MAYDAY_CONFIRMATION
+                    and old_call.ask_at < call.ask_at and old_put.ask_at < put.ask_at):
+                return {
+                    "threshold": str(threshold),
+                    "crossing_observed_at": observed_at.isoformat(),
+                    "confirmed_ask_at": latest_ask_at.isoformat(),
+                    "call_ask_at": call.ask_at.isoformat(),
+                    "put_ask_at": put.ask_at.isoformat(),
+                    "call_bid": str(call.bid),
+                    "call_ask": str(call.ask),
+                    "put_bid": str(put.bid),
+                    "put_ask": str(put.ask),
+                }
+            next_observed_at = observed_at
+        return None
 
 @dataclass(frozen=True)
 class Command:
@@ -220,10 +256,10 @@ class Engine:
         if snap.now >= self.plan.close_at:
             s["reason"] = s["reason"] or "EOD_1555_ET"
         quotes = (snap.call_quote, snap.put_quote)
-        if (entry.filled and all(q and q.valid(snap.now) for q in quotes)
-                and sum(decimal(q.ask) for q in quotes) >=
-                decimal(entry.average) * D("1.65")):
-            s["reason"] = s["reason"] or "MAYDAY"
+        if remaining and not s["reason"]:
+            confirmation = snap.confirmed_mayday(entry.average)
+            if confirmation:
+                s.update(reason="MAYDAY", mayday_confirmation=confirmation)
         # Normal entry cancels on the first partial fill. An explicit owner
         # add-on may work at the same limit until full or an exit is due.
         # Confirm all entry cancellations before placing any exit.

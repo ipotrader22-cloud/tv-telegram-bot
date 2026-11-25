@@ -120,12 +120,85 @@ class EngineTests(unittest.TestCase):
         t = self.s.now
         self.s.call_quote = Quote(D("41.5"), D("42"), t, t)
         self.s.put_quote = Quote(D("41"), D("41.325"), t, t)
+        start = t - timedelta(seconds=3)
+        self.s.quote_history = (
+            (start, replace(self.s.call_quote, bid_at=start, ask_at=start),
+             replace(self.s.put_quote, bid_at=start, ask_at=start)),
+            (t, self.s.call_quote, self.s.put_quote),
+        )
 
     def test_exact_mayday_threshold_inclusive(self):
         self.entry()
         self.mayday()
         cmd = self.e.step(self.s)[0]
         self.assertEqual((cmd.order_type, cmd.reason), ("MKT", "MAYDAY"))
+        trace = self.e.state["mayday_confirmation"]
+        self.assertEqual(D(trace["threshold"]), D("83.325"))
+        self.assertEqual(trace["confirmed_ask_at"], self.s.now.isoformat())
+
+    def test_nov25_recorded_one_lot_put_ask_spike_leaves_target_working(self):
+        entry = datetime(2026, 11, 24, 20, 20, tzinfo=ET)
+        expiry = datetime(2026, 11, 25, 16, 0, tzinfo=ET)
+        self.e = Engine(plan(session="2026-11-24", entry_at=entry, expiry_at=expiry,
+                             entry_limit=D("81.75"), strike=D("7200")))
+        self.s = Snapshot(entry)
+        self.e.step(self.s)
+        self.entry(price="81.75")
+        target, = self.e.step(self.s)
+        self.s.orders[target.ref] = Order(target.ref, "Submitted")
+        start = datetime(2026, 11, 25, 2, 20, 31, tzinfo=ET)
+        history = []
+        for seconds, put_ask in ((-1, "81.25"), (0, "140.00"), (1, "140.00"), (2, "76.50")):
+            at = start + timedelta(seconds=seconds)
+            self.s.now = at
+            self.s.call_quote = Quote(D("20.00"), D("20.25"), at, at)
+            self.s.put_quote = Quote(D("74.25"), D(put_ask), at, at)
+            history.append((at, self.s.call_quote, self.s.put_quote))
+            self.s.quote_history = tuple(history)
+            self.assertEqual(self.e.step(self.s), [])
+            self.assertIsNone(self.e.state["reason"])
+        self.assertEqual(target.price, "70.75")
+
+    def test_crossings_on_either_side_of_a_quote_dip_do_not_confirm(self):
+        self.entry()
+        self.mayday()
+        first, last = self.s.quote_history
+        at = self.s.now - timedelta(seconds=1)
+        dip = (at, replace(self.s.call_quote, ask=D("41.75"), bid_at=at, ask_at=at),
+               replace(self.s.put_quote, bid_at=at, ask_at=at))
+        self.s.quote_history = (first, dip, last)
+        self.assertEqual(self.e.step(self.s)[0].reason, "TARGET")
+
+    def test_unchanged_put_ask_does_not_confirm_even_with_new_call_quotes(self):
+        self.entry()
+        self.mayday()
+        first, last = self.s.quote_history
+        self.s.put_quote = first[2]
+        self.s.quote_history = (first, (last[0], last[1], first[2]))
+        self.assertEqual(self.e.step(self.s)[0].reason, "TARGET")
+
+    def test_a_gap_between_fresh_crossings_does_not_confirm(self):
+        self.entry()
+        self.mayday()
+        at = self.s.now - timedelta(seconds=6)
+        first = (at, replace(self.s.call_quote, bid_at=at, ask_at=at),
+                 replace(self.s.put_quote, bid_at=at, ask_at=at))
+        self.s.quote_history = (first, self.s.quote_history[-1])
+        self.assertEqual(self.e.step(self.s)[0].reason, "TARGET")
+
+    def test_confirmed_mayday_survives_restart_after_target_cancel(self):
+        self.entry()
+        target, = self.e.step(self.s)
+        self.s.orders[target.ref] = Order(target.ref, "Submitted")
+        self.mayday()
+        cancel, = self.e.step(self.s)
+        self.assertEqual((cancel.kind, cancel.ref), ("CANCEL", target.ref))
+        restarted = Engine(self.e.plan, dict(self.e.state))
+        self.s.orders[target.ref] = Order(target.ref, "Cancelled")
+        self.s.quote_history = ()
+        self.s.call_quote = self.s.put_quote = None
+        close, = restarted.step(self.s)
+        self.assertEqual((close.reason, close.quantity), ("MAYDAY", 10))
 
     def test_below_mayday_places_target(self):
         self.entry()

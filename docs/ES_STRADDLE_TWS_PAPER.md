@@ -23,11 +23,15 @@ limit must also be valid in its applicable CME premium band.
 Profit BUY LMT = ceil(actual weighted entry credit * .865 / .25) * .25.
 50.50 credit -> raw 43.6825 -> 43.75. Exact quarters stay unchanged.
 
-Mayday triggers when fresh real-time call ask + put ask >= actual weighted
-entry credit * 1.65. Cancel/confirm the target and market-close the proven
-residual. 50.50 credit -> 83.325 trigger. This is a trigger, not a guaranteed
-execution price. The combined leg asks can differ from a native combo quote;
-this explicit buyback-cost interpretation requires supervised paper acceptance.
+Mayday requires fresh real-time call ask + put ask >= actual weighted
+entry credit * 1.65 for at least three seconds, with a new ask observation
+on each leg since the initial crossing. 50.50 credit -> 83.325 threshold.
+A below-threshold or invalid quote breaks confirmation, as does any lapse
+in quote freshness or broker continuity. The adapter captures selected leg
+updates between order reconciliation polls. Once confirmed, cancel/confirm
+the target and market-close the proven residual. The journal records the
+threshold, quote prices and times when Mayday is confirmed. The trigger is
+based on leg asks, and the eventual market execution may differ.
 
 At expiry-day 15:55 ET, irrespective of quote freshness, cancel the remaining
 entry and target, confirm termination, then close the execution-proven residual.
@@ -476,6 +480,19 @@ that exact object as one order. Distinct orders sharing a reference and
 unowned working orders or fills still hold actions. New holds record their
 source in the journal. The November 24 journal did not record that detail,
 so the specific callback that triggered the incident cannot be confirmed.
+
+### November 25 Mayday quote confirmation
+
+The paper executor closed ten at 96.25 at 02:20:34 ET after the 81.75
+entry's Mayday threshold (134.8875) was breached. Historical TWS quotes
+showed a one-lot put ask of 140 from 02:20:31 through 02:20:32 ET while
+the bid was around 74–75 and the call ask around 20. The put ask returned
+to the mid-70s by 02:20:33. The 02:45 TWS restart occurred afterward.
+The owner requested protection against this behavior. The three-second
+confirmation above filters the recorded spike in offline replay while
+preserving the threshold, limit target and unconditional 15:55 ET rule.
+A restart discards unconfirmed samples and retains any already-journaled
+Mayday exit decision.
 
 ## Rollback
 

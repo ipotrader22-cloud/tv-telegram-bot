@@ -3,6 +3,7 @@ import copy
 import json
 import tempfile
 import unittest
+from collections import deque
 from pathlib import Path
 from types import SimpleNamespace as N
 from datetime import timedelta
@@ -219,18 +220,22 @@ class RecoveryTests(unittest.TestCase):
 
     def test_disconnect_invalidates_all_quote_timestamps(self):
         a=TWS.__new__(TWS); a.continuous=True; a.generation=0; a.quotes={101:{'ask_at':ENTRY}}
+        a.quote_history = deque([(ENTRY, None, None)])
         a.disconnected()
         self.assertFalse(a.continuous); self.assertEqual(a.generation,1); self.assertEqual(a.quotes,{})
+        self.assertFalse(a.quote_history)
 
     def test_failed_contract_restore_cannot_resume_stale_connection_state(self):
         a=TWS.__new__(TWS)
         a.continuous=True; a.generation=1; a.quotes={101:{'ask_at':ENTRY}}
+        a.quote_history = deque([(ENTRY, None, None)])
         a.Contract=lambda **kw:N(**kw)
         a.ib=N(reqContractDetails=lambda c:[])
         with self.assertRaisesRegex(RecoveryError,'unavailable or ambiguous'):
             a.restore(self.p,self.record)
         self.assertFalse(a.continuous)
         self.assertEqual(a.quotes,{})
+        self.assertFalse(a.quote_history)
         self.assertIsNone(a._coverage_generation)
 
     def test_pinned_ib_insync_connection_signature(self):
@@ -252,6 +257,7 @@ class RecoveryTests(unittest.TestCase):
         rules=[N(lowEdge=0,increment=.05),N(lowEdge=5,increment=.1),
                N(lowEdge=20,increment=.25),N(lowEdge=100,increment=.5)]
         a=TWS.__new__(TWS); a.Contract=Contract; a.ComboLeg=ComboLeg
+        a.quotes = {}; a.quote_history = deque()
         a.underlying_id=100; a.combo_tick=D('.25'); a.expiry_zone=ET
         future=Contract(conId=100,secType='FUT',symbol='ES',currency='USD',multiplier='50')
         details={right:N(contract=Contract(conId=cid,secType='FOP',symbol='ES',right=right,
@@ -325,6 +331,7 @@ class RecoveryTests(unittest.TestCase):
         a.market_rules=[N(lowEdge=0,increment=.25)]
         a.details=[N(tradingHours='20261116:1700-20261117:1500',timeZoneId='US/Central')]*2
         a.quote=lambda c:None
+        a.quotes = {}; a.quote_history = deque()
         a.ib=N(isConnected=lambda:True,reqOpenOrders=lambda:[],
                fills=lambda:[],
                reqAllOpenOrders=lambda:working or [],reqCompletedOrders=lambda **kw:completed or [],
@@ -332,6 +339,25 @@ class RecoveryTests(unittest.TestCase):
                    N(account='DU_TEST',contract=N(conId=cid,symbol='ES'),position=position)
                    for cid in (101,102)])
         return a
+
+    def test_tws_records_selected_quote_changes_between_reconciliation_polls(self):
+        a = self.adapter()
+        self.filled()
+        call = N(contract=a.call, bid=20.0, ask=20.25, marketDataType=1)
+        put = N(contract=a.put, bid=74.25, ask=140.0, marketDataType=1)
+        for ticker in (call, put):
+            ticker.ticks = [N(tickType=1), N(tickType=2)]
+        a.ib.ticker = lambda contract: call if contract.conId == 101 else put
+        a.quote = TWS.quote.__get__(a)
+        for seconds, put_ask in ((0, 140.0), (1, 75.5), (3, 140.0)):
+            put.ask = put_ask
+            with patch('es_straddle.tws.now', return_value=ENTRY + timedelta(seconds=seconds)):
+                a.ticks([call, put])
+        with patch('es_straddle.tws.now', return_value=ENTRY + timedelta(seconds=3)):
+            snapshot = a.snapshot(self.engine)
+        self.assertEqual([record[2].ask for record in snapshot.quote_history],
+                         [D('140'), D('75.5'), D('140')])
+        self.assertIsNone(snapshot.confirmed_mayday(D('81.75')))
 
     def test_adapter_recovers_completed_order_using_fill_bound_perm_id(self):
         t=self.trade(orderId=0,clientId=0)

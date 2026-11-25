@@ -172,6 +172,15 @@ the same cached open-order object could cause this hold. The broker scan now
 counts that object once and records the source of future holds. The original
 incident's callback is unconfirmed. Genuine ownership conflicts still hold.
 
+November 25 Mayday safeguard: a brief one-lot put ask at 140 triggered the
+134.8875 threshold on the 81.75 entry. The buyback filled at 96.25.
+At the owner's request, require at least three seconds of continuously fresh,
+over-threshold ask quotes plus a newer ask observation on each leg. Capture
+changes between broker reconciliation polls, and record the evidence when
+confirmed. Keep the 1.65 multiplier, target, cancel/reconcile workflow and
+unconditional 15:55 close. In-progress confirmation is connection-local.
+The recorded spike is replayed in offline tests.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

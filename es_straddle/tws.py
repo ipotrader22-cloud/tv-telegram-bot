@@ -5,12 +5,13 @@ import os
 import sys
 import copy
 import logging
+from collections import deque
 from datetime import datetime, timedelta, time, timezone
 from pathlib import Path
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from .core import (D, ET, Engine, Order, Plan, Quote, Snapshot, midpoint,
-                   TERMINAL, decimal)
+                   TERMINAL, MAYDAY_CONFIRMATION, QUOTE_MAX_AGE, decimal)
 from .recovery import (RecoveryError, process_lock, new_record, load_record,
                        history_covers, reserve, observe_order, observe_fill,
                        recovered_order, matches_order, combo_contract_ids, require_downloaded_history)
@@ -145,6 +146,8 @@ class TWS:
         self.ib.disconnectedEvent += self.disconnected
         self.ib.errorEvent += self.error
         self.quotes = {}
+        self.quote_history = deque()
+        self.call = self.put = None
         self.ib.pendingTickersEvent += self.ticks
         self.underlying_id = args.underlying_id
         self.combo_tick = decimal(args.combo_tick)
@@ -156,6 +159,7 @@ class TWS:
         self.continuous = False
         self.generation += 1
         self.quotes.clear()
+        self.quote_history.clear()
 
     def error(self, request_id, code, message, contract):
         if code in (1100, 1101, 1102, 1300):
@@ -171,6 +175,7 @@ class TWS:
         if self.account not in self.ib.managedAccounts():
             raise RecoveryError('Paper account changed after reconnect')
         self.quotes.clear()
+        self.quote_history.clear()
         self.ib.reqMarketDataType(1)
         self.continuous = True
 
@@ -179,6 +184,7 @@ class TWS:
         generation = self.generation
         self.continuous = False
         self.quotes.clear()
+        self.quote_history.clear()
         self.record = record
         self._coverage_generation = None
         pair = []
@@ -220,13 +226,22 @@ class TWS:
 
     def ticks(self, tickers):
         observed = now()
+        updated = set()
         for ticker in tickers:
-            item = self.quotes.setdefault(ticker.contract.conId, {})
+            cid = ticker.contract.conId
+            item = self.quotes.setdefault(cid, {})
             for tick in ticker.ticks:
                 if tick.tickType == 1:
                     item["bid_at"] = observed
+                    updated.add(cid)
                 elif tick.tickType == 2:
                     item["ask_at"] = observed
+                    updated.add(cid)
+        if self.call and self.put and updated.intersection((self.call.conId, self.put.conId)):
+            self.quote_history.append((observed, self.quote(self.call), self.quote(self.put)))
+            cutoff = observed - MAYDAY_CONFIRMATION - QUOTE_MAX_AGE
+            while self.quote_history[0][0] < cutoff:
+                self.quote_history.popleft()
 
     def quote(self, contract):
         ticker = self.ib.ticker(contract)
@@ -309,6 +324,8 @@ class TWS:
         if len(valid) > 1 and valid[0][0] == valid[1][0]:
             raise ValueError("Ambiguous PM trading class")
         strike, pair = valid[0]
+        self.quotes.clear()
+        self.quote_history.clear()
         self.call, self.put = (x[0].contract for x in pair)
         self.details = [x[0] for x in pair]
         self.load_market_rules()
@@ -483,7 +500,8 @@ class TWS:
                         synchronized=integral, foreign_activity=candidate['foreign_activity'],
                         continuity=self.continuous and history_policy_allowed(self.args),
                         session_open=session_open, target_price_valid=target_valid,
-                        held_flat_evidence=held_flat_evidence)
+                        held_flat_evidence=held_flat_evidence,
+                        quote_history=tuple(self.quote_history))
 
     def execute(self, command):
         if not self.paper_execute:
