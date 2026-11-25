@@ -429,8 +429,40 @@ class RecoveryTests(unittest.TestCase):
         with patch('es_straddle.tws.now',return_value=ENTRY+timedelta(seconds=2)):
             s=a.snapshot(self.engine)
         self.assertTrue(s.foreign_activity)
+        self.assertEqual(self.record['foreign_activity_source'], 'unreserved_open_order')
         self.assertEqual(self.engine.step(s),[])
         self.assertEqual(a.working,{})
+
+    def test_repeated_callback_for_same_working_trade_does_not_block_target(self):
+        # Replay the wrapper behavior: multiple openOrder callbacks append
+        # the very same cached Trade, including during fills.
+        trade = self.trade()
+        trade.order.orderRef = self.ref
+        trade.contract = self.manual_combo(ids=(101, 102)).contract
+        trade.orderStatus = N(status='Filled', filled=10)
+        fills = [self.fill(), self.fill(102, eid='put', price=25.5)]
+        adapter = self.adapter(working=[trade, trade], fills=fills)
+        with patch('es_straddle.tws.now', return_value=ENTRY + timedelta(seconds=2)):
+            snapshot = adapter.snapshot(self.engine)
+        self.assertFalse(snapshot.foreign_activity)
+        self.assertEqual(adapter.working, {self.ref: trade})
+        commands = self.engine.step(snapshot)
+        self.assertEqual([(cmd.action, cmd.quantity, cmd.price, cmd.reason) for cmd in commands],
+                         [('BUY', 10, '43.75', 'TARGET')])
+
+    def test_distinct_working_trades_with_same_reference_still_block(self):
+        trade = self.trade()
+        trade.order.orderRef = self.ref
+        trade.contract = self.manual_combo(ids=(101, 102)).contract
+        other = copy.deepcopy(trade)
+        other.order.orderId += 1
+        other.order.permId += 1
+        adapter = self.adapter(working=[trade, other], position=0)
+        with patch('es_straddle.tws.now', return_value=ENTRY + timedelta(seconds=2)):
+            snapshot = adapter.snapshot(self.engine)
+        self.assertTrue(snapshot.foreign_activity)
+        self.assertEqual(self.record['foreign_activity_source'], 'duplicate_order_ref')
+        self.assertEqual(self.engine.step(snapshot), [])
 
     def test_partial_target_cancel_recovery_closes_only_seven(self):
         self.filled()

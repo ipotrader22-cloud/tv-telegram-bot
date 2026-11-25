@@ -210,6 +210,8 @@ def observe_fill(record, fill, plan, account, client_id, known_trades=()):
             or (saved['perm_id'] and e.permId != saved['perm_id'])
             or e.side != ('SLD' if saved['action'] == 'SELL' else 'BOT')):
         record['foreign_activity'] = True
+        record.setdefault('foreign_activity_source',
+                          'unreserved_execution' if saved is None else 'execution_identity_mismatch')
         return
     if not e.execId or not e.permId or getattr(e, 'pendingPriceRevision', False):
         raise RecoveryError('Incomplete execution identity or pending price revision')

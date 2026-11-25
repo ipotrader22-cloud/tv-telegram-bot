@@ -164,6 +164,14 @@ balance, exact flat positions, and no overlapping or ambiguous working order.
 Retain the hold evidence. Restart may review a held session under the same
 rules; unresolved ownership still blocks and the entry window is never replayed.
 
+November 24 paper exit delay: after ten fills at 81.75, the foreign-activity
+hold delayed the target until the exact account positions, reservation and
+execution components could be reconciled. TWS confirmed the ten-lot 70.75
+GTC target at 20:35 ET. An offline replay showed that repeated delivery of
+the same cached open-order object could cause this hold. The broker scan now
+counts that object once and records the source of future holds. The original
+incident's callback is unconfirmed. Genuine ownership conflicts still hold.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
 and premium-dependent CME tick rules. The exact .25-rounded target is never

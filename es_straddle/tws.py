@@ -393,8 +393,15 @@ class TWS:
                 continue
             relevant_working = True
             saved = candidate['orders'].get(o.orderRef)
-            if saved is None or o.orderRef in self.working:
+            previous = self.working.get(o.orderRef)
+            # ib_insync appends its cached Trade for each openOrder callback.
+            # A repeat of the same object adds no broker order.
+            if trade is previous:
+                continue
+            if saved is None or previous is not None:
                 candidate['foreign_activity'] = True
+                candidate.setdefault('foreign_activity_source',
+                                     'duplicate_order_ref' if previous is not None else 'unreserved_open_order')
                 continue
             expected = sorted((cid, 1, 'BUY', 'CME') for cid in ids)
             actual = sorted((l.conId, l.ratio, l.action, l.exchange) for l in (c.comboLegs or []))

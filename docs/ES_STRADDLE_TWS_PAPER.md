@@ -460,6 +460,23 @@ recorded execution components appear in the broker response. Entry and exit
 quantities must match. The foreign-activity marker stays in the audit history.
 Any missing or unresolved evidence keeps the hold and prevents order actions.
 
+### November 24 exit delay and repeated open-order callbacks
+
+The scheduled ten-lot paper entry filled at 81.75. A foreign-activity hold
+prevented the buyback. A fresh TWS read matched the completed reservation and
+all twelve execution components, confirmed both positions were short ten, and
+found no overlapping or ambiguous working orders. After that reconciliation
+and an isolated restart, TWS independently confirmed the 70.75 GTC buyback
+for ten at 20:35 ET. The original held journal was retained locally.
+
+The pinned adapter can return the same cached Trade object more than once
+when open-order callbacks repeat. The old scan flagged the second delivery
+as foreign even when the order matched the reservation. The scan now treats
+that exact object as one order. Distinct orders sharing a reference and
+unowned working orders or fills still hold actions. New holds record their
+source in the journal. The November 24 journal did not record that detail,
+so the specific callback that triggered the incident cannot be confirmed.
+
 ## Rollback
 
 Stop only this isolated candidate. Inspect/reconcile its owned paper orders
