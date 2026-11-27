@@ -45,3 +45,19 @@ test('QA workbook selection is limited to the dedicated staging site',()=>{
   for(const bad of [{RENDER_SERVICE_ID:'production'},{SITE_BASE_URL:'https://www.vixale.com'},{GOOGLE_SHEET_ID:id},
     {VIXALE_SWING_QA_WORKBOOK_ID:engine2Workbook({})}]) assert.throws(()=>engine2Workbook({...env,...bad}));
 });
+test('stored preparation bytes and the committed preparation must both match',async()=>{
+  const {readEvidence}=require('../scripts/swing-diagnostics/evidence.cjs');
+  const verifyPreparation=async(stored,prepared)=>assert.deepEqual(await readEvidence(stored),await readEvidence(prepared));
+  const {gzipSync}=require('node:zlib');
+  const {createHash}=require('node:crypto');
+  const value={fingerprint:'fixture',batch:{items:[{score:75}],sourceEvidence:{artifact:{bars:[[42,45]]},news:[]}}};
+  const raw=Buffer.from(JSON.stringify(value));
+  const store={__vixaleEvidenceEncoding:'gzip-json-v1',bytes:raw.length,sha256:createHash('sha256').update(raw).digest('hex'),data:gzipSync(raw).toString('base64')};
+  await verifyPreparation(store,value);
+  const changed=structuredClone(value);
+  changed.batch.sourceEvidence.artifact.bars[0][0]++;
+  await assert.rejects(verifyPreparation(store,changed));
+  await verifyPreparation(value,structuredClone(value));
+  await assert.rejects(verifyPreparation(store,{...value,batch:[]}));
+  await assert.rejects(verifyPreparation({...store,data:gzipSync('x').toString('base64')},value));
+});

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const {createRequire} = require('node:module');
 const {randomUUID} = require('node:crypto');
-const {collect} = require('./postgres.cjs');
+const fs = require('node:fs');
 const {reconcile} = require('./reconcile.cjs');
 
 async function readWorkbook(google, spreadsheetId) {
@@ -32,13 +32,13 @@ async function readWorkbook(google, spreadsheetId) {
   return {portfolio,open,closed,feed,history,formulas:{cash:cash[0][0],spill:spill[0][0],equity}};
 }
 
-async function live(date,spreadsheetId) {
+async function live(date,spreadsheetId,db) {
   const engine=createRequire(path.resolve('engine-v2/clean-ledger.cjs'));
   const origin='https://vixale-engine-v2-shadow-observer.onrender.com';
   const token=randomUUID();
   const opts={redirect:'error',cache:'no-store',headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(45000)};
-  const [db,sheet,response,page]=await Promise.all([
-    collect(date), readWorkbook(engine('googleapis').google,spreadsheetId),
+  const [sheet,response,page]=await Promise.all([
+    readWorkbook({auth:engine('google-auth-library'),sheets:engine('googleapis/build/src/apis/sheets').sheets},spreadsheetId),
     fetch(origin+'/v2/model/snapshot?engine2_readback='+token,opts),
     fetch(origin+'/v2/swing-trading?engine2_readback='+token,opts)
   ]);
@@ -53,7 +53,7 @@ async function live(date,spreadsheetId) {
     deliveryJournal:db.delivery};
 }
 
-if(require.main===module) live(process.argv[2],process.argv[3]).then(result=>{
+if(require.main===module) live(process.argv[2],process.argv[3],JSON.parse(fs.readFileSync(process.argv[4],'utf8'))).then(result=>{
   console.log(JSON.stringify(result));
   if(result.status!=='PASS')process.exitCode=1;
 }).catch(error=>{

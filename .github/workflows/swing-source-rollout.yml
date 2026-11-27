@@ -33,6 +33,7 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix scripts/swing-diagnostics --ignore-scripts --no-audit --no-fund
       - name: Parser, authorization, source and formatting regression
         run: |
           node --test tests/test_swing_session_diagnostics.js

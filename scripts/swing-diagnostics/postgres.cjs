@@ -5,13 +5,13 @@
 const {createRequire} = require('node:module');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const {readEvidence}=require('./evidence.cjs');
 const epoch = '2026-10-19';
 
 async function collect(date, root = process.cwd()) {
   assert.match(date, /^20\d\d-\d\d-\d\d$/);
   const engine = createRequire(path.resolve(root, 'engine-v2/clean-ledger.cjs'));
   const {Client} = engine('pg');
-  const {decodeEvidence} = engine('./evidence-storage.cjs');
   const {dbName} = engine('./clean-ledger.cjs');
   const {verifyCurrentOpenings} = engine('./same-session-opening.cjs');
   const {validateMorningTrigger} = engine('./nyse-morning-clock.cjs');
@@ -26,6 +26,12 @@ async function collect(date, root = process.cwd()) {
     const identity = (await db.query("select current_database() as db, current_setting('transaction_read_only') as ro")).rows[0];
     assert.equal(identity.db, expected);
     assert.equal(identity.ro, 'on');
+    // Verify the durable preparation before loading the larger decision envelope.
+    const frozen=await (async()=>{
+      const p=await db.query('select artifact from vixale_v2.preopen_preparations where session_date=$1',[date]);
+      assert.equal(p.rowCount,1);
+      return readEvidence(p.rows[0].artifact);
+    })();
     const result = await db.query(`select r.run_id,r.model,r.evidence_manifest,r.accepted_at,
       d.active,d.closed,p.snapshot_id,p.state
       from vixale_v2.clean_runs r join vixale_v2.clean_daily_state d using(epoch,session_date,run_id)
@@ -33,15 +39,12 @@ async function collect(date, root = process.cwd()) {
       where r.epoch=$1 and r.session_date=$2`, [epoch,date]);
     assert.equal(result.rowCount, 1, 'decision_missing');
     const row = result.rows[0];
-    const input = decodeEvidence(row.evidence_manifest.inputs);
+    const input = await readEvidence(row.evidence_manifest.inputs);
     assert.equal(input.date,date);
     assert.equal(validateMorningTrigger({date,runAt:input.runAt}).status,'PASS');
-    const prepared = (await db.query('select artifact from vixale_v2.preopen_preparations where session_date=$1',[date])).rows;
-    assert.equal(prepared.length,1);
-    const frozen=decodeEvidence(prepared[0].artifact);
+    assert.deepEqual(input.sourceEvidence.prepared,frozen);
     assert.equal(input.preparedHash,frozen.fingerprint);
     assert.deepEqual(input.researchBatch,frozen.batch);
-    assert.deepEqual(input.sourceEvidence.prepared,frozen);
     const research = engine('./research-attestation.cjs').validateResearchBatch(input.researchBatch);
     assert.equal(research.status,'PASS');
     const {GOOGLE_POLICY,validGoogleQuote} = engine('./google-quote-provider.cjs');
@@ -49,8 +52,10 @@ async function collect(date, root = process.cwd()) {
     if (input.pricePolicy === GOOGLE_POLICY) {
       assert.ok(evidence.quotes.every(q=>validGoogleQuote(q,{date,runAt:input.runAt})));
     } else {
-      // Historical 09:40 configurations have a different attestation contract.
-      assert.equal(engine('./clean-ledger.cjs').validateMorningCommit(input).status,'READY_FOR_SHADOW_COMMIT');
+      const {POLICY,validFixedQuote,etTime}=engine('./delayed-model-policy.cjs');
+      assert.equal(input.pricePolicy,POLICY);
+      assert.equal(input.priceAsOf,etTime(date,580));
+      assert.ok(evidence.quotes.every(q=>validFixedQuote(q,{date,runAt:input.runAt})));
     }
     assert.deepEqual(input.positions,row.active);
     assert.deepEqual(input.closed,row.closed);
