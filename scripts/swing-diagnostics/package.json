@@ -1,0 +1,6 @@
+{
+  "name": "vixale-swing-session-diagnostics",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": { "stream-json": "1.9.1" }
+}
