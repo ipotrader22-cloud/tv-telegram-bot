@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'lib/swing-*.js'
+      - 'scripts/swing-diagnostics/**'
       - 'website_swing*.js'
       - 'tests/test_swing*.js'
       - 'tests/test_engine2_equity_format.js'
@@ -12,7 +13,7 @@ on:
       - 'package.json'
       - '.github/workflows/swing-source-rollout.yml'
   push:
-    branches: [feature/swing-engine2-source-rollout]
+    branches: [feature/swing-engine2-source-rollout, 'integration/engine2-diagnostics-*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,12 +23,21 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify tested revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - run: npm install --ignore-scripts --no-audit --no-fund
       - name: Parser, authorization, source and formatting regression
         run: |
+          node --test tests/test_swing_session_diagnostics.js
+          node --check scripts/swing-diagnostics/live.cjs
+          node --check scripts/swing-diagnostics/postgres.cjs
           node tests/test_swing_leaders.js
           node tests/test_swing_model_pnl_precision.js
           node tests/test_swing_leaders_candidate_feed_compat.js
