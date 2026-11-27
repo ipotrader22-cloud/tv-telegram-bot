@@ -323,6 +323,24 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual((cmd.order_type,cmd.reason),('MKT','TARGET_TICK_INVALID'))
         self.assertIsNone(e.state['target_ref'])
 
+    def test_high_premium_entry_places_valid_limit_buyback_after_recovery(self):
+        p = plan(entry_limit=D('125.50'), entry_tick=D('.50'))
+        engine = Engine(p)
+        entry, = engine.step(Snapshot(ENTRY))
+        self.record = new_record(p, engine, self.args, ENTRY)
+        reserve(self.record, entry, 9)
+        fills = [self.fill(price=62.50), self.fill(102, eid='put', price=63.00)]
+        adapter = self.adapter(fills=fills)
+        adapter.market_rules = [N(lowEdge=0, increment=.05), N(lowEdge=5, increment=.10),
+                                N(lowEdge=20, increment=.25), N(lowEdge=100, increment=.50)]
+        restarted = Engine(p, copy.deepcopy(self.record['state']))
+        with patch('es_straddle.tws.now', return_value=ENTRY + timedelta(seconds=2)):
+            snapshot = adapter.snapshot(restarted)
+        self.assertTrue(snapshot.target_price_valid)
+        target, = restarted.step(snapshot)
+        self.assertEqual((target.action, target.quantity, target.order_type, target.price, target.reason),
+                         ('BUY', 10, 'LMT', '109.00', 'TARGET'))
+
     def adapter(self, working=None, completed=None, fills=None, position=-10):
         a=TWS.__new__(TWS)
         a.record=self.record; a.args=N(history_days=1,history_all_clients_verified=True)

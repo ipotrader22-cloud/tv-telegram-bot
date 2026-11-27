@@ -20,8 +20,9 @@ def target_price(credit):
     credit = decimal(credit)
     if credit <= 0:
         raise ValueError("Entry credit must be positive")
-    return (credit * D(".865") / D(".25")).to_integral_value(
-        rounding=ROUND_CEILING) * D(".25")
+    raw_target = credit * D(".865")
+    tick = D(".50") if raw_target > D("100") else D(".25")
+    return (raw_target / tick).to_integral_value(rounding=ROUND_CEILING) * tick
 
 def midpoint(bid, ask, tick):
     bid, ask, tick = map(decimal, (bid, ask, tick))

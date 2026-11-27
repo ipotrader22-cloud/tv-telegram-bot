@@ -335,10 +335,13 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(recovered.state["blocked"], "ENTRY_ACK_UNKNOWN")
 
 class PricingCalendarTests(unittest.TestCase):
-    def test_target_quarter_ceiling(self):
+    def test_target_ceiling_uses_the_buyback_price_band(self):
         for entry, expected in [("50.50", "43.75"), ("50", "43.25"),
-                                ("100", "86.50"), ("1", "1.00")]:
-            self.assertEqual(target_price(entry), D(expected))
+                                ("100", "86.50"), ("115.60", "100.00"),
+                                ("115.61", "100.50"), ("125.50", "109.00"),
+                                ("200", "173.00"), ("1", "1.00")]:
+            with self.subTest(entry=entry):
+                self.assertEqual(target_price(entry), D(expected))
 
     def test_price_invalid(self):
         for entry in ("NaN", "Infinity", "0", "-1"):

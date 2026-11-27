@@ -20,8 +20,11 @@ limit; never chase or use a market entry. This November 17 owner-approved
 amendment supersedes the original off-grid-midpoint skip rule. The resulting
 limit must also be valid in its applicable CME premium band.
 
-Profit BUY LMT = ceil(actual weighted entry credit * .865 / .25) * .25.
-50.50 credit -> raw 43.6825 -> 43.75. Exact quarters stay unchanged.
+Profit BUY LMT = actual weighted entry credit * .865, rounded up to
+0.25 points through 100 and to 0.50 points above 100. This November 26
+owner amendment applies the band to the raw buyback price. For 50.50
+credit, 43.6825 rounds to 43.75. For 125.50 credit, 108.5575 rounds to
+109.00. The result must pass the broker's current market-rule validation.
 
 Mayday requires fresh real-time call ask + put ask >= actual weighted
 entry credit * 1.65 for at least three seconds, with a new ask observation
@@ -493,6 +496,16 @@ confirmation above filters the recorded spike in offline replay while
 preserving the threshold, limit target and unconditional 15:55 ET rule.
 A restart discards unconfirmed samples and retains any already-journaled
 Mayday exit decision.
+
+### November 26 high-premium buyback
+
+The November 26 paper entry for the next verified 16:00 ET expiry rested
+at 125.50. The earlier quarter-point rule would compute 108.75, which is
+off the downloaded half-point premium band and would invoke the invalid
+target exit path. The owner authorized rounding the buyback up in 0.50
+increments above 100. The 13.5% capture calculation, lower-price increment,
+entry limit and market-rule validation remain in place. The regression
+recovers a 125.50 fill and verifies a 109.00 limit buyback for ten.
 
 ## Rollback
 

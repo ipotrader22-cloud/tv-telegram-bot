@@ -181,10 +181,16 @@ confirmed. Keep the 1.65 multiplier, target, cancel/reconcile workflow and
 unconditional 15:55 close. In-progress confirmation is connection-local.
 The recorded spike is replayed in offline tests.
 
+November 26 buyback tick amendment: round the raw weighted-credit × .865
+target up to 0.50 above 100 points, and to 0.25 through 100. At 125.50,
+the intended buyback is 109.00, valid on the broker's verified half-point
+band. The executor still checks the resulting price against the downloaded
+CME market rule before submission.
+
 Local adapter fixes cover pinned ib_insync connect compatibility, string-valued
 underlying IDs, explicit operator expiry timezone versus exchange trading hours,
-and premium-dependent CME tick rules. The exact .25-rounded target is never
-repriced; an invalid exchange tick uses the unprotected-target exit path.
+and premium-dependent CME tick rules. The rounded target is never repriced;
+an invalid exchange tick uses the unprotected-target exit path.
 See docs/ES_STRADDLE_TWS_PAPER.md for commands, evidence, bounds and rollback.
 Rollback stops only this isolated process, reconciles owned broker orders,
 preserves journals and reverts the narrow PR; stock bridge stays untouched.
