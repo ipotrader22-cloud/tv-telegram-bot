@@ -3078,11 +3078,30 @@ async function markStandardBridgeClosePublicationComplete(sheets, row) {
   let state = null;
   const maxAttempts = 20;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    state = await getStandardBridgeClosePublicationState(sheets, row);
-    const closedWritten = Boolean(
-      state?.metadata?.metadata?.closed_trade_written
-    );
-    if (state?.metadata && (state.closed || closedWritten)) break;
+    // Completion needs only exact delivery metadata and, for older rows
+    // without the durable closed-written marker, matching Closed Trades evidence.
+    // Open/Trades are already reconciled by processLedger before this stage.
+    const deliveryId = rawBridgeDeliveryId(row?.raw);
+    await ensureTradeMetadataSheet(sheets);
+    const metadataRows = await readSheet(sheets, TRADE_METADATA_SHEET, 'A:Y');
+    let metadata = null;
+    if (deliveryId) {
+      for (let index = 1; index < metadataRows.length; index++) {
+        const parsed = parseTradeMetadataRow(metadataRows[index] || []);
+        if (String(parsed.bridge_delivery_id || '').trim() === deliveryId) {
+          metadata = { row_number: index + 1, metadata: parsed };
+          break;
+        }
+      }
+    }
+    let closed = null;
+    if (metadata && !metadata.metadata.closed_trade_written) {
+      const closedRows = await readSheet(sheets, CLOSED_TRADES_SHEET, 'A:V');
+      closed = findRawBridgeDeliveryRow(closedRows, [11, 21], deliveryId) ||
+        findCompactClosedTradeRow(closedRows, metadata.metadata);
+    }
+    state = { delivery_id: deliveryId, metadata, closed };
+    if (metadata && (closed || metadata.metadata.closed_trade_written)) break;
     if (attempt < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 250));
     }
