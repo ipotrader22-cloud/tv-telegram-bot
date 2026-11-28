@@ -678,7 +678,10 @@ class DemoLifecycle:
 
     async def maintenance_pass(self):
         """One failed reconciliation must not silently suppress the EOD evaluation."""
-        for name in ("process_inbox", "reconcile", "eod_failsafe_pass"):
+        # Evaluate EOD before potentially slow inbox/reconciliation work.
+        # All existing broker locks and session/ownership gates remain in force.
+        for name in ("eod_failsafe_pass", "process_inbox", "reconcile"):
+            started = time.monotonic()
             self.health[name + "_started_at"] = self.timestamp()
             try:
                 await getattr(self, name)()
@@ -690,6 +693,29 @@ class DemoLifecycle:
                 print("[SMIO DEMO MAINTENANCE BLOCKED]", name, type(error).__name__)
             finally:
                 self.health[name + "_finished_at"] = self.timestamp()
+                self.health[name + "_duration_seconds"] = round(time.monotonic() - started, 3)
+                if name == "eod_failsafe_pass":
+                    self.record_eod_diagnostic()
+
+    def record_eod_diagnostic(self):
+        """Best-effort persistent, redacted diagnostic; never authorizes orders."""
+        try:
+            path = self.journal_path.with_name("smio_eod_diagnostics.jsonl")
+            record = {key: value for key, value in self.health.items()
+                      if key.startswith(("eod_", "process_inbox_", "reconcile_"))}
+            # Retain transitions and evaluation samples, not every idle poll.
+            signature = (record.get("eod_result"), record.get("eod_failsafe_pass_error"))
+            now = time.monotonic()
+            if (signature == getattr(self, "_eod_diag_signature", None)
+                    and now - getattr(self, "_eod_diag_at", 0) < 30):
+                return
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+            self._eod_diag_signature = signature
+            self._eod_diag_at = now
+            self.health.pop("eod_diagnostic_error", None)
+        except Exception as exc:
+            self.health["eod_diagnostic_error"] = type(exc).__name__
 
     async def reconcile(self):
         async with self.routing_lock, self.core.ib_lock:
