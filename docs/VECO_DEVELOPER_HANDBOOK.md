@@ -4295,3 +4295,8 @@ Rollback: revert the narrow PR and allow normal Render main auto-deployment.
 Production acceptance requires a successful CI run and fresh authenticated
 API/page readback demonstrating AVY coverage and matching timestamps; a code
 change alone does not establish availability of Yahoo from Render.
+
+
+## November 28, 2026 — SMIO EOD maintenance priority candidate
+
+Handbook update required: YES. WMT remained open after November 27; exact first failure is unverified because persistent runtime logs were unavailable. Four installed bridge files matched origin/main by Git blob identity. The candidate evaluates EOD before inbox/reconciliation in each maintenance pass, retains all broker locks and session/ownership gates, records phase durations, and appends redacted EOD health samples to smio_eod_diagnostics.jsonl beside the journal. Diagnostic failure is nonfatal. This reduces within-pass delay but does not guarantee deadlines across slow passes or lock contention. The log requires operator retention management. No change to frozen PINE_0.1 strategy, callback contracts or historical records. Run the full SMIO offline suite and require controlled Windows paper validation before rollout. Roll back code via narrow revert and controlled stopped-bridge installation; preserve journal, inbox, outbox and diagnostic evidence. NUE/BA publication recovery and WMT/NOW historical reconciliation remain separate unresolved work.
